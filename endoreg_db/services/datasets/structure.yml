@@ -38,6 +38,7 @@ dependencies:
   - endoreg_db/services/annotations
   - endoreg_db/services/frames
   - endoreg_db/services/hub
+  - endoreg_db/services/media
   - endoreg_db/services/video_files
   - endoreg_db/utils
   external:

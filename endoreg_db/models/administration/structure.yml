@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 files:
+- file: person/patient/patient.py
+  role: Patient persistence with a unique stable UUID and thin center-scoped pseudonym lookup wrapper with historical salt alias support.
+- file: person/patient/patient_hash_alias.py
+  role: Center-scoped historical patient hashes retained across salt migrations, without secrets or direct identifiers.
 - file: app_settings.py
   role: Application settings persistence.
 - file: center/__init__.py

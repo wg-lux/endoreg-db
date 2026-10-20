@@ -24,7 +24,7 @@ def drf_validation_error(exc: PydanticValidationError) -> DRFValidationError:
 
 
 def drf_validation_error_detail(exc: PydanticValidationError) -> dict[str, Any]:
-    return {"details": exc.errors(include_context=False)}
+    return {"details": exc.errors(include_context=False, include_input=False)}
 
 
 def drf_validation_error_response(

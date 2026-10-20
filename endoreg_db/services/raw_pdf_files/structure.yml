@@ -33,13 +33,15 @@ files:
 - file: types.py
   role: Exports parse_report_pdf_artifact_kind.
 - file: validation.py
-  role: Exports validate_report_metadata_annotation.
+  role: Validates report metadata with atomic checked correction of inferred clinical links.
 dependencies:
   internal:
+  - endoreg_db/services/cases
   - endoreg_db/models
   - endoreg_db/services/centers
   - endoreg_db/services/media
   - endoreg_db/services/patient_identity
+  - endoreg_db/services/secret_rotation
   - endoreg_db/utils
   external:
   - django

@@ -8,15 +8,17 @@ boundaries:
 - Preserve content-hash deduplication, encrypted storage, fenced publication and failure propagation.
 files:
 - file: context/import_context.py
-  role: Typed source and import context.
+  role: Typed import context with one derived media reference, stable center identity and distinct forced reprocessing/recovery intent.
 - file: context/file_lock.py
   role: File and content-hash locking.
+- file: file_storage/create_video_file.py
+  role: Content-identity reuse and canonical processor binding before video processing.
 - file: file_storage/state_management.py
   role: Import finalization and derivative readiness.
 - file: file_storage/cleanup.py
   role: Owned staging cleanup.
 - file: processing/report_processing/report_anonymization.py
-  role: Document anonymization adapter.
+  role: Document anonymization adapter; validate extraction evidence and persist owner-bound staging receipts.
 entrypoints:
 - name: VideoImportService
   file: video_import_service.py
@@ -30,6 +32,7 @@ dependencies:
   - endoreg_db/schemas
   - endoreg_db/services/imports
   - endoreg_db/services/hub
+  - endoreg_db/services/video_files
   - endoreg_db/utils
   external:
   - django

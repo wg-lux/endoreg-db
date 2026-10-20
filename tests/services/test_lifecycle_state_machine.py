@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pytest
 
 from endoreg_db.services.runtime.lifecycle_state_machine import (
@@ -472,18 +474,74 @@ def test_operation_lifecycle_keeps_terminal_states_closed(
         transition_operation_lifecycle(current_state, event)
 
 
-def test_lifecycle_transition_requires_native_capability(
+@pytest.fixture(params=["service", "operation"])
+def lifecycle_transition(request: pytest.FixtureRequest) -> Callable[[], str]:
+    if request.param == "service":
+        return lambda: transition_service_lifecycle(
+            ServiceLifecycleState.STOPPED, ServiceLifecycleEvent.START_REQUESTED
+        )
+    return lambda: transition_operation_lifecycle(
+        OperationLifecycleState.QUEUED, OperationLifecycleEvent.CLAIM
+    )
+
+
+@pytest.mark.parametrize(
+    "missing_binding",
+    ["_transition_service_lifecycle", "_transition_operation_lifecycle"],
+)
+def test_lifecycle_transition_requires_native_bindings(
     monkeypatch: pytest.MonkeyPatch,
+    lifecycle_transition: Callable[[], str],
+    missing_binding: str,
 ) -> None:
     import endoreg_db.utils.rust_backend as rust_backend_module
 
-    monkeypatch.setattr(rust_backend_module, "_transition_service_lifecycle", None)
+    monkeypatch.setattr(rust_backend_module, missing_binding, None)
 
     with pytest.raises(RuntimeError, match="required Rust lifecycle_state_machine"):
-        rust_backend_module.transition_service_lifecycle(
-            current_state="stopped",
-            event="start_requested",
-        )
+        lifecycle_transition()
+
+
+def test_lifecycle_transition_rejects_incompatible_native_contract(
+    monkeypatch: pytest.MonkeyPatch,
+    lifecycle_transition: Callable[[], str],
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    monkeypatch.setattr(
+        rust_backend_module, "_LIFECYCLE_STATE_MACHINE_CONTRACT", "unsupported_contract"
+    )
+
+    with pytest.raises(RuntimeError, match="required Rust lifecycle_state_machine"):
+        lifecycle_transition()
+
+
+@pytest.mark.parametrize(
+    "error_type", [ValueError, OSError, RuntimeError, TypeError, OverflowError]
+)
+def test_lifecycle_transition_preserves_native_failure_cause(
+    monkeypatch: pytest.MonkeyPatch,
+    lifecycle_transition: Callable[[], str],
+    error_type: type[Exception],
+) -> None:
+    import endoreg_db.utils.rust_backend as rust_backend_module
+
+    native_error = error_type("native transition rejected")
+
+    def fail_transition(_state: str, _event: str) -> str:
+        raise native_error
+
+    monkeypatch.setattr(
+        rust_backend_module, "_transition_service_lifecycle", fail_transition
+    )
+    monkeypatch.setattr(
+        rust_backend_module, "_transition_operation_lifecycle", fail_transition
+    )
+
+    expected_type = ValueError if error_type is ValueError else RuntimeError
+    with pytest.raises(expected_type, match="native transition rejected") as error:
+        lifecycle_transition()
+    assert error.value.__cause__ is native_error
 
 
 def test_native_lifecycle_capability_is_versioned() -> None:

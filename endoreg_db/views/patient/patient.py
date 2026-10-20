@@ -597,14 +597,13 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 )
 
             # Generate the pseudonym
-            patient_hash, persisted = generate_patient_pseudonym(patient)
+            _, persisted = generate_patient_pseudonym(patient)
 
             if patient_id is None:
                 raise ValueError("Patient id is required for pseudonym response")
 
             payload = PatientPseudonymPayload(
                 patient_id=patient_id,
-                patient_hash=patient_hash,
                 source="server",
                 persisted=persisted,
                 message="Pseudonym generated successfully",

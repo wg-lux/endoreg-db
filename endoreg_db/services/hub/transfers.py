@@ -4,8 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from collections.abc import Generator, Iterable, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
@@ -71,15 +70,13 @@ from endoreg_db.services.runtime.lifecycle_state_machine import (
 )
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.utils.file_operations import (
-    atomic_handoff_file,
-    ensure_directory,
     safe_delete_field_file,
 )
-from endoreg_db.utils.hashs import get_file_hash
-from endoreg_db.utils.paths import get_runtime_paths
-from endoreg_db.utils.storage import delete_field_file, file_exists, save_local_file
+from endoreg_db.services.hub.payloads import reject_transferred_identity_hashes
+from endoreg_db.utils.hashs import get_bytes_hash, get_file_hash
+from lx_dtypes.models.contracts.hub_transfer import HubTransferSensitiveMetaPayload
+from endoreg_db.utils.storage import file_exists
 from endoreg_db.utils.structured_logging import hash_identifier
-from .ingest import _default_processor_name
 from .transfer_envelope import (
     HubMediaEnvelopeReplayConflict,
     prepare_inbound_hub_envelope,
@@ -219,16 +216,6 @@ def _renew_transfer_operation(fence: TransferOperationFence) -> None:
         raise RuntimeError("transfer operation ownership fence is no longer current")
 
 
-@contextmanager
-def _transfer_import_mutation(
-    fence: TransferOperationFence,
-) -> Generator[None, None, None]:
-    with transaction.atomic():
-        TransferJob.objects.select_for_update().get(pk=fence.transfer_job_id)
-        _renew_transfer_operation(fence)
-        yield
-
-
 def _record_transfer_candidate(
     fence: TransferOperationFence,
     *,
@@ -277,7 +264,6 @@ class TransferOperationHeartbeat:
             close_old_connections()
 
 
-_SAFE_SENSITIVE_META_FIELDS = frozenset({"patient_hash", "examination_hash"})
 _UNSAFE_STRUCTURED_REPORT_FIELDS = frozenset(
     {
         "title",
@@ -370,9 +356,12 @@ def _json_object_list(
 
 
 def _assert_privacy_preserving_resource_rows(resource_rows: JsonObject) -> None:
+    reject_transferred_identity_hashes(resource_rows)
     sensitive_meta = resource_rows.get("sensitive_meta")
     if isinstance(sensitive_meta, dict):
-        forbidden = sorted(set(sensitive_meta).difference(_SAFE_SENSITIVE_META_FIELDS))
+        forbidden = sorted(
+            set(sensitive_meta).difference({"patient_uuid", "examination_uuid"})
+        )
         if forbidden:
             raise ValueError(
                 "Direct identity fields are prohibited in hub transfers: "
@@ -528,6 +517,9 @@ def create_or_reuse_transfer_job(
     provenance: TransferProvenance,
     created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
+    reject_transferred_identity_hashes((resource_rows, processing_snapshot, provenance))
+    if payload_schema_version != "5.0":
+        raise ValueError("Only hub payload schema 5.0 is accepted")
     transfer_job_manager = cast(Any, TransferJob.objects)
     source_node_pk = cast(int, source_node.pk)
     target_node_pk = cast(int, target_node.pk)
@@ -1111,6 +1103,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 existing=video.sensitive_meta if video.pk else None,
                 payload=cast(JsonObject, sensitive_meta_payload),
                 center=source_center,
+                source_node=transfer_job.source_node,
             )
             video.sensitive_meta = sensitive_meta
 
@@ -1270,6 +1263,7 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 existing=report.sensitive_meta if report.pk else None,
                 payload=cast(JsonObject, sensitive_meta_payload),
                 center=source_center,
+                source_node=transfer_job.source_node,
             )
             report.sensitive_meta = sensitive_meta
 
@@ -1327,452 +1321,6 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         )
 
     return transfer_job
-
-
-def _attach_video_transfer_media(
-    *,
-    transfer_job: TransferJob,
-    uploaded_file: UploadedFile,
-    temp_path: Path,
-    media_role: str,
-) -> TransferJob:
-    video = _get_transfer_video(transfer_job)
-    upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload.mp4")).name
-    suffix = _normalized_suffix(upload_name, video.suffix or ".mp4")
-
-    if media_role == "raw":
-        actual_hash = get_file_hash(temp_path)
-        if actual_hash != transfer_job.resource_hash:
-            raise ValueError(
-                "Uploaded raw video hash does not match transfer resource_hash"
-            )
-
-        update_fields = _store_model_file(
-            instance=video,
-            field_name="raw_file",
-            source_path=temp_path,
-            stored_name=f"{transfer_job.resource_hash}{suffix}",
-        )
-        if video.suffix != suffix:
-            video.suffix = suffix
-            update_fields.append("suffix")
-        if not video.original_file_name:
-            video.original_file_name = upload_name
-            update_fields.append("original_file_name")
-        if update_fields:
-            update_fields.append("date_modified")
-            video.save(update_fields=update_fields)
-
-        _record_media_upload(
-            transfer_job=transfer_job,
-            media_role=media_role,
-            stored_name=_stored_field_name(video.raw_file),
-            content_hash=actual_hash,
-        )
-        _apply_case_resolution_for_media(
-            transfer_job=transfer_job,
-            media_obj=video,
-            media_type="video",
-        )
-        return _handle_video_processing_after_raw_upload(
-            transfer_job=transfer_job,
-            video=video,
-            import_path=temp_path,
-        )
-
-    expected_hash = _expected_processed_video_hash(
-        transfer_job=transfer_job, video=video
-    )
-    if not expected_hash:
-        raise ValueError(
-            "Processed video upload requires video_file.processed_video_hash in transfer metadata"
-        )
-
-    actual_hash = get_file_hash(temp_path)
-    if actual_hash != expected_hash:
-        raise ValueError(
-            "Uploaded processed video hash does not match the expected processed_video_hash"
-        )
-
-    update_fields = _store_model_file(
-        instance=video,
-        field_name="processed_file",
-        source_path=temp_path,
-        stored_name=f"{expected_hash}{suffix}",
-    )
-    if video.processed_video_hash != expected_hash:
-        video.processed_video_hash = expected_hash
-        update_fields.append("processed_video_hash")
-    if update_fields:
-        update_fields.append("date_modified")
-        video.save(update_fields=update_fields)
-
-    _mark_video_transfer_as_processed(video)
-    _record_media_upload(
-        transfer_job=transfer_job,
-        media_role=media_role,
-        stored_name=_stored_field_name(video.processed_file),
-        content_hash=actual_hash,
-    )
-    _apply_case_resolution_for_media(
-        transfer_job=transfer_job,
-        media_obj=video,
-        media_type="video",
-    )
-    return _save_transfer_job_state(
-        transfer_job=transfer_job,
-        target_object_id=video.pk,
-        transfer_status=TransferJob.TransferStatus.APPLIED,
-        processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
-        status_detail="Processed video uploaded and sender processing state preserved",
-    )
-
-
-def _attach_report_transfer_media(
-    *,
-    transfer_job: TransferJob,
-    uploaded_file: UploadedFile,
-    temp_path: Path,
-    media_role: str,
-) -> TransferJob:
-    report = _get_transfer_report(transfer_job)
-
-    if media_role == "raw":
-        actual_hash = get_file_hash(temp_path)
-        if actual_hash != transfer_job.resource_hash:
-            raise ValueError(
-                "Uploaded raw report hash does not match transfer resource_hash"
-            )
-
-        update_fields = _store_model_file(
-            instance=report,
-            field_name="file",
-            source_path=temp_path,
-            stored_name=f"{transfer_job.resource_hash}.pdf",
-        )
-        if update_fields:
-            update_fields.append("date_modified")
-            report.save(update_fields=update_fields)
-
-        _record_media_upload(
-            transfer_job=transfer_job,
-            media_role=media_role,
-            stored_name=_stored_field_name(report.file),
-            content_hash=actual_hash,
-        )
-        _apply_case_resolution_for_media(
-            transfer_job=transfer_job,
-            media_obj=report,
-            media_type="pdf",
-        )
-        return _handle_report_processing_after_raw_upload(
-            transfer_job=transfer_job,
-            report=report,
-            import_path=temp_path,
-        )
-
-    expected_hash = _expected_processed_report_hash(transfer_job=transfer_job)
-    if not expected_hash:
-        raise ValueError(
-            "Processed report upload requires "
-            "raw_pdf_state.processed_file_sha256 in transfer metadata"
-        )
-    actual_hash = get_file_hash(temp_path)
-    if actual_hash != expected_hash:
-        raise ValueError(
-            "Uploaded processed report hash does not match the expected "
-            "processed_file_sha256"
-        )
-    update_fields = _store_model_file(
-        instance=report,
-        field_name="processed_file",
-        source_path=temp_path,
-        stored_name=f"{expected_hash}.pdf",
-    )
-    if update_fields:
-        update_fields.append("date_modified")
-        report.save(update_fields=update_fields)
-
-    _mark_report_transfer_as_processed(report)
-    _record_media_upload(
-        transfer_job=transfer_job,
-        media_role=media_role,
-        stored_name=_stored_field_name(report.processed_file),
-        content_hash=actual_hash,
-    )
-    _apply_case_resolution_for_media(
-        transfer_job=transfer_job,
-        media_obj=report,
-        media_type="pdf",
-    )
-    return _save_transfer_job_state(
-        transfer_job=transfer_job,
-        target_object_id=report.pk,
-        transfer_status=TransferJob.TransferStatus.APPLIED,
-        processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
-        status_detail="Processed report uploaded and sender processing state preserved",
-    )
-
-
-def _handle_video_processing_after_raw_upload(
-    *,
-    transfer_job: TransferJob,
-    video: VideoFile,
-    import_path: Path,
-) -> TransferJob:
-    sender_success = _sender_processing_success(transfer_job)
-    processed_file = getattr(video, "processed_file", None)
-    local_processed_present = file_exists(processed_file)
-    if (
-        not local_processed_present
-        and getattr(processed_file, "name", None)
-        and not hasattr(processed_file, "storage")
-    ):
-        local_processed_present = True
-
-    if (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.INGEST_ONLY_NO_PROCESSING.value
-    ):
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=video.pk,
-            transfer_status=TransferJob.TransferStatus.APPLIED,
-            processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
-            status_detail="Raw video uploaded and stored without starting processing",
-        )
-
-    if (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
-        and sender_success
-    ):
-        if local_processed_present:
-            _mark_video_transfer_as_processed(video)
-            return _save_transfer_job_state(
-                transfer_job=transfer_job,
-                target_object_id=video.pk,
-                transfer_status=TransferJob.TransferStatus.APPLIED,
-                processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
-                status_detail=(
-                    "Raw video uploaded; existing processed artifact preserves sender state"
-                ),
-            )
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=video.pk,
-            transfer_status=TransferJob.TransferStatus.AWAITING_MEDIA,
-            processing_decision=TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
-            status_detail=(
-                "Raw video uploaded; waiting for processed media to preserve sender state"
-            ),
-        )
-
-    should_process = False
-    if (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.REPROCESS_ALWAYS.value
-    ):
-        should_process = True
-    elif (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS.value
-    ):
-        should_process = not local_processed_present
-    elif (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
-    ):
-        should_process = not bool(sender_success)
-
-    if not should_process:
-        decision = TransferJob.ProcessingDecision.SKIP_EXISTING_SUCCESS
-        detail = "Raw video uploaded; local processed output already exists"
-        if not local_processed_present:
-            decision = TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
-            detail = "Raw video uploaded without processing due to transfer policy"
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=video.pk,
-            transfer_status=TransferJob.TransferStatus.APPLIED,
-            processing_decision=decision,
-            status_detail=detail,
-        )
-
-    processor_name = _default_processor_name()
-    if not processor_name:
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=video.pk,
-            transfer_status=TransferJob.TransferStatus.FAILED,
-            processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
-            status_detail="No default EndoscopyProcessor is configured for video processing",
-        )
-
-    operation_fence: TransferOperationFence
-    transfer_job, operation_fence = _claim_transfer_operation(transfer_job.pk)
-    operation_heartbeat = TransferOperationHeartbeat(operation_fence)
-    operation_heartbeat.start()
-    try:
-        from endoreg_db.import_files.video_import_service import (
-            VideoImportService,
-        )
-
-        from endoreg_db.services.imports.execution import ImportExecutionFence
-
-        VideoImportService().import_and_anonymize_fenced(
-            file_path=import_path,
-            center_name=video.center.name,
-            processor_name=processor_name,
-            retry=True,
-            execution_fence=ImportExecutionFence(
-                attempt_id=operation_fence.attempt_id.hex,
-                guard=operation_heartbeat.guard,
-                mutation_guard=lambda: _transfer_import_mutation(operation_fence),
-            ),
-        )
-        operation_heartbeat.guard()
-    except Exception as exc:
-        operation_heartbeat.stop()
-        logger.exception(
-            "Hub video transfer processing failed for %s", transfer_job.transfer_key
-        )
-        return _fail_transfer_operation(
-            transfer_job=transfer_job,
-            operation_fence=operation_fence,
-            target_object_id=video.pk,
-            processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
-            status_detail=f"Raw video uploaded but processing failed: {exc}",
-        )
-    operation_heartbeat.stop()
-
-    video.refresh_from_db()
-    _apply_case_resolution_for_media(
-        transfer_job=transfer_job,
-        media_obj=video,
-        media_type="video",
-    )
-    return _save_transfer_job_state(
-        transfer_job=transfer_job,
-        target_object_id=video.pk,
-        transfer_status=TransferJob.TransferStatus.APPLIED,
-        processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
-        status_detail="Raw video uploaded and processing completed on the hub",
-        operation_fence=operation_fence,
-    )
-
-
-def _handle_report_processing_after_raw_upload(
-    *,
-    transfer_job: TransferJob,
-    report: RawPdfFile,
-    import_path: Path,
-) -> TransferJob:
-    sender_success = _sender_processing_success(transfer_job)
-    local_processed_present = report.processed_file.exists()
-
-    if (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.INGEST_ONLY_NO_PROCESSING.value
-    ):
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=report.pk,
-            transfer_status=TransferJob.TransferStatus.APPLIED,
-            processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
-            status_detail="Raw report uploaded and stored without starting processing",
-        )
-
-    if (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
-        and sender_success
-    ):
-        if local_processed_present:
-            _mark_report_transfer_as_processed(report)
-            return _save_transfer_job_state(
-                transfer_job=transfer_job,
-                target_object_id=report.pk,
-                transfer_status=TransferJob.TransferStatus.APPLIED,
-                processing_decision=TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE,
-                status_detail=(
-                    "Raw report uploaded; existing processed artifact preserves sender state"
-                ),
-            )
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=report.pk,
-            transfer_status=TransferJob.TransferStatus.AWAITING_MEDIA,
-            processing_decision=TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
-            status_detail=(
-                "Raw report uploaded; waiting for processed media to preserve sender state"
-            ),
-        )
-
-    should_process = False
-    if (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.REPROCESS_ALWAYS.value
-    ):
-        should_process = True
-    elif (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS.value
-    ):
-        should_process = not local_processed_present
-    elif (
-        transfer_job.processing_policy
-        == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
-    ):
-        should_process = not bool(sender_success)
-
-    if not should_process:
-        decision = TransferJob.ProcessingDecision.SKIP_EXISTING_SUCCESS
-        detail = "Raw report uploaded; local processed output already exists"
-        if not local_processed_present:
-            decision = TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
-            detail = "Raw report uploaded without processing due to transfer policy"
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=report.pk,
-            transfer_status=TransferJob.TransferStatus.APPLIED,
-            processing_decision=decision,
-            status_detail=detail,
-        )
-
-    try:
-        from endoreg_db.import_files.report_import_service import ReportImportService
-
-        ReportImportService().import_and_anonymize(
-            file_path=import_path,
-            center_name=report.center.name if report.center is not None else "",
-            retry=True,
-        )
-    except Exception as exc:
-        logger.exception(
-            "Hub report transfer processing failed for %s", transfer_job.transfer_key
-        )
-        return _save_transfer_job_state(
-            transfer_job=transfer_job,
-            target_object_id=report.pk,
-            transfer_status=TransferJob.TransferStatus.FAILED,
-            processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
-            status_detail=f"Raw report uploaded but processing failed: {exc}",
-        )
-
-    report.refresh_from_db()
-    _apply_case_resolution_for_media(
-        transfer_job=transfer_job,
-        media_obj=report,
-        media_type="pdf",
-    )
-    return _save_transfer_job_state(
-        transfer_job=transfer_job,
-        target_object_id=report.pk,
-        transfer_status=TransferJob.TransferStatus.APPLIED,
-        processing_decision=TransferJob.ProcessingDecision.START_PROCESSING,
-        status_detail="Raw report uploaded and processing completed on the hub",
-    )
 
 
 def _save_transfer_job_state(
@@ -1884,19 +1432,6 @@ def _fail_transfer_operation(
     return transfer_job
 
 
-def _store_model_file(
-    *,
-    instance: Any,
-    field_name: str,
-    source_path: Path,
-    stored_name: str,
-) -> list[str]:
-    delete_field_file(instance, field_name, missing_ok=True, save=False)
-    field_file = getattr(instance, field_name)
-    save_local_file(field_file, source_path, name=stored_name, save=False)
-    return [field_name]
-
-
 def _store_model_stream(
     *,
     instance: Any,
@@ -1927,38 +1462,6 @@ def _delete_replaced_generation_after_commit(
     transaction.on_commit(
         partial(safe_delete_field_file, replaced_field, missing_ok=True),
         robust=True,
-    )
-
-
-def _stored_field_name(field_file: object) -> str:
-    stored_name = getattr(field_file, "name", None)
-    if not isinstance(stored_name, str) or not stored_name:
-        raise RuntimeError("Stored media field is missing a storage name")
-    return stored_name
-
-
-def _write_uploaded_file_to_temp(
-    *, uploaded_file: UploadedFile, default_suffix: str
-) -> Path:
-    ensure_directory(get_runtime_paths().transcoding)
-    upload_name = Path(str(getattr(uploaded_file, "name", "") or "upload")).name
-    suffix = _normalized_suffix(upload_name, default_suffix)
-    destination = (
-        get_runtime_paths().transcoding / f"hub-upload-{uuid.uuid4().hex}{suffix}"
-    )
-    content = (
-        cast(Iterable[bytes], uploaded_file.chunks())
-        if hasattr(uploaded_file, "chunks")
-        else [uploaded_file.read()]
-    )
-    required_bytes = uploaded_file.size
-    if required_bytes is None or required_bytes < 0:
-        raise ValueError("Uploaded media size must be known before staging.")
-    return atomic_handoff_file(
-        destination=destination,
-        content=content,
-        required_bytes=required_bytes,
-        file_mode=0o600,
     )
 
 
@@ -2095,28 +1598,6 @@ def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
         ]
     )
     ProcessingHistory.mark_success(file_hash=report.pdf_hash, obj=report)
-
-
-def _sender_processing_success(transfer_job: TransferJob) -> bool | None:
-    processing_snapshot = cast(JsonObject, transfer_job.processing_snapshot or {})
-    sender_processing_success = _coerce_optional_bool(
-        processing_snapshot.get("sender_processing_success")
-    )
-    if sender_processing_success is not None:
-        return sender_processing_success
-
-    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
-    processing_history_payload = resource_rows.get("processing_history") or {}
-    if isinstance(processing_history_payload, dict):
-        return _coerce_optional_bool(processing_history_payload.get("success"))
-    return None
-
-
-def _normalized_suffix(upload_name: str, default_suffix: str) -> str:
-    suffix = Path(upload_name).suffix.strip() or default_suffix
-    if not suffix.startswith("."):
-        suffix = f".{suffix}"
-    return suffix.lower()
 
 
 def _apply_frame_annotation_rows(
@@ -2600,22 +2081,106 @@ def _apply_report_state_payload(report_state: RawPdfState, payload: JsonObject) 
         report_state.save(update_fields=updated_fields)
 
 
+@transaction.atomic
 def _upsert_sensitive_meta(
     *,
     existing: SensitiveMeta | None,
     payload: JsonObject,
     center: Center,
+    source_node: NetworkNode | None = None,
 ) -> SensitiveMeta:
     _assert_privacy_preserving_resource_rows(
         cast(JsonObject, {"sensitive_meta": payload})
     )
-    payload_patient_hash = str(payload.get("patient_hash", "") or "").strip()
-    payload_examination_hash = str(payload.get("examination_hash", "") or "").strip()
-    if not payload_patient_hash or not payload_examination_hash:
+    identity = HubTransferSensitiveMetaPayload.model_validate(payload)
+    if (
+        source_node is None
+        or getattr(source_node, "owning_center_id", None) != center.pk
+    ):
         raise ValueError(
-            "Hub sensitive metadata requires patient_hash and examination_hash."
+            "Hub identity requires the authenticated source node and its center"
         )
+    # These receiver-local identities contain no source demographic hash or salt.
+    # UUIDs are preserved; the authenticated namespace binds their source ownership.
+    namespace = f"hub-record-v5:{source_node.pk}:{center.pk}"
+    payload_patient_hash = get_bytes_hash(
+        f"{namespace}:patient:{identity.patient_uuid}".encode("utf-8")
+    )
+    payload_examination_hash = get_bytes_hash(
+        f"{namespace}:examination:{identity.examination_uuid}".encode("utf-8")
+    )
 
+    # Serialize hub identity creation within the authenticated center.
+    Center.objects.select_for_update().get(pk=center.pk)
+    patient = Patient.objects.filter(uuid=identity.patient_uuid).first()
+    if patient is not None and (
+        patient.center_id != center.pk or patient.patient_hash != payload_patient_hash
+    ):
+        raise ValueError("Hub patient UUID belongs to a different source owner.")
+    if existing is not None:
+        existing = SensitiveMeta.objects.select_for_update().get(pk=existing.pk)
+        if existing.center_id != center.pk:
+            raise ValueError("Hub sensitive metadata belongs to a different center.")
+        if existing.pseudo_patient_id is not None and (
+            patient is None or existing.pseudo_patient_id != patient.pk
+        ):
+            raise ValueError("Hub sensitive metadata is linked to a different patient.")
+        if existing.patient_hash and existing.patient_hash != payload_patient_hash:
+            previous_patient = Patient.get_pseudo_patient_by_hash(
+                existing.patient_hash, center=center
+            )
+            if patient is None or previous_patient != patient:
+                raise ValueError(
+                    "Hub sensitive metadata has a different patient identity."
+                )
+        if (
+            existing.examination_hash
+            and existing.examination_hash != payload_examination_hash
+        ):
+            raise ValueError(
+                "Hub sensitive metadata has a different examination identity."
+            )
+
+    patient_examination = (
+        PatientExamination.objects.select_related("patient")
+        .filter(uuid=identity.examination_uuid)
+        .first()
+    )
+    if patient_examination is not None and (
+        patient is None
+        or patient_examination.patient_id != patient.pk
+        or patient_examination.hash != payload_examination_hash
+    ):
+        raise ValueError(
+            "Hub examination_hash is already linked to a different patient_hash."
+        )
+    if (
+        existing is not None
+        and existing.pseudo_examination_id is not None
+        and (
+            patient_examination is None
+            or existing.pseudo_examination_id != patient_examination.pk
+        )
+    ):
+        raise ValueError("Hub sensitive metadata is linked to a different examination.")
+    if patient is None:
+        patient = Patient.objects.create(
+            uuid=identity.patient_uuid,
+            first_name="",
+            last_name="",
+            dob=None,
+            gender=None,
+            center=center,
+            patient_hash=payload_patient_hash,
+            is_real_person=False,
+        )
+    if patient_examination is None:
+        patient_examination = PatientExamination.objects.create(
+            uuid=identity.examination_uuid,
+            patient=patient,
+            examination=None,
+            hash=payload_examination_hash,
+        )
     direct_identifier_updates: dict[str, Any] = {
         "patient_first_name": None,
         "patient_last_name": None,
@@ -2650,34 +2215,6 @@ def _upsert_sensitive_meta(
         )
         sensitive_meta.refresh_from_db()
 
-    patient = Patient.objects.filter(patient_hash=payload_patient_hash).first()
-    if patient is None:
-        patient = Patient.objects.create(
-            first_name="",
-            last_name="",
-            dob=None,
-            gender=None,
-            center=center,
-            patient_hash=payload_patient_hash,
-            is_real_person=False,
-        )
-    patient_examination = (
-        PatientExamination.objects.select_related("patient")
-        .filter(hash=payload_examination_hash)
-        .first()
-    )
-    if patient_examination is not None and (
-        patient_examination.patient.patient_hash != payload_patient_hash
-    ):
-        raise ValueError(
-            "Hub examination_hash is already linked to a different patient_hash."
-        )
-    if patient_examination is None:
-        patient_examination = PatientExamination.objects.create(
-            patient=patient,
-            examination=None,
-            hash=payload_examination_hash,
-        )
     SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
         pseudo_patient=patient,
         pseudo_examination=patient_examination,

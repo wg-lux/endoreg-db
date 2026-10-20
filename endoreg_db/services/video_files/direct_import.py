@@ -94,7 +94,9 @@ class VideoImportService(ProcessingService):
             raise ValueError("Direct video import requires a supported video source")
         if not processor_name.strip():
             raise ValueError("Direct video import requires a processor name")
-        center = resolve_import_center(center_name)
+        center = (
+            video.center if video is not None else resolve_import_center(center_name)
+        )
         with file_lock(path), path.open("rb") as source:
             content_hash = get_file_hash(path)
             job, _ = create_or_reuse_upload_job(
@@ -137,9 +139,10 @@ class VideoImportService(ProcessingService):
                     if video is None:
                         video = self.import_and_anonymize_fenced(
                             local_path,
-                            center_name,
+                            str(center.name),
                             processor_name,
                             retry=retry,
+                            center_key=str(center.center_key),
                             execution_fence=fence,
                         )
                     else:

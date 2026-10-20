@@ -45,10 +45,17 @@ def test_center_conflict_preserves_existing_patient() -> None:
     patient = Patient.objects.create(
         patient_hash="scoped", center=original, is_real_person=False
     )
-    with pytest.raises(ValueError, match="different center"):
-        Patient.get_or_create_pseudo_patient_by_hash("scoped", center=other)
+    assert Patient.get_pseudo_patient_by_hash("scoped", center=other) is None
     patient.refresh_from_db()
     assert patient.center_id == original.pk
+    assert Patient.objects.count() == 1
+
+    other_patient = Patient.objects.create(
+        patient_hash="scoped", center=other, is_real_person=False
+    )
+    assert Patient.get_pseudo_patient_by_hash("scoped", center=original) == patient
+    assert Patient.get_pseudo_patient_by_hash("scoped", center=other) == other_patient
+    assert Patient.objects.count() == 2
 
 
 def test_existing_identity_keeps_established_profile() -> None:

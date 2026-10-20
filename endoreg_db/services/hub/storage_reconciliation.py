@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
-import hashlib
 import json
 from uuid import UUID
+
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -191,7 +192,7 @@ class _OperationalEvent:
 
 def _correlation_id(*parts: object) -> str:
     payload = "\x1f".join(str(part) for part in parts).encode("utf-8")
-    return f"storage-reconcile:{hashlib.sha256(payload).hexdigest()}"
+    return f"storage-reconcile:{get_bytes_hash(payload)}"
 
 
 def _request_fingerprint(
@@ -229,7 +230,7 @@ def _request_fingerprint(
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _matching_cleanup_receipt(

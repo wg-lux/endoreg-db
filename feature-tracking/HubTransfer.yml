@@ -22,6 +22,200 @@ source_documents:
   disposition: reference
   note: Provides the existing ingest operations model that outbound transfer operations must complement.
 definition_of_done:
+- id: guarded_patient_matching_resolver
+  category: security
+  title: Ausführbarer Patientenresolver nach dem Lean-Annahmevertrag
+  acceptance:
+  - Lokale Eingaben stammen aus autorisierten bestehenden Datensätzen und werden vor Ergebnisannahme erneut geprüft; fehlende oder gelöschte Originaldaten und unzulässige Schlüsselgenerationen werden abgewiesen.
+  - Der Resolver nutzt die bestehende Kodierung und HMAC-Funktion mit A-Schlüssel und A-Zentrum; vollständige Aggregation offenbart nur dem Empfänger den Ergebnisstatus und gegebenenfalls einen einzelnen Kandidaten.
+  - Signierte Ergebnisse binden Sitzung, Teilnehmer, Zweck, Publikum, Ablauf, Schema, Generation, Circuit und unveränderliche Datensatzreferenzen an einen lokal aufgezeichneten Workerabschluss.
+  - Atomare persistierte Sitzungsannahme verhindert Replay und konkurrierende Doppelannahme; begrenzte kumulative Anfragen und explizite UUID-Beziehungen ersetzen automatische Zusammenführung.
+  - Negative Tests decken Substitution, Manipulation, Ablauf, unzulässige Generationen, Mehrdeutigkeit und Abbruch ab; Backend- und Vertrauensannahmen bleiben explizit und die Funktion wird nicht automatisch ausgerollt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Typprüfung, fokussierte ORM- und Workerprüfungen sowie tatsächliche Zwei-Prozess-Circuitprüfung ausführen; Bereitstellung und unabhängige Kryptografieprüfung separat bewerten.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: existing_hmac_2pc_evaluation
+  category: security
+  title: Isolierte Bewertung privater Vergleiche bestehender Patienten-HMACs
+  acceptance:
+  - Referenztests stimmen mit produktiver JSON- und UTF-8-Kodierung sowie HMAC-SHA256 unter Quellschlüssel
+    und Quellzentrum überein; bestehende UUIDs und Hashes bleiben unverändert.
+  - Ein synthetischer Zwei-Prozess-Versuch oder ein konkreter Backend-Blocker wird dokumentiert; Referenzzeiten
+    werden niemals als 2PC-Leistung bezeichnet.
+  - Bewertung trennt Tupelgleichheit, Datensatzbindung, reale Identität, Protokollsicherheit, gemessene
+    Leistung und Betriebsbereitschaft einschließlich Administratoren, historischen Schlüsseln und wiederholten
+    Abfragen.
+  - Signaturen, Wiederholungsschutz, autorisierte Eingaben und klinische Identität werden nur bei tatsächlich
+    implementiertem Nachweis als unterstützt bezeichnet; diese Evaluation aktiviert keinen Produktionsabgleich.
+  required: false
+  verification:
+    kind: manual
+    instructions: Bericht und reproduzierbare synthetische Tests prüfen; produktive Freigabe bleibt ein
+      separates Kriterium.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/patient_matching_2pc_assessment.md
+    - kind: test
+      reference: tests/scripts/test_patient_matching_2pc_reference.py
+    - kind: code
+      reference: scripts/patient_matching_2pc.mpc
+    - kind: command
+      reference: '39 reference tests passed; focused Pyright and Ruff passed; full Pyright 20 existing
+        errors/24 warnings; real Tinier batches 1/10/100 completed, 100: 171.815s and 32482.8MB; structure65/tracker37
+        valid'
+    note: 'Isolierte Evaluation ausgeführt: exakter bestehender HMAC mit A-Key/A-Zentrum und in-circuit
+      Epoch-Prüfung; UUIDs und lokale Hashes unverändert. Produktionsbindung, minimaler/atomarer Output,
+      Signatur/Replay-Schutz, unabhängige Administration und vollständige Sicherheitsanalyse fehlen. Referenztests39
+      bestanden; Backendmessungen sind synthetische Einzelläufe, keine Betriebsfreigabe.'
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-19T15:52:25.490456Z'
+- id: cross_site_private_patient_matching
+  category: security
+  title: Privater zentrenübergreifender Abgleich verifizierter gemeinsamer Patientenkennungen
+  acceptance:
+  - Abgleichseingaben sind verifizierte gemeinsame Patientenkennungen mit festgelegtem Aussteller-Namensraum,
+    Normalisierung und Verifikationsbeleg; Name, Geburtsdatum und unbestätigte externe IDs sind ausgeschlossen.
+  - Das Betriebsmodell benennt Hub-, Schlüssel- und Quellsystem-Vertrauensgrenzen, Administratoren, Wiederherstellungsrechte
+    und das Verhalten bei kompromittierten Quellen. Ein gemeinsamer Host oder Administrator wird nicht
+    als unabhängige Schlüsselhaltung oder Schutz vor gemeinsamer Kompromittierung dargestellt.
+  - Ein geprüftes privates Abgleichsprotokoll schützt Kennungseingaben und bindet Ergebnisse an ihren
+    Verifikationsnachweis. Kryptografische Auswertungsnachweise werden nicht mit Kennungsverifikation
+    verwechselt.
+  - Signierte Meldungen binden Quellknoten, persistierte Patienten-UUID, Empfänger, Zweck, Abgleichsraum,
+    Schlüsselgeneration, Ablaufzeit und Wiederholungsschutz. Schlüsselwiderruf und Rotation schlagen bei
+    widersprüchlichen oder unbekannten Generationen geschlossen fehl.
+  - Patienten-UUIDs bleiben unverändert; zentrenübergreifende Beziehungen werden separat und nachvollziehbar
+    verwaltet. Inhalts-Hashes identifizieren Artefakte, niemals Patienten. Widersprüche verursachen keine
+    stille Zusammenführung.
+  - Passworthashes, Django SECRET_KEY, NetworkNode.shared_secret, lokale Master-Schlüssel und Patientenmerkmale
+    werden nicht als Abgleichsschlüssel oder Saatwerte asymmetrischer Schlüssel verwendet.
+  - Wiederholungen, konkurrierende Zuordnungen, gefälschte Belege, falsche Aussteller, unzulässige Schlüssel,
+    Manipulation, Widerruf und gezielte Kennungsabfragen sind durch wiederverwendbare Tests abgedeckt;
+    Gleichheitsleckage und autorisierte Rateversuche werden ausdrücklich bewertet.
+  required: true
+  verification:
+    kind: manual
+    instructions: Prüfe den verifizierten Ausstellervertrag, unabhängige Betriebsverantwortung, Protokoll-
+      und Bibliotheksprüfung sowie adversariale Integrationstests vor Aktivierung.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/source_patient_matching.md
+    - kind: review
+      reference: /home/admin/luxnix/ansible/inventory/host_vars/gs-02.yml:84 and :146; /home/admin/luxnix/modules/nixos/luxnix/vault/default.nix:403;
+        /home/admin/luxnix/docs/vault-hub-machine-enrollment.md:47. Read-only source review; no remote
+        inspection or secret access.
+    - kind: command
+      reference: 37 feature definitions and 65 endoreg-db structure manifests validated; independent LuxNix
+        review validated 23 manifests. Documentation-only change; no code tests run.
+    - kind: document
+      reference: docs/patient_matching_2pc_assessment.md
+    note: Der Produktionsvertrag verlangt weiterhin verifizierte issuerqualifizierte Kennungen. Die separate
+      synthetische Ansatz-A-Evaluation untersucht exakte Demografie-HMAC-Gleichheit mit bestehenden A-Schlüsseln;
+      sie benötigt keinen zentralen gemeinsamen Matching-Key. Hub/Vault-Kolokation allein schließt A/B-2PC
+      nicht aus. Effektive gemeinsame Administratorrechte, Record-Bindung und Verifikationsverfahren bleiben
+      offen; keine Produktionsaktivierung.
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-19T15:50:07.310278Z'
+- id: local_identity_hash_boundary
+  category: security
+  title: Patientenidentität bleibt am Quellknoten
+  acceptance:
+  - Patienten- und Untersuchungshashes werden vor jeder Hub-Übertragung abgewiesen, auch in verschachtelten
+    Metadaten und Wiederholungen.
+  - Der Empfänger weist Identitätshashes vor Persistenz zurück; vorhandene lokale Identitäten und Datei-Prüfsummen
+    bleiben erhalten.
+  - Vertrag 5.0 überträgt persistierte UUIDs für Patienten und Untersuchungen gemäß lx-data-models. Lokale
+    Ganzzahl-IDs werden abgewiesen; Wiederholungen behalten UUIDs und Inhalts-Hashes. UUID-Kollisionen
+    mit fremden Besitzern oder Patienten werden vor Verknüpfung abgewiesen.
+  - Sender und Empfänger verwenden den gemeinsamen lx_dtypes-Vertrag; Versionen 3.0 und 4.0 bleiben ungültig.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused boundary regression tests and type checks before coordinated deployment.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: 'Backend boundary/keyring suite: 99 passed; local import identity guards/resolution:
+        22 passed. Focused Pyright 0 errors; full Pyright has 17 pre-existing identity_resolve draft errors.'
+    - kind: command
+      reference: 'Final receiver privacy, historical identity preservation and real source-hash rejection
+        suite: 53 passed in 44.02s. Focused Pyright 0 errors; Ruff and 65 structure maps passed.'
+    - kind: command
+      reference: 'Contract v4: shared contract 31 passed; source-ID/no-salt receiver boundaries 16 passed;
+        receiver transfer contracts/unit decisions 76 passed plus 3 subtests; sender payload 8 passed
+        and worker 27 passed, using current shared source overlay. Focused Pyright and Ruff passed. Structure
+        maps valid in all three repos; lx-data-models HTML build passed.'
+    - kind: command
+      reference: 'Final integration Pyright: receiver, sender, shared response guard and corrected cohort
+        test 0 errors. Full lx-data-models Pyright 0 errors; HTML and linkcheck pass. Endoreg full Pyright
+        retains 17 unrelated errors in identity_resolve/generate_public_key.py; concurrently stale cohort
+        assertion was corrected and focused type check passed.'
+    - kind: command
+      reference: 'UUID contract: 41 shared tests passed; lx-annotate sender payload/worker: 36 passed;
+        receiver HTTP/identity/import checks: 43 passed and 969 subtests. Tests used sibling lx-data-models/endoreg-db
+        sources through explicit PYTHONPATH overlays.'
+    - kind: command
+      reference: Full lx-data-models Pyright passed; changed receiver and sender Pyright passed. Full
+        endoreg-db Pyright retains 17 pre-existing errors in identity_resolve/generate_public_key.py and
+        24 warnings. Ruff, whitespace checks and structure maps passed in all three repositories; shared
+        HTML and linkcheck passed.
+    - kind: test
+      reference: tests/services/test_patient_uuid_migration.py
+    - kind: test
+      reference: tests/services/test_source_patient_matching.py
+    - kind: command
+      reference: 'Final receiver and migration verification after unifying persistence identity validation:
+        97 passed, 3 subtests passed in 44.46s (test_patient_uuid_migration, test_source_patient_matching,
+        test_transfer_identity_boundary, test_transfer_job_contract, test_hub_transfer_unit_decisions).
+        Existing pytest plugin and temporary-directory cleanup warnings remain.'
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-19T14:26:11.289743Z'
+- id: source_local_patient_matching
+  category: security
+  title: Historischen zentralen Hashabgleich sperren
+  acceptance:
+  - Patienten- und Untersuchungshashes bleiben lokal; die frühere zentrale Hashzuordnung ist durch local_identity_hash_boundary
+    außer Kraft gesetzt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_source_patient_matching.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/source_patient_matching.md
+    - kind: test
+      reference: tests/services/test_source_patient_matching.py
+    - kind: command
+      reference: '2026-10-19: .devenv/state/venv/bin/pytest tests/services/test_source_patient_matching.py
+        tests/services/test_hub_transfer_unit_decisions.py -q --tb=short: 42 passed, 1 plugin warning,
+        37.41s; existing pytest temporary-directory cleanup warnings. Focused Pyright 0 errors/0 warnings;
+        Ruff passed; 65 structure maps and 37 feature definitions valid. Full Pyright: 17 unrelated errors
+        in endoreg_db/identity_resolve/generate_public_key.py, 24 warnings.'
+    note: Receiver-service matching verified with DJANGO_SALT=None and forbidden salt resolution. Existing
+      production behavior reused; no deployment changes or claim that global hub startup can omit all
+      identity configuration. Authenticated center remains the trust boundary; no per-machine isolation
+      or cross-source matching introduced.
+    assessed_by: codex-sha-benchmark-20261019
+    assessed_at: '2026-10-19T12:29:31.690173Z'
 - id: documented_transfer_scope
   category: requirements
   title: Sender roles, transfer scope, approval semantics, and phase boundaries are explicit

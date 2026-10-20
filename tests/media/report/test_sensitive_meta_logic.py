@@ -45,7 +45,7 @@ def generate_random_examination_date() -> date:
     return random_date
 
 
-def get_patient_hash(
+def calculate_patient_hash(
     first_name: str,
     last_name: str,
     dob: date | datetime,
@@ -63,10 +63,9 @@ def get_patient_examination_hash(
     dob: date | datetime,
     examination_date: date | datetime,
     center: str,
-    salt: str,
 ) -> str:
     """Mock implementation of patient examination hash generation"""
-    hash_input = f"{first_name}|{last_name}|{dob}|{examination_date}|{center}|{salt}"
+    hash_input = f"{first_name}|{last_name}|{dob}|{examination_date}|{center}"
     return hash_input
 
 
@@ -78,7 +77,7 @@ def calculate_patient_hash_simple(
     salt: str = "test_salt",
 ) -> str:
     """Simplified patient hash calculation for testing"""
-    hash_str = get_patient_hash(
+    hash_str = calculate_patient_hash(
         first_name=first_name,
         last_name=last_name,
         dob=dob,
@@ -103,7 +102,6 @@ def calculate_examination_hash_simple(
         dob=dob,
         examination_date=examination_date,
         center=center,
-        salt=salt,
     )
     return sha256(hash_str.encode()).hexdigest()
 
@@ -251,7 +249,7 @@ def test_sensitive_meta_logic_hashes_validate_required_fields():
         center="center-a",
     )
 
-    patient_hash = sensitive_meta_logic.calculate_patient_hash(instance, salt="salt")
+    patient_hash = sensitive_meta_logic.calculate_patient_hash(instance)
     examination_hash = sensitive_meta_logic.calculate_examination_hash(
         instance,
         salt="salt",
@@ -262,7 +260,7 @@ def test_sensitive_meta_logic_hashes_validate_required_fields():
 
     instance.center = None
     with pytest.raises(ValueError, match="Center is required"):
-        sensitive_meta_logic.calculate_patient_hash(instance, salt="salt")
+        sensitive_meta_logic.calculate_patient_hash(instance)
 
 
 if __name__ == "__main__":

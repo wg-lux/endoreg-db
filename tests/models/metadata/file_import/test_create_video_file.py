@@ -20,11 +20,13 @@ from endoreg_db.models import (
     Label,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.services.video_files import _imports as create_from_file_module
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityError,
+    MediaIntegrityResult,
     MediaIntegrityStatus,
 )
 from endoreg_db.utils.file_operations import (
@@ -273,7 +275,7 @@ def test_create_from_file_duplicate_with_existing_file(
     ctx2 = ImportContext(
         file_path=src_file,
         center_name=center_name,
-        processor_name=processor_name,
+        processor_name="different-requested-processor",
     )
     assert isinstance(ctx.file_hash, str)
     ph = ProcessingHistory().get_or_create_for_hash(
@@ -290,6 +292,106 @@ def test_create_from_file_duplicate_with_existing_file(
     assert needs_processing2 is False
 
     assert v2.pk == v1.pk
+    assert ctx2.processor_name == processor_name
+
+
+@pytest.mark.parametrize("force_reprocess", [False, True])
+def test_completed_video_without_processor_only_allows_reuse(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    force_reprocess: bool,
+) -> None:
+    video = VideoFile(raw_video_hash="completed-content", raw_file="retained.mp4")
+    ctx = ImportContext(
+        file_path=tmp_path / "reimport.mp4",
+        center_name="existing-center",
+        processor_name="different-requested-processor",
+        current_video=video,
+        force_reprocess=force_reprocess,
+    )
+
+    def completed_integrity(
+        _video: VideoFile, *, content_hash: str
+    ) -> MediaIntegrityResult:
+        assert _video is video
+        return MediaIntegrityResult(
+            ok=True,
+            status=MediaIntegrityStatus.OK,
+            reason="Completed video",
+            content_hash=content_hash,
+        )
+
+    monkeypatch.setattr(
+        create_video_file, "check_video_media_integrity", completed_integrity
+    )
+    if force_reprocess:
+        with pytest.raises(ValueError, match="no canonical import processor"):
+            create_video_file._handle_success_history(ctx, "completed-content")
+    else:
+        decision = create_video_file._handle_success_history(ctx, "completed-content")
+        assert decision.can_short_circuit
+        assert not decision.needs_processing
+
+
+@pytest.mark.parametrize("from_context", [False, True])
+@pytest.mark.parametrize("processor_source", ["direct", "legacy", "missing"])
+def test_reused_video_binds_canonical_processor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    from_context: bool,
+    processor_source: str,
+) -> None:
+    canonical = EndoscopyProcessor(name="canonical-processor")
+    video = VideoFile(raw_video_hash="existing-content")
+    if processor_source == "direct":
+        video.processor = canonical
+        video.video_meta = VideoMeta(
+            processor=EndoscopyProcessor(name="outdated-metadata-processor")
+        )
+    elif processor_source == "legacy":
+        video.video_meta = VideoMeta(processor=canonical)
+    ctx = ImportContext(
+        file_path=tmp_path / "reimport.mp4",
+        center_name="existing-center",
+        processor_name="different-requested-processor",
+        current_video=video if from_context else None,
+    )
+
+    def reusable_source(_video: VideoFile) -> None:
+        assert _video is video
+
+    def existing_video(**_kwargs: object) -> VideoFile:
+        return video
+
+    def existing_center(
+        _video: VideoFile, center_name: str, *, center_key: str | None = None
+    ) -> SimpleNamespace:
+        assert _video is video
+        assert center_key == ctx.center_key
+        return SimpleNamespace(name=center_name)
+
+    monkeypatch.setattr(
+        create_video_file, "require_reusable_video_raw_source", reusable_source
+    )
+    monkeypatch.setattr(VideoFile, "create_from_file_initialized", existing_video)
+    monkeypatch.setattr(
+        create_video_file,
+        "ensure_center",
+        existing_center,
+    )
+
+    if processor_source == "missing":
+        with pytest.raises(ValueError, match="no canonical import processor"):
+            create_video_file._get_or_create_video_instance(
+                ctx, file_path=ctx.file_path, file_hash="existing-content"
+            )
+        assert ctx.processor_name == "different-requested-processor"
+    else:
+        selected = create_video_file._get_or_create_video_instance(
+            ctx, file_path=ctx.file_path, file_hash="existing-content"
+        )
+        assert selected is video
+        assert ctx.processor_name == canonical.name
 
 
 def test_create_or_retrieve_success_history_unusable_processed_file_needs_processing(
@@ -317,7 +419,10 @@ def test_create_or_retrieve_success_history_unusable_processed_file_needs_proces
     ctx.file_hash = get_file_hash(source_path)
 
     assert isinstance(ctx.file_hash, str)
-    video = video_file_module.VideoFile(raw_video_hash=ctx.file_hash)
+    video = video_file_module.VideoFile(
+        raw_video_hash=ctx.file_hash,
+        processor=EndoscopyProcessor(name="olympus_cv_1500"),
+    )
     video.pk = 1
     video.raw_file.storage = FileSystemStorage(location=tmp_path)
     video.raw_file.name = "import/stale-success.mp4"
@@ -412,7 +517,10 @@ def test_create_or_retrieve_history_missing_video_imports_fresh(
     captured_file_paths: list[Path] = []
     captured_video_hashes: list[str] = []
     captured_history: list[dict[str, str | bool]] = []
-    created_video = video_file_module.VideoFile(raw_video_hash=ctx.file_hash)
+    created_video = video_file_module.VideoFile(
+        raw_video_hash=ctx.file_hash,
+        processor=EndoscopyProcessor(name="olympus_cv_1500"),
+    )
     created_video.pk = 2
 
     def fake_has_history_for_hash(*, file_hash: str, success: bool) -> bool:
@@ -827,7 +935,10 @@ def test_create_or_retrieve_prefers_sensitive_path(
     ctx.file_hash = "hash-from-sensitive-copy"
 
     captured_file_paths: list[Path] = []
-    created_video = video_file_module.VideoFile(raw_video_hash=ctx.file_hash)
+    created_video = video_file_module.VideoFile(
+        raw_video_hash=ctx.file_hash,
+        processor=EndoscopyProcessor(name="olympus_cv_1500"),
+    )
     created_video.pk = 1
 
     def fake_has_history_for_hash(*, file_hash: str, success: bool) -> bool:

@@ -13,6 +13,7 @@ from endoreg_db.services.hub.import_monitoring import (
     safe_import_error_detail,
     schedule_processing_retry,
 )
+from endoreg_db.services.hub.upload_job_state_machine import mark_upload_job_error
 
 
 def test_retry_delay_is_bounded_exponential_backoff() -> None:
@@ -24,10 +25,39 @@ def test_retry_delay_is_bounded_exponential_backoff() -> None:
     ]
 
 
-def test_safe_error_detail_does_not_echo_technical_input() -> None:
-    assert safe_import_error_detail("unknown /protected/secret.mp4") == ""
-    assert "/protected" not in safe_import_error_detail(
-        UploadJob.ErrorCode.DISPATCH_UNAVAILABLE
+@pytest.mark.parametrize("error_code", UploadJob.ErrorCode)
+def test_safe_error_detail_covers_every_import_error_code(
+    error_code: UploadJob.ErrorCode,
+) -> None:
+    detail = safe_import_error_detail(error_code)
+    assert bool(detail) is (error_code != UploadJob.ErrorCode.NONE)
+
+
+def test_safe_error_detail_rejects_unknown_code_without_echoing_input() -> None:
+    with pytest.raises(ValueError, match="^Unsupported import error code$") as raised:
+        safe_import_error_detail("unknown /protected/secret.mp4")
+    assert raised.value.__cause__ is None
+    assert raised.value.__suppress_context__ is True
+
+
+@pytest.mark.django_db
+def test_native_validated_interruption_exposes_only_safe_operator_guidance() -> None:
+    upload_job = UploadJob.objects.create(status=UploadJob.Status.PROCESSING)
+    technical_detail = "Worker failed reading /protected/secret.pdf"
+
+    mark_upload_job_error(
+        upload_job,
+        technical_detail,
+        error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED.value,
+    )
+
+    upload_job.refresh_from_db()
+    assert upload_job.status == UploadJob.Status.ERROR
+    assert upload_job.error_detail == technical_detail
+    assert upload_job.retryable is False
+    assert safe_import_error_detail(upload_job.error_code) == (
+        "Import execution was interrupted. Retained media requires operator review "
+        "before recovery."
     )
 
 

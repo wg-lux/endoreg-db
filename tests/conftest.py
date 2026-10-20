@@ -729,18 +729,6 @@ def mock_video_file(base_db_data: bool) -> Iterator[VideoFile]:
 
 
 @pytest.fixture(autouse=True)
-def enable_db_access_for_all_tests(request: pytest.FixtureRequest) -> None:
-    """
-    Allow database access for all tests, unless explicitly opted out.
-    This fixture is automatically used for all tests.
-    """
-    node = _request_node(request)
-    if node.get_closest_marker("no_db"):
-        return
-    request.getfixturevalue("db")
-
-
-@pytest.fixture(autouse=True)
 def render_drf_response_content_on_direct_access(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1019,6 +1007,13 @@ def pytest_collection_modifyitems(
     Modify test collection to add markers and skip expensive tests conditionally.
     """
     for item in items:
+        # pytest-django discovers required database aliases from collected marks
+        # and fixture names, before any dynamic fixture request can run.
+        if not item.get_closest_marker("no_db") and not item.get_closest_marker(
+            "django_db"
+        ):
+            item.add_marker(pytest.mark.django_db)
+
         # Auto-mark video tests
         if _node_matches(item, "video"):
             item.add_marker(pytest.mark.video)
@@ -1525,6 +1520,14 @@ def isolate_runtime_path_cache() -> Iterator[None]:
         yield
     finally:
         paths_module.clear_runtime_paths_cache()
+
+
+def gen_salt_pair() -> tuple[str, bytes]:
+    """Generate a 256-bit CSPRNG salt as both string and UTF-8 bytes."""
+    import secrets
+
+    s = secrets.token_hex(32)
+    return s, s.encode("utf-8")
 
 
 @pytest.fixture

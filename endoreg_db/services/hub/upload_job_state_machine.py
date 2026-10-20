@@ -187,6 +187,30 @@ def mark_upload_job_integrity_lost(
     upload_job.mark_lost(error_detail, error_code=error_code)
 
 
+def validate_upload_job_interruption(*, current_status: str) -> None:
+    """Authorize expired execution interruption through the native lifecycle."""
+    if current_status not in (
+        UploadJob.Status.PROCESSING.value,
+        UploadJob.Status.CANCEL_REQUESTED.value,
+    ):
+        raise ValueError(
+            f"UploadJob has no active execution to interrupt: {current_status}"
+        )
+    # Cancellation intent does not prove that execution or cleanup finished.
+    interrupted_state = reduce_operation_lifecycle(
+        OperationLifecycleState.RUNNING,
+        (
+            OperationLifecycleEvent.OWNERSHIP_LOST,
+            OperationLifecycleEvent.RECONCILE_FAIL,
+        ),
+    )
+    if interrupted_state is not OperationLifecycleState.FAILED:
+        raise RuntimeError(
+            "native UploadJob interruption reduction produced unexpected state: "
+            f"{interrupted_state.value}"
+        )
+
+
 def validate_upload_job_interrupted_retry(*, current_status: str) -> None:
     """Validate immediate fenced recovery after an expired import owner."""
     try:

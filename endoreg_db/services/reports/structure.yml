@@ -18,6 +18,8 @@ entrypoints:
   file: persistence.py
   purpose: Persist an edited report and its clinical snapshot in one transaction.
 files:
+- file: completion.py
+  role: Read-only canonical attempt and extraction receipt projections for job/API completion.
 - file: __init__.py
   role: Berichtimport, klinischer Kontext, Persistenz und PDF-Ausgabe.
 - file: finding_extraction.py

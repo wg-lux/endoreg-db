@@ -1,12 +1,13 @@
 # Online rotation of media, identity and Django signing secrets
 
-Coordination source: [LuxNix secret management](https://github.com/wg-lux/luxnix/blob/main/secrets-management.yml).
-Scope and readiness: [Anonymization.yml](../feature-tracking/Anonymization.yml),
-criterion `online_secret_rotation`. This document describes operations and limits;
-it does not provision, publish or delete secrets. A stolen key remains usable
-against previously stolen copies. Identity salt produces hashes, Django
-`SECRET_KEY` signs sessions and tokens, and media uses independent master and
-per-file keys.
+## Central identity delivery is disabled
+
+Identity salts remain on their originating node. The runtime rejects injected
+`DJANGO_IDENTITY_SALT_BUNDLE` and `DJANGO_IDENTITY_SALT_DELIVERY=secretspec`;
+LuxNix central provisioning is disabled. Preserve established local file/keyring
+configuration and historical generations. See [identity enrollment](identity_ring_enrollment.md)
+and [the authoritative criterion](../feature-tracking/Anonymization.yml).
+No automatic key replacement, deletion or migration accompanies this restriction.
 
 ## Private manifests
 
@@ -15,8 +16,9 @@ Manifests use YAML with integer `schema_version: 1`; unknown fields are rejected
 | Field or format | Contract |
 | --- | --- |
 | `active` | Absolute path to a private file containing the new active secret |
-| `retiring` | At most eight absolute paths to explicitly permitted previous secrets |
+| `retiring` | Absolute paths to explicitly permitted historical secrets; the complete manifest is bounded to 64 KiB, never silently truncated |
 | `allow_legacy_default_salt` | Identity salt only: `true` permits `default_salt` only in `retiring` |
+| `center_id`, `generation` | Optional paired identity metadata: stable center key and positive integer issuer generation; managed clients validate `DJANGO_IDENTITY_CENTER_ID` on every load, with an optional `DJANGO_IDENTITY_SALT_GENERATION` pin |
 | Permissions | Regular files without symbolic links, owned by root or the service user, with no group or other permissions |
 | Publication | Provision generations in separate immutable files, then replace only the manifest atomically; never put secrets in command arguments, logs or Git |
 | Master key | URL-safe Base64 encoding of 16, 24 or 32 random bytes; prefer 32 for new generations |
@@ -93,6 +95,36 @@ when supplying reviewed original identities.
 
 ## Identity migration contract
 
+`services.secret_rotation.migration.rotate_identity_salt` is the typed whole-run
+entrypoint shared by the management command. It fixes the keyring snapshot and
+PostgreSQL writer lock for the complete operation. `--expected-active-fingerprint`
+binds a preview/apply to the independently checked SHA-256 salt fingerprint.
+`--compromised` requires this binding and independently reviewed original sources
+for every affected metadata row, including rows whose demographics remain present.
+Compromised recovery forbids `--allow-partial`. These checks validate the supplied
+review evidence structurally; operators remain responsible for authenticating its
+clinical source independently of the compromised hash. Review manifests belong
+inside the LuxNix encrypted storage boundary, with the existing private-file checks.
+
+Historical identity salts are retained at the source for patient reidentification;
+they are neither request credentials nor media-decryption keys. Ordinary source
+recognition may preserve an established historical patient hash and clinical links
+when identifiers and examination dates were erased. It authenticates incoming
+originals using stored identity fingerprints without restoring erased fields.
+Unknown generations and ambiguous matches require review. Historical patient hashes
+are retained as center-scoped aliases in the same transaction before explicit
+migration changes the canonical hash. Center-scoped patient lookup resolves these
+aliases and rejects conflicts. This does not yet extend to all downstream consumers:
+hub reimport and the examination serializer still require coordinated alias-aware
+resolution; historical examination hashes and exported references need separate
+compatibility acceptance. These requirements remain tracked in
+`Anonymization.yml`, criterion `compromised_identity_salt_migration`.
+New patient identities
+use the active salt. New examinations for historical patients use the active salt;
+explicit reviewed group migration authenticates examination hashes across the
+retained generations. No operation deletes historical key material.
+
+
 The summary distinguishes `applied` and `rolled_back`. `patient_groups` and
 `metadata_rows` count independently verified groups/rows even if the enclosing
 transaction subsequently rolls back. PostgreSQL transaction locks coordinate
@@ -158,9 +190,9 @@ does not repair affected indexes; separate maintenance and reindexing are needed
 
 ## Signing and retirement
 
-Planned rotation may temporarily retain previous signing keys in
-`SECRET_KEY_FALLBACKS`. A compromised key must never remain a fallback; invalidate
-its sessions and signed tokens. `configured_signing_keys` in
+Signing rotation always leaves `SECRET_KEY_FALLBACKS` empty, including planned
+rotation. Coordinate consumer reload and invalidate previous sessions and signed
+tokens. Historical manifest entries never authorize old signatures. `configured_signing_keys` in
 `endoreg_db.config.secret_keyring` validates keyring, single-file and inline sources
 consistently. Other host settings must explicitly use it; an environment entry
 alone does not change them.

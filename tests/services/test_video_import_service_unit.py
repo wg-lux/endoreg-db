@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 from contextlib import nullcontext
 from pathlib import Path
+
 from types import ModuleType, SimpleNamespace
 from typing import cast
 from unittest.mock import Mock, call
@@ -28,6 +29,7 @@ from pydantic import ValidationError
 
 from endoreg_db.import_files import video_import_service as sut
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.models import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
 
@@ -1182,6 +1184,67 @@ class TestImportOrchestration:
         assert create_video.call_count == 2
         reset_failure.assert_called_once()
 
+    def test_failure_history_recovers_state_without_forcing_another_reset(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from endoreg_db.import_files.file_storage import (
+            create_video_file,
+            state_management,
+        )
+        from endoreg_db.models.state.video import VideoState
+
+        source = tmp_path / "failed.mp4"
+        source.write_bytes(b"failed source")
+        video = VideoFile(raw_video_hash=CONTENT_HASH)
+        state = VideoState(processing_error=True)
+        monkeypatch.setattr(state, "save", Mock())
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService, "_ensure_pipeline_storage_budget", Mock()
+        )
+        monkeypatch.setattr(sut, "create_sensitive_copy", Mock(return_value=None))
+        monkeypatch.setattr(
+            create_video_file, "_load_current_video", Mock(return_value=video)
+        )
+        history_cleanup = Mock()
+        monkeypatch.setattr(create_video_file, "finalize_failure", history_cleanup)
+        extra_cleanup = Mock()
+        monkeypatch.setattr(sut, "_finalize_video_failure_if_owned", extra_cleanup)
+        monkeypatch.setattr(sut, "get_or_create_video_state", Mock(return_value=state))
+        monkeypatch.setattr(
+            state_management, "_ensure_instance_state", Mock(return_value=state)
+        )
+        monkeypatch.setattr(
+            state_management, "require_reusable_video_raw_source", Mock()
+        )
+
+        def retrieve(ctx: ImportContext) -> tuple[VideoFile, bool, bool]:
+            create_video_file._handle_failure_history(ctx, CONTENT_HASH)
+            return video, False, True
+
+        def process(ctx: ImportContext) -> VideoFile:
+            assert ctx.retry is True
+            assert ctx.force_reprocess is False
+            state_management.mark_instance_processing_started(video, ctx)
+            return video
+
+        retrieve_mock = Mock(side_effect=retrieve)
+        monkeypatch.setattr(sut, "create_or_retrieve_video_file", retrieve_mock)
+        service = sut.VideoImportService()
+        monkeypatch.setattr(service, "_anonymize_and_finalize", process)
+        assert (
+            service.import_and_anonymize_fenced(
+                source, "test-center", "test-processor", execution_fence=_test_fence()
+            )
+            is video
+        )
+        assert state.processing_error is False
+        assert state.processing_started is True
+        retrieve_mock.assert_called_once()
+        history_cleanup.assert_called_once()
+        extra_cleanup.assert_not_called()
+
     def test_state_initialization_failure_prevents_anonymization(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
     ) -> None:
@@ -1292,7 +1355,10 @@ class TestReanonymizationOrchestration:
         # Arrange
         raw_path = tmp_path / "raw.mp4"
         raw_path.write_bytes(b"video")
-        video = VideoFile(raw_video_hash="video")
+        video = VideoFile(
+            raw_video_hash="video",
+            center=Center(name="test-center", center_key="test-center"),
+        )
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
         monkeypatch.setattr(sut, "content_hash_lock", lambda _hash: nullcontext())
@@ -1344,7 +1410,11 @@ class TestReanonymizationOrchestration:
         # Arrange
         raw_path = tmp_path / "raw.mp4"
         raw_path.write_bytes(b"video")
-        video = VideoFile(raw_video_hash="video", video_meta_id=1)
+        video = VideoFile(
+            raw_video_hash="video",
+            video_meta_id=1,
+            center=Center(name="test-center", center_key="test-center"),
+        )
 
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())

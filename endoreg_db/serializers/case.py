@@ -100,7 +100,6 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
             "patient",
             "admission_date",
             "leave_date",
-            "hash",
             "is_active",
             "is_closed",
             "is_deleted",
@@ -149,7 +148,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
                         "uuid": str(pdf.uuid),
                         "patient_examination_id": patient_examination_id,
                         "occurrence_at": pdf.date_created,
-                        "file_name": getattr(pdf.file, "name", None),
+                        "file_name": f"report-{pdf.pk}.pdf",
                     }
                 )
             for video in patient_examination.video_files.all():
@@ -160,7 +159,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
                         "uuid": str(video.uuid),
                         "patient_examination_id": patient_examination_id,
                         "occurrence_at": video.uploaded_at,
-                        "file_name": video.original_file_name,
+                        "file_name": f"video-{video.pk}",
                     }
                 )
             for report in patient_examination.reports.all():

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Unpack, cast, Any
+from typing import TYPE_CHECKING, Unpack, Any
 
 from django.db import models
 from django.utils.text import slugify
@@ -28,8 +28,8 @@ class Center(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     center_key: models.CharField[Any, Any] = models.CharField(
         max_length=255,
-        unique=True,
-        blank=True,
+        unique=False,
+        blank=False,
     )
     display_name: models.CharField[Any, Any] = models.CharField(
         max_length=255,
@@ -91,23 +91,20 @@ class Center(models.Model):
     def natural_key(self) -> tuple[str]:
         return (self.name,)
 
-    @classmethod
-    def build_center_key(
-        cls,
-        value: str,
-        *,
-        exclude_pk: int | None = None,
-    ) -> str:
-        base = slugify(value or "") or "center"
-        candidate = base
-        suffix = 2
-        queryset = cls.objects.all()
-        if exclude_pk is not None:
-            queryset = queryset.exclude(pk=exclude_pk)
-        while queryset.filter(center_key=candidate).exists():
-            candidate = f"{base}-{suffix}"
-            suffix += 1
-        return candidate
+    @staticmethod
+    def build_center_key(value: str) -> str:
+        """
+        Deterministically build an immutable slug identifier from the center name.
+
+        Guarantees the exact same key for the same input across all environments.
+        Collisions between distinct names must fail at the database constraint level.
+        """
+        key = slugify(value or "")
+        if not key:
+            raise ValueError(
+                f"Cannot build a valid center_key: '{value}' contains no slugifiable characters."
+            )
+        return key
 
     def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         if self.pk:
@@ -117,17 +114,19 @@ class Center(models.Model):
                 .values_list("center_key", flat=True)
                 .first()
             )
-            if existing_key and self.center_key and self.center_key != existing_key:
-                raise ValueError("center_key is immutable once assigned")
+            if existing_key:
+                if self.center_key and self.center_key != existing_key:
+                    raise ValueError(
+                        f"center_key is immutable once assigned (persisted: '{existing_key}')"
+                    )
+                self.center_key = existing_key
 
         if not self.center_key:
-            source_value = self.display_name or self.name
-            self.center_key = self.build_center_key(
-                source_value,
-                exclude_pk=cast(int | None, self.pk),
-            )
+            self.center_key = self.build_center_key(self.name)
+
         if not self.display_name:
             self.display_name = self.name
+
         super().save(**kwargs)
 
     def __str__(self) -> str:

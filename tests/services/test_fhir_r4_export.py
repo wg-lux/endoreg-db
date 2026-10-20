@@ -186,7 +186,7 @@ def test_build_patient_examination_fhir_bundle_links_resources(
         "tag": [
             {
                 "system": "https://wg-lux.de/fhir/CodeSystem/lx-export-version",
-                "code": "1.0",
+                "code": "2.0",
             }
         ],
     }
@@ -194,6 +194,8 @@ def test_build_patient_examination_fhir_bundle_links_resources(
     assert "Erika" not in serialized
     assert "Musterfrau" not in serialized
     assert "1970-01-02" not in serialized
+    assert str(examination.patient.patient_hash) not in serialized
+    assert str(examination.hash) not in serialized
     assert "P-123" not in serialized
     assert "Polyp removed completely." not in serialized
     event = next(
@@ -270,12 +272,11 @@ def test_bundle_validation_rejects_unknown_nested_resource_field() -> None:
 
 
 @pytest.mark.django_db
-def test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing(
+def test_export_fails_closed_and_logs_when_examination_is_unpersisted(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     examination = _clinical_examination()
-    examination.patient.patient_hash = None
-    examination.patient.save(update_fields=["patient_hash"])
+    examination.pk = None
 
     with (
         caplog.at_level(logging.ERROR, logger="endoreg_db.interoperability.fhir"),
@@ -290,7 +291,7 @@ def test_export_fails_closed_and_logs_when_patient_pseudonym_is_missing(
     ]
     assert [event["event"] for event in events] == ["fhir.export_rejected"]
     assert isinstance(exc_info.value.__cause__, ValueError)
-    assert "requires patient_hash" in str(exc_info.value.__cause__)
+    assert "must be persisted" in str(exc_info.value.__cause__)
     assert events[0]["reason"] == "bundle_validation_failed"
     assert events[0]["error_code"] == "fhir_export_invalid"
     assert events[0]["error_type"] == "ValueError"
@@ -336,7 +337,7 @@ def test_patient_examination_fhir_endpoint_returns_canonical_wire_names(
 
 
 @pytest.mark.django_db
-def test_patient_examination_fhir_endpoint_maps_expected_export_error(
+def test_patient_examination_fhir_endpoint_does_not_require_patient_hash(
     api_client: APIClient,
 ) -> None:
     examination = _clinical_examination()
@@ -345,13 +346,8 @@ def test_patient_examination_fhir_endpoint_maps_expected_export_error(
 
     response = api_client.get(f"/api/patient-examinations/{examination.pk}/fhir/")
 
-    assert response.status_code == 422
-    assert response.data == {
-        "code": "fhir_export_invalid",
-        "detail": "The FHIR export cannot be created from the available data.",
-        "retryable": False,
-    }
-    assert "requires patient_hash" not in response.content.decode()
+    assert response.status_code == 200
+    assert "patient_hash" not in response.content.decode()
 
 
 @pytest.mark.django_db

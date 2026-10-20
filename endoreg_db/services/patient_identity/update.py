@@ -7,7 +7,12 @@ from django.db import transaction
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.gender import Gender
-from endoreg_db.models.state.sensitive_meta import SensitiveMetaState
+from endoreg_db.schemas.sensitive_meta_verification import (
+    SensitiveMetaVerificationCommand,
+)
+from endoreg_db.services.patient_identity.verification import (
+    update_sensitive_meta_verification,
+)
 from endoreg_db.schemas.sensitive_meta_update import SensitiveMetaUpdateCommand
 
 
@@ -81,14 +86,18 @@ def update_sensitive_meta(
         "names_verified",
     }
     if verification_fields:
-        state, _ = SensitiveMetaState.objects.select_for_update().get_or_create(
-            origin=sensitive_meta
+        update_sensitive_meta_verification(
+            sensitive_meta_id=sensitive_meta.pk,
+            command=SensitiveMetaVerificationCommand(
+                dob_verified=bool(command.dob_verified)
+                if "dob_verified" in verification_fields
+                else None,
+                names_verified=bool(command.names_verified)
+                if "names_verified" in verification_fields
+                else None,
+            ),
         )
-        if "dob_verified" in verification_fields:
-            state.dob_verified = bool(command.dob_verified)
-        if "names_verified" in verification_fields:
-            state.names_verified = bool(command.names_verified)
-        state.save()
+        sensitive_meta.state_safe.refresh_from_db()
 
     return SensitiveMetaUpdateResult(sensitive_meta=sensitive_meta)
 

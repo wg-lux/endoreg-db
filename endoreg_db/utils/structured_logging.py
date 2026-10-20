@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import logging
 import re
@@ -50,7 +49,9 @@ def request_log_context() -> Generator[str, None, None]:
 
 
 def hash_identifier(value: object) -> str:
-    return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+    from endoreg_db.utils.hashs import get_bytes_hash
+
+    return get_bytes_hash(str(value).encode("utf-8"))
 
 
 def path_reference(path: str | Path) -> JsonObject:

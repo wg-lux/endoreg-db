@@ -5,11 +5,13 @@ from typing import Any, cast
 from uuid import uuid4
 
 import pytest
+from django.contrib.auth.models import User
 from django.utils import timezone
 from rest_framework.test import APIClient
 
 from endoreg_db.models import (
     Case,
+    Center,
     Examination,
     LabValue,
     Medication,
@@ -187,7 +189,12 @@ def test_case_and_patient_examination_are_created_atomically(
     packaged_registry: Path,
     with_identity: bool,
 ) -> None:
+    api_client.force_authenticate(
+        User.objects.create_user(username="case-atomic", is_staff=True)
+    )
+    center = Center.objects.create(name="case-atomic")
     patient = Patient.objects.create(
+        center=center,
         patient_hash=f"case-atomic-{uuid4().hex}",
         first_name="Atomic",
         last_name="Patient",
@@ -199,7 +206,7 @@ def test_case_and_patient_examination_are_created_atomically(
         data={
             "admission_date": "2026-07-22T08:00:00Z",
             "patient_examination": {
-                "patient": patient.patient_hash,
+                "patient": patient.pk,
                 "examination": examination.name,
                 "date_start": "2026-07-22",
                 **(
@@ -252,7 +259,13 @@ def test_case_and_patient_examination_are_created_atomically(
 def test_case_creation_rejects_invalid_knowledge_base_without_persistence(
     api_client: APIClient, packaged_registry: Path, identity: dict[str, str]
 ) -> None:
-    patient = Patient.objects.create(patient_hash=f"case-kb-{uuid4().hex}")
+    api_client.force_authenticate(
+        User.objects.create_user(username="case-kb", is_staff=True)
+    )
+    center = Center.objects.create(name="case-kb")
+    patient = Patient.objects.create(
+        center=center, patient_hash=f"case-kb-{uuid4().hex}"
+    )
     examination = Examination.objects.create(name=f"case-kb-{uuid4().hex}")
     before = (Case.objects.count(), PatientExamination.objects.count())
     response = api_client.post(
@@ -260,7 +273,7 @@ def test_case_creation_rejects_invalid_knowledge_base_without_persistence(
         data={
             "admission_date": "2026-07-22T08:00:00Z",
             "patient_examination": {
-                "patient": patient.patient_hash,
+                "patient": patient.pk,
                 "examination": examination.name,
                 "date_start": "2026-07-22",
                 **identity,
@@ -290,7 +303,7 @@ def test_create_with_examination_rejects_unknown_fields_before_persistence(
         data={
             "admission_date": "2026-07-22T08:00:00Z",
             "patient_examination": {
-                "patient": patient.patient_hash,
+                "patient": patient.pk,
                 "examination": examination.name,
                 "date_start": "2026-07-22",
                 "patient_birth_date": "1980-01-01",
@@ -306,9 +319,14 @@ def test_create_with_examination_rejects_unknown_fields_before_persistence(
 
 
 @pytest.mark.django_db
-def test_create_with_examination_rolls_back_patient_created_during_validation(
+def test_create_with_examination_rejects_unknown_patient_without_persistence(
     api_client: APIClient,
 ) -> None:
+    api_client.force_authenticate(
+        User.objects.create_user(username="case-unknown", is_staff=True)
+    )
+    Center.objects.create(name="case-unknown")
+    examination = Examination.objects.create(name="case-unknown-examination")
     new_patient_hash = f"case-rollback-{uuid4().hex}"
     patient_count = Patient.objects.count()
     patient_examination_count = PatientExamination.objects.count()
@@ -319,8 +337,8 @@ def test_create_with_examination_rolls_back_patient_created_during_validation(
         data={
             "admission_date": "2026-07-22T08:00:00Z",
             "patient_examination": {
-                "patient": new_patient_hash,
-                "examination": f"missing-exam-{uuid4().hex}",
+                "patient": 2147483647,
+                "examination": examination.name,
                 "date_start": "2026-07-22",
             },
         },
@@ -328,6 +346,9 @@ def test_create_with_examination_rolls_back_patient_created_during_validation(
     )
 
     assert response.status_code == 400
+    assert "Patient ist im autorisierten Zentrum nicht eindeutig verfügbar" in str(
+        response.data
+    )
     assert Patient.objects.filter(patient_hash=new_patient_hash).exists() is False
     assert Patient.objects.count() == patient_count
     assert PatientExamination.objects.count() == patient_examination_count
@@ -338,7 +359,8 @@ def test_create_with_examination_rolls_back_patient_created_during_validation(
 @pytest.mark.parametrize(
     ("field", "value"),
     [
-        ("patient", 7),
+        ("patient", "7"),
+        ("patient", "a" * 64),
         ("examination", True),
         ("date_start", 20260722),
     ],
@@ -349,7 +371,7 @@ def test_create_with_examination_rejects_coerced_nested_scalars(
     value: object,
 ) -> None:
     nested_payload: dict[str, object] = {
-        "patient": "strict-patient",
+        "patient": 7,
         "examination": "strict-examination",
         "date_start": "2026-07-22",
     }
@@ -365,5 +387,6 @@ def test_create_with_examination_rejects_coerced_nested_scalars(
     )
 
     assert response.status_code == 400
+    assert "a" * 64 not in str(response.data)
     assert Case.objects.count() == 0
     assert PatientExamination.objects.count() == 0

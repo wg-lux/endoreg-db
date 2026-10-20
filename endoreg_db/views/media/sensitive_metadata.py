@@ -263,7 +263,6 @@ def _serialize_patient_examination_match(
             _get_object_field(patient_examination, "date_start")
         ),
         "date_end": _as_isoformat(_get_object_field(patient_examination, "date_end")),
-        "hash": _get_str_field(patient_examination, "hash"),
     }
 
 
@@ -351,16 +350,6 @@ def _case_resolution_payload(
         "current_patient_id": current_patient_id,
         "pseudo_patient_id": pseudo_patient_id,
         "pseudo_examination_id": pseudo_examination_id,
-        "patient_hash_display": (
-            f"...{patient_hash[-8:]}"
-            if isinstance(patient_hash, str) and patient_hash
-            else None
-        ),
-        "examination_hash_display": (
-            f"...{examination_hash[-8:]}"
-            if isinstance(examination_hash, str) and examination_hash
-            else None
-        ),
         "pseudo_patient": {
             "id": pseudo_patient_id,
             "match_count": patient_matches_count,

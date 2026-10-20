@@ -2,12 +2,9 @@ from __future__ import annotations
 
 from endoreg_db.utils.storage.files import canonical_media_name
 
-import hashlib
 import logging
-import os
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile
 
@@ -36,7 +33,6 @@ from endoreg_db.services.streaming.streamable_media_types import (
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
-    atomic_write_file,
     ensure_directory,
     safe_unlink_file,
     get_file_hash,
@@ -49,11 +45,6 @@ from endoreg_db.utils.paths import (
 )
 from endoreg_db.utils.storage_profile import resolve_storage_policy
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.storage_streaming import (
-    field_file_size,
-    iter_file_path_bytes,
-    iter_field_file_bytes,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -106,41 +97,6 @@ def _streamable_processed_video_root() -> Path:
 def _is_sha256_hex(value: str) -> bool:
     value = value.strip()
     return len(value) == 64 and all(char in "0123456789abcdefABCDEF" for char in value)
-
-
-def _source_size(video_field_file: FieldFile | Any, source_path: Path | None) -> int:
-    if source_path is not None and source_path.is_file():
-        return source_path.stat().st_size
-    return field_file_size(video_field_file)
-
-
-def _source_bytes(
-    video_field_file: FieldFile | Any,
-    source_path: Path | None,
-    *,
-    start: int,
-    end: int,
-) -> Any:
-    if source_path is not None:
-        return iter_file_path_bytes(source_path, start=start, end=end)
-    return iter_field_file_bytes(video_field_file, start=start, end=end)
-
-
-def _source_hash(video_field_file: FieldFile | Any, source_path: Path | None) -> str:
-    if source_path is not None:
-        return get_file_hash(source_path)
-    file_size = _source_size(video_field_file, source_path)
-    digest = hashlib.sha256()
-    if file_size <= 0:
-        return digest.hexdigest()
-    for chunk in _source_bytes(
-        video_field_file,
-        source_path,
-        start=0,
-        end=file_size - 1,
-    ):
-        digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _repair_plaintext_field_file(field_file: FieldFile | Any | None) -> bool:
@@ -321,59 +277,6 @@ def _secure_delete_legacy_streamable_path(
         return False
     safe_unlink_file(streamable_path, missing_ok=True)
     return True
-
-
-def _materialize_streamable_target(  # pyright: ignore[reportUnusedFunction]
-    video_field_file: FieldFile | Any,
-    target_path: Path,
-    *,
-    source_path: Path | None = None,
-    expected_hash: str = "",
-    transcode_profile: StreamableTranscodeProfile = DEFAULT_STREAMABLE_TRANSCODE_PROFILE,
-) -> Path:
-    file_size = _source_size(video_field_file, source_path)
-    temp_source = target_path.with_name(
-        f".{target_path.name}.source.{os.getpid()}.{uuid4().hex}.tmp"
-    )
-
-    try:
-        if file_size <= 0:
-            raise RuntimeError(f"Refusing empty streamable source: {target_path}")
-        if (
-            expected_hash
-            and _is_sha256_hex(expected_hash)
-            and _source_hash(video_field_file, source_path) != expected_hash
-        ):
-            raise RuntimeError(
-                f"Refusing streamable source with unexpected hash: {target_path}"
-            )
-
-        ffmpeg_source_path = source_path
-        if ffmpeg_source_path is None:
-            ffmpeg_source_path = atomic_write_file(
-                destination=temp_source,
-                content=_source_bytes(
-                    video_field_file,
-                    source_path,
-                    start=0,
-                    end=file_size - 1,
-                ),
-                required_bytes=file_size,
-                file_mode=STREAMABLE_FILE_MODE,
-                dir_mode=STREAMABLE_DIRECTORY_MODE,
-            )
-            if _is_encrypted_file(ffmpeg_source_path):
-                raise RuntimeError(
-                    f"Refusing encrypted streamable source: {target_path}"
-                )
-
-        return _transcode_streamable_mp4(
-            ffmpeg_source_path,
-            target_path,
-            profile=transcode_profile,
-        )
-    finally:
-        safe_unlink_file(temp_source, missing_ok=True)
 
 
 def _streamable_root_for_kind(kind: StreamableArtifactKind) -> Path:

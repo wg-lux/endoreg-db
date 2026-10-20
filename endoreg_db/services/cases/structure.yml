@@ -19,7 +19,7 @@ files:
 - file: __init__.py
   role: Falllebenszyklus, Dokumentzuordnung und Untersuchungsbeziehungen.
 - file: auto_resolution.py
-  role: Exports link_media_to_patient_examination, auto_resolve_media_case.
+  role: Links inferred cases through center-scoped resolution and atomic checked metadata corrections; rejects conflicting persisted identities.
 - file: documents.py
   role: Exports attach_document_to_case.
 - file: examination_links.py
@@ -44,6 +44,8 @@ dependencies:
   - pydantic
 submodules: []
 contracts:
+- name: Center-scoped identity resolution
+  doc: feature-tracking/Anonymization.yml
 - name: Service ownership and compatibility
   doc: feature-tracking/CodeQuality.yml
 tests:
@@ -51,6 +53,7 @@ tests:
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_case_persistence.py tests/services/test_examination_revisions.py
     tests/services/test_case_persistence_transactions.py
   files:
+  - tests/views/anonymization/test_sensitive_metadata_view.py
   - tests/services/test_case_persistence.py
   - tests/services/test_examination_revisions.py
   - tests/services/test_case_persistence_transactions.py

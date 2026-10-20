@@ -161,10 +161,12 @@ class VideoImportService:
         *,
         execution_fence: ImportExecutionFence,
         retry: bool = False,
+        center_key: str | None = None,
     ) -> VideoFile:
         return self._timed_import_and_anonymize(
             file_path=file_path,
             center_name=center_name,
+            center_key=center_key,
             processor_name=processor_name,
             retry=retry,
             execution_fence=execution_fence,
@@ -178,6 +180,7 @@ class VideoImportService:
         processor_name: str,
         retry: bool,
         execution_fence: ImportExecutionFence,
+        center_key: str | None = None,
     ) -> VideoFile:
         started_at = start_workload_timing()
         outcome_token = _video_import_outcome.set(WorkloadOutcome.FAILED)
@@ -186,6 +189,7 @@ class VideoImportService:
             result = self._import_and_anonymize(
                 file_path=file_path,
                 center_name=center_name,
+                center_key=center_key,
                 processor_name=processor_name,
                 retry=retry,
                 execution_fence=execution_fence,
@@ -222,6 +226,7 @@ class VideoImportService:
         processor_name: str,
         retry: bool,
         execution_fence: ImportExecutionFence,
+        center_key: str | None = None,
     ) -> VideoFile | None:
         """Single linear execution path for video import, staging, and anonymization."""
         ctx = self._create_import_context(
@@ -230,8 +235,9 @@ class VideoImportService:
             processor_name,
             retry=retry,
             execution_fence=execution_fence,
+            center_key=center_key,
         )
-        return self._process_import_pipeline(ctx, retry)
+        return self._process_import_pipeline(ctx)
 
     def _create_import_context(
         self,
@@ -241,10 +247,10 @@ class VideoImportService:
         *,
         retry: bool,
         execution_fence: ImportExecutionFence,
+        center_key: str | None = None,
     ) -> ImportContext:
         """Validate the source and bind the caller's authority before staging."""
-        center_key: str | None = None
-        if not center_name.strip():
+        if center_key is None and not center_name.strip():
             from endoreg_db.services.centers.defaults import resolve_local_center
 
             center = resolve_local_center()
@@ -265,12 +271,11 @@ class VideoImportService:
 
         ctx.original_path = ctx.file_path
         ctx.retry = retry
+        ctx.force_reprocess = retry
 
         return ctx
 
-    def _process_import_pipeline(
-        self, ctx: ImportContext, retry: bool
-    ) -> VideoFile | None:
+    def _process_import_pipeline(self, ctx: ImportContext) -> VideoFile | None:
         """Lock source/content, reuse a completed result, or enter the owned attempt."""
         assert ctx.original_path is not None
         with cleanup_cancelled_import_staging(ctx), file_lock(ctx.original_path):
@@ -282,11 +287,11 @@ class VideoImportService:
 
                 existing_video = self._get_existing_completed_video(ctx)
                 if existing_video is not None:
-                    if not retry:
+                    if not ctx.force_reprocess:
                         return self._reuse_completed_import(ctx, existing_video)
                     require_reusable_video_raw_source(existing_video)
 
-                return self._run_owned_import(ctx, retry)
+                return self._run_owned_import(ctx)
 
     def _reuse_completed_import(
         self, ctx: ImportContext, existing_video: VideoFile
@@ -300,7 +305,7 @@ class VideoImportService:
         _set_video_import_outcome(WorkloadOutcome.REUSED)
         return existing_video
 
-    def _run_owned_import(self, ctx: ImportContext, retry: bool) -> VideoFile | None:
+    def _run_owned_import(self, ctx: ImportContext) -> VideoFile | None:
         """Use the caller's fence to stage the source, prepare the row, and apply retry policy."""
         ctx.require_execution_ownership()
         self._ensure_pipeline_storage_budget(ctx.file_path)
@@ -315,11 +320,15 @@ class VideoImportService:
         with ctx.owned_mutation():
             state = get_or_create_video_state(ctx.current_video)
 
-        if retry and needs_processing and not state.anonymization_validated:
+        if (
+            ctx.force_reprocess
+            and needs_processing
+            and not state.anonymization_validated
+        ):
             _finalize_video_failure_if_owned(ctx)
             ctx.current_video, _, needs_processing = create_or_retrieve_video_file(ctx)
 
-        if not needs_processing and not retry:
+        if not needs_processing and not ctx.force_reprocess:
             return self._reuse_completed_import(ctx, ctx.current_video)
 
         return self._anonymize_and_finalize(ctx)
@@ -437,14 +446,15 @@ class VideoImportService:
                 ctx = ImportContext(
                     file_path=local_source_path,
                     center_name=center_name,
+                    center_key=video.center.center_key,
                     processor_name=processor_name,
                     file_type="video",
                     file_hash=source_identity,
                     original_path=local_source_path,
                     local_source_path=local_source_path,
                     current_video=video,
-                    instance=video,
                     retry=True,
+                    force_reprocess=True,
                 )
 
                 ctx.bind_execution_fence(execution_fence)

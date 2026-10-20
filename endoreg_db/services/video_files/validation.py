@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+from endoreg_db.services.secret_rotation.identity import identity_rotation_transaction
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -11,10 +12,13 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+@identity_rotation_transaction
 def validate_video_metadata_annotation(
     video: "VideoFile",
     extracted_data_dict: VideoTextMetaPayload | None = None,
 ) -> bool:
+    from endoreg_db.services.cases.auto_resolution import correct_inferred_case_identity
+
     from .metadata import update_video_text_metadata
     from .state import get_or_create_video_state
     from endoreg_db.services.video_storage.generation_cleanup import (
@@ -35,13 +39,14 @@ def validate_video_metadata_annotation(
     if extracted_data_dict is None and video.sensitive_meta is None:
         return False
 
-    updated_meta = update_video_text_metadata(
-        video,
-        extracted_data_dict,
-        overwrite=True,
-    )
-    if updated_meta is None:
-        return False
+    with correct_inferred_case_identity(media_type="video", media_obj=video):
+        updated_meta = update_video_text_metadata(
+            video,
+            extracted_data_dict,
+            overwrite=True,
+        )
+        if updated_meta is None:
+            return False
 
     get_or_create_video_state(video).mark_anonymization_validated(save=True)
     video.save()

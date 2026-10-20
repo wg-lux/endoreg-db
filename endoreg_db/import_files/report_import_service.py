@@ -6,6 +6,7 @@ from endoreg_db.services.imports.execution import ImportExecutionFence
 import logging
 from html import escape
 from contextvars import ContextVar
+from functools import partial
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -48,7 +49,10 @@ from endoreg_db.services.raw_pdf_files import (
     get_raw_pdf_by_content_hash,
     require_usable_completed_report,
 )
-from endoreg_db.services.reports.import_lifecycle import ReportImportLifecycle
+from endoreg_db.services.reports.import_lifecycle import (
+    ReportImportLifecycle,
+    ReportJobAlreadyCompleted,
+)
 from endoreg_db.services.reports.finding_extraction import (
     record_report_finding_presence,
 )
@@ -145,6 +149,9 @@ class ReportImportService:
             if _report_import_outcome.get() is WorkloadOutcome.FAILED:
                 _set_report_import_outcome(WorkloadOutcome.COMPLETED)
             return result
+        except ReportJobAlreadyCompleted:
+            _set_report_import_outcome(WorkloadOutcome.REUSED)
+            raise
         except Exception:
             _set_report_import_outcome(WorkloadOutcome.FAILED)
             raise
@@ -268,7 +275,10 @@ class ReportImportService:
         assert ctx.file_hash is not None
         ctx.current_report = existing_completed
         if self.lifecycle is not None:
-            fence = acquire_report_import_fence(ctx.file_hash)
+            fence = acquire_report_import_fence(
+                ctx.file_hash,
+                before_claim=partial(self.lifecycle.validate_source, ctx.file_hash),
+            )
             try:
                 with report_import_finalization_guard(fence):
                     # Re-read completion under cluster ownership.
@@ -278,7 +288,7 @@ class ReportImportService:
                         source_sha256=ctx.file_hash,
                         require_artifact=False,
                     )
-                    self.lifecycle.succeeded(existing_completed)
+                    self.lifecycle.succeeded(existing_completed, reused=True)
             except Exception:
                 mark_report_import_fence_failed(fence)
                 raise
@@ -290,7 +300,12 @@ class ReportImportService:
         """Acquire report-content ownership, prepare the row, and apply retry policy."""
         assert ctx.file_hash is not None
         self._validate_ocr_runtime()
-        fence = acquire_report_import_fence(ctx.file_hash)
+        fence = acquire_report_import_fence(
+            ctx.file_hash,
+            before_claim=partial(self.lifecycle.validate_source, ctx.file_hash)
+            if self.lifecycle is not None
+            else None,
+        )
         try:
             with ReportImportFenceHeartbeat(fence) as heartbeat:
                 ctx.bind_execution_fence(
@@ -314,7 +329,7 @@ class ReportImportService:
                     self._cleanup_duplicate_staging(ctx)
                     with report_import_finalization_guard(fence):
                         if self.lifecycle is not None:
-                            self.lifecycle.succeeded(ctx.current_report)
+                            self.lifecycle.succeeded(ctx.current_report, reused=True)
                     _set_report_import_outcome(WorkloadOutcome.REUSED)
                     return ctx.current_report
 

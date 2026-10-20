@@ -41,6 +41,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     """
 
     # Add computed fields for video status
+    original_file_name = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     assigned_user = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
@@ -57,6 +58,9 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     center_key = serializers.CharField(source="center.center_key", read_only=True)
     center_name = serializers.CharField(source="center.display_name", read_only=True)
     processor_name = serializers.SerializerMethodField()
+
+    def get_original_file_name(self, obj: VideoFile) -> str:
+        return f"video-{obj.pk}"
 
     class Meta(_ModelSerializerMeta):
         model = VideoFile  # pyright: ignore[reportAssignmentType]

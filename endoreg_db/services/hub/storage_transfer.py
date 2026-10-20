@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-import hashlib
 import json
 from uuid import UUID
+
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import transaction
 from django.db.models import Max
@@ -175,7 +176,7 @@ def _validate_common(
 
 def _fingerprint(values: dict[str, str | int]) -> str:
     canonical = json.dumps(values, sort_keys=True, separators=(",", ":")).encode()
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _stored_fingerprint(request: StoredTransferEvidenceRequest) -> str:

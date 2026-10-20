@@ -59,7 +59,6 @@ class PatientSerializer(serializers.ModelSerializer[Patient]):
             "center_key",
             "email",
             "phone",
-            "patient_hash",
             "is_real_person",
             "age",
         ]

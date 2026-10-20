@@ -66,8 +66,6 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer[SensitiveMeta]):
     examination_date_display = serializers.SerializerMethodField()
 
     # Hash displays (last 8 chars)
-    patient_hash_display = serializers.SerializerMethodField()
-    examination_hash_display = serializers.SerializerMethodField()
     pseudo_patient_id = serializers.IntegerField(read_only=True)
     pseudo_examination_id = serializers.IntegerField(read_only=True)
 
@@ -92,8 +90,6 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer[SensitiveMeta]):
             "patient_gender_name",
             "endoscope_type",
             "endoscope_sn",
-            "patient_hash_display",
-            "examination_hash_display",
             "pseudo_patient_id",
             "pseudo_examination_id",
             "examiners_display",
@@ -109,8 +105,6 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer[SensitiveMeta]):
         ]
         read_only_fields = [
             "id",
-            "patient_hash_display",
-            "examination_hash_display",
         ]
 
     # --- Verification getters ---
@@ -148,13 +142,6 @@ class SensitiveMetaDetailSerializer(serializers.ModelSerializer[SensitiveMeta]):
         )
 
     # --- Hash short forms ---
-    def get_patient_hash_display(self, obj: _SensitiveMetaDetailLike) -> str | None:
-        return f"...{obj.patient_hash[-8:]}" if obj.patient_hash else None
-
-    def get_examination_hash_display(self, obj: _SensitiveMetaDetailLike) -> str | None:
-        return f"...{obj.examination_hash[-8:]}" if obj.examination_hash else None
-
-    # --- Text fields ---
     def get_text(self, obj: _SensitiveMetaDetailLike) -> str | None:
         return obj.text if isinstance(obj.text, str) else None
 

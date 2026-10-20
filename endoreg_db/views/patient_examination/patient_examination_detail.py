@@ -62,7 +62,10 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
         try:
             instance = self.get_object()
             serializer = PatientExaminationSerializer(
-                instance, data=request.data, partial=True
+                instance,
+                data=request.data,
+                partial=True,
+                context=self.get_serializer_context(),
             )
 
             if serializer.is_valid():

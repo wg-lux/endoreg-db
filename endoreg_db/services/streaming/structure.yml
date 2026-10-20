@@ -26,7 +26,7 @@ files:
 - file: seekable_media_input.py
   role: Exports serve_seekable_media_input.
 - file: streamable_media.py
-  role: Exports resolve_streamable_media_state, sync_video_streamable_artifacts.
+  role: Resolve derivative state and retire legacy plaintext copies; processed streaming materialization delegates to hls_media.
 - file: streamable_media_state.py
   role: Exports build_streamable_media_state.
 - file: streamable_media_transcoding.py

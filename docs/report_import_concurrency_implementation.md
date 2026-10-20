@@ -261,3 +261,80 @@ Gemeinsame Übersicht: [Zustandsverwaltung](endoreg_db_state_management.md).
 Akzeptanz und Evidenz für diese Grenzen:
 [ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml)
 und [LongRunningServiceStateMachines.yml](../feature-tracking/LongRunningServiceStateMachines.yml).
+
+
+## Extraction evidence and native lifecycle authority
+
+The `report_anonymization_v2` boundary requires explicit extraction evidence.
+`findings` counts meaningful extracted metadata entries, not clinical findings;
+`empty` means a configured provider returned a validated empty result. `fallback`
+means the explicitly permitted deterministic spaCy/regex extraction completed and
+validated, possibly without metadata. Provider errors cannot masquerade as empty
+results. An attempted provider followed by fallback retains a bounded failure code.
+
+The host revalidates the complete result before metadata mutation, checks requested
+provider policy, and stores a content-free `raw_meta.report_extraction_receipt` under
+the existing ownership guard. It retains unrelated metadata. Its attempt ID is the
+canonical content-fence owner; its staged artifact hash describes the validated
+plaintext staging artifact, not encrypted storage bytes or publication evidence.
+A receipt is an observation and may exist before publication. It does not establish
+success. Artifact parsing, hash checks, ownership checks and final publication
+remain independently required. Rust's existing lifecycle reducer exclusively
+authorizes success, failure, lost ownership and retry of `ReportImportAttempt`.
+
+Deploy matching lx-data-models, lx-anonymizer and endoreg-db builds together; older
+wire contracts are rejected and no Python lifecycle fallback is introduced. No
+historical extraction receipt is synthesized. Existing successful-history reuse
+remains a legacy compatibility path, and previously completed job projections do
+not establish new extraction evidence. Retrospective reconciliation and packaged
+worker failure injection remain separate readiness requirements in
+`report_extraction_outcome_rust_authority` in
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml).
+
+A validated empty provider response may continue the configured local extraction
+chain. In that case fallback records `provider_attempted=true` without a failure
+code; this distinguishes normal empty-response fallback from provider failure.
+
+
+## Current completion projections and preserved history
+
+New report jobs retain an immutable content hash, fencing token and owner reference
+inside their validated result. Fresh processing also binds the receipt owner and
+staged artifact digest; completed-record reuse is explicitly recorded as `reused`.
+The API adds `completion_evidence`: its `canonical_status` is read from the current
+persisted Rust-authorized attempt only when its fencing token matches the job.
+The existing top-level job `status` remains historical for compatibility. Consumers
+must not interpret historical `status=success` as proof of current completion.
+No frontend adoption of the additive projection is assumed by this backend change.
+
+A historical job without an attempt reference is `legacy_unverified`; a reference
+to an older epoch is `superseded`. Neither claims current canonical success. A new
+job that explicitly reuses validated historical content can complete under a new
+canonical attempt while reporting extraction as `legacy_unverified`. This does
+not manufacture a receipt. Fresh processing without an owner-bound receipt fails
+inside the finalization transaction. Extraction outcomes/counts describe metadata
+extraction, not clinical findings or clinical approval.
+
+A duplicate task delivery verifies the committed canonical reference and report
+integrity before returning success. Unverified historical or superseded deliveries
+raise a typed nonretryable refusal without changing the historical job. Admission
+is checked under the canonical attempt lock before expiry handling and again
+before a new claim, so a stale queued duplicate cannot advance the winning epoch.
+The same native lifecycle reducer continues to authorize every persisted transition.
+Read-only API evidence is a conservative observation, not a durable concurrency
+snapshot. Task completion takes the canonical row lock while verifying its evidence.
+
+The retained-report integrity policy remains unchanged: `require_artifact=False`
+allows approved processed-file cleanup when retained anonymized text/identity is
+usable. When an artifact exists its parser and persisted plaintext digest are still
+checked; the job's committed digest and extraction staging digest must agree.
+
+## Local candidate packages
+
+The coordinated unpublished candidates are lx-dtypes `0.5.4.dev1`, lx-anonymizer
+`1.0.9.dev1`, and endoreg-db `1.5.8.dev1`. Endoreg-db retains an exact anonymizer pin
+and requires the new lx-dtypes minimum. There is no published-registry claim and no
+production activation. Existing operator lockfile edits are preserved; ordinary
+registry lock synchronization requires the prereleases to become available or a
+reviewed private wheel source. Local tests install the exact staged wheel artifacts
+and record their hashes instead of changing the production dependency source.

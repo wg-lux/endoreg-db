@@ -153,6 +153,12 @@ definition_of_done:
   - Vor dem Import gespeicherte Präsentationszeitstempel sind explizit auswählbar; fehlende historische
     Werte werden nicht aus der Bildrate rekonstruiert.
   - Downloads schreiben keine zusätzlichen unverschlüsselten Mediendateien auf dem Server.
+  - Browser- und Datei-Medienexport verwenden dieselbe Integritätsentscheidung; aktuelle Inhaltsidentität,
+    vorhandener Freigabehash und gelesene Datei müssen übereinstimmen, auch außerhalb des Studienserver-Modus.
+  - Annotationsmanifeste referenzieren den kanonischen Processed-Inhaltshash; veraltete Freigaben werden
+    abgewiesen. Anzahl, Tabelle und Medien eines Exportauftrags verwenden dieselbe Annotationsauswahl.
+  - Exportentscheidungen verwenden den zentralen Segmentstatus einschließlich laufender oder fehlgeschlagener
+    Bereinigung; Browser- und Datei-CSV verwenden dieselbe Kodierung zum Schutz vor Tabellenformeln.
   required: true
   verification:
     kind: manual
@@ -179,12 +185,27 @@ definition_of_done:
     - kind: document
       reference: 'docs/annotation_export_guide.md: direkte Browser-Downloads, getrennte Original-/Processed-Zeitstempelfolgen
         und Grenzen historischer Daten.'
-    note: Lokal implementiert und getestet. CSV enthält vorhandene Frame-Annotationen mit gespeicherten
-      Koordinaten; vollständige Original-/Processed-Zeitstempelsequenzen werden separat mit Inhalts-Hash
-      und rationaler Zeitbasis exportiert. Keine Zuordnung unterschiedlicher Generationen per Frameindex,
-      keine Rekonstruktion fehlender Originalwerte, kein Rohvideoexport. Keine Bereitstellung oder Produktionsfreigabe.
-    assessed_by: codex-export-20261006-a
-    assessed_at: '2026-10-06T09:28:21.447002Z'
+    - kind: command
+      reference: '2026-10-19: Vollständiger Pyright nach Export-Zentralisierung: 0 errors, 24 warnings.
+        65 Strukturmanifeste und 37 Feature-Definitionen gültig. Exportregressionen laufen; keine Produktionsfreigabe.'
+    - kind: test
+      reference: '2026-10-19: 50 Tests in tests/views/media/test_video_export_downloads.py, tests/views/misc/test_export_annotated_contract.py
+        und tests/models/test_dataset_export_scope.py bestanden, einschließlich 3 Cleanup-Subtests. Kombinierter
+        Lauf:57 passed,5 zunächst fehlerhafte neue Frame-Testfixtures; nach Korrektur vollständige tests/services/test_export_frames_contract.py:31
+        passed,1 Plugin-Warnung,70.39s, keine Skips. Insgesamt81 unterschiedliche Tests bestanden. RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false via devenv shell. PostgreSQL-Sperren, Generationenwechsel, Auswahländerung
+        und CSV-Parität geprüft.'
+    - kind: command
+      reference: '2026-10-19 final: vollständiger Pyright0 errors24 warnings; gezielte Typprüfung nach
+        letzten Änderungen0/0. Ruff, scoped git diff --check,65 Strukturmanifeste und37 Feature-Definitionen
+        bestanden. Frühere fremde Startup-/Typfehler durch zuständigen Agenten behoben; bestehende pytest-Plugin-
+        und temporäre Aufräumwarnungen bleiben.'
+    note: Exportfreigabe, kanonische Artefaktidentität, Segmentstatus und CSV-Kodierung zentralisiert.
+      Datei-Exporte verwenden eine feste Annotationsauswahl; geordnete Videosperren verhindern Generationenwechsel
+      bis Exportende. Neue Playback-Lease-Anforderungen desselben Videos können während langer Exporte
+      warten. Lokale Regressionen bestanden; kein Deployment und keine Produktionsfreigabe.
+    assessed_by: codex-exports-audit-20261019
+    assessed_at: '2026-10-19T08:32:25.557597Z'
 - id: periodic_generation_cleanup
   category: operations
   title: Periodische Bereinigung erfasst temporäre Dateien bekannter Generationen

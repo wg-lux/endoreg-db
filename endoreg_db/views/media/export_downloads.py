@@ -7,6 +7,7 @@ from typing import cast
 from cryptography.exceptions import InvalidTag
 from django.db import transaction
 from django.http import StreamingHttpResponse
+from endoreg_db.services.privacy.response_boundary import HeaderValidatedCsvResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -98,10 +99,7 @@ class VideoExportDownloadView(OpenApiAPIView):
                         if kind == "timestamps"
                         else annotation_csv(video, use_export_flags=flag == "true")
                     )
-                    response = StreamingHttpResponse(
-                        lines,
-                        content_type="text/csv; charset=utf-8",
-                    )
+                    response = HeaderValidatedCsvResponse(lines)
                     response["Content-Disposition"] = (
                         f'attachment; filename="video_{pk}_annotationen.csv"'
                     )

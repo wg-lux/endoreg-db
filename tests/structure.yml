@@ -8,7 +8,40 @@ responsibilities:
 - Use repository runtime isolation and intentional foreground test commands.
 boundaries:
 - Do not run expensive background suites through editor coverage commands.
+- Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: scripts/test_patient_matching_2pc_reference.py
+  role: Production encoder equivalence, historical epoch and incomplete outcome checks with synthetic inputs.
+- file: services/test_patient_uuid_migration.py
+  role: Distinct UUID backfill with stable primary keys and preserved patient examination links.
+- file: services/test_identity_response_boundary.py
+  role: Browser response denial, serializer output, hash-bearing exports, safe checksums and non-consuming stream guards.
+- file: services/test_transfer_identity_boundary.py
+  role: Reject identity fields before transfer persistence; preserve file-integrity checksums.
+- file: services/test_source_patient_matching.py
+  role: Real source identity hashes rejected at the hub without salt resolution, including repeats and distinct examinations.
+- file: scripts/test_benchmark_sha256.py
+  role: Known-key digest vectors, bounded candidate recovery, CLI and invalid-input regressions without database access.
+- file: utils/test_encryption_streaming.py
+  role: Legacy plaintext retirement, encrypted storage mode and shared transcode profile regressions.
+- file: serializers/test_patient_examination_identity.py
+  role: Authorized current and historical patient resolution without serializer validation writes.
+- file: services/test_patient_examination_hash_resolution.py
+  role: Center-scoped examination resolution, patient alias reuse, idempotency and conflict rejection.
+- file: environment/test_database_fixture_contract.py
+  role: Isolated default database creation, per-test rollback and explicit no-database access rejection.
+- file: services/test_migrate_legacy_hashes.py
+  role: PostgreSQL atomic identity migration, preflight rejection, idempotency, aliases and writer fencing.
+- file: services/test_patient_hash_aliases.py
+  role: Historical patient hash retention, center isolation, conflicts and rollback.
+- file: services/test_historical_identity_resolution.py
+  role: Returning patient recognition across retained salts with erased metadata and fail-closed identity evidence.
+- file: utils/test_sensitive_meta_hash_security.py
+  role: Synthetic legacy encoding ambiguity, current model HMAC separation and bounded candidate recovery without database access.
+- file: utils/test_image_content_hash.py
+  role: Deterministic single-pixel generations, exact-copy controls and PNG metadata hash experiment.
+- file: services/test_report_completion.py
+  role: Canonical attempt task/API completion, explicit legacy reuse, and refusal without mutation or retry.
 
 - file: test_model_worker_prefork.py
   role: Real billiard prefork recycling, task deadlines and detached OCR descendant cleanup.

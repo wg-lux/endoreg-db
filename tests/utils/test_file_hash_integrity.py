@@ -1,10 +1,18 @@
 from unittest.mock import patch
+from collections.abc import Callable
 
 import pytest
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.utils.hashs import get_file_hash
+
+pytestmark = pytest.mark.no_db
+
+
+@pytest.fixture
+def hash_file() -> Callable[[FieldFile], str]:
+    return get_file_hash
 
 
 @pytest.fixture
@@ -23,7 +31,11 @@ def stored_file() -> FieldFile:
     ],
 )
 def test_hash_rejects_inconsistent_stored_stream(
-    stored_file: FieldFile, size: int, chunks: list[bytes], final_size: int
+    stored_file: FieldFile,
+    size: int,
+    chunks: list[bytes],
+    final_size: int,
+    hash_file: Callable[[FieldFile], str],
 ) -> None:
     with (
         patch(
@@ -36,12 +48,14 @@ def test_hash_rejects_inconsistent_stored_stream(
         ),
         pytest.raises(ValueError, match="plaintext size"),
     ):
-        get_file_hash(stored_file)
+        hash_file(stored_file)
 
 
 @pytest.mark.parametrize("chunks", [[b"abc"], [b"a", b"", b"bc"]])
 def test_hash_accepts_complete_stream(
-    stored_file: FieldFile, chunks: list[bytes]
+    stored_file: FieldFile,
+    chunks: list[bytes],
+    hash_file: Callable[[FieldFile], str],
 ) -> None:
     with (
         patch("endoreg_db.utils.storage_streaming.field_file_size", return_value=3),
@@ -50,12 +64,15 @@ def test_hash_accepts_complete_stream(
             return_value=iter(chunks),
         ),
     ):
-        assert get_file_hash(stored_file) == (
+        assert hash_file(stored_file) == (
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         )
 
 
-def test_hash_propagates_authenticated_stream_failure(stored_file: FieldFile) -> None:
+def test_hash_propagates_authenticated_stream_failure(
+    stored_file: FieldFile,
+    hash_file: Callable[[FieldFile], str],
+) -> None:
     with (
         patch("endoreg_db.utils.storage_streaming.field_file_size", return_value=3),
         patch(
@@ -64,4 +81,4 @@ def test_hash_propagates_authenticated_stream_failure(stored_file: FieldFile) ->
         ),
         pytest.raises(OSError, match="authentication failed"),
     ):
-        get_file_hash(stored_file)
+        hash_file(stored_file)

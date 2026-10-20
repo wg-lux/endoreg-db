@@ -59,6 +59,7 @@ class UploadJobRetryDispatchResult:
 def safe_import_error_detail(error_code: str) -> str:
     """Return a stable operator-safe message without exception or path details."""
     messages = {
+        UploadJob.ErrorCode.NONE.value: "",
         UploadJob.ErrorCode.DISPATCH_UNAVAILABLE.value: (
             "Import service is temporarily unavailable. An automatic retry is scheduled."
         ),
@@ -77,11 +78,18 @@ def safe_import_error_detail(error_code: str) -> str:
         UploadJob.ErrorCode.PROCESSING_FAILED.value: (
             "Import processing failed. Technical details are available in protected logs."
         ),
+        UploadJob.ErrorCode.IMPORT_INTERRUPTED.value: (
+            "Import execution was interrupted. Retained media requires operator review "
+            "before recovery."
+        ),
         UploadJob.ErrorCode.SOURCE_MISSING.value: (
             "The import source is missing or inconsistent. A safe re-import is required."
         ),
     }
-    return messages.get(error_code, "")
+    try:
+        return messages[error_code]
+    except KeyError:
+        raise ValueError("Unsupported import error code") from None
 
 
 def retry_delay_seconds(retry_count: int) -> int:

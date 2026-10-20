@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferSensitiveMetaPayloadData as _SensitiveMetaPayload,
+)
+
 from typing import TypedDict, cast
 
 from rest_framework import serializers
+
+from endoreg_db.services.hub.payloads import reject_transferred_identity_hashes
 
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
@@ -25,11 +31,6 @@ class _VideoFilePayload(TypedDict):
 
 class _ReportFilePayload(TypedDict):
     pdf_hash: str
-
-
-class _SensitiveMetaPayload(TypedDict, total=False):
-    patient_hash: str
-    examination_hash: str
 
 
 class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
@@ -72,9 +73,9 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
 
     def validate_payload_schema_version(self, value: str) -> str:
         normalized = value.strip()
-        if normalized != "3.0":
+        if normalized != "5.0":
             raise serializers.ValidationError(
-                "Only privacy-preserving hub payload_schema_version '3.0' is accepted."
+                "Only privacy-preserving hub payload_schema_version '5.0' is accepted."
             )
         return normalized
 
@@ -89,6 +90,10 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         return normalized
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        try:
+            reject_transferred_identity_hashes(attrs)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
         transfer_mode = str(attrs["transfer_mode"])
         self._validate_transfer_mode(transfer_mode)
 
@@ -517,19 +522,12 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         if sensitive_meta is None or not sensitive_meta:
             return
 
-        has_hashes = bool(
-            sensitive_meta.get("patient_hash", "").strip()
-            and sensitive_meta.get("examination_hash", "").strip()
-        )
-        if not has_hashes:
+        # Shared resource-row validation already enforces patient and examination UUIDs.
+        if not sensitive_meta.get("patient_uuid") or not sensitive_meta.get(
+            "examination_uuid"
+        ):
             raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        "resource_rows.sensitive_meta must include patient_hash "
-                        "and examination_hash; direct identity derivation fields "
-                        "are prohibited"
-                    )
-                }
+                "Source patient and examination UUIDs are required"
             )
 
     def _validate_privacy_boundary(self, resource_rows: dict[str, object]) -> None:
@@ -538,7 +536,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             sensitive_meta_fields = cast(dict[str, object], sensitive_meta)
             direct_identity_fields = sorted(
                 set(sensitive_meta_fields).difference(
-                    {"patient_hash", "examination_hash"}
+                    {"patient_uuid", "examination_uuid"}
                 )
             )
             if direct_identity_fields:

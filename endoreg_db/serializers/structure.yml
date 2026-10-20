@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - No service workflow ownership or duplicate clinical payload schema; keep public fields snake_case.
 files:
+- file: patient_examination/patient_examination.py
+  role: Hash-free examination representation and local patient ID validation within authorized centers.
 - file: __init__.py
   role: Serializer exports.
 - file: hub/transfer_job.py
@@ -23,6 +25,9 @@ dependencies:
   internal:
   - endoreg_db/models
   - endoreg_db/schemas
+  - endoreg_db/services/hub
+  - endoreg_db/services/centers
+  - endoreg_db/services/patient_identity
   external:
   - rest_framework
   - lx_dtypes

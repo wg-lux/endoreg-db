@@ -1,4 +1,3 @@
-import hashlib
 import logging
 from endoreg_db.services.hub.upload_job_files import (
     record_working_file,
@@ -8,13 +7,14 @@ import stat
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Protocol, cast
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from django.db import transaction
 from lx_dtypes.models.contracts.report_anonymization import (
     ReportAnonymizationOptions,
     ReportAnonymizationRequest,
     ReportAnonymizationResult,
+    ReportExtractionReceipt,
 )
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
 
@@ -27,7 +27,7 @@ from endoreg_db.models.administration.person.patient.patient import (
     Patient,
     canonical_pseudo_patient_name,
 )
-from endoreg_db.utils.hashs import get_patient_hash
+from endoreg_db.utils.hashs import get_bytes_hash, get_patient_identity_fingerprint
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import ensure_directory, get_file_hash
 from endoreg_db.utils.structured_logging import emit_structured_event
@@ -98,6 +98,18 @@ def persist_report_anonymization_result(
         report.sensitive_meta = sensitive_meta
         updates.append("sensitive_meta")
 
+    if isinstance(result, ReportAnonymizationResult):
+        receipt = ReportExtractionReceipt(
+            attempt_id=result.attempt_id.hex,
+            source_sha256=result.source_sha256,
+            staged_artifact_sha256=result.artifact_sha256,
+            extraction_evidence=result.extraction_evidence,
+        )
+        raw_meta = dict(report.raw_meta or {})
+        raw_meta["report_extraction_receipt"] = receipt.model_dump(mode="json")
+        report.raw_meta = raw_meta
+        updates.append("raw_meta")
+
     if updates:
         report.save(update_fields=updates)
 
@@ -124,6 +136,14 @@ def _validate_report_result(
         raise ValueError("Report anonymization attempt identity does not match")
     if result.source_sha256 != request.source_sha256:
         raise ValueError("Report anonymization source identity does not match")
+
+    if (
+        request.options.use_llm is False
+        and result.extraction_evidence.provider_attempted
+    ):
+        raise ValueError(
+            "Report extraction invoked a provider outside the requested policy"
+        )
 
     artifact = result.artifact_path
     if ".." in artifact.parts:
@@ -208,7 +228,7 @@ class ReportAnonymizer:
                 "Stable report snapshot hash is required for anonymization."
             )
         request = ReportAnonymizationRequest(
-            attempt_id=uuid4(),
+            attempt_id=UUID(ctx.attempt_id),
             source_path=ctx.file_path,
             source_sha256=ctx.file_hash,
             source_size_bytes=ctx.file_path.stat().st_size,
@@ -221,6 +241,18 @@ class ReportAnonymizer:
                 request=request,
                 output_directory=attempt_directory,
             )
+        evidence = anonymization_result.extraction_evidence
+        emit_structured_event(
+            logger,
+            "report_anonymization.extraction_validated",
+            extraction_outcome=evidence.outcome,
+            actual_backend=evidence.backend,
+            finding_count=evidence.finding_count,
+            provider_attempted=evidence.provider_attempted,
+            provider_failure=(
+                evidence.provider_failure.value if evidence.provider_failure else None
+            ),
+        )
         ctx.original_text = anonymization_result.original_text
         ctx.anonymized_text = anonymization_result.anonymized_text
         ctx.extracted_metadata = anonymization_result.extracted_metadata
@@ -264,17 +296,20 @@ class ReportAnonymizer:
                     raise ValueError(
                         "Patient DOB is required to resolve a canonical report pseudonym"
                     )
-                seed = hashlib.sha256(
+                seed = get_bytes_hash(
                     f"{center_name}|{candidate.first_name}|{candidate.last_name}".encode()
-                ).hexdigest()
+                )
             else:
-                hash_material = get_patient_hash(
+                if center is not None:
+                    center_key = center.center_key
+                else:
+                    raise SystemError("Center is not configured.")
+                seed = get_patient_identity_fingerprint(
                     first_name=candidate.first_name,
                     last_name=candidate.last_name,
                     dob=candidate.dob,
-                    center=center_name,
+                    center_key=center_key,
                 )
-                seed = hashlib.sha256(hash_material.encode()).hexdigest()
 
             existing = Patient.get_pseudo_patient_by_hash(seed, center)
             if existing is not None:

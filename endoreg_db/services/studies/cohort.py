@@ -43,7 +43,6 @@ class StudyReportRow(StudyMediaRow):
 
 class StudyExaminationRow(TypedDict):
     patient_examination_id: int
-    case_hash: str
     examination_name: str
     examination_date: str | None
     findings: list[PatientFindingHistoryData]
@@ -52,9 +51,7 @@ class StudyExaminationRow(TypedDict):
 class StudyCaseRow(TypedDict):
     patient_examination_id: int
     patient_examination_ids: list[int]
-    case_hash: str
-    case_hashes: list[str]
-    patient_hash: str
+    patient_id: int
     examination_name: str
     examination_date: str | None
     examinations: list[StudyExaminationRow]
@@ -652,7 +649,6 @@ def _build_case_row(
         examination_rows.append(
             {
                 "patient_examination_id": case_id,
-                "case_hash": patient_examination.hash,
                 "examination_name": str(
                     getattr(patient_examination.examination, "name", "") or ""
                 ).strip(),
@@ -664,16 +660,13 @@ def _build_case_row(
         return None
     report_rows.sort(key=lambda row: row["id"])
     video_rows.sort(key=lambda row: row["id"])
-    patient_hash = str(latest_examination.patient.patient_hash or "").strip()
     examination_name = str(
         getattr(latest_examination.examination, "name", "") or ""
     ).strip()
     row: StudyCaseRow = {
         "patient_examination_id": latest_examination.pk,
         "patient_examination_ids": case_ids,
-        "case_hash": latest_examination.hash,
-        "case_hashes": [examination.hash for examination in patient_examinations],
-        "patient_hash": patient_hash,
+        "patient_id": int(latest_examination.patient.pk),
         "examination_name": examination_name,
         "examination_date": _examination_date(latest_examination),
         "examinations": examination_rows,

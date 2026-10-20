@@ -341,3 +341,60 @@ def test_retry_dispatch_reconciles_only_expired_owned_attempts() -> None:
     for job in jobs[2:]:
         job.refresh_from_db()
         assert job.status == UploadJob.Status.PROCESSING
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("cancel_requested", [False, True])
+@pytest.mark.parametrize("native_refuses", [False, True])
+def test_interruption_requires_native_authorization_before_mutation(
+    monkeypatch: pytest.MonkeyPatch, cancel_requested: bool, native_refuses: bool
+) -> None:
+    from endoreg_db.services.runtime import lifecycle_state_machine
+    from endoreg_db.utils.rust_backend import (
+        OperationLifecycleEventToken,
+        OperationLifecycleStateToken,
+    )
+
+    job = _upload_job(Center.objects.create(name="native-interruption-guard"))
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="expired-worker"
+    )
+    UploadJob.objects.filter(pk=job.pk).update(
+        status=UploadJob.Status.CANCEL_REQUESTED
+        if cancel_requested
+        else UploadJob.Status.PROCESSING,
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1),
+        cancellation_requested_at=timezone.now() if cancel_requested else None,
+    )
+    before = UploadJob.objects.values().get(pk=job.pk)
+    native_transition = lifecycle_state_machine.transition_operation_lifecycle_native
+    events: list[tuple[str, str]] = []
+
+    def reject_interruption(
+        *,
+        current_state: OperationLifecycleStateToken,
+        event: OperationLifecycleEventToken,
+    ) -> OperationLifecycleStateToken:
+        events.append((current_state, event))
+        if event == "reconcile_fail":
+            if native_refuses:
+                raise ValueError("native interruption refused")
+            return "running"
+        return native_transition(current_state=current_state, event=event)
+
+    monkeypatch.setattr(
+        lifecycle_state_machine,
+        "transition_operation_lifecycle_native",
+        reject_interruption,
+    )
+    with pytest.raises(
+        ValueError if native_refuses else RuntimeError,
+        match="native interruption refused" if native_refuses else "unexpected state",
+    ):
+        reconcile_expired_upload_job_import_leases()
+    assert events == [("running", "ownership_lost"), ("lost", "reconcile_fail")]
+    assert UploadJob.objects.values().get(pk=job.pk) == before
+    job.refresh_from_db()
+    assert job.processing_fencing_token == lease.fencing_epoch
+    with job.file.open("rb") as source:
+        assert source.read() == b"video"

@@ -8,8 +8,6 @@ ingest.py; see structure.yml for navigation and regression tests.
 
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import logging
 from typing import Any, cast
@@ -23,7 +21,7 @@ from endoreg_db.models.administration.person.patient.patient_external_id import 
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
-from endoreg_db.utils.hashs import get_identity_salt
+from endoreg_db.utils.hashs import get_bytes_hash, get_identity_hash
 
 # Keep the historical logger namespace for existing log filters.
 logger = logging.getLogger("endoreg_db.services.hub.ingest")
@@ -62,9 +60,7 @@ def attach_external_id_to_sensitive_meta(
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
-            patient_hash = hmac.new(
-                get_identity_salt().encode("utf-8"), identity, hashlib.sha256
-            ).hexdigest()
+            patient_hash = get_identity_hash(identity)
             pseudo_patient = Patient.get_pseudo_patient_by_hash(patient_hash, center)
             if pseudo_patient is None:
                 pseudo_patient = Patient.objects.create(
@@ -116,9 +112,7 @@ def attach_external_id_to_sensitive_meta(
             sensitive_meta.casenumber or f"sensitive-meta:{sensitive_meta.pk}",
         )
     )
-    canonical_examination_hash = hashlib.sha256(
-        examination_identity.encode("utf-8")
-    ).hexdigest()
+    canonical_examination_hash = get_bytes_hash(examination_identity.encode("utf-8"))
     canonical_examination, _ = PatientExamination.objects.get_or_create(
         hash=canonical_examination_hash,
         defaults={

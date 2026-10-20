@@ -1,4 +1,5 @@
 from __future__ import annotations
+from uuid import UUID, uuid4
 from typing import TYPE_CHECKING, Optional, Protocol, Any, Unpack, cast
 
 from django.core.exceptions import ValidationError
@@ -10,6 +11,7 @@ from endoreg_db.schemas import (
 )
 
 if TYPE_CHECKING:
+    from endoreg_db.models.administration.center.center import Center
     from endoreg_db.models.administration.person.patient.patient import Patient  # pyright: ignore
     from endoreg_db.models.medical.examination.examination import Examination
     from endoreg_db.models.medical.examination.examination_indication import (
@@ -47,6 +49,9 @@ class PatientExamination(models.Model):
     date_start: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
     date_end: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
     hash: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    uuid: models.UUIDField[UUID, UUID] = models.UUIDField(
+        default=uuid4, unique=True, editable=False
+    )
     knowledge_base_module: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, default=""
     )
@@ -95,33 +100,19 @@ class PatientExamination(models.Model):
         patient_hash: str,
         examination_hash: str,
         examination_name: Optional[str] = None,
+        *,
+        center: "Center",
     ) -> tuple["PatientExamination", bool]:
-        from ...administration.person import Patient
-        from ..examination import Examination
-
-        created = False
-
-        if PatientExamination.objects.filter(
-            patient__patient_hash=patient_hash, hash=examination_hash
-        ).exists():
-            return PatientExamination.objects.get(
-                patient__patient_hash=patient_hash, hash=examination_hash
-            ), created
-
-        patient, created = Patient.get_or_create_pseudo_patient_by_hash(patient_hash)
-        if examination_name is not None:
-            examination = Examination.objects.get(name=examination_name)
-        else:
-            examination = None
-
-        patient_examination = cls.objects.create(
-            patient=patient, examination=examination, hash=examination_hash
+        from endoreg_db.services.patient_identity.examination_hashes import (
+            get_or_create_pseudo_patient_examination_by_hash,
         )
 
-        patient_examination.save()
-
-        created = True
-        return patient_examination, created
+        return get_or_create_pseudo_patient_examination_by_hash(
+            patient_hash=patient_hash,
+            examination_hash=examination_hash,
+            examination_name=examination_name,
+            center=center,
+        )
 
     def __str__(self) -> str:
         return f"{self.patient} - {self.examination} - {self.date_start}"

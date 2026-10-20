@@ -499,7 +499,7 @@ def test_anonymization_overview_mixed_content():
     # Verify Video (Older)
     assert data[1]["media_type"] == "video"
     assert data[1]["id"] == video.pk
-    assert data[1]["filename"] == "old_video.mp4"
+    assert data[1]["filename"] == f"video-{video.pk}"
     assert data[1]["upload_job"]["status"] == UploadJob.Status.ANONYMIZED
     assert data[1]["upload_job"]["ingest_mode"] == UploadJob.IngestMode.WATCHER
     assert data[1]["upload_job"]["source_system"] == "watcher-daemon"
@@ -734,7 +734,7 @@ def test_central_hub_overview_unscopes_videos_but_not_reports() -> None:
     )
     assert foreign_payload["filename"] == f"Video {foreign_video.pk}"
     assert foreign_payload["sensitive_meta_id"] is None
-    assert foreign_payload["patient_hash_display"] is None
+    assert "patient_hash_display" not in foreign_payload
     assert foreign_payload["pseudo_patient_id"] is None
     assert foreign_payload["upload_job"] is None
 
@@ -857,3 +857,47 @@ def test_start_reset_video_reprocesses_existing_identity(
     assert importer.reanonymize_existing_video.call_args.args[0].pk == video.pk
     importer.import_and_anonymize.assert_not_called()
     assert VideoFile.objects.filter(raw_video_hash=video.raw_video_hash).count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("locked", [False, True])
+@pytest.mark.parametrize("processing", [False, True])
+@pytest.mark.parametrize("media_type", ["video", "pdf"])
+def test_polling_reports_actual_lock(
+    media_type: str, processing: bool, locked: bool
+) -> None:
+    from endoreg_db.services.runtime.polling_coordinator import PollingCoordinator
+
+    cache.clear()
+    center = Center.objects.create(name="polling-lock")
+    if media_type == "video":
+        media = VideoFile.objects.create(
+            center=center,
+            raw_video_hash="polling-lock-video",
+            state=VideoState.objects.create(frames_extracted=processing),
+        )
+    else:
+        media = RawPdfFile.objects.create(
+            center=center,
+            pdf_hash="polling-lock-report",
+            state=RawPdfState.objects.create(processing_started=processing),
+        )
+    if locked:
+        assert PollingCoordinator.acquire_processing_lock(media.pk, media_type)
+    try:
+        user = User.objects.create_user(username="polling-lock-reader")
+        request = APIRequestFactory().get(
+            f"/api/anonymization/{media.pk}/status/", {"kind": media_type}
+        )
+        force_authenticate(request, user=user)
+        response = anonymization_status(request, file_id=media.pk)
+        assert response.status_code == 200
+        assert response.data["processing_locked"] is locked
+        assert media.state is not None
+        assert (
+            response.data["anonymization_status"]
+            == media.state.anonymization_status.value
+        )
+    finally:
+        if locked:
+            PollingCoordinator.release_processing_lock(media.pk, media_type)

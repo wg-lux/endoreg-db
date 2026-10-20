@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import secrets
 from datetime import date, datetime
+from pathlib import Path
 from uuid import uuid4
 
 import pytest
@@ -11,8 +13,22 @@ from lx_dtypes.models import SensitiveMeta as LxSensitiveMeta
 from endoreg_db.import_files.file_storage.sensitive_meta_storage import (
     persist_sensitive_meta_candidate,
 )
-from endoreg_db.models import Center, Patient, RawPdfFile, SensitiveMeta
+from endoreg_db.models import (
+    Center,
+    Patient,
+    PatientExamination,
+    RawPdfFile,
+    SensitiveMeta,
+)
 from endoreg_db.services.privacy.quality_evaluation import DIRECT_IDENTIFIER_FIELDS
+from endoreg_db.services.secret_rotation.identity import (
+    IdentitySource,
+    identity_fingerprint,
+    legacy_hash,
+    salt_fingerprint,
+)
+from endoreg_db.utils.hashs import get_identity_salt
+from tests.services.test_secret_rotation import write_ring
 
 
 @pytest.mark.django_db
@@ -106,7 +122,7 @@ def test_legacy_salt_enrollment_preserves_identity_or_fails(
     )
     first.refresh_from_db()
     if wrong_salt:
-        with override_settings(DJANGO_SALT="different-test-salt"):
+        with override_settings(DJANGO_SALT=secrets.token_hex(32)):
             with pytest.raises(ValueError, match="does not match legacy"):
                 first.save()
     else:
@@ -171,6 +187,8 @@ def test_empty_extraction_has_no_invented_identity(base_db_data: bool) -> None:
 def test_legacy_name_concatenation_collision_fails_without_partial_writes(
     base_db_data: bool,
     erased: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     center = Center.objects.create(name=f"collision-{uuid4().hex}")
     first = SensitiveMeta.objects.create(
@@ -183,8 +201,35 @@ def test_legacy_name_concatenation_collision_fails_without_partial_writes(
     patient_id = first.pseudo_patient_id
     if erased:
         first.create_anonymized_record()
-    before = SensitiveMeta.objects.count()
-    with pytest.raises(ValueError, match="Ambiguous legacy"):
+    # Modern HMAC input is unambiguous. Enroll actual legacy persisted values
+    # rather than expecting modern hashes of AB/C and A/BC to collide.
+    old_salt = secrets.token_hex(32).encode()
+    source = IdentitySource(first_name="AB", last_name="C", dob=date(1980, 1, 2))
+    historical_hash = legacy_hash("AB", "C", source.dob, center.name, None, old_salt)
+    historical_exam = legacy_hash(
+        "AB", "C", source.dob, center.name, date(2026, 9, 21), old_salt
+    )
+    Patient.objects.filter(pk=patient_id).update(patient_hash=historical_hash)
+    PatientExamination.objects.filter(pk=first.pseudo_examination_id).update(
+        hash=historical_exam
+    )
+    SensitiveMeta.objects.filter(pk=first.pk).update(
+        patient_hash=historical_hash,
+        examination_hash=historical_exam,
+        identity_fingerprint=identity_fingerprint(source, center.pk, old_salt),
+        identity_salt_fingerprint=salt_fingerprint(old_salt),
+    )
+    ring = write_ring(
+        tmp_path, get_identity_salt().encode(), (old_salt,), kind="identity"
+    )
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    before = (
+        SensitiveMeta.objects.count(),
+        Patient.objects.count(),
+        PatientExamination.objects.count(),
+    )
+    message = "Historical identity evidence" if erased else "Identity collision"
+    with pytest.raises(ValueError, match=message):
         SensitiveMeta.objects.create(
             center=center,
             patient_first_name="A",
@@ -192,7 +237,11 @@ def test_legacy_name_concatenation_collision_fails_without_partial_writes(
             patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
             examination_date=date(2026, 9, 21),
         )
-    assert SensitiveMeta.objects.count() == before
+    assert (
+        SensitiveMeta.objects.count(),
+        Patient.objects.count(),
+        PatientExamination.objects.count(),
+    ) == before
     first.refresh_from_db()
     assert first.pseudo_patient_id == patient_id
 
@@ -217,7 +266,7 @@ def test_erased_identity_reuse_and_salt_drift_are_verified(base_db_data: bool) -
         examination_date=date(2026, 9, 21),
     )
     assert second.pseudo_patient_id == patient_id
-    with override_settings(DJANGO_SALT="different-test-salt"):
+    with override_settings(DJANGO_SALT=secrets.token_hex(32)):
         with pytest.raises(ValueError, match="salt differs"):
             SensitiveMeta.objects.create(
                 center=center,

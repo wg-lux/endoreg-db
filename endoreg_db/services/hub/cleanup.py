@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import logging
 import stat
 import uuid
@@ -280,9 +281,7 @@ def _source_snapshot(
 
     return (
         UploadSourceSnapshot(
-            storage_name_sha256=hashlib.sha256(
-                storage_name.encode("utf-8")
-            ).hexdigest(),
+            storage_name_sha256=get_bytes_hash(storage_name.encode("utf-8")),
             size_bytes=int(stat_result.st_size),
             content_sha256=content_sha256,
         ),

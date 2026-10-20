@@ -210,14 +210,9 @@ class SensitiveMeta(models.Model):
 
     # --- State ---
     @property
-    def state_verified(self) -> bool | None:
-        """
-        Convenience alias to check if the related state is verified.
-        Returns None if state is not set.
-        """
-        if hasattr(self, "state") and self.state is not None:
-            return self.state.is_verified
-        return None
+    def state_verified(self) -> bool:
+        """Compatibility alias for the canonical verification result."""
+        return self.is_verified
 
     @classmethod
     def create_from_dict(
@@ -337,43 +332,22 @@ class SensitiveMeta(models.Model):
         Gets the related SensitiveMetaState instance, creating one if it doesn't exist.
         Does not save the SensitiveMeta instance itself.
         """
-        try:
-            state = self.state_safe
-            return state
+        from endoreg_db.services.patient_identity.verification import (
+            get_or_create_sensitive_meta_state,
+        )
 
-        except SensitiveMetaState.DoesNotExist:
-            # If it doesn't exist, create it
-            logger.info("Creating new SensitiveMetaState for SensitiveMeta %s", self.pk)
-            # Create the state, linking it back to this instance
-            # The 'origin' field on SensitiveMetaState points back to this SensitiveMeta instance
-            new_state = SensitiveMetaState.objects.create(origin=self)
-            # Assign the newly created state to the instance's 'state' attribute
-            # This avoids needing to query again immediately
-            self.state = new_state
-            return new_state
-        except AttributeError:
-            # Fallback if related_name is not 'state' or instance not saved yet (no PK)
-            if self.pk:
-                state, created = SensitiveMetaState.objects.get_or_create(origin=self)
-                if created:
-                    logger.info(
-                        "Created new SensitiveMetaState for SensitiveMeta %s (via get_or_create)",
-                        self.pk,
-                    )
-                # Link the state back to the instance in memory
-                self.state = state
-                return state
-            else:
-                # Cannot create state if the main instance has no PK
-                raise ValueError(
-                    "Cannot get or create state for an unsaved SensitiveMeta instance."
-                )
+        if self.pk is None:
+            raise ValueError(
+                "Cannot get or create state for an unsaved SensitiveMeta instance."
+            )
+        self.state = get_or_create_sensitive_meta_state(self.pk)
+        return self.state
 
     def __repr__(self) -> str:
         return self.__str__()
 
     # --- Hashing methods delegate to sensitive_meta_logic ---
-    def get_patient_hash(self, salt: str | None = None) -> str:
+    def calculate_patient_hash(self, salt: str | None = None) -> str:
         """Calculates the patient hash using external sensitive_meta_logic."""
         return sensitive_meta_logic.calculate_patient_hash(self, salt=salt)
 
@@ -390,41 +364,46 @@ class SensitiveMeta(models.Model):
 
         This method performs pre-save operations via external sensitive_meta_logic, persists the instance, ensures the related SensitiveMetaState exists, and links the appropriate examiner to the instance.
         """
-        # 1. Call the main sensitive_meta_logic function to perform pre-save checks, data generation,
-        #    and creation/linking of pseudo patient/examination FKs.
-        #    This function modifies the instance fields (hashes, FKs, dates).
-        #    It returns the examiner instance to be linked *after* saving.
-        self.clean()
-        examiner_to_link = sensitive_meta_logic.perform_save_logic(
-            self
-        )  # Pass only self
+        from endoreg_db.services.patient_identity.verification import (
+            sensitive_meta_verification_guard,
+        )
 
-        # 2. Call the original Django save method to save the instance itself
-        #    (including updated FKs, hashes, dates).
-        super().save(*args, **kwargs)  # Pass original args/kwargs
+        with sensitive_meta_verification_guard(self):
+            # 1. Call the main sensitive_meta_logic function to perform pre-save checks, data generation,
+            #    and creation/linking of pseudo patient/examination FKs.
+            #    This function modifies the instance fields (hashes, FKs, dates).
+            #    It returns the examiner instance to be linked *after* saving.
+            self.clean()
+            examiner_to_link = sensitive_meta_logic.perform_save_logic(
+                self
+            )  # Pass only self
 
-        # 3. Ensure SensitiveMetaState exists *after* saving the main instance
-        #    Use related name 'state' if defined, otherwise access via manager.
-        if self.pk:  # Ensure we have a PK
-            try:
-                # Check if the related state object already exists using the related manager
-                _ = self.state
-            except SensitiveMetaState.DoesNotExist:
-                # If not, create a new one, linking it to the saved instance
-                SensitiveMetaState.objects.create(origin=self)
-            except AttributeError:
-                # Fallback check if 'state' related_name is missing
-                if not SensitiveMetaState.objects.filter(origin=self).exists():
+            # 2. Call the original Django save method to save the instance itself
+            #    (including updated FKs, hashes, dates).
+            super().save(*args, **kwargs)  # Pass original args/kwargs
+
+            # 3. Ensure SensitiveMetaState exists *after* saving the main instance
+            #    Use related name 'state' if defined, otherwise access via manager.
+            if self.pk:  # Ensure we have a PK
+                try:
+                    # Check if the related state object already exists using the related manager
+                    _ = self.state
+                except SensitiveMetaState.DoesNotExist:
+                    # If not, create a new one, linking it to the saved instance
                     SensitiveMetaState.objects.create(origin=self)
+                except AttributeError:
+                    # Fallback check if 'state' related_name is missing
+                    if not SensitiveMetaState.objects.filter(origin=self).exists():
+                        SensitiveMetaState.objects.create(origin=self)
 
-        # 4. Handle ManyToMany linking (examiners) *after* the instance has a PK.
-        if (
-            examiner_to_link
-            and self.pk
-            and not self.examiners.filter(pk=examiner_to_link.pk).exists()
-        ):
-            self.examiners.add(examiner_to_link)
-            # Adding to M2M handles its own DB interaction, no second super().save() needed.
+            # 4. Handle ManyToMany linking (examiners) *after* the instance has a PK.
+            if (
+                examiner_to_link
+                and self.pk
+                and not self.examiners.filter(pk=examiner_to_link.pk).exists()
+            ):
+                self.examiners.add(examiner_to_link)
+                # Adding to M2M handles its own DB interaction, no second super().save() needed.
 
     def mark_dob_verified(self) -> None:
         """

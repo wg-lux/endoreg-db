@@ -40,7 +40,7 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):  # pyri
 
     Expected payload:
     {
-        "patient": "patient_hash_string",  # or patient_id integer
+        "patient": 2,  # local patient ID
         "examination": "examination_name", # examination name string
         "date_start": "2024-01-15",
     }
@@ -53,7 +53,7 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):  # pyri
     @transaction.atomic
     def create(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
-            logger.info(f"Creating examination with data: {request.data}")
+            logger.info("Creating examination")
 
             # Use the serializer for validation and creation
             serializer = cast(

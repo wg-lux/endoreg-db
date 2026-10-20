@@ -70,7 +70,7 @@ def test_update_sensitive_meta_applies_relations_scalars_and_explicit_false(
     assert result.sensitive_meta.center_id == new_center.pk
     assert result.sensitive_meta.patient_gender_id == new_gender.pk
     assert state.dob_verified is False
-    assert state.names_verified is True
+    assert state.names_verified is False
 
 
 @pytest.mark.django_db
@@ -102,3 +102,55 @@ def test_update_sensitive_meta_rejects_missing_named_relations_atomically(
             sensitive_meta_id=sensitive_meta.pk,
             command=SensitiveMetaUpdateCommand(patient_gender_name="missing-gender"),
         )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("reverify", [False, True])
+def test_changed_name_requires_explicit_reverification(
+    sensitive_meta: SensitiveMeta, reverify: bool
+) -> None:
+    sensitive_meta.mark_dob_verified()
+    sensitive_meta.mark_names_verified()
+    command = (
+        SensitiveMetaUpdateCommand(patient_first_name="Anna", names_verified=True)
+        if reverify
+        else SensitiveMetaUpdateCommand(patient_first_name="Anna")
+    )
+    result = update_sensitive_meta(sensitive_meta_id=sensitive_meta.pk, command=command)
+    assert result.sensitive_meta.state_safe.names_verified is reverify
+    assert result.sensitive_meta.state_safe.dob_verified
+
+
+@pytest.mark.django_db
+def test_failed_verification_rolls_back_identity_update(
+    sensitive_meta: SensitiveMeta, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.services.patient_identity import verification
+    from endoreg_db.schemas.sensitive_meta_verification import (
+        SensitiveMetaVerificationCommand,
+    )
+    from endoreg_db.services.patient_identity.verification import (
+        SensitiveMetaVerificationResult,
+    )
+
+    sensitive_meta.mark_names_verified()
+    original_name = sensitive_meta.patient_first_name
+    original = verification.update_sensitive_meta_verification
+
+    def fail_after_write(
+        *, sensitive_meta_id: int, command: SensitiveMetaVerificationCommand
+    ) -> SensitiveMetaVerificationResult:
+        original(sensitive_meta_id=sensitive_meta_id, command=command)
+        raise ValueError("verification persistence rejected")
+
+    monkeypatch.setattr(
+        verification, "update_sensitive_meta_verification", fail_after_write
+    )
+    with pytest.raises(ValueError, match="persistence rejected"):
+        update_sensitive_meta(
+            sensitive_meta_id=sensitive_meta.pk,
+            command=SensitiveMetaUpdateCommand(patient_first_name="Anna"),
+        )
+    sensitive_meta.refresh_from_db()
+    assert sensitive_meta.patient_first_name == original_name
+    assert sensitive_meta.state_safe.names_verified

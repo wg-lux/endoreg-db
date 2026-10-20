@@ -164,6 +164,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.media.frame_media.DecodedFrameStreamView",
     ),
     (
+        "media/videos/<int:pk>/provenance/recover/",
+        "video-provenance-recovery",
+        "endoreg_db.views.video.provenance_recovery.VideoProvenanceRecoveryView",
+    ),
+    (
         "media/videos/<int:pk>/reimport/",
         "video-reimport",
         "endoreg_db.views.video.reimport.VideoReimportView",

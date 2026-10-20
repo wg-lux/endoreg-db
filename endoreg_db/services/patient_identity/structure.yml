@@ -16,6 +16,10 @@ entrypoints:
   file: external_ids.py
   purpose: Resolve or create and persist the typed external-ID relation.
 files:
+- file: examination_hashes.py
+  role: Transactional center-scoped examination lookup through canonical patient aliases, rejecting conflicting ownership.
+- file: hash_aliases.py
+  role: Transactional historical patient aliases and center-scoped current hash resolution; opaque current identifiers require explicit opt-in.
 - file: __init__.py
   role: Patientenkennungen und verifizierte sensible Metadaten.
 - file: external_ids.py
@@ -25,12 +29,13 @@ files:
 - file: validated_media_identity.py
   role: Exports commit_validated_media_identity.
 - file: verification.py
-  role: Exports update_sensitive_meta_verification.
+  role: Central locked verification-state creation, atomic writes and save guard revoking checks when persisted identity fields change.
 dependencies:
   internal:
   - endoreg_db/models
   - endoreg_db/schemas
   - endoreg_db/services/cases
+  - endoreg_db/utils
   external:
   - django
   - lx_dtypes

@@ -22,6 +22,7 @@ from endoreg_db.utils.model_fields import (
     model_value as _model_value,
 )
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
+from endoreg_db.services.media.export_policy import validated_export_video_filter
 
 if TYPE_CHECKING:
     from endoreg_db.models.aidataset.aidataset import AIDataSet
@@ -251,21 +252,19 @@ def build_export_payload(
             video_file__center__center_key=normalized_center_key
         )
     if only_validated:
+        require_export_approval = local_study_server_mode_enabled()
         image_annotations_qs = image_annotations_qs.filter(
-            frame__video__state__anonymization_validated=True
+            validated_export_video_filter(
+                video_prefix="frame__video",
+                require_export_approval=require_export_approval,
+            )
         )
         video_annotations_qs = video_annotations_qs.filter(
-            video_file__state__anonymization_validated=True
+            validated_export_video_filter(
+                video_prefix="video_file",
+                require_export_approval=require_export_approval,
+            )
         )
-        if local_study_server_mode_enabled():
-            image_annotations_qs = image_annotations_qs.filter(
-                frame__video__state__outside_segments_removed=True,
-                frame__video__state__ready_for_export=True,
-            ).exclude(frame__video__state__processed_file_sha256="")
-            video_annotations_qs = video_annotations_qs.filter(
-                video_file__state__outside_segments_removed=True,
-                video_file__state__ready_for_export=True,
-            ).exclude(video_file__state__processed_file_sha256="")
 
     image_annotations = list(
         image_annotations_qs.order_by(

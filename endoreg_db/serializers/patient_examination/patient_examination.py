@@ -5,11 +5,13 @@ from datetime import date
 from typing import Protocol, TypedDict, cast
 
 from rest_framework import serializers
+from rest_framework.request import Request
 
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.patient_examination import (
     PatientExaminationPatientDataPayload,
@@ -38,10 +40,11 @@ class _PatientExaminationWriteData(TypedDict, total=False):
 
 
 class PatientExaminationSerializer(serializers.ModelSerializer[PatientExamination]):
-    patient = serializers.CharField(
+    patient = serializers.IntegerField(
         write_only=True,
         required=True,
-        help_text="Patient Hash (z.B. 'patient_2')",
+        min_value=1,
+        help_text="Local patient ID",
     )
     patient_data = serializers.SerializerMethodField(read_only=True)
     examination: object = cast(
@@ -65,7 +68,6 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             "examination",
             "date_start",
             "date_end",
-            "hash",
             "knowledge_base_module",
             "knowledge_base_version",
             "patient_name",
@@ -73,7 +75,6 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
         ]
         read_only_fields = [
             "id",
-            "hash",
             "patient_name",
             "examination_name",
             "patient_data",
@@ -85,12 +86,8 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
         patient = obj.patient
         if patient.pk is None:
             raise serializers.ValidationError("Patient ist nicht gespeichert")
-        patient_hash = patient.patient_hash
-        if not patient_hash:
-            raise serializers.ValidationError("Patient Hash fehlt")
         payload = PatientExaminationPatientDataPayload(
             id=patient.pk,
-            patient_hash=patient_hash,
             first_name=patient.first_name,
             last_name=patient.last_name,
         )
@@ -106,19 +103,20 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             return ""
         return examination.name
 
-    def validate_patient(self, value: str) -> Patient:
-        if not value:
-            raise serializers.ValidationError("Patient Hash ist erforderlich")
-
-        try:
-            return Patient.objects.get(patient_hash=value)
-        except Patient.DoesNotExist:
-            return Patient.objects.create(
-                patient_hash=value,
-                first_name="Patient",
-                last_name=value,
-                is_real_person=False,
+    def validate_patient(self, value: int) -> Patient:
+        request = self.context.get("request")
+        if not isinstance(request, Request):
+            raise serializers.ValidationError("Autorisierter Anfragekontext fehlt")
+        center_ids = resolve_allowed_center_ids(request.user)
+        patients = Patient.objects.filter(pk=value)
+        if center_ids is not None:
+            patients = patients.filter(center_id__in=center_ids)
+        patient = patients.first()
+        if patient is None:
+            raise serializers.ValidationError(
+                "Patient ist im autorisierten Zentrum nicht eindeutig verfügbar"
             )
+        return patient
 
     def validate_date_start(self, value: date | None) -> date | None:
         if value is not None and value > date.today():

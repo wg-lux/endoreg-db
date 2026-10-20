@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 from typing import Literal, Protocol, cast
-import hashlib
 import json
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import models, transaction
 
@@ -37,11 +37,11 @@ class _PatientExaminationIdentityContract(Protocol):
 
 
 def _canonical_payload_hash(payload: JsonObject) -> str:
-    return hashlib.sha256(
+    return get_bytes_hash(
         json.dumps(payload, default=str, sort_keys=True, separators=(",", ":")).encode(
             "utf-8"
         )
-    ).hexdigest()
+    )
 
 
 @transaction.atomic

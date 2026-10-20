@@ -7,6 +7,9 @@ from lx_dtypes.models.contracts.video_provenance import (
 )
 
 import math
+import json
+
+from lx_dtypes.models.contracts.report_anonymization import ReportExtractionReceipt
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
@@ -17,6 +20,7 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
 )
 from lx_dtypes.models.contracts.hub_transfer import (
     HubTransferSegmentProvenancePayload,
+    HubTransferSensitiveMetaPayload,
     HubTransferVideoSegmentPayload,
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
@@ -334,6 +338,18 @@ class RawPdfMetaPayload(BaseModel):
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
     finding_extraction: FindingExtractionEvidence | None = None
+    report_extraction_receipt: ReportExtractionReceipt | None = None
+
+    @field_validator("report_extraction_receipt", mode="before")
+    @classmethod
+    def _validate_extraction_receipt(
+        cls, value: object
+    ) -> ReportExtractionReceipt | None:
+        if value is None:
+            return None
+        if isinstance(value, ReportExtractionReceipt):
+            value = value.model_dump(mode="json")
+        return ReportExtractionReceipt.model_validate_json(json.dumps(value))
 
     document_type: DocumentType | str | None = None
     validation_source: str | None = None
@@ -392,21 +408,7 @@ class RawPdfMetaPayload(BaseModel):
         return _json_compatible_value(value, field_name="raw_meta")
 
 
-class TransferSensitiveMetaRow(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    patient_hash: str
-    examination_hash: str
-
-    @field_validator("patient_hash", "examination_hash", mode="before")
-    @classmethod
-    def _require_pseudonym_hash(cls, value: Any) -> str:
-        return _sha256_hex(value, field_name="pseudonym hash")
-
-    @field_validator("*", mode="before")
-    @classmethod
-    def _coerce_json_values(cls, value: Any) -> Any:
-        return _json_compatible_value(value, field_name="resource_rows.sensitive_meta")
+TransferSensitiveMetaRow = HubTransferSensitiveMetaPayload
 
 
 class TransferProcessingHistoryRow(BaseModel):

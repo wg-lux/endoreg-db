@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from collections.abc import Iterable
 from typing import Protocol, cast
 
 from django.db import transaction
@@ -14,6 +15,7 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
+from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.schemas.case_documents import CaseDocumentMediaType
 from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -97,64 +99,49 @@ class MediaManagementView(APIView):
         }
 
     def _get_video_stats(self) -> dict[str, int]:
-        videos = VideoFile.objects.select_related("state").all()
-        stats = {
-            "total": videos.count(),
-            "not_started": 0,
-            "processing": 0,
-            "done": 0,
-            "failed": 0,
-            "validated": 0,
-            "unfinished": 0,
-        }
-        for video in videos:
-            if not video.state:
-                stats["not_started"] += 1
-                stats["unfinished"] += 1
-                continue
-            video_status = video.state.anonymization_status.value
-            if video_status == "not_started":
-                stats["not_started"] += 1
-                stats["unfinished"] += 1
-            elif video_status in {"extracting_frames", "processing_anonymization"}:
-                stats["processing"] += 1
-                stats["unfinished"] += 1
-            elif video_status == "done_processing_anonymization":
-                stats["done"] += 1
-            elif video_status == "failed":
-                stats["failed"] += 1
-                stats["unfinished"] += 1
-            elif video_status == "validated":
-                stats["validated"] += 1
-            else:
-                stats["unfinished"] += 1
-        return stats
+        return self._get_media_stats(VideoFile.objects.select_related("state").all())
 
     def _get_pdf_stats(self) -> dict[str, int]:
-        pdfs = RawPdfFile.objects.all()
-        stats = {
-            "total": pdfs.count(),
-            "not_started": 0,
-            "processing": 0,
-            "done": 0,
-            "failed": 0,
-            "validated": 0,
-            "unfinished": 0,
-        }
-        for pdf in pdfs:
-            has_anonymized = bool(pdf.anonymized_text and pdf.anonymized_text.strip())
-            is_validated = bool(
-                getattr(pdf.sensitive_meta, "is_verified", False)
-                if pdf.sensitive_meta
-                else False
+        return self._get_media_stats(RawPdfFile.objects.select_related("state").all())
+
+    @staticmethod
+    def _get_media_stats(media: Iterable[VideoFile | RawPdfFile]) -> dict[str, int]:
+        stats: dict[str, int] = dict.fromkeys(
+            (
+                "total",
+                "not_started",
+                "processing",
+                "done",
+                "failed",
+                "validated",
+                "unfinished",
+            ),
+            0,
+        )
+        for item in media:
+            stats["total"] += 1
+            state = item.state
+            resolved = (
+                state.anonymization_status if state else AnonymizationState.NOT_STARTED
             )
-            if not has_anonymized:
+            if resolved == AnonymizationState.NOT_STARTED:
                 stats["not_started"] += 1
-                stats["unfinished"] += 1
-            elif is_validated:
-                stats["validated"] += 1
-            else:
+            elif resolved in {
+                AnonymizationState.EXTRACTING_FRAMES,
+                AnonymizationState.PROCESSING_ANONYMIZING,
+            }:
+                stats["processing"] += 1
+            elif resolved == AnonymizationState.DONE_PROCESSING_ANONYMIZATION:
                 stats["done"] += 1
+            elif resolved == AnonymizationState.FAILED:
+                stats["failed"] += 1
+            elif resolved == AnonymizationState.VALIDATED:
+                stats["validated"] += 1
+            if resolved not in {
+                AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
+                AnonymizationState.VALIDATED,
+            }:
+                stats["unfinished"] += 1
         return stats
 
     def _perform_cleanup(
@@ -396,31 +383,38 @@ def reset_processing_status(request: HttpRequest, file_id: int) -> Response:
             video = VideoFile.objects.get(id=file_id)
             if video.state is not None:
                 state = video.state
-                setattr(state, "processing_finished", False)
-                setattr(state, "anonymization_status_id", None)
-                state.save()
+                state.mark_processing_not_started()
+                state.refresh_from_db()
             payload = MediaManagementResetStatusResponsePayload(
                 detail="Video processing status reset",
                 file_type="video",
                 file_id=file_id,
             ).model_dump(mode="python")
-            payload["new_status"] = "not_started"
+            payload["new_status"] = (
+                video.state.anonymization_status.value
+                if video.state
+                else AnonymizationState.NOT_STARTED.value
+            )
             return Response(payload)
         except VideoFile.DoesNotExist:
             pass
 
         try:
             pdf = RawPdfFile.objects.get(id=file_id)
-            if pdf.sensitive_meta and pdf.sensitive_meta.state:
-                state = pdf.sensitive_meta.state
-                setattr(state, "processing_finished", False)
-                state.save()
-                payload = MediaManagementResetStatusResponsePayload(
-                    detail="Report processing status reset",
-                    file_type="pdf",
-                    file_id=file_id,
-                )
-                return Response(payload.model_dump(mode="python"))
+            if pdf.state is not None:
+                pdf.state.mark_processing_not_started()
+                pdf.state.refresh_from_db()
+            payload = MediaManagementResetStatusResponsePayload(
+                detail="Report processing status reset",
+                file_type="pdf",
+                file_id=file_id,
+            ).model_dump(mode="python")
+            payload["new_status"] = (
+                pdf.state.anonymization_status.value
+                if pdf.state
+                else AnonymizationState.NOT_STARTED.value
+            )
+            return Response(payload)
         except RawPdfFile.DoesNotExist:
             pass
 

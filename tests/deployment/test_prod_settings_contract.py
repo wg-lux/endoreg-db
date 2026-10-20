@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -15,13 +16,23 @@ pytestmark = pytest.mark.no_db
 
 
 @pytest.fixture(autouse=True)
-def identity_salt_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    path = atomic_write_file(
+def private_identity_salt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give every subprocess its own valid salt, independent of host keyrings."""
+    for name in (
+        "DJANGO_SALT",
+        "DJANGO_IDENTITY_SALT_KEYRING_FILE",
+        "DJANGO_IDENTITY_CENTER_ID",
+        "DJANGO_IDENTITY_SALT_GENERATION",
+        "DJANGO_SIGNING_KEYRING_FILE",
+        "DJANGO_SECRET_KEY_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    salt_file = atomic_write_file(
         destination=tmp_path / "identity-salt",
-        content=(b"production-probe-test-salt",),
+        content=[secrets.token_hex(32).encode()],
         file_mode=0o600,
     )
-    monkeypatch.setenv("DJANGO_SALT_FILE", str(path))
+    monkeypatch.setenv("DJANGO_SALT_FILE", str(salt_file))
 
 
 def _run_prod_settings_probe(

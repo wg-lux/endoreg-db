@@ -43,7 +43,7 @@ files:
 - file: deletion.py
   role: Explicit video deletion using persisted ownership, never filename searches.
 - file: direct_import.py
-  role: Direct video imports acquire the same durable ownership as queued imports.
+  role: Direct video imports bind the resolved center key and acquire the same durable ownership as queued imports.
 - file: frame_coordinates.py
   role: Generation-bound decoded timestamps and persisted prediction windows.
 - file: frames.py
@@ -79,7 +79,7 @@ files:
 - file: types.py
   role: Exports parse_video_artifact_kind.
 - file: validation.py
-  role: Exports validate_video_metadata_annotation.
+  role: Validates annotated metadata with checked correction of inferred case identity.
 - file: video_masks.py
   role: Host persistence for immutable masks validated and loaded by lx-dtypes.
 dependencies:
@@ -92,11 +92,13 @@ dependencies:
   - endoreg_db/models
   - endoreg_db/schemas
   - endoreg_db/services/annotations
+  - endoreg_db/services/cases
   - endoreg_db/services/centers
   - endoreg_db/services/hub
   - endoreg_db/services/imports
   - endoreg_db/services/jobs
   - endoreg_db/services/media
+  - endoreg_db/services/secret_rotation
   - endoreg_db/services/streaming
   - endoreg_db/services/video_storage
   - endoreg_db/utils

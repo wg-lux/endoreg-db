@@ -459,17 +459,13 @@ def finalize_failure(
       reset explicitly requests it
     """
 
-    if ctx.instance is None:
-        if isinstance(ctx.current_report, RawPdfFile):
-            ctx.instance = ctx.current_report
-        elif isinstance(ctx.current_video, VideoFile):
-            ctx.instance = ctx.current_video
-        else:
-            raise Exception
+    instance = ctx.instance
+    if not isinstance(instance, (RawPdfFile, VideoFile)):
+        raise RuntimeError("Cannot finalize failed import without a media instance")
 
     ctx.require_execution_ownership()
     with ctx.owned_mutation():
-        state = _ensure_instance_state(ctx.instance)
+        state = _ensure_instance_state(instance)
         state.mark_processing_failed()
         file_hash = ensure_context_file_hash(ctx)
         ProcessingHistory.get_or_create_for_hash(file_hash=file_hash, success=False)
@@ -481,7 +477,7 @@ def finalize_failure(
     )
     logger.error(
         "File processing failed; failure state persisted for instance %s",
-        ctx.instance.pk,
+        instance.pk,
     )
 
 
@@ -507,7 +503,7 @@ def delete_associated_files(
 
 
 def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
-    video = ctx.instance if isinstance(ctx.instance, VideoFile) else ctx.current_video
+    video = ctx.current_video
     if not isinstance(video, VideoFile):
         return
 

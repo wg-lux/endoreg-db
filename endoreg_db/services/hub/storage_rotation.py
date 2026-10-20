@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-import hashlib
 import json
 from uuid import UUID
+
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -177,7 +178,7 @@ def _fingerprint(value: dict[str, str | int]) -> str:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _rotation_request_fingerprint(request: RotationRequest) -> str:

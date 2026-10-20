@@ -32,6 +32,11 @@ from endoreg_db.models import (
     Tag,
 )
 from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
+from endoreg_db.services.cases.auto_resolution import (
+    auto_resolve_media_case,
+    correct_inferred_case_identity,
+)
+from endoreg_db.services.patient_identity.hash_aliases import record_patient_hash_alias
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -120,6 +125,163 @@ class TestSensitiveMetadataEndpoints:
         assert isinstance(response, DRFResponse)
         return response
 
+    @pytest.fixture
+    def consistent_case(self, sensitive_meta: SensitiveMeta) -> SensitiveMeta:
+        patient = sensitive_meta.pseudo_patient
+        examination = sensitive_meta.pseudo_examination
+        assert patient is not None and examination is not None
+        Patient.objects.filter(pk=patient.pk).update(
+            patient_hash="a" * 64, center=sensitive_meta.center, is_real_person=False
+        )
+        PatientExamination.objects.filter(pk=examination.pk).update(hash="b" * 64)
+        SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(
+            patient_hash="a" * 64, examination_hash="b" * 64
+        )
+        sensitive_meta.refresh_from_db()
+        return sensitive_meta
+
+    @pytest.mark.parametrize(
+        "conflict",
+        [
+            "patient",
+            "examination_patient",
+            "hash_owner",
+            "examination_hash",
+            "center",
+            "media_patient",
+        ],
+    )
+    def test_auto_case_rejects_conflicting_identity_without_mutation(
+        self, video: VideoFile, consistent_case: SensitiveMeta, conflict: str
+    ) -> None:
+        other = Patient.objects.create(
+            patient_hash="c" * 64, center=consistent_case.center, is_real_person=False
+        )
+        if conflict == "patient":
+            SensitiveMeta.objects.filter(pk=consistent_case.pk).update(
+                pseudo_patient=other
+            )
+        elif conflict == "examination_patient":
+            PatientExamination.objects.filter(
+                pk=consistent_case.pseudo_examination_id
+            ).update(patient=other)
+        elif conflict == "hash_owner":
+            PatientExamination.objects.filter(
+                pk=consistent_case.pseudo_examination_id
+            ).update(patient=other)
+            SensitiveMeta.objects.filter(pk=consistent_case.pk).update(
+                pseudo_examination=None
+            )
+        elif conflict == "examination_hash":
+            SensitiveMeta.objects.filter(pk=consistent_case.pk).update(
+                examination_hash="d" * 64
+            )
+        elif conflict == "center":
+            video.center = Center.objects.create(name=f"other-{uuid4().hex}")
+            video.save(update_fields=["center"])
+        else:
+            video.patient = other
+            video.save(update_fields=["patient"])
+        video.refresh_from_db()
+        before_meta = video.meta
+        before_patient = video.patient_id
+        before_count = PatientExamination.objects.count()
+        with pytest.raises(ValueError):
+            auto_resolve_media_case(media_type="video", media_obj=video)
+        video.refresh_from_db()
+        assert video.examination_id is None
+        assert video.patient_id == before_patient
+        assert video.meta == before_meta
+        assert PatientExamination.objects.count() == before_count
+
+    @pytest.mark.parametrize("historical", [False, True])
+    def test_auto_case_resolves_center_scoped_identity_idempotently(
+        self, video: VideoFile, consistent_case: SensitiveMeta, historical: bool
+    ) -> None:
+        patient = consistent_case.pseudo_patient
+        assert patient is not None and consistent_case.center is not None
+        if historical:
+            record_patient_hash_alias(
+                patient=patient,
+                center=consistent_case.center,
+                patient_hash="a" * 64,
+                salt_fingerprint="f" * 64,
+            )
+            Patient.objects.filter(pk=patient.pk).update(patient_hash="e" * 64)
+        video.refresh_from_db()
+        first = auto_resolve_media_case(media_type="video", media_obj=video)
+        second = auto_resolve_media_case(media_type="video", media_obj=video)
+        assert first.patient_examination is not None
+        assert first.patient_examination.pk == consistent_case.pseudo_examination_id
+        assert second.patient_examination == first.patient_examination
+        assert first.created is second.created is False
+        video.refresh_from_db()
+        assert video.patient_id == patient.pk
+
+    @pytest.mark.parametrize("explicit", [False, True])
+    def test_auto_case_preserves_only_explicit_conflicting_link(
+        self, video: VideoFile, consistent_case: SensitiveMeta, explicit: bool
+    ) -> None:
+        other = PatientExamination.objects.create(
+            patient=consistent_case.pseudo_patient, hash="d" * 64
+        )
+        video.examination = other
+        video.meta = {"case_resolution": {"is_explicitly_resolved": explicit}}
+        video.save(update_fields=["examination", "meta"])
+        video.refresh_from_db()
+        previous_meta = video.meta
+        if explicit:
+            result = auto_resolve_media_case(media_type="video", media_obj=video)
+            assert result.patient_examination == other
+            assert result.reason == "already_linked"
+        else:
+            with pytest.raises(ValueError, match="Linked examination conflicts"):
+                auto_resolve_media_case(media_type="video", media_obj=video)
+        video.refresh_from_db()
+        assert video.examination_id == other.pk
+        assert video.meta == previous_meta
+
+    def test_auto_case_rejects_pdf_center_conflict(
+        self, pdf: RawPdfFile, consistent_case: SensitiveMeta
+    ) -> None:
+        foreign_center = Center.objects.create(name=f"foreign-{uuid4().hex}")
+        RawPdfFile.objects.filter(pk=pdf.pk).update(center=foreign_center)
+        pdf.refresh_from_db()
+        with pytest.raises(ValueError, match="centers conflict"):
+            auto_resolve_media_case(media_type="pdf", media_obj=pdf)
+        pdf.refresh_from_db()
+        assert pdf.center_id == foreign_center.pk
+        assert pdf.examination_id == consistent_case.pseudo_examination_id
+
+    @pytest.mark.parametrize("preexisting_conflict", [False, True])
+    def test_metadata_correction_rejects_inconsistent_identity_atomically(
+        self,
+        pdf: RawPdfFile,
+        consistent_case: SensitiveMeta,
+        preexisting_conflict: bool,
+    ) -> None:
+        if preexisting_conflict:
+            other = PatientExamination.objects.create(
+                patient=consistent_case.pseudo_patient, hash="d" * 64
+            )
+            RawPdfFile.objects.filter(pk=pdf.pk).update(examination=other)
+        pdf.refresh_from_db()
+        previous_examination_id = pdf.examination_id
+        entered = False
+        with pytest.raises(ValueError):
+            with correct_inferred_case_identity(media_type="pdf", media_obj=pdf):
+                entered = True
+                SensitiveMeta.objects.filter(pk=consistent_case.pk).update(
+                    examination_hash="", pseudo_examination=None
+                )
+                assert pdf.sensitive_meta is not None
+                pdf.sensitive_meta.refresh_from_db()
+        assert entered is not preexisting_conflict
+        pdf.refresh_from_db()
+        consistent_case.refresh_from_db()
+        assert pdf.examination_id == previous_examination_id
+        assert consistent_case.examination_hash == "b" * 64
+
     def _require_sensitive_meta(
         self, sensitive_meta: SensitiveMeta | None
     ) -> SensitiveMeta:
@@ -154,8 +316,8 @@ class TestSensitiveMetadataEndpoints:
             payload["pseudo_examination_id"]
             == self._require_sensitive_meta(video.sensitive_meta).pseudo_examination_id
         )
-        assert payload["patient_hash_display"].startswith("...")
-        assert payload["examination_hash_display"].startswith("...")
+        assert "patient_hash_display" not in payload
+        assert "examination_hash_display" not in payload
 
     def test_get_video_sensitive_metadata_includes_tags_and_validation_comment(
         self, client: DjangoClient, video: VideoFile
@@ -353,13 +515,20 @@ class TestSensitiveMetadataEndpoints:
         assert payload["match_status"] == "linked"
         assert payload["linked_patient_examination_id"] == pdf.examination_id
 
+    @pytest.mark.parametrize("previously_linked", [False, True])
     def test_validate_video_auto_links_exact_case_match_and_updates_read_side(
         self,
         client: DjangoClient,
         factory: APIRequestFactory,
         user: User,
         video: VideoFile,
+        previously_linked: bool,
     ) -> None:
+        if previously_linked:
+            sensitive_meta = self._require_sensitive_meta(video.sensitive_meta)
+            video.patient = sensitive_meta.pseudo_patient
+            video.examination = sensitive_meta.pseudo_examination
+            video.save(update_fields=["patient", "examination"])
         validation_payload = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
@@ -403,6 +572,16 @@ class TestSensitiveMetadataEndpoints:
             "matched_by_hash",
             "already_linked",
         }
+        sensitive_meta = self._require_sensitive_meta(video.sensitive_meta)
+        assert video.examination is not None
+        assert video.examination.hash == sensitive_meta.examination_hash
+        assert video.examination.date_start == date(2024, 2, 15)
+        identity_commit = AuditLedger.objects.filter(
+            object_type="SensitiveMeta",
+            object_pk=str(sensitive_meta.pk),
+            action="identity_committed",
+        ).latest("ts")
+        assert identity_commit.data["examination_hash"] == video.examination.hash
 
         read_response = client.get(f"/api/media/videos/{video.pk}/case-resolution/")
 

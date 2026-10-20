@@ -294,8 +294,6 @@ class AnonymizationOverviewView(APIView):
                     "upload_job": overview_upload_job_retry_summary(upload_job),
                     "hls_materializations": [],
                     "document_type": None,
-                    "patient_hash_display": None,
-                    "examination_hash_display": None,
                     "pseudo_patient_id": None,
                     "pseudo_examination_id": None,
                     "import_only": True,
@@ -580,14 +578,6 @@ def anonymization_status(request: Request, file_id: int) -> Response:
         or "not_started"
     )
 
-    # processing_locked als Ableitung des Status interpretieren
-    processing_statuses = {
-        "processing_anonymization",
-        "extracting_frames",
-        "predicting_segments",
-    }
-    processing_locked_derived = status_val in processing_statuses
-
     return Response(
         {
             "file_id": file_id,
@@ -595,7 +585,9 @@ def anonymization_status(request: Request, file_id: int) -> Response:
             "anonymization_status": status_val,
             "integrity_status": status_info.get("integrity_status", ""),
             "integrity_error": status_info.get("integrity_error", ""),
-            "processing_locked": processing_locked_derived,
+            "processing_locked": PollingCoordinator.is_processing_locked(
+                file_id, file_type
+            ),
         }
     )
 

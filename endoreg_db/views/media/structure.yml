@@ -23,6 +23,7 @@ dependencies:
   internal:
   - endoreg_db/views/video
   - endoreg_db/services/media
+  - endoreg_db/services/privacy
   - endoreg_db/services/annotations
   - endoreg_db/authz
   - endoreg_db/serializers

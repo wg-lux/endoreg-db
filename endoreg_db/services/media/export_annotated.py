@@ -20,6 +20,11 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
+from endoreg_db.services.annotations.segment_validation_workflow import (
+    SEGMENT_ANNOTATION_FINAL_STATUSES,
+    SegmentAnnotationStatus,
+    resolve_segment_annotation_status,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -96,19 +101,11 @@ class ExportAnnotatedService:
         self,
         video: VideoFile,
     ) -> None:
-        state = getattr(video, "state", None)
-
-        if state is None:
-            return
-
-        segment_annotations_created = bool(
-            getattr(state, "segment_annotations_created", False)
-        )
-        segment_annotations_validated = bool(
-            getattr(state, "segment_annotations_validated", False)
-        )
-
-        if segment_annotations_created and not segment_annotations_validated:
+        status = resolve_segment_annotation_status(video)
+        if (
+            status != SegmentAnnotationStatus.NOT_STARTED.value
+            and status not in SEGMENT_ANNOTATION_FINAL_STATUSES
+        ):
             raise ExportConflictError(
-                "cleanup_required: segment annotations are not finalized"
+                f"cleanup_required: segment annotations are not finalized ({status})"
             )

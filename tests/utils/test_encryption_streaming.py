@@ -1,9 +1,8 @@
 from importlib import import_module
 from pathlib import Path
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import Iterable
 from dataclasses import dataclass
 import hashlib
-from typing import NoReturn
 
 import pytest
 
@@ -59,82 +58,6 @@ def _app_encrypted_policy(kind: PayloadKind) -> StoragePolicy:
     return StoragePolicy.APP_ENCRYPTED
 
 
-def _constant_field_file_size(size: int) -> Callable[[DummyFieldFile], int]:
-    def field_file_size(field_file: DummyFieldFile) -> int:
-        return size
-
-    return field_file_size
-
-
-def _fail_field_file_size(field_file: DummyFieldFile) -> NoReturn:
-    raise AssertionError("should use local source path size")
-
-
-def _field_file_payload_reader(
-    payload: bytes,
-) -> Callable[
-    [DummyFieldFile, int, int],
-    Iterator[bytes],
-]:
-    def iter_field_file_bytes(
-        field_file: DummyFieldFile,
-        start: int,
-        end: int,
-    ) -> Iterator[bytes]:
-        return iter([payload])
-
-    return iter_field_file_bytes
-
-
-def _encrypted_payload_reader(
-    field_file: DummyFieldFile,
-    start: int,
-    end: int,
-) -> Iterator[bytes]:
-    return iter([sm.LX_ENCRYPTED_MAGIC, b"ciphertext"])
-
-
-def _fake_streamable_transcode(payload: bytes) -> Callable[..., Path]:
-    def transcode_streamable_mp4(
-        source_path: Path, target_path: Path, **_: object
-    ) -> Path:
-        assert source_path.exists()
-        target_path.parent.mkdir(parents=True, exist_ok=True)
-        target_path.write_bytes(payload)
-        return target_path
-
-    return transcode_streamable_mp4
-
-
-def _fail_materialize_streamable_target(
-    video_field_file: DummyFieldFile,
-    target_path: Path,
-    *,
-    source_path: Path | None = None,
-    expected_hash: str = "",
-) -> NoReturn:
-    raise AssertionError("should not rematerialize existing plaintext streamable file")
-
-
-def _fail_rewrite_streamable_target(
-    video_field_file: DummyFieldFile,
-    target_path: Path,
-    *,
-    source_path: Path | None = None,
-    expected_hash: str = "",
-) -> NoReturn:
-    raise AssertionError("should not rewrite existing plaintext file")
-
-
-def _fail_source_hash(
-    video_field_file: DummyFieldFile,
-    source_path: Path | None,
-) -> NoReturn:
-    raise AssertionError(
-        "should not hash source for an already recorded streamable path"
-    )
-
-
 @pytest.fixture
 def video() -> DummyVideo:
     return DummyVideo()
@@ -152,37 +75,6 @@ def streamable_roots(
         root=tmp_path,
         raw_root=raw_root,
         processed_root=processed_root,
-    )
-
-
-def test_materialize_refuses_encrypted_streamable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    target = tmp_path / "bad.mp4"
-
-    monkeypatch.setattr(sm, "field_file_size", _constant_field_file_size(8))
-    monkeypatch.setattr(
-        sm,
-        "iter_field_file_bytes",
-        _encrypted_payload_reader,
-    )
-
-    with pytest.raises(RuntimeError, match="Refusing encrypted streamable source"):
-        sm._materialize_streamable_target(DummyFieldFile("raw/input.mp4"), target)
-    assert not target.exists()
-
-
-def test_source_size_prefers_existing_local_source_path(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source_path = tmp_path / "source.mp4"
-    source_path.write_bytes(b"local source bytes")
-    monkeypatch.setattr(sm, "field_file_size", _fail_field_file_size)
-
-    assert sm._source_size(DummyFieldFile("raw/input.mp4"), source_path) == len(
-        b"local source bytes"
     )
 
 
@@ -287,17 +179,6 @@ def test_sync_does_not_materialize_plaintext_raw_or_set_streamable_mode(
         "resolve_storage_policy",
         _fs_streamable_policy,
     )
-    monkeypatch.setattr(sm, "field_file_size", _constant_field_file_size(12))
-    monkeypatch.setattr(
-        sm,
-        "iter_field_file_bytes",
-        _field_file_payload_reader(video.raw_payload),
-    )
-    monkeypatch.setattr(
-        sm,
-        "_transcode_streamable_mp4",
-        _fake_streamable_transcode(video.raw_streamable_payload),
-    )
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -325,16 +206,6 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
         "resolve_storage_policy",
         _fs_streamable_policy,
     )
-    monkeypatch.setattr(
-        sm,
-        "field_file_size",
-        _constant_field_file_size(len(video.raw_payload)),
-    )
-    monkeypatch.setattr(
-        sm,
-        "iter_field_file_bytes",
-        _field_file_payload_reader(video.raw_payload),
-    )
 
     target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -343,12 +214,6 @@ def test_sync_is_idempotent_and_does_not_rewrite_existing_plaintext(
         f"streamable_videos/raw/{video.raw_video_hash}.mp4"
     )
     video.storage_mode = DummyStorageMode.STREAMABLE
-
-    monkeypatch.setattr(
-        sm,
-        "_materialize_streamable_target",
-        _fail_materialize_streamable_target,
-    )
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -372,21 +237,6 @@ def test_sync_force_removes_existing_plaintext(
         sm,
         "resolve_storage_policy",
         _fs_streamable_policy,
-    )
-    monkeypatch.setattr(
-        sm,
-        "field_file_size",
-        _constant_field_file_size(len(video.raw_payload)),
-    )
-    monkeypatch.setattr(
-        sm,
-        "iter_field_file_bytes",
-        _field_file_payload_reader(video.raw_payload),
-    )
-    monkeypatch.setattr(
-        sm,
-        "_transcode_streamable_mp4",
-        _fake_streamable_transcode(video.raw_streamable_payload),
     )
 
     target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
@@ -412,44 +262,6 @@ def test_sync_force_removes_existing_plaintext(
     assert update_fields == ["raw_streamable_relative_path", "storage_mode"]
 
 
-def test_sync_idempotent_path_does_not_rehash_source(
-    video: DummyVideo,
-    streamable_roots: StreamableRoots,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        sm,
-        "resolve_storage_policy",
-        _fs_streamable_policy,
-    )
-    monkeypatch.setattr(sm, "_source_hash", _fail_source_hash)
-
-    target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_bytes(video.raw_streamable_payload)
-
-    video.raw_streamable_relative_path = (
-        f"streamable_videos/raw/{video.raw_video_hash}.mp4"
-    )
-    video.storage_mode = DummyStorageMode.STREAMABLE
-
-    monkeypatch.setattr(
-        sm,
-        "_materialize_streamable_target",
-        _fail_materialize_streamable_target,
-    )
-
-    update_fields = sm.sync_video_streamable_artifacts(
-        video,
-        include_raw=True,
-        include_processed=False,
-        save=True,
-    )
-
-    assert not target.exists()
-    assert update_fields == ["raw_streamable_relative_path", "storage_mode"]
-
-
 def test_sync_does_not_adopt_untracked_existing_plaintext(
     video: DummyVideo,
     streamable_roots: StreamableRoots,
@@ -460,28 +272,12 @@ def test_sync_does_not_adopt_untracked_existing_plaintext(
         "resolve_storage_policy",
         _fs_streamable_policy,
     )
-    monkeypatch.setattr(
-        sm,
-        "field_file_size",
-        _constant_field_file_size(len(video.raw_payload)),
-    )
-    monkeypatch.setattr(
-        sm,
-        "iter_field_file_bytes",
-        _field_file_payload_reader(video.raw_payload),
-    )
 
     target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_bytes(video.raw_streamable_payload)
 
     video.raw_streamable_relative_path = ""
-
-    monkeypatch.setattr(
-        sm,
-        "_materialize_streamable_target",
-        _fail_rewrite_streamable_target,
-    )
 
     update_fields = sm.sync_video_streamable_artifacts(
         video,
@@ -504,21 +300,6 @@ def test_sync_removes_existing_plaintext_with_wrong_hash(
         sm,
         "resolve_storage_policy",
         _fs_streamable_policy,
-    )
-    monkeypatch.setattr(
-        sm,
-        "field_file_size",
-        _constant_field_file_size(len(video.raw_payload)),
-    )
-    monkeypatch.setattr(
-        sm,
-        "iter_field_file_bytes",
-        _field_file_payload_reader(video.raw_payload),
-    )
-    monkeypatch.setattr(
-        sm,
-        "_transcode_streamable_mp4",
-        _fake_streamable_transcode(video.raw_streamable_payload),
     )
 
     target = streamable_roots.raw_root / f"{video.raw_video_hash}.mp4"

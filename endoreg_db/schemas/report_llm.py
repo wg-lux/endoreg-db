@@ -14,6 +14,7 @@ from pydantic import (
     StrictBool,
     TypeAdapter,
     field_validator,
+    model_validator,
 )
 
 
@@ -45,10 +46,59 @@ class ReportLlmReimportRequestPayload(BaseModel):
     retry: StrictBool = True
 
 
+class ReportImportAttemptReference(BaseModel):
+    """Identity of a native-authorized attempt, never a second lifecycle state."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    content_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    fencing_token: int = Field(ge=1)
+    owner_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    reused: bool = False
+    extraction_attempt_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{32}$")
+    staged_artifact_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_validator(mode="after")
+    def validate_extraction_binding(self) -> ReportImportAttemptReference:
+        if (self.extraction_attempt_id is None) != (
+            self.staged_artifact_sha256 is None
+        ):
+            raise ValueError(
+                "extraction identity and artifact digest must appear together"
+            )
+        if not self.reused and self.extraction_attempt_id != self.owner_id:
+            raise ValueError(
+                "fresh extraction receipt must belong to the claimed owner"
+            )
+        return self
+
+
+class ReportCompletionProjection(BaseModel):
+    """Read-only evidence classification; canonical_status comes from the attempt."""
+
+    model_config = ConfigDict(extra="forbid", strict=True, frozen=True)
+
+    attempt: Literal[
+        "current",
+        "superseded",
+        "legacy_unverified",
+        "missing",
+        "invalid",
+        "not_recorded",
+    ]
+    canonical_status: str | None = None
+    extraction: Literal["validated", "legacy_unverified", "invalid"] = (
+        "legacy_unverified"
+    )
+    extraction_outcome: Literal["findings", "empty", "fallback"] | None = None
+    provider_failure: str | None = None
+
+
 class ReportLlmJobResult(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     schema_version: Literal["1.0"] = REPORT_LLM_JOB_SCHEMA_VERSION
+    attempt_reference: ReportImportAttemptReference | None = None
     upload_job_id: str | None = None
     pdf_id: int | None = Field(default=None, ge=1)
     pdf_hash: str | None = None

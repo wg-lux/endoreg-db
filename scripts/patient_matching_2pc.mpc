@@ -1,0 +1,67 @@
+"""Synthetic MP-SPDZ v0.4.4 binary-circuit experiment; never clinical use.
+
+Compile arguments: key byte length, payload byte length, candidate count,
+public epoch hex (HMAC-SHA256(key, b'endoreg-identity-salt-v1')).
+Party 0 privately inputs key bytes then the 32-byte target tag; party 1
+privately inputs each pre-encoded JSON payload. Each byte is an integer.
+Only epoch validity and gated equality bits are opened, to BOTH parties.
+This does not authenticate inputs, validate JSON, bind UUIDs, or prove that
+the supplied candidate set is complete. Use the supported Tinier engine;
+the tested release's Tiny engine aborted during oblivious-transfer setup.
+"""
+
+from Compiler.GC.types import sbit, sbits, sbitvec
+from Compiler.circuit import sha256
+from Compiler.library import for_range, print_ln
+
+key_size, payload_size, count = map(int, program.args[1:4])
+epoch_hex = program.args[4]
+if not (1 <= key_size <= 1024 and 1 <= payload_size <= 4096 and 1 <= count <= 100):
+    raise ValueError("Synthetic experiment exceeds its public size limits")
+if len(epoch_hex) != 64 or any(c not in "0123456789abcdef" for c in epoch_hex):
+    raise ValueError("Expected canonical public key-epoch hex")
+
+
+def private_bytes(owner, size):
+    return [bit for _ in range(size) for bit in reversed(
+        sbits.get_type(8).get_input_from(owner).bit_decompose())]
+
+
+def public_bytes(value):
+    return [sbit((byte >> shift) & 1) for byte in value for shift in range(7, -1, -1)]
+
+
+def digest(bits):
+    # The library accepts most-significant-bit-first input, returns reversed bits.
+    return list(reversed(sha256(sbitvec.from_vec(bits)).v))
+
+
+def equal(left, right):
+    result = sbit(1)
+    for a, b in zip(left, right):
+        result = result & (1 ^ a ^ b)
+    return result
+
+
+key = private_bytes(0, key_size)
+target = private_bytes(0, 32)
+if key_size > 64:
+    key = digest(key)
+key += [sbit(0)] * (512 - len(key))
+ipad = [bit ^ ((0x36 >> (7 - i % 8)) & 1) for i, bit in enumerate(key)]
+opad = [bit ^ ((0x5c >> (7 - i % 8)) & 1) for i, bit in enumerate(key)]
+
+
+def hmac_sha256(message):
+    return digest(opad + digest(ipad + message))
+
+
+epoch_valid = equal(hmac_sha256(public_bytes(b"endoreg-identity-salt-v1")),
+                    public_bytes(bytes.fromhex(epoch_hex)))
+print_ln("epoch_valid=%s", epoch_valid.reveal())
+
+
+@for_range(count)
+def candidate(index):
+    actual = hmac_sha256(private_bytes(1, payload_size))
+    print_ln("candidate=%s match=%s", index, (equal(actual, target) & epoch_valid).reveal())

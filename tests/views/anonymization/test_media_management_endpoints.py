@@ -3,7 +3,10 @@ from __future__ import annotations
 from uuid import uuid4
 from pathlib import Path
 
-from django.test import TestCase
+import pytest
+from django.test import Client, TestCase
+from endoreg_db.models.state.video import VideoState
+from endoreg_db.models.state.raw_pdf import RawPdfState
 from django.core.files.base import ContentFile
 
 from endoreg_db.models import Center, RawPdfFile, UploadJob, VideoFile
@@ -223,3 +226,76 @@ class MediaManagementEndpointTests(TestCase):
         assert payload["file_type"] == "video"
         assert payload["file_id"] == self.video.pk
         assert payload["new_status"] == "not_started"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("media_type", ["video", "pdf"])
+@pytest.mark.parametrize(
+    "flags,bucket",
+    [
+        ({}, "not_started"),
+        ({"processing_error": True, "anonymization_validated": True}, "failed"),
+        ({"anonymization_validated": True}, "validated"),
+        ({"sensitive_meta_processed": True}, "done"),
+        ({"processing_started": True, "frames_extracted": True}, "processing"),
+    ],
+)
+def test_media_stats_use_canonical_state(
+    client: Client, media_type: str, flags: dict[str, bool], bucket: str
+) -> None:
+    center = Center.objects.create(name="canonical-statistics")
+    if media_type == "video":
+        VideoFile.objects.create(
+            center=center,
+            raw_video_hash=uuid4().hex,
+            state=VideoState.objects.create(was_created=False, **flags),
+        )
+    else:
+        report_flags = {
+            key: value for key, value in flags.items() if key != "frames_extracted"
+        }
+        RawPdfFile.objects.create(
+            center=center,
+            pdf_hash=uuid4().hex,
+            anonymized_text="Reviewed text",
+            state=RawPdfState.objects.create(**report_flags),
+        )
+    response = client.get("/api/media-management/status/")
+    assert response.status_code == 200
+    stats = response.json()["videos" if media_type == "video" else "pdfs"]
+    assert stats["total"] == 1
+    assert stats[bucket] == 1
+    assert stats["unfinished"] == int(bucket not in {"done", "validated"})
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("media_type", ["video", "pdf"])
+@pytest.mark.parametrize("failed", [False, True])
+def test_reset_returns_persisted_canonical_status(
+    client: Client, media_type: str, failed: bool
+) -> None:
+    center = Center.objects.create(name="canonical-reset")
+    flags = dict(
+        processing_error=failed,
+        anonymization_validated=True,
+        sensitive_meta_processed=True,
+        anonymized=True,
+    )
+    if media_type == "video":
+        media = VideoFile.objects.create(
+            center=center,
+            raw_video_hash=uuid4().hex,
+            state=VideoState.objects.create(**flags),
+        )
+    else:
+        media = RawPdfFile.objects.create(
+            center=center,
+            pdf_hash=uuid4().hex,
+            state=RawPdfState.objects.create(**flags),
+        )
+    response = client.post(f"/api/media-management/reset-status/{media.pk}/")
+    assert response.status_code == 200
+    media.refresh_from_db()
+    assert media.state is not None
+    assert response.json()["new_status"] == media.state.anonymization_status.value
+    assert response.json()["new_status"] == ("failed" if failed else "not_started")

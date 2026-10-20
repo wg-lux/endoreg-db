@@ -14,6 +14,9 @@ from lx_dtypes.models.contracts.examination_revision import (
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonScalar, JsonValue
 from openpyxl import Workbook
 
+from endoreg_db.services.privacy.response_boundary import (
+    reject_transferred_identity_hashes,
+)
 from endoreg_db.models.administration.case.case import Case
 from endoreg_db.models.medical.patient.examination_revision import CaseExaminationRecord
 from endoreg_db.services.cases.examination_revisions import (
@@ -59,7 +62,7 @@ def _leaves(
 def selected_case_export(case: Case) -> JsonObject:
     case = Case.objects.select_for_update().get(pk=case.pk)
     assert_case_examinations_complete(case)
-    if case.is_deleted or case.patient.is_real_person or not case.patient.patient_hash:
+    if case.is_deleted or case.patient.is_real_person:
         raise ValueError("Research export requires an available pseudonymous case.")
     records: list[JsonValue] = []
     for selected in (
@@ -87,10 +90,10 @@ def selected_case_export(case: Case) -> JsonObject:
             }
         )
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "generated_at": timezone.now().isoformat(),
         "case_id": str(case.case_id),
-        "patient_pseudonym": case.patient.patient_hash,
+        "patient_id": case.patient.pk,
         "center_key": case.patient.center.center_key if case.patient.center else None,
         "is_closed": case.is_closed,
         "examinations": records,
@@ -99,6 +102,7 @@ def selected_case_export(case: Case) -> JsonObject:
 
 def case_export_workbook(payload: JsonObject | list[JsonObject]) -> bytes:
     """One row per repeated clinical value; IDs join every sheet without text splitting."""
+    reject_transferred_identity_hashes(payload)
     payloads = payload if isinstance(payload, list) else [payload]
     # Validate the complete export before writing any workbook XML. Strict JSON
     # validation accepts serialized UUID/date fields without coercing numeric IDs.
@@ -138,7 +142,7 @@ def case_export_workbook(payload: JsonObject | list[JsonObject]) -> bytes:
     payloads = [cast(JsonObject, item.model_dump(mode="json")) for item in documents]
     workbook = Workbook(write_only=True)
     sheets = {
-        "Cases": ["case_id", "patient_pseudonym", "center_key", "is_closed"],
+        "Cases": ["case_id", "patient_id", "center_key", "is_closed"],
         "Case examinations": ["case_id", "patient_examination_id", "revision_id"],
         "Examinations": [
             "patient_examination_id",

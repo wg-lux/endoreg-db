@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/migrate_legacy_hashes.py
+  role: Strict atomic identity HMAC migration with write-free dry-run diffs and private reviewed-source input.
+- file: commands/rotate_identity_salt.py
+  role: Private review-file parsing and command adapter for whole-run identity salt migration.
 - file: commands/load_base_db_data.py
   role: Canonical base reference-data command.
 - file: commands/setup_endoreg_db.py

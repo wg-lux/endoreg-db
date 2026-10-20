@@ -149,12 +149,13 @@ def test_live_storage_observes_keyring_and_keeps_stream_generation(
 
 
 def test_default_salt_is_only_explicit_retiring_material(tmp_path: Path) -> None:
-    path = write_ring(tmp_path, b"new-test-salt", (b"default_salt",), kind="identity")
+    active = bytes(range(32)).hex().encode()
+    path = write_ring(tmp_path, active, (b"default_salt",), kind="identity")
     with pytest.raises(ValueError, match="explicitly enrolled"):
         load_keyring(path, kind="identity")
     path = write_ring(
         tmp_path,
-        b"new-test-salt",
+        active,
         (b"default_salt",),
         kind="identity",
         allow_legacy=True,
@@ -163,7 +164,7 @@ def test_default_salt_is_only_explicit_retiring_material(tmp_path: Path) -> None
     path = write_ring(
         tmp_path,
         b"default_salt",
-        (b"new-test-salt",),
+        (active,),
         kind="identity",
         allow_legacy=True,
     )
@@ -180,23 +181,21 @@ def test_keyring_rejects_public_files_and_duplicate_keys(tmp_path: Path) -> None
         load_keyring(path, kind="master")
 
 
-def test_signing_overlap_and_compromised_key_revocation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("retain_previous", [True, False])
+def test_signing_rotation_rejects_previous_signatures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retain_previous: bool
 ) -> None:
     old, new = b"old-test-signing-material" * 3, b"new-test-signing-material" * 3
     signed = Signer(key=old.decode(), fallback_keys=[]).sign("test-session")
-    path = write_ring(tmp_path, new, (old,), kind="signing")
+    path = write_ring(tmp_path, new, (old,) if retain_previous else (), kind="signing")
     monkeypatch.setenv("DJANGO_SIGNING_KEYRING_FILE", str(path))
     keys = configured_signing_keys()
     assert keys is not None
-    assert (
-        Signer(key=keys[0], fallback_keys=[*keys[1]]).unsign(signed) == "test-session"
-    )
-    write_ring(tmp_path, new, (), kind="signing")
-    keys = configured_signing_keys()
-    assert keys is not None
+    assert keys == (new.decode(), [])
+    signer = Signer(key=keys[0], fallback_keys=[*keys[1]])
+    assert signer.unsign(signer.sign("test-session")) == "test-session"
     with pytest.raises(BadSignature):
-        Signer(key=keys[0], fallback_keys=[*keys[1]]).unsign(signed)
+        signer.unsign(signed)
 
 
 def test_authoritative_hash_rejects_missing_complete_chunks(tmp_path: Path) -> None:

@@ -76,9 +76,8 @@ def test_same_hash_groups_follow_up_examinations_into_one_case(
     # Assert
     assert len(rows) == 1
     row = rows[0]
-    assert row["patient_hash"] == "shared-identity"
+    assert row["patient_id"] == follow_up.patient_id
     assert row["patient_examination_ids"] == [20, 10]
-    assert row["case_hashes"] == ["follow-up-examination", "initial-examination"]
     assert [item["examination_date"] for item in row["examinations"]] == [
         "2026-09-01",
         "2026-01-01",
@@ -140,7 +139,7 @@ def test_different_hashes_keep_cases_separate_despite_matching_demographics() ->
 
     # Assert
     assert len(rows) == 2
-    assert [row["patient_hash"] for row in rows] == ["identity-a", "identity-b"]
+    assert [row["patient_id"] for row in rows] == [1, 2]
     assert [row["patient_examination_ids"] for row in rows] == [[1], [2]]
     assert [[video["id"] for video in row["videos"]] for row in rows] == [[1], [2]]
 

@@ -23,7 +23,7 @@ files:
 - file: presets.py
   role: Atomic host projection of explicitly selected terminology presets.
 - file: revision_export.py
-  role: Strictly validated normalized research tables from selected immutable examinations; reject identity conflicts and lossy Excel values.
+  role: Research export contract 2.0 and workbook validation using local patient IDs; reject identity hashes before publication.
 - file: table_import.py
   role: Atomic table import using canonical identity, clinical and media services.
 - file: table_mappings.py
@@ -38,6 +38,7 @@ dependencies:
   - endoreg_db/services/centers
   - endoreg_db/services/reference_data
   - endoreg_db/services/reports
+  - endoreg_db/services/privacy
   - endoreg_db/utils
   external:
   - django

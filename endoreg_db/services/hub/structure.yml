@@ -48,7 +48,7 @@ files:
 - file: network_nodes.py
   role: Exports create_network_node, update_network_node, delete_network_node.
 - file: payloads.py
-  role: Internal helpers and compatibility imports.
+  role: Recursive source-identity transfer prohibition and compatibility imports.
 - file: preanonymized_metadata.py
   role: Preanonymized metadata normalization and external patient identity linking.
 - file: quarantine.py
@@ -78,7 +78,7 @@ files:
 - file: transfer_logging.py
   role: Exports enabled, sanitize, section.
 - file: transfers.py
-  role: Exports create_or_reuse_transfer_job, authenticate_network_node, apply_transfer_metadata.
+  role: Version 5 persistent UUID linkage with authenticated source ownership and encrypted processed-media publication; retired plaintext attachment rejects before staging.
 - file: upload_job_cancellation.py
   role: Persist import cancellation intent; only the owning worker acknowledges it.
 - file: upload_job_files.py
@@ -103,6 +103,7 @@ dependencies:
   - endoreg_db/services/imports
   - endoreg_db/services/jobs
   - endoreg_db/services/media
+  - endoreg_db/services/privacy
   - endoreg_db/services/raw_pdf_files
   - endoreg_db/services/reports
   - endoreg_db/services/runtime
@@ -190,7 +191,7 @@ modules:
   upload_job_cancellation.py:
     owns: Cancellation intent and owner acknowledgement
   upload_job_state_machine.py:
-    owns: Validated job-state transitions
+    owns: Native-validated job-state transitions and expired-execution interruption paths
   upload_job_files.py:
     owns: Source and media artifact ledger registration
   cleanup.py:

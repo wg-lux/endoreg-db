@@ -8,9 +8,9 @@ boundaries:
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 files:
 - file: sensitive_meta.py
-  role: Sensitive identity persistence and retained compatibility methods.
+  role: Sensitive identity persistence; saves delegate verification invalidation to patient_identity and state aliases share is_verified.
 - file: sensitive_meta_logic.py
-  role: Existing identity workflow helpers; consult service boundaries before changes.
+  role: Existing identity helpers; delegates erased historical identity matching to secret_rotation services.
 - file: video_meta.py
   role: Video and encoder metadata.
 - file: pdf_meta.py
@@ -23,6 +23,7 @@ dependencies:
   internal:
   - endoreg_db/schemas
   - endoreg_db/services
+  - endoreg_db/utils
   external:
   - django
   - numpy

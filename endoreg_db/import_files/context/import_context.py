@@ -66,9 +66,12 @@ class ImportContext(BaseModel):
     center_name: str
     # Bind an implicitly selected local center even when display names collide.
     center_key: str | None = Field(default=None, min_length=1, max_length=255)
-    processor_name: str = "olympus-cv-500"
+    processor_name: str | None = None
 
+    # Effective recovery state, including a previously failed attempt.
     retry: bool = False
+    # Explicit caller intent to replace even a successfully imported result.
+    force_reprocess: bool = False
     import_completed: bool = False
     error_reason: str = ""
 
@@ -102,7 +105,6 @@ class ImportContext(BaseModel):
     current_video: SkipValidation[VideoFile | None] = None
     current_meta: LxSensitiveMeta | None = None
 
-    instance: SkipValidation[RawPdfFile | VideoFile | None] = None
     file_type: Literal["undefined", "video", "report"] = "undefined"
 
     file_hash: str | None = None
@@ -110,6 +112,27 @@ class ImportContext(BaseModel):
     original_text: str | None = None
     anonymized_text: str | None = None
     extracted_metadata: LxSensitiveMeta = Field(default_factory=LxSensitiveMeta)
+
+    @property
+    def instance(self) -> RawPdfFile | VideoFile | None:
+        """The bound media is authoritative, including after retry replacement."""
+        return (
+            self.current_report
+            if self.current_report is not None
+            else self.current_video
+        )
+
+    @field_validator("current_report", "current_video")
+    @classmethod
+    def _validate_exclusive_media(
+        cls, value: RawPdfFile | VideoFile | None, info: ValidationInfo
+    ) -> RawPdfFile | VideoFile | None:
+        other = (
+            "current_video" if info.field_name == "current_report" else "current_report"
+        )
+        if value is not None and info.data.get(other) is not None:
+            raise ValueError("Import context can bind only one media instance")
+        return value
 
     def require_execution_ownership(self) -> None:
         """Reject a superseded attempt before an import side effect."""
@@ -161,8 +184,10 @@ class ImportContext(BaseModel):
         cls,
         value: str | None,
         info: ValidationInfo,
-    ) -> str:
+    ) -> str | None:
         if value is None:
+            if info.field_name == "processor_name":
+                return None
             raise ValueError(f"{info.field_name} is required")
         stripped = value.strip()
         if not stripped:

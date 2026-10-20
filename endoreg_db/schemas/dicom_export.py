@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from endoreg_db.utils.hashs import get_bytes_hash
+
 from collections.abc import Mapping
-import hashlib
 import json
 from typing import cast
 
@@ -101,7 +102,7 @@ def dicom_export_manifest_sha256(value: object) -> str:
         separators=(",", ":"),
         ensure_ascii=True,
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 __all__ = [

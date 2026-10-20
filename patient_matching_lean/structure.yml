@@ -1,0 +1,32 @@
+version: 1
+tier: domain
+path: patient_matching_lean
+parent: ../structure.yml
+summary: Lean specification of exact tuple matching, disclosure limits and guarded UUID-link acceptance.
+responsibilities:
+- Specify functional matching and acceptance invariants independently of deployment.
+boundaries:
+- Backend refinement, authentic inputs and cryptographic simulation remain hypotheses.
+- Feature readiness belongs in feature-tracking/HubTransfer.yml.
+entrypoints:
+- name: Formal proof verification
+  file: verify.py
+  purpose: Build pinned Lean project and audit theorem axioms.
+files:
+- file: PatientMatching/Core.lean
+  role: Abstract matching and result classification.
+- file: PatientMatching/Workflow.lean
+  role: Immutable record references and single-result guarded acceptance.
+- file: PatientMatching/Privacy.lean
+  role: Conditional privacy composition and disclosure bounds.
+- file: PatientMatching/Counterexamples.lean
+  role: Output leakage examples and explicit backend-refinement obligation.
+- file: PatientMatchingProofs.lean
+  role: Generated standalone proof source.
+- file: README_DE.md
+  role: Supplied proof interpretation and trust assumptions.
+- file: lean-toolchain
+  role: Pinned Lean compiler version.
+contracts:
+- name: Guarded resolver
+  doc: feature-tracking/HubTransfer.yml

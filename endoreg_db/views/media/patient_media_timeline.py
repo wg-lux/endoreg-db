@@ -147,7 +147,6 @@ def _patient_ref(patient_obj: Patient | None) -> dict[str, TimelineValue] | None
     return {
         "id": cast(int | None, patient_obj.pk),
         "is_real_person": bool(getattr(patient_obj, "is_real_person", True)),
-        "patient_hash": cast(str | None, getattr(patient_obj, "patient_hash", None)),
         "first_name": cast(str | None, getattr(patient_obj, "first_name", None)),
         "last_name": cast(str | None, getattr(patient_obj, "last_name", None)),
         "dob": _safe_iso(cast(dt_date | None, getattr(patient_obj, "dob", None))),
@@ -164,7 +163,7 @@ def _active_video_file_name(video: VideoFile) -> str | None:
             exc,
         )
         return None
-    return cast(str | None, getattr(active_file, "name", None)) or None
+    return f"video-{video.pk}" if active_file else None
 
 
 def _segment_label_name(segment: LabelVideoSegment) -> str:
@@ -351,7 +350,6 @@ def _patient_payload(patient: Patient) -> dict[str, TimelineValue]:
         "last_name": cast(str | None, getattr(patient, "last_name", None)),
         "dob": _safe_iso(cast(dt_date | None, getattr(patient, "dob", None))),
         "is_real_person": bool(getattr(patient, "is_real_person", True)),
-        "patient_hash": cast(str | None, getattr(patient, "patient_hash", None)),
     }
 
 
@@ -632,7 +630,7 @@ def _report_timeline_item(
                 None,
             ),
         ),
-        "file_name": cast(str | None, getattr(report_file, "name", None)),
+        "file_name": f"report-{report.pk}.pdf" if report_file else None,
         "raw_pdf_id": cast(int | None, getattr(raw_pdf, "pk", None)),
         "patient_examination_id": cast(
             int | None,
@@ -775,11 +773,10 @@ def _pdf_timeline_item(
             ),
         ),
         "pdf_hash": cast(str | None, getattr(pdf, "pdf_hash", None)),
-        "file_name": cast(str | None, getattr(file_obj, "name", None)),
-        "processed_file_name": cast(
-            str | None,
-            getattr(processed_file_obj, "name", None),
-        ),
+        "file_name": f"report-{pdf.pk}.pdf" if file_obj else None,
+        "processed_file_name": f"report-{pdf.pk}-processed.pdf"
+        if processed_file_obj
+        else None,
         "full_report_id": _pdf_full_report_id(pdf, full_report),
         "document_type": cast(
             str | None,
@@ -901,10 +898,7 @@ def _video_timeline_item(
         ),
         "raw_video_hash": cast(str | None, getattr(video, "raw_video_hash", None)),
         "file_name": _active_video_file_name(video),
-        "original_file_name": cast(
-            str | None,
-            getattr(video, "original_file_name", None),
-        ),
+        "original_file_name": f"video-{video.pk}",
         "patient_examination_id": cast(
             int | None,
             getattr(patient_examination, "pk", None),

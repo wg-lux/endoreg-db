@@ -7,7 +7,7 @@ import subprocess
 import sys
 import time
 from datetime import UTC, datetime
-from hashlib import sha256
+from endoreg_db.utils.hashs import get_file_hash
 from collections.abc import Callable, Mapping
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -378,7 +378,7 @@ def _assert_runtime_readiness(config: OfflineBatchRunnerConfig) -> None:
 
 def _configuration_digest(config_path: Path) -> str:
     try:
-        return sha256(config_path.read_bytes()).hexdigest()
+        return get_file_hash(config_path)
     except OSError as exc:
         raise OfflineBatchConfigurationError(
             "Cannot read configuration while computing its audit digest."

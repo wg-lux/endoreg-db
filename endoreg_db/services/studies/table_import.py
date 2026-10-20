@@ -136,7 +136,7 @@ def _persist_row(
     source_hash: str,
 ) -> tuple[PatientExamination, bool, int, int]:
     meta = _identity(row, center)
-    patient_hash = meta.get_patient_hash()
+    patient_hash = meta.calculate_patient_hash()
     examination_hash = meta.get_patient_examination_hash()
     record = _scoped_record(row, owner, center)
     existing = (

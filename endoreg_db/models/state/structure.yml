@@ -9,6 +9,8 @@ boundaries:
 - Preserve concurrent operation ownership and canonical media generation identity; raw media export is
   prohibited.
 files:
+- file: sensitive_meta.py
+  role: Persist name/date-of-birth checks; derived is_verified and compatibility mutators delegate to the verification service.
 - file: video.py
   role: Video lifecycle state.
 - file: raw_pdf.py
@@ -25,6 +27,7 @@ dependencies:
   internal:
   - endoreg_db/schemas
   - endoreg_db/services
+  - endoreg_db/utils
   external:
   - django
 contracts:

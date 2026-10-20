@@ -56,9 +56,24 @@ the exporter must never fall back to raw media. Unvalidated, unavailable, failed
 or lost media fail closed. For most model-training runs, prefer
 `export_frames=true` and `export_videos=false`.
 
-API exports require authentication. Annotation data and anonymized processed
-exports may span centers because annotation datasets can combine material from
-multiple sites. Raw-video viewing remains independently center-scoped. In local
+Browser downloads and file exports share the integrity policy in
+`endoreg_db.services.media.export_policy`: the processed file must match
+`VideoFile.processed_video_hash`, and an existing export approval must refer to
+that same content. Local study-server approval requirements remain additional
+gates. Annotation manifests use the canonical processed content hash, not an
+independent copy of the approval hash. Both CSV outputs use the same text-cell
+encoding to escape spreadsheet formula prefixes.
+
+Each file-export invocation fixes its annotation selection once for the table,
+row count and media assets. It locks the selected video records in identifier
+order until the export finishes and rejects a generation change observed while
+acquiring those locks. This also fences generation replacement after a stream
+lease would expire. New playback lease acquisition and writes to those selected
+videos can wait for a long export; unrelated videos remain independent.
+
+API exports require authentication and access to the requested video's center.
+Annotation datasets can combine material from multiple sites within their
+authorized export scope. In local
 study-server mode, callers must still select exactly one center unless a staff
 user explicitly requests all centers; that is an explicit export selection
 rule, not an annotation ownership boundary.
@@ -216,7 +231,7 @@ With `output_dir: /data/endoreg-training/gastronet_run_001` and
 
 The annotation table columns are:
 
-- `annotation_id`, `video_id`, `video_hash`
+- `annotation_id`, `video_id`, `raw_video_hash`
 - `frame_id`, `frame_number`, `frame_relative_path`, `frame_timestamp`
 - `presentation_timestamp`, `presentation_time_seconds`
 - `stream_time_base_num`, `stream_time_base_den`, `timeline_version`

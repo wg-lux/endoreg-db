@@ -7,6 +7,7 @@ import hashlib
 import base64
 import os
 import tempfile
+from uuid import NAMESPACE_URL, uuid5
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
@@ -321,9 +322,9 @@ class HubTransferEndpointTests(TestCase):
             "width": 1280,
             "height": 720,
         }
-        patient_hash = self._sha256(b"site-a-patient")
-        examination_hash = self._sha256(
-            f"site-a-examination:{examination_date}".encode()
+        patient_uuid = str(uuid5(NAMESPACE_URL, "test:site-a-patient"))
+        examination_uuid = str(
+            uuid5(NAMESPACE_URL, f"test:site-a-examination:{examination_date}")
         )
         payload: dict[str, Any] = {
             "transfer_key": transfer_key,
@@ -336,12 +337,12 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "3.0",
+            "payload_schema_version": "5.0",
             "resource_rows": {
                 "video_file": video_file_payload,
                 "sensitive_meta": {
-                    "patient_hash": patient_hash,
-                    "examination_hash": examination_hash,
+                    "patient_uuid": patient_uuid,
+                    "examination_uuid": examination_uuid,
                 },
                 "video_state": {
                     "processing_started": True,
@@ -384,15 +385,17 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "3.0",
+            "payload_schema_version": "5.0",
             "resource_rows": {
                 "raw_pdf_file": {
                     "pdf_hash": pdf_hash,
                     "anonymized_text": "Anonymized clinical report",
                 },
                 "sensitive_meta": {
-                    "patient_hash": self._sha256(b"site-a-patient"),
-                    "examination_hash": self._sha256(b"site-a-examination:2026-03-20"),
+                    "patient_uuid": str(uuid5(NAMESPACE_URL, "test:site-a-patient")),
+                    "examination_uuid": str(
+                        uuid5(NAMESPACE_URL, "test:site-a-examination:2026-03-20")
+                    ),
                 },
                 "raw_pdf_state": {
                     "processing_started": True,
@@ -1478,7 +1481,7 @@ class HubTransferEndpointTests(TestCase):
         )
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfers_for_same_patient_join_by_sensitive_meta_hash_inputs(self):
+    def test_transfers_for_same_patient_join_by_persistent_uuid(self):
         first_payload = self._video_transfer_payload(
             transfer_key="site-a__video__join-1",
             raw_video_hash="join-hash-1",

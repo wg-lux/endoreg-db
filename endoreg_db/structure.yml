@@ -8,6 +8,10 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0103_patient_examination_uuid.py
+  role: Backfill unique persistent patient and examination UUIDs without changing local primary keys.
+- file: migrations/0102_patient_hash_alias.py
+  role: Add center-scoped historical patient hash aliases without backfilling unauthenticated identity links.
 - file: tasks.py
   role: Celery task adapters; there is no tasks directory.
 - file: api_urls.py
@@ -25,13 +29,11 @@ files:
 - file: migrations/__init__.py
   role: Schema migrations package; review schema changes with owning model manifest.
 - file: export/frames/export_frames_with_labels.py
-  role: Frame export workflow compatibility boundary.
+  role: Frame export workflow with one annotation selection and shared media integrity and CSV encoding services.
 - file: helpers/data_loader.py
   role: Reference-data loader helpers.
 - file: factories/__init__.py
   role: Test fixture factories.
-- file: queries/__init__.py
-  role: Query helper package.
 - file: admin.py
   role: Django admin registration.
 entrypoints:

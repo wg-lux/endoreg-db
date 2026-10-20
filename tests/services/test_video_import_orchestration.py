@@ -1,3 +1,5 @@
+# pyright: reportPrivateUsage=false
+
 """Direct callers acquire real UploadJob ownership before expensive processing."""
 
 from pathlib import Path
@@ -33,10 +35,12 @@ def test_direct_import_owns_processing_and_terminal_state(
         *,
         execution_fence: ImportExecutionFence,
         retry: bool = False,
+        center_key: str | None = None,
     ) -> VideoFile:
         assert transaction.get_autocommit()
         assert Path(file_path).read_bytes() == source.read_bytes()
         assert center_name == center.name
+        assert center_key == center.center_key
         assert processor_name == "processor"
         assert retry is False
         job = UploadJob.objects.get(source_system="direct_video_import")
@@ -93,6 +97,7 @@ def test_reimport_preparation_is_owned_and_transactional(
     source.write_bytes(b"test reimport bytes")
     center = Center.objects.create(name="before", center_key="reimport")
     video = VideoFile.objects.create(center=center)
+    Center.objects.create(name="before", center_key="same-display-name")
     service = sut.VideoImportService()
 
     def context_names(_video: VideoFile) -> tuple[str, str]:
@@ -154,7 +159,7 @@ def test_direct_import_preserves_implicit_center_selection(
 
     source = tmp_path / "local.mp4"
     source.write_bytes(b"local source")
-    Center.objects.create(name="Shared name", center_key="other")
+    other = Center.objects.create(name="Shared name", center_key="other")
     selected = Center.objects.create(name="Shared name", center_key="selected")
     ApplicationSettings.objects.update_or_create(pk=1, defaults={"center": selected})
     service = sut.VideoImportService()
@@ -166,10 +171,20 @@ def test_direct_import_preserves_implicit_center_selection(
         *,
         execution_fence: ImportExecutionFence,
         retry: bool = False,
+        center_key: str | None = None,
     ) -> VideoFile:
-        # Passing a resolved display name would lose the stable key when
-        # several centers share that name. The core resolves this blank input.
-        assert center_name == ""
+        assert center_name == selected.name
+        assert center_key == selected.center_key
+        ApplicationSettings.objects.filter(pk=1).update(center=other)
+        ctx = service._create_import_context(
+            file_path,
+            center_name,
+            processor_name,
+            retry=retry,
+            center_key=center_key,
+            execution_fence=execution_fence,
+        )
+        assert ctx.center_key == selected.center_key
         assert (
             UploadJob.objects.get(source_system="direct_video_import").source_center
             == selected

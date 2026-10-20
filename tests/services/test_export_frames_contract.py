@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Generator, Iterator
 from contextlib import AbstractContextManager, contextmanager
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 import json
+import csv
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Literal, cast
 
 import pytest
+from django.db import OperationalError, close_old_connections, connection, transaction
 from django.db.models import QuerySet
 from django.test.utils import override_settings
 
@@ -35,6 +38,9 @@ from endoreg_db.schemas.video_storage import (
 )
 from endoreg_db.services.video_storage.contracts import evidence_as_json
 from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.services.media import export_policy
+from endoreg_db.services.media.csv_export import csv_lines
 
 
 class _FakeValuesList:
@@ -95,6 +101,7 @@ class _VideoState:
 class _VideoDouble:
     pk: int
     raw_video_hash: str = "raw-hash"
+    processed_video_hash: str = "a" * 64
     raw_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     processed_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     active_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
@@ -169,6 +176,11 @@ def test_export_videos_prefers_processed_artifact_over_raw(
     )
     monkeypatch.setattr(export_module.VideoFile.objects, "filter", filter_videos_by_id)
 
+    def hash_processed_file(_file: object) -> str:
+        return get_file_hash(processed_path)
+
+    monkeypatch.setattr(export_policy, "get_file_hash", hash_processed_file)
+    video.processed_video_hash = get_file_hash(processed_path)
     exported_count = export_module._export_videos_from_annotations(
         cast(QuerySet[ImageClassificationAnnotation], _FakeAnnotations(video.pk)),
         output_dir=output_dir,
@@ -202,6 +214,17 @@ def test_pts_dataset_forces_frames_from_processed_artifact() -> None:
 
     assert normalized.transcode_frames is True
     assert normalized.transcode_overwrite is True
+    assert normalized.use_frame_pk_paths is True
+
+
+def test_legacy_transcode_uses_matching_table_and_asset_names() -> None:
+    normalized = export_module._normalize_export_config(
+        export_module.export_config(
+            output_path="annotations.csv",
+            transcode_frames=True,
+            use_frame_pk_paths=None,
+        )
+    )
     assert normalized.use_frame_pk_paths is True
 
 
@@ -263,13 +286,15 @@ def test_segment_export_filters_nullable_provenance(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("approval_hash", ["a" * 64, "b" * 64, ""])
 def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     tmp_path: Path,
+    approval_hash: str,
 ) -> None:
     center = Center.objects.create(name="pts-export-center")
     state = VideoState.objects.create(
         anonymization_validated=True,
-        processed_file_sha256="a" * 64,
+        processed_file_sha256=approval_hash,
     )
     timeline = VideoTimelineContract(
         fps_num=30_000,
@@ -297,6 +322,8 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
         center=center,
         state=state,
         raw_video_hash="pts-export-video",
+        processed_video_hash="a" * 64,
+        processed_file="processed.mp4",
         fps=timeline.fps,
         duration=timeline.duration_seconds,
         frame_count=timeline.frame_count,
@@ -339,6 +366,19 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     )
 
     output_path = tmp_path / "annotations.json"
+    if approval_hash == "b" * 64:
+        with pytest.raises(ValueError, match="readiness proof|Videogeneration"):
+            export_module.export_frames_with_labels_to_json(
+                output_path,
+                export_profile="pts_dataset_v1",
+                video_id=video.pk,
+                information_source_name=source.name,
+                only_validated=False,
+                use_export_flags=False,
+                export_frames=False,
+            )
+        assert not output_path.exists()
+        return
     export_module.export_frames_with_labels_to_json(
         output_path,
         export_profile="pts_dataset_v1",
@@ -785,3 +825,227 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     assert captured_pts == [45_000, 144_224]
     assert (tmp_path / "frames" / "frame_51.jpg").read_bytes() == b"frame-0"
     assert (tmp_path / "frames" / "frame_52.jpg").read_bytes() == b"frame-1"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("output_format", ["csv", "json"])
+def test_export_job_uses_one_annotation_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="snapshot-center"),
+        raw_video_hash="snapshot-video",
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    label = Label.objects.create(name="snapshot-label")
+    source = InformationSource.objects.create(name="snapshot-source")
+    selected = ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=label,
+        information_source=source,
+        annotator="=formula",
+    )
+    original_writer = export_module._write_annotation_rows
+    asset_ids: list[int] = []
+
+    def write_then_change_selection(
+        path: Path,
+        rows: list[export_module.AnnotationRow],
+        *,
+        output_format: str,
+    ) -> Path:
+        result = original_writer(path, rows, output_format=output_format)
+        ImageClassificationAnnotation.objects.filter(pk=selected.pk).update(
+            annotator="changed"
+        )
+        ImageClassificationAnnotation.objects.create(
+            value=True,
+            frame=frame,
+            label=label,
+            information_source=source,
+            annotator="new",
+        )
+        return result
+
+    def capture_assets(
+        annotations: list[ImageClassificationAnnotation],
+        **kwargs: object,
+    ) -> export_module.ExportAssetResult:
+        asset_ids.extend(item.pk for item in annotations)
+        assert annotations[0].annotator == "=formula"
+        return {
+            "exported_video_count": 0,
+            "exported_frame_count": 1,
+            "video_output_dir": None,
+            "frame_output_dir": tmp_path / "frames",
+        }
+
+    monkeypatch.setattr(
+        export_module, "_write_annotation_rows", write_then_change_selection
+    )
+    monkeypatch.setattr(export_module, "_export_media_assets", capture_assets)
+    result = export_module.annotation_exporter_client().run_export(
+        export_module.export_config(
+            output_path=tmp_path / f"annotations.{output_format}",
+            output_format=cast(Literal["csv", "json"], output_format),
+            use_export_flags=False,
+            only_validated=False,
+        )
+    )
+    assert result.row_count == 1
+    assert asset_ids == [selected.pk]
+    if output_format == "json":
+        rows = json.loads(result.output_path.read_text())
+        assert rows[0]["annotator"] == "=formula"
+    else:
+        with result.output_path.open() as exported_file:
+            rows = list(csv.DictReader(exported_file))
+        assert rows[0]["annotator"] == "'=formula"
+
+
+@pytest.mark.parametrize(
+    "value", ["=formula", "+formula", "-formula", "@formula", "normal"]
+)
+def test_file_and_browser_csv_use_same_text_encoding(
+    tmp_path: Path, value: str
+) -> None:
+    row = cast(
+        export_module.AnnotationRow, dict.fromkeys(export_module.DEFAULT_FIELDNAMES)
+    )
+    row["annotator"] = value
+    output = export_module._write_annotation_rows(
+        tmp_path / "annotations.csv", [row], output_format="csv"
+    )
+    assert output.read_bytes().decode() == "".join(
+        csv_lines(
+            [
+                export_module.DEFAULT_FIELDNAMES,
+                [row[name] for name in export_module.DEFAULT_FIELDNAMES],
+            ]
+        )
+    )
+
+
+@pytest.mark.django_db
+def test_snapshot_rejects_generation_changed_before_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="changed-generation-center"),
+        raw_video_hash="changed-generation-video",
+        processed_video_hash="a" * 64,
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=Label.objects.create(name="changed-generation-label"),
+    )
+    original_select_for_update = VideoFile.objects.select_for_update
+
+    def replace_before_lock() -> QuerySet[VideoFile]:
+        VideoFile.objects.filter(pk=video.pk).update(processed_video_hash="b" * 64)
+        return original_select_for_update()
+
+    monkeypatch.setattr(VideoFile.objects, "select_for_update", replace_before_lock)
+    with pytest.raises(ValueError, match="generation changed"):
+        export_module._snapshot_annotations(ImageClassificationAnnotation.objects.all())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_export_snapshot_locks_generation_until_transaction_finishes() -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("PostgreSQL row locking is required")
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="locked-generation-center"),
+        raw_video_hash="locked-generation-video",
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=Label.objects.create(name="locked-generation-label"),
+    )
+
+    def attempt_publication_lock() -> bool:
+        close_old_connections()
+        try:
+            with transaction.atomic():
+                VideoFile.objects.select_for_update(nowait=True).get(pk=video.pk)
+            return True
+        except OperationalError:
+            return False
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with transaction.atomic():
+            selected = export_module._snapshot_annotations(
+                export_module._build_annotations_queryset().filter(frame__video=video)
+            )
+            assert len(selected) == 1
+            assert executor.submit(attempt_publication_lock).result(timeout=5) is False
+        assert executor.submit(attempt_publication_lock).result(timeout=5) is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("output_format", ["csv", "json"])
+def test_direct_export_reuses_selection_after_transcode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="direct-snapshot-center"),
+        raw_video_hash="direct-snapshot-video",
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    label = Label.objects.create(name="direct-snapshot-label")
+    source = InformationSource.objects.create(name="direct-snapshot-source")
+    selected = ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=label,
+        information_source=source,
+        annotator="original",
+    )
+
+    def transcode_then_change_selection(
+        annotations: list[ImageClassificationAnnotation],
+        **kwargs: object,
+    ) -> None:
+        assert [item.pk for item in annotations] == [selected.pk]
+        ImageClassificationAnnotation.objects.filter(pk=selected.pk).update(
+            annotator="changed"
+        )
+        ImageClassificationAnnotation.objects.create(
+            value=True, frame=frame, label=label, information_source=source
+        )
+
+    monkeypatch.setattr(
+        export_module,
+        "transcode_videos_for_annotations",
+        transcode_then_change_selection,
+    )
+    writer = (
+        export_module.export_frames_with_labels_to_json
+        if output_format == "json"
+        else export_module.export_frames_with_labels_to_csv
+    )
+    output = writer(
+        tmp_path / f"annotations.{output_format}",
+        video_id=video.pk,
+        transcode_frames=True,
+        use_export_flags=False,
+        only_validated=False,
+    )
+    if output_format == "json":
+        rows = json.loads(output.read_text())
+    else:
+        with output.open() as exported_file:
+            rows = list(csv.DictReader(exported_file))
+    assert len(rows) == 1
+    assert rows[0]["annotator"] == "original"

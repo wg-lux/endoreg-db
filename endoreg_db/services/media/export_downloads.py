@@ -2,10 +2,8 @@
 
 from __future__ import annotations
 
-import csv
-import io
 from itertools import chain
-from collections.abc import Iterable, Iterator, Sequence
+from collections.abc import Iterable, Iterator
 from time import monotonic
 
 from django.db import transaction
@@ -13,37 +11,17 @@ from django.db import transaction
 from endoreg_db.config.env import get_media_operation_stream_lease_seconds
 from endoreg_db.export.frames.export_frames_with_labels import (
     DEFAULT_FIELDNAMES,
-    assert_video_media_export_ready,
     video_annotation_download_rows,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import CanonicalTimelineHistoryEntry
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
-from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.services.media.export_policy import assert_video_media_export_ready
+from endoreg_db.services.media.csv_export import csv_lines as csv_lines
 
 
 def validate_video_download(video: VideoFile, *, verify_content: bool = True) -> None:
-    if video.state is None:
-        raise ValueError("Die Anonymisierungsfreigabe fehlt.")
-    assert_video_media_export_ready(video, verify_content=False)
-    if not video.processed_file:
-        raise ValueError("Das anonymisierte Video ist nicht verfügbar.")
-    if video.meta and video.meta.get("integrity_status") == "lost":
-        raise ValueError("Das Video ist als verloren markiert.")
-    actual_hash = (
-        get_file_hash(video.processed_file)
-        if verify_content
-        else video.processed_video_hash
-    )
-    if not video.processed_video_hash or actual_hash != video.processed_video_hash:
-        raise ValueError(
-            "Die Integritätsprüfung des anonymisierten Videos ist fehlgeschlagen."
-        )
-    if (
-        video.state.processed_file_sha256
-        and video.state.processed_file_sha256 != actual_hash
-    ):
-        raise ValueError("Die Exportfreigabe gehört zu einer anderen Videogeneration.")
+    assert_video_media_export_ready(video, verify_content=verify_content)
 
 
 def leased_video_bytes(video: VideoFile, chunks: Iterable[bytes]) -> Iterator[bytes]:
@@ -67,25 +45,6 @@ def leased_video_bytes(video: VideoFile, chunks: Iterable[bytes]) -> Iterator[by
                 validate_video_download(current, verify_content=False)
             renewed_at = monotonic()
         yield chunk
-
-
-def csv_lines(rows: Iterable[Sequence[object]]) -> Iterator[str]:
-    """Encode bounded rows, protecting text cells against spreadsheet formulas."""
-    buffer = io.StringIO(newline="")
-    writer = csv.writer(buffer)
-    for row in rows:
-        writer.writerow(
-            [
-                "'" + value
-                if isinstance(value, str)
-                and value.startswith(("=", "+", "-", "@", "\t", "\r", "\n"))
-                else value
-                for value in row
-            ]
-        )
-        yield buffer.getvalue()
-        buffer.seek(0)
-        buffer.truncate(0)
 
 
 def annotation_csv(video: VideoFile, *, use_export_flags: bool) -> Iterator[str]:

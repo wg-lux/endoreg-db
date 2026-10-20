@@ -19,7 +19,11 @@ from endoreg_db.models import (
     Label,
     PortalUserInfo,
     VideoFile,
+    VideoProcessingHistory,
     VideoState,
+)
+from endoreg_db.services.annotations.segment_validation_workflow import (
+    blackening_history_config,
 )
 from endoreg_db.utils.file_operations import atomic_write_file
 
@@ -567,3 +571,54 @@ class ExportAnnotatedContractTests(TestCase):
 
         assert response.status_code == 200, response.content
         assert captured["config"].video_id == self.video.pk
+
+    def test_video_specific_export_rejects_cleanup_history_despite_validated_flags(
+        self,
+    ) -> None:
+        self.state.segment_annotations_created = True
+        self.state.segment_annotations_validated = True
+        self.state.save()
+        for history_status in (
+            VideoProcessingHistory.STATUS_PENDING,
+            VideoProcessingHistory.STATUS_RUNNING,
+            VideoProcessingHistory.STATUS_FAILURE,
+        ):
+            with self.subTest(history_status=history_status):
+                VideoProcessingHistory.objects.create(
+                    video=self.video,
+                    operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+                    status=history_status,
+                    config=blackening_history_config(only_validated=False),
+                )
+                captured: dict[str, export_config] = {}
+                with patch(
+                    "endoreg_db.services.media.export_annotated.annotation_exporter_client",
+                    return_value=_FakeExporterClient(captured),
+                ):
+                    response = self.client.post(
+                        "/api/media/videos/export-annotated/",
+                        data=self._valid_payload(use_export_flags=False),
+                        content_type="application/json",
+                    )
+                assert response.status_code == 409, response.content
+                assert "config" not in captured
+
+    def test_video_specific_export_rejects_validated_flags_without_cleanup(
+        self,
+    ) -> None:
+        self.state.segment_annotations_created = True
+        self.state.segment_annotations_validated = True
+        self.state.outside_segments_removed = False
+        self.state.save()
+        captured: dict[str, export_config] = {}
+        with patch(
+            "endoreg_db.services.media.export_annotated.annotation_exporter_client",
+            return_value=_FakeExporterClient(captured),
+        ):
+            response = self.client.post(
+                "/api/media/videos/export-annotated/",
+                data=self._valid_payload(use_export_flags=False),
+                content_type="application/json",
+            )
+        assert response.status_code == 409, response.content
+        assert "config" not in captured

@@ -25,6 +25,116 @@ source_documents:
   disposition: reference
   note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
 definition_of_done:
+- id: report_extraction_outcome_rust_authority
+  category: data_integrity
+  title: Report success distinguishes extraction outcomes through Rust-authoritative state transitions
+  acceptance:
+  - Distinguish successful extraction with findings, successful extraction without findings, an explicitly
+    permitted deterministic fallback, and provider or extraction failure as typed evidence; an empty dictionary
+    or Celery True return is not completion evidence.
+  - Rust remains the single source of truth for lifecycle states, event validation and deterministic transitions
+    through the existing native lifecycle core and typed bindings. Python orchestrates fenced persistence
+    and side effects; lx-dtypes validates exchanged evidence, and neither defines a competing state machine
+    or success flag.
+  - Reuse the existing report import lifecycle adapter and canonical persisted attempt. Extend the native
+    contract first if new transition semantics are required, and fail closed on a missing or incompatible
+    required native core rather than introducing a Python production fallback.
+  - Preserve the explicit spaCy/regex policy in report_spacy_fallback_without_llm. If a provider fails
+    after readiness selection, record actual backend and failure evidence; completion requires a permitted
+    fallback that itself passed validation, otherwise use the existing Rust-authorized failure/retry path
+    without publishing apparent success.
+  - Artifact parsing, hash validation, metadata validation, ownership fencing and publication evidence
+    remain required independently of extraction outcome; task results, monitoring and API projections
+    derive completion from the canonical persisted attempt after the Rust-authorized transition.
+  - Native and Python integration regressions cover findings, valid empty extraction, permitted fallback,
+    provider failure after a successful readiness probe, fallback failure, invalid artifacts, stale ownership,
+    retry and duplicate delivery without contradictory completion projections.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review against LongRunningServiceStateMachines.yml rust_transition_core and the native
+      lifecycle contract; run native transition tests, strict Pyright, report import/state-machine/fencing
+      tests and packaged-worker failure injection. Verify that one persisted attempt determines all completion
+      projections.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: lx-data-models/lx_dtypes/models/contracts/report_anonymization.py; endoreg_db/import_files/processing/report_processing/report_anonymization.py;
+        endoreg_db/schemas/persisted_json.py
+    - kind: test
+      reference: '2026-10-16: PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer:/home/admin/endoreg-db
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/import_files/test_report_anonymization_contract.py
+        tests/services/test_report_import_state_machine.py tests/services/test_report_import_fencing.py
+        tests/services/test_report_import_service_unit.py tests/import_files/test_report_finalize_success.py
+        tests/services/test_report_llm_jobs.py -q --tb=short: 153 passed, 133 warnings in 244.51s. Shared
+        contract tests 18 passed after valid-empty-provider fallback correction.'
+    - kind: command
+      reference: '2026-10-16: Full Pyright before receipt edits: 0 errors, 20 warnings; final focused
+        changed adapter/schema/tests: 0 errors, 4 external missing-stub warnings. Native lifecycle cargo
+        tests: 4 passed with explicit project Python libpython3.12 linkage; ordinary extension-module
+        test link failed with unresolved Python symbols. Both structure linters and scoped Ruff checks
+        pass.'
+    - kind: document
+      reference: docs/report_import_concurrency_implementation.md; lx-data-models/docs/guides/package_boundary.md
+    - kind: test
+      reference: '2026-10-16 final new receipt/producer-host native transition checks: same PYTHONPATH
+        and RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false, pytest tests/import_files/test_report_anonymization_contract.py
+        -k "producer_extraction or persisted_receipt or canonical_attempt" -q --tb=short: 7 passed, 24
+        deselected, 134 warnings in 91.33s. Verifies real producer extraction and public result construction
+        with isolated model/OCR boundaries, valid empty response, provider failure with validated empty
+        fallback, provider failure without fallback, native failure/success transitions, receipt not success
+        before finalization, owner binding, unrelated metadata retention, invalid receipt rejection and
+        transaction rollback. This is not a packaged-worker/full-publication test.'
+    - kind: command
+      reference: 'Test module origins: /home/admin/lx-data-models/lx_dtypes/__init__.py; /home/admin/lx-anonymizer/lx_anonymizer/__init__.py;
+        /home/admin/endoreg-db/endoreg_db/endoreg_rust_backend.cpython-312-x86_64-linux-gnu.so. Native
+        source tests used RUSTFLAGS="-L native=/nix/store/cxg5baah5wxnj50mhash68lgfyk3429q-python3-3.12.13/lib
+        -l python3.12" devenv shell cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml lifecycle_state
+        --lib: 4 passed.'
+    - kind: code
+      reference: endoreg_db/services/reports/completion.py; services/reports/import_fencing.py before_claim
+        admission; services/reports/import_lifecycle.py ReportJobAlreadyCompleted; services/jobs/report_llm_jobs.py;
+        schemas/report_llm.py; tests/services/test_report_completion.py. Fresh missing/wrong-owner evidence
+        rejected before finalization; legacy reuse explicit, no fabricated receipts.
+    - kind: test
+      reference: '2026-10-16 continuation: PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer:/home/admin/endoreg-db
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_report_completion.py
+        tests/services/test_report_llm_jobs.py tests/services/test_report_import_service_unit.py tests/services/test_report_import_fencing.py
+        tests/services/test_report_import_state_machine.py -q --tb=short:131passed1warning62.26s. Scoped
+        Pyright0errors1externalstubwarning; final2hook scoped Pyright0errors0warnings; scoped Ruff and
+        both structure linters pass.'
+    - kind: test
+      reference: '2026-10-16 installed wheels: /home/admin/.cache/lx-watcher-review/packaged-venv/bin/python
+        pre-imports endoreg_db,lx_dtypes,lx_anonymizer outside repository then pytest.main with absolute
+        repo config/test paths. All package origins and native backend confirmed isolated site-packages.
+        tests/services/test_report_completion.py:14passed1warning72.69s. tests/services/test_report_import_fencing.py
+        -k "second_claim_admission or duplicate_admission_precedes":2passed21deselected1warning50.42s.
+        Tests cover stale queued delivery for retry and reuse, typed refusal without retry/historical
+        mutation, explicit legacy reuse, artifact/receipt mismatch, and both pre-mutation admission points.
+        Deterministic interleavings, not a multi-process PostgreSQL concurrency claim.'
+    - kind: command
+      reference: Local candidate wheels built with python -m build (dtypes) and repository maturin build
+        --release workflow (endoreg) using explicit interpreter/tool paths, no environment synchronization.
+        dtypes0.5.4.dev1 SHA25694d0a5f8f95f133f9cc09ada59651052ca90127bab7706d12b9e6c896183a2ac; endoreg1.5.8.dev1
+        SHA25674e317f87cbbad1382a176dc6a08317917fb7a2975c462c8f6650245210993e2. Endoreg wheel attested
+        byte-identical to all8changed report production files. Shared environment was recreated/restored
+        by separately coordinated FSM work; final tests used isolated candidateenv, not published anonymizer1.0.8.
+    note: 'Local implementation and independent review cover v2 extraction evidence, owner-bound receipts,
+      immutable job attempt references, canonical task/API completion projections, explicit legacy reuse
+      and nonretryable historical/superseded refusal without mutation. Admission is checked under canonical
+      ownership before expiry/token mutation, including the second acquisition transaction, so stale queued
+      deliveries cannot invalidate the winning epoch. Rust alone authorizes lifecycle transitions; no
+      new Python state machine, database migration, historical backfill or production reimport. Stored
+      job.status remains historical; API completion_evidence is additive and existing frontend adoption
+      is not claimed. Remaining release gates: actual packaged endoreg Celery import-to-publication failure
+      injection (installed boundary/task tests are not a full worker lane), simultaneous multiprocess
+      PostgreSQL admission-race evidence, and coordinated unpublished candidate/lock resolution. Existing
+      lock edits preserved; no deployment or publication. Candidate versions lx-dtypes0.5.4.dev1/lx-anonymizer1.0.9.dev1/endoreg-db1.5.8.dev1
+      must be installed together.'
+    assessed_by: codex-endoreg-outcomes-20261016
+    assessed_at: '2026-10-16T07:54:04.361242Z'
 - id: ingest_helper_modules
   category: maintainability
   title: Ingest metadata helpers have discoverable owners and compatible historical imports
@@ -379,6 +489,16 @@ definition_of_done:
   - Video, Report, API, Watcher, Transfer und voranonymisierter Import besitzen einen persistierten, typisierten
     Versuch mit eindeutiger Medienart, Quellgeneration, Owner, Status und Attempt-ID.
   - Direkte Service- und Kommandoaufrufe umgehen Lease, Retry, Fencing, Publikation oder Cleanup nicht.
+  - Ein einmal aufgelöstes Importzentrum bleibt über seinen stabilen Schlüssel zwischen Upload-Auftrag
+    und Medienverarbeitung gebunden, auch wenn sich die lokale Zentrumsauswahl inzwischen ändert.
+  - Wiederverwendete Videos bestimmen den Anonymisierungsprozessor aus ihrer kanonischen Zuordnung; Kontext
+    und Maskierung dürfen keinen abweichenden Prozessor verwenden. Prozessor-Defaults haben eine gemeinsame
+    Auflösung und werden nicht als gerätespezifischer Kontext-Default dupliziert.
+  - Fehlerbehandlung und Bereinigung beziehen sich auf dieselbe aktuelle Medienreferenz wie die Verarbeitung;
+    widersprüchliche Kontextreferenzen werden abgelehnt oder ausschließlich abgeleitet.
+  - Explizit angeforderte Wiederverarbeitung und aus Fehlerhistorie erkannte Wiederholung haben eine eindeutige
+    Semantik ohne konkurrierende veränderbare Retry-Werte. Regressionen prüfen diese Fälle sowie Zentrumwechsel,
+    Prozessorabweichungen und den Wechsel der aktuellen Medienreferenz.
   - Der Vertrag benennt explizit, welche lokalen Locks nur Optimierungen und welche Datenbankzustände
     autoritative Cluster-Ownership sind.
   - Queued video reservations and running deliveries have distinct owner identities; same-task redelivery
@@ -427,17 +547,23 @@ definition_of_done:
     - kind: command
       reference: '2026-09-07 final full Pyright: 0 errors, 0 warnings. SQLite database-recovery/task/import-finalization/lease/video-import
         suite: 117 passed, 2 warnings; original focused recovery/backfill suite: 96 passed, 2 warnings.'
-    note: Video queued reservations now use queued-task:<id>; each delivery atomically receives execution-<UUID>
-      and a new fencing epoch. Same-task duplicates and legacy live owners are rejected; heartbeat alone
-      renews. Celery busy delivery raises typed lease-busy and retries at bounded heartbeat cadence, with
-      task-level max_retries=None, without changing upload retry_count. Completed jobs return idempotently
-      under the acquisition lock. Combined HLS/import/lease/dispatch lane 69 passed, final lease/dispatch/task
-      changes 29 passed, final task configuration 3 passed; Pyright clean. Full PostgreSQL process-level
-      locking and other report/legacy attempt paths remain unverified. Identified database recovery failures
-      now preserve source/lease/retry budget and propagate to unlimited Celery retries with 60-to-900-second
-      capped backoff. NOT NULL errors are no longer treated as duplicate content.
-    assessed_by: codex-gc05-20260907
-    assessed_at: '2026-09-07T09:38:15.188750Z'
+    - kind: command
+      reference: '2026-10-19 ImportContext SSOT: full Pyright 0 errors/24 existing warnings; scoped changed-file
+        Pyright 0 errors/0 warnings, final reanonymization fixtures 0 errors/1 existing warning. Ruff
+        and git diff --check pass; 65 structure manifests and 37 feature definitions valid.'
+    - kind: test
+      reference: '2026-10-19 devenv shell env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest:
+        test_import_context, test_storage_state_management, test_video_import_service_unit, test_video_import_orchestration,
+        test_video_import_transfer_identity, test_report_import_service_unit, test_report_finalize_success;
+        create_video_file::test_completed_video_without_processor_only_allows_reuse and ::test_reused_video_binds_canonical_processor;
+        test_video_import_service::test_reanonymize_transcode_failure_preserves_previous_canonical_video
+        and ::test_reanonymize_existing_video_skips_import_staging. 215 passed,1 warning,69.25s,exit0.
+        Covers stable center binding across default changes, canonical processor and forced-reuse refusal,
+        derived media reference and recovery without duplicate reset. Earlier full nine-module lane interrupted
+        intentionally after222passed,no failures,885s due repeated catalogue seeding; not a complete suite
+        result. No production readiness or deployment claim.'
+    assessed_by: codex-import-context-audit-20261019
+    assessed_at: '2026-10-19T08:36:56.313692Z'
 - id: video_finalization_fencing_receipt
   category: data_integrity
   title: Video-Finalisierung prüft Ownership und verlangt persistente Erfolgsevidenz
@@ -910,6 +1036,16 @@ definition_of_done:
         Full backend Pyright0errors6warnings; scoped typing/Ruff/structure pass.'
     - kind: document
       reference: feature-tracking/reports/gc10_import_incident_20261015.yml
+    - kind: test
+      reference: '2026-10-16: PATH=.devenv/profile/bin:$PATH LD_LIBRARY_PATH=.devenv/profile/lib PYTHONPATH=/home/admin/endoreg-db
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_lifecycle_state_machine.py
+        tests/services/test_import_monitoring.py tests/services/test_upload_job_state_machine.py tests/services/test_upload_job_import_lease.py
+        tests/services/test_upload_job_import_lease_postgresql.py tests/services/test_upload_job_cancellation.py
+        tests/services/test_hub_ingest_dispatch.py tests/views/anonymization/test_anonymization_overview.py
+        -q --tb=short: 261 passed, 1 plugin warning, 69.26s, no skips, exit 0; existing temporary-directory
+        cleanup warnings. Full Pyright before pytest: 0 errors, 24 warnings; final scoped seven changed
+        Python files: 0 errors, 0 warnings. Structure: 65 manifests valid. Native refusal and unexpected
+        result preserve ownership, cancellation intent and source; PostgreSQL concurrency regression included.'
     note: 'Bounded expired raw-video ownership reconciliation and durable interruption guards implemented/tested.
       No live job mutation; interrupted jobs retain media and require reviewed recovery, cancellation
       cleanup is not assumed.
@@ -934,9 +1070,15 @@ definition_of_done:
       - Keine Treiberaktivierung, kein Neustart und kein neues Anwendungspaket ausgerollt.
 
       - Verbleibende rote Felder für tatsächlich unvollständige oder unbelegte Zustände sind weiterhin
-      sachlich begründet.'
-    assessed_by: codex-docs-20261015-a
-    assessed_at: '2026-10-15T08:12:46.646607Z'
+      sachlich begründet.
+
+
+      2026-10-16: Abgelaufene Upload-Ausführung einschließlich ausstehender Abbruchabsicht wird vor jeder
+      Mutation durch Rust ownership_lost -> reconcile_fail autorisiert. Ablehnung und unerwarteter Endzustand
+      erhalten die gesamte Datenbankzeile und Quellbytes. ERROR/IMPORT_INTERRUPTED, Fencing, Abbruchabsicht
+      und Medienerhalt bleiben unverändert. Keine allgemeine Migration aller Zustandsmaschinen oder Produktionsfreigabe.'
+    assessed_by: codex-20261016-recovery-fsm
+    assessed_at: '2026-10-16T07:52:17.165173Z'
 - id: import_pipeline_operator_documentation
   category: documentation
   title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert

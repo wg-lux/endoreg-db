@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import importlib.metadata
 import json
 import os
@@ -234,9 +235,9 @@ def build_quality_evaluation_manifest(
 
 def _new_evaluation_run_context() -> _EvaluationRunContext:
     private_salt = secrets.token_hex(32)
-    run_digest = hashlib.sha256(
+    run_digest = get_bytes_hash(
         f"{private_salt}:{datetime.now(UTC).isoformat()}".encode("utf-8")
-    ).hexdigest()[:32]
+    )[:32]
     return _EvaluationRunContext(
         evaluation_run_id=run_digest,
         private_hash_salt=private_salt,
@@ -655,9 +656,9 @@ def _hash_identifier(
     namespace: str,
     value: str,
 ) -> str:
-    digest = hashlib.sha256(
+    digest = get_bytes_hash(
         f"{context.private_hash_salt}\0{namespace}\0{value}".encode("utf-8")
-    ).hexdigest()
+    )
     return f"evh_{digest[:32]}"
 
 

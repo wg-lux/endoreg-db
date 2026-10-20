@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import hashlib
 import os
 from collections.abc import Callable, Generator, Iterator
@@ -39,7 +41,7 @@ class RotationResult:
 
 @contextmanager
 def storage_write_lock(path: Path) -> Generator[None]:
-    name = hashlib.sha256(path.name.encode()).hexdigest()
+    name = get_bytes_hash(path.name.encode())
     with advisory_file_lock(lock_path=path.parent / f".lx-rotation-{name}.lock"):
         yield
 

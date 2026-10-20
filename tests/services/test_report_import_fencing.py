@@ -281,3 +281,49 @@ def test_report_heartbeat_preserves_database_recovery_exception(
         ReportImportAttempt.objects.get(content_hash=fence.content_hash).owner_id
         == fence.owner_id
     )
+
+
+def test_second_claim_admission_preserves_winner_epoch() -> None:
+    from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
+
+    first = acquire_report_import_fence("e" * 64)
+    with report_import_finalization_guard(first):
+        pass
+    before = ReportImportAttempt.objects.values().get(pk=first.content_hash)
+    admissions = 0
+
+    def winner_becomes_visible() -> None:
+        nonlocal admissions
+        admissions += 1
+        if admissions == 2:
+            raise ReportJobAlreadyCompleted("winner committed between admission checks")
+
+    with pytest.raises(ReportJobAlreadyCompleted):
+        acquire_report_import_fence(
+            first.content_hash, before_claim=winner_becomes_visible
+        )
+    assert admissions == 2
+    assert ReportImportAttempt.objects.values().get(pk=first.content_hash) == before
+
+
+def test_duplicate_admission_precedes_expired_owner_lost_mutation() -> None:
+    from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
+
+    first = acquire_report_import_fence("f" * 64)
+    ReportImportAttempt.objects.filter(pk=first.content_hash).update(
+        lease_expires_at=timezone.now() - timedelta(seconds=1)
+    )
+    before = ReportImportAttempt.objects.values().get(pk=first.content_hash)
+    admissions = 0
+
+    def reject_historical_delivery() -> None:
+        nonlocal admissions
+        admissions += 1
+        raise ReportJobAlreadyCompleted("historical delivery")
+
+    with pytest.raises(ReportJobAlreadyCompleted):
+        acquire_report_import_fence(
+            first.content_hash, before_claim=reject_historical_delivery
+        )
+    assert admissions == 1
+    assert ReportImportAttempt.objects.values().get(pk=first.content_hash) == before

@@ -46,6 +46,12 @@ from endoreg_db.services.video_files import (
 from endoreg_db.services.patient_identity.validated_media_identity import (
     commit_validated_media_identity,
 )
+from endoreg_db.schemas.sensitive_meta_verification import (
+    SensitiveMetaVerificationCommand,
+)
+from endoreg_db.services.patient_identity.verification import (
+    update_sensitive_meta_verification,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
@@ -378,16 +384,6 @@ def _build_pdf_validation_context(pdf: RawPdfFile) -> dict[str, object] | None:
 
     return {
         "sensitive_meta_id": validated_meta.pk,
-        "patient_hash_display": (
-            f"...{validated_meta.patient_hash[-8:]}"
-            if validated_meta.patient_hash
-            else None
-        ),
-        "examination_hash_display": (
-            f"...{validated_meta.examination_hash[-8:]}"
-            if validated_meta.examination_hash
-            else None
-        ),
         "pseudo_patient_id": validated_meta.pseudo_patient_id,
         "pseudo_examination_id": validated_meta.pseudo_examination_id,
     }
@@ -573,9 +569,8 @@ def _run_video_metadata_validation(
 def _ensure_video_sensitive_meta(
     *,
     video_obj: _VideoValidationLike,
-    initial_sensitive_meta: SensitiveMeta | None,
 ) -> SensitiveMeta | Response:
-    sensitive_meta = initial_sensitive_meta
+    sensitive_meta = video_obj.sensitive_meta
     if video_obj.sensitive_meta is None:
         sensitive_meta = SensitiveMeta.objects.create(center=video_obj.center)
         video_obj.sensitive_meta = sensitive_meta
@@ -607,9 +602,13 @@ def _finalize_video_validation(
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    update_sensitive_meta_verification(
+        sensitive_meta_id=sensitive_meta.pk,
+        command=SensitiveMetaVerificationCommand(
+            dob_verified=True, names_verified=True
+        ),
+    )
     state_obj.refresh_from_db()
-    state_obj.mark_dob_verified()
-    state_obj.mark_names_verified()
     resolution = commit_validated_media_identity(
         media_type="video",
         media_obj=video,
@@ -619,7 +618,6 @@ def _finalize_video_validation(
     sensitive_meta.create_anonymized_record()
     if video_obj.state is not None:
         video_obj.state.save(update_fields=["anonymized"])
-        state_obj.save()
     return resolution
 
 
@@ -681,7 +679,6 @@ def _validate_video(
 
     sensitive_meta = _ensure_video_sensitive_meta(
         video_obj=video_obj,
-        initial_sensitive_meta=initial_sensitive_meta,
     )
     if isinstance(sensitive_meta, Response):
         return sensitive_meta
@@ -810,9 +807,13 @@ def _finalize_pdf_validation(
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
+    update_sensitive_meta_verification(
+        sensitive_meta_id=sensitive_meta.pk,
+        command=SensitiveMetaVerificationCommand(
+            dob_verified=True, names_verified=True
+        ),
+    )
     state_obj.refresh_from_db()
-    state_obj.mark_dob_verified()
-    state_obj.mark_names_verified()
     resolution = commit_validated_media_identity(
         media_type="pdf",
         media_obj=pdf,
@@ -823,7 +824,6 @@ def _finalize_pdf_validation(
     if pdf_obj.state is not None:
         pdf_obj.state.mark_anonymized()
         pdf_obj.state.save(update_fields=["anonymized"])
-    state_obj.save()
     return resolution
 
 

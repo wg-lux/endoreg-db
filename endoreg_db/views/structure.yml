@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use snake_case API fields; parse requests at the boundary and delegate workflows to services.
 files:
+- file: patient_examination/patient_examination_detail.py
+  role: Examination detail and update adapter passing request authorization context to identity validation.
 - file: access_control.py
   role: Center-scoped access helpers.
 - file: case.py

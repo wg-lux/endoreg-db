@@ -9,6 +9,10 @@ responsibilities:
 boundaries:
 - Do not place secrets, patient information or parallel readiness records in messages.
 files:
+- file: reports/retired_media_paths_removal.yml
+  role: Consumer evidence and verification of explicitly retired media implementations and their exclusive tests.
+- file: reports/sensitive_meta_hash_security.md
+  role: German identity hash security analysis aligned with source-only policy; historical legacy findings remain dated.
 - file: reports/gc10_import_timing_20261015.yml
   role: Sanitized gc-10 phase timings and bounded decoder-thread comparison; no production readiness claim.
 - file: reports/gc10_import_incident_20261015.yml

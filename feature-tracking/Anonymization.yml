@@ -15,7 +15,245 @@ source_documents:
 - path: docs/configurable_ai_setup.md
   disposition: reference
   note: Configuration of the artificial intelligence components in use.
+- path: feature-tracking/reports/sensitive_meta_hash_security.md
+  disposition: reference
+  note: Lokale Identitätspolicy und aktuelle HMAC-Einordnung; datierte historische Befunde zu Legacy-Kollisionen.
 definition_of_done:
+- id: identity_hash_response_boundary
+  category: security
+  title: Identity hashes never leave through browser or export responses
+  acceptance:
+  - Patient and examination browser routes accept center-scoped local patient IDs, return no identity
+    hashes, and use resource IDs for displayed filenames; cohort grouping retains server-side hash matching.
+  - Both applications reject JSON and browser responses carrying patient, examination or case hashes,
+    shortened displays or identity fingerprints; error responses contain no rejected values.
+  - FHIR and research spreadsheet exports reject their hash-bearing contracts before publication; renamed
+    patient pseudonyms do not bypass the restriction.
+  - File-integrity checksums and approved binary media streaming remain available; blocked responses never
+    consume a deferred metadata stream.
+  required: true
+  verification:
+    kind: manual
+    instructions: Verify HTTP middleware, actual serializer payloads, FHIR and spreadsheet entrypoints,
+      and unchanged media streaming.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: 'Final backend response/transfer/keyring suite: 94 passed in 1.73s. Real patient/examination
+        serializer output, FHIR rejection, prepared workbook refusal, redacted errors, malformed/deep
+        JSON, non-consuming metadata streams, binary video streaming and file checksums tested. Focused
+        Pyright and Ruff passed.'
+    - kind: test
+      reference: tests/views/case/test_case_viewset.py
+    - kind: test
+      reference: tests/services/test_identity_response_boundary.py
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py
+    note: 'Local-ID browser and export contracts implemented. Hash matching and aliases stay local. FHIR
+      and selected-case exports use contract 2.0; workbook columns contain local IDs. CSV headers are
+      validated before streaming, OpenAPI type names no longer trigger data-field rejection, arbitrary
+      metadata streams remain closed. Verification: browser/case/timeline/identity suite 76 passed; expanded
+      export+metadata suite 87 passed and one stale version expectation corrected, then FHIR 12 passed;
+      final guard/cohort/download suite 60 passed; shared revision/cohort 16 passed; host workbook/guard
+      16 passed across corrected runs. Focused Pyright/Ruff and all manifests pass. Production approval
+      and deployment are outside this change.'
+    assessed_by: codex-patient-hash-01a1543d
+    assessed_at: '2026-10-19T13:56:18.020409Z'
+- id: central_identity_salts_disabled
+  category: security
+  title: Keine zentrale Bereitstellung von Identitätssalts
+  acceptance:
+  - Zentrale Salt-Bereitstellung bleibt deaktiviert; lokale Identitäten und historische Schlüssel werden
+    nicht automatisch ersetzt.
+  - Injizierte zentrale Identitätsbundles werden vor Dateizugriff und Hashberechnung abgewiesen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused boundary regression tests and type checks before coordinated deployment.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '99 backend boundary/keyring tests and 22 local import identity tests passed; LuxNix
+        central-launcher, local-preservation and enrollment suite: 44 passed.'
+    note: Central bundle injection is rejected; established local keyrings and identities are preserved.
+      No host activation or previously distributed secret revocation.
+    assessed_by: codex-hash-boundary-20261019
+    assessed_at: '2026-10-19T13:12:15.618854Z'
+- id: strict_legacy_hmac_inventory
+  category: security
+  title: Atomare HMAC-Migration des vollständigen Identitätsbestands
+  acceptance:
+  - migrate_legacy_hashes validiert alle Zentren, Quellen, Beziehungen und Zielkollisionen vor der ersten
+    Datenbankmutation; fehlende Originale benötigen geprüfte Zuordnungen. Keine automatische Zusammenführung.
+  - Eine PostgreSQL-Transaktion mit Advisory-Lock (20260921, 2), Schreibsperren und festem Schlüssel-Snapshot
+    erhält Primärschlüssel und historische Patientenhash-Aliase. Jeder Fehler rollt alle Änderungen zurück.
+  - Patient, PatientExamination, SensitiveMeta und Examiner verwenden die bestehenden domänenseparierten
+    UTF-8-HMAC-Helfer mit ensure_ascii=False. Wiederholungen verändern passende aktive Fingerprints nicht.
+  - Der aktive Schlüssel erfüllt die bestehende 256-Bit-Schlüsselvalidierung. Gebundene Zentrumsgrenzen
+    bleiben erhalten; unvollständige oder fremde Inventare werden nicht still übersprungen.
+  - Dry-run zeigt ausschließlich Hash-Differenzen und Zähler ohne Datenbankmutation. Nachprüfung verifiziert
+    sämtliche Zielwerte und Beziehungen vor Commit; strukturierte Commit-Logs enthalten nur Zähler.
+  - Wiederkehrende Importe erhalten nach Migration auch bei gelöschten Originalen ihre klinischen Verknüpfungen.
+    Metadaten-Schreiber und Bericht-Pseudonymauflösung verwenden denselben direkten HMAC; historische
+    SHA-256-von-HMAC-Zwischenstände werden ausschließlich aus Originalquellen verifiziert und migriert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor tests/services/test_migrate_legacy_hashes.py ausführen; PostgreSQL-Rollback,
+      Schreibsperren, Unicode, Kollisionsvorprüfung, Alias-Erhalt und Wiederholungen prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_migrate_legacy_hashes.py
+    - kind: command
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_migrate_legacy_hashes.py
+        tests/services/test_patient_hash_aliases.py tests/services/test_historical_identity_resolution.py::test_returning_source_matches_erased_patient_without_restoring_identifiers
+        -q --tb=short --show-capture=no --disable-warnings: 37 passed, 133 warnings, 110.07s; PostgreSQL.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors,24 warnings; focused changed-module Pyright: 0 errors,0 warnings;
+        Ruff passed; 65 structure manifests and37 feature definitions valid.'
+    note: 'Isolierte PostgreSQL-Prüfung bestätigt vollständigen Rollback, Vorprüfung, Aliase, Wiederholbarkeit,
+      Unicode, Quellenreview, Schreibsperren und wiederkehrende Importe. Breiter Integrationslauf: 76
+      bestanden,2 alte Untersuchungsrotationsfehler; beide nach Korrektur im frischen 37-Test-Lauf bestanden.
+      Separater koordinierter Hash-/Report-Regressionslauf: 220 bestanden. Keine Produktionsmigration
+      oder Secret-Änderung.'
+    assessed_by: codex-identity-migration-20261019
+    assessed_at: '2026-10-19T08:05:52.488997Z'
+- id: compromised_identity_salt_migration
+  category: security
+  title: Geprüfte Migration kompromittierter Identitätssalze erhält klinische Beziehungen
+  acceptance:
+  - LuxNix secrets-management.yml bleibt die einzige repositoryübergreifende Koordinationsquelle. Zentrale
+    Identitätssalt-Auslieferung bleibt gemäß central_identity_salts_disabled deaktiviert; ältere Delivery-Kriterien
+    autorisieren keine Aktivierung. Verschlüsselte lokale Secret-Persistenz gehört zu wg-lux/luxnix
+    feature-tracking/luxnix_secret_lifecycle_readiness.yml, Kriterium encrypted_local_secret_persistence.
+    Der Backendservice übernimmt weder Provisionierung noch Secret-Verteilung.
+  - Ein typisierter Service verwendet die vorhandene Gruppenmigration und einen festen Schlüssel-Snapshot
+    über Preview und Apply; kompatible PostgreSQL-Schreiber werden koordiniert. Preview und Wiederholung
+    verändern keine Identitäten; unvollständige Kompromittierungs-Migration rollt vollständig zurück.
+  - Ein explizit autorisierter lokaler Rotationsablauf bindet das neue aktive Salz an die erwartete Generation
+    und erhält etablierte lokale Lesegenerationen. Keine zentrale Bundle-Injektion, automatische Zufallsgenerierung
+    bei fehlendem Material, Default-Salze, stille Fallbacks oder Verwendung kompromittierter Salze für
+    neue Identitäten. Lokale Identitätsschreiber verwenden denselben validierten Schlüssel-Snapshot;
+    dieser Vertrag erlaubt keine zentrale Verteilung an Clients.
+  - Fehlende oder gelöschte Originalidentitäten benötigen unabhängig geprüfte autorisierte Quellen. Übereinstimmung
+    mit einem kompromittierten Hash allein bestätigt keine Person. Reviewdateien und Recoverydaten unterliegen
+    dem LuxNix-Vertrag für verschlüsselte Persistenz; keine Originaldaten in Logs.
+  - Vollständige Inventarisierung und Prüfung umfassen Patientengruppen, Metadaten, verknüpfte Untersuchungen,
+    Untersucher, fehlende Quellen und widersprüchliche Beziehungen. Primärschlüssel bleiben stabil; Konflikte
+    führen niemals zu automatischer Zusammenführung oder neu erfundenen Identitäten.
+  - Historische Identitätssalze bleiben am Quellzentrum für die Wiedererkennung bestehender Patienten
+    und historischer Hashreferenzen verfügbar, auch nach Löschung direkter Identifikatoren. Neue Patienten
+    verwenden ausschließlich die aktive Generation. Alte Salze sind weder Dateientschlüsselungsschlüssel
+    noch Authentifizierungs- oder Auslieferungsfallbacks. Unbekannte Generationen, fehlende Fingerprint-Evidenz
+    und mehrdeutige Treffer erfordern Review; klinische Beziehungen werden niemals blind zusammengeführt.
+    Abgeschlossene Hashmigration allein erlaubt kein Retirement der Quellgenerationen.
+  - Historische Patientenhash-Aliase bleiben lokal, zentrumsgebunden und transaktional mit der Migration
+    erhalten. Historische Untersuchungsreferenzen und bereits exportierte Altbestände benötigen eine
+    eigene geprüfte Kompatibilitätsstrategie ohne erneute Hashübertragung. Hub-Reimport mit Identitätshashes
+    wird gemäß HubTransfer.yml/local_identity_hash_boundary vor Registrierung abgewiesen, auch bei Wiederholungen.
+  - Lokale interne Auflösung verwendet die gemeinsame zentrumsgebundene Aliasauflösung. Browser- und
+    Exportverträge verwenden autorisierte lokale IDs gemäß identity_hash_response_boundary; keine Hashannahme
+    oder Hashausgabe als Kompatibilitätsfallback. Serializer-Validierung schreibt keine Patienten und
+    akzeptiert nur eindeutig aufgelöste Patienten aus autorisierten Zentren; unbekannte oder mehrdeutige
+    Referenzen werden abgewiesen. Allgemeine Untersuchungs-APIs behalten ihre Unterstützung realer Patienten.
+  - Automatische Medienzuordnung und die Untersuchungs-Modellfassade prüfen den kanonischen Patienten,
+    das Zentrum und vorhandene Pseudonymbeziehungen vor jeder Mutation. Historische Patientenaliase verwenden
+    dieselben Primärschlüssel; widersprüchliche Untersuchungs- oder Metadatenbeziehungen sowie fehlender
+    Zentrumskontext erzeugen keine neuen Identitäten oder Verknüpfungen. Regressionstests prüfen Wiederholung,
+    Alias-Konflikte, Zentrumsgrenzen und unveränderte Daten bei Ablehnung.
+  - Autorisierte Metadatenkorrekturen bei Video und PDF prüfen bestehende automatische Verknüpfungen vor
+    der Änderung und lösen sie nach erfolgreicher Korrektur atomar erneut auf. Bereits widersprüchliche
+    Verknüpfungen werden abgewiesen; explizite oder zurückgestellte Fallzuordnungen werden nicht überschrieben.
+  - Strukturierte Ergebnisse unterscheiden Preview, Commit, Rollback und verbleibende Blocker ohne Geheimnisse
+    offenzulegen. Anhängende Audit-Historie bleibt unverändert; Replikate, Hub-Referenzen, Exporte und
+    Backups brauchen koordinierte Abnahme vor Retirement. Rotation schützt keine bereits gestohlenen Hash-/Schlüsselkopien
+    rückwirkend.
+  required: true
+  verification:
+    kind: manual
+    instructions: Vor pytest Pyright ausführen. tests/services/test_identity_salt_rotation.py um Gesamt-Snapshot,
+      vollständigen Rollback, falsche Zielgeneration, fehlende Reviewquellen, Idempotenz und PostgreSQL-Parallelität
+      erweitern; anschließend Import-/Identitätsregression und Restore auf isolierter produktionsnaher
+      Umgebung.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_patient_hash_aliases.py
+    - kind: test
+      reference: tests/services/test_patient_examination_hash_resolution.py
+    - kind: test
+      reference: tests/serializers/test_patient_examination_identity.py
+    - kind: test
+      reference: tests/services/test_hub_transfer_unit_decisions.py
+    - kind: test
+      reference: tests/views/anonymization/test_sensitive_metadata_view.py
+    - kind: command
+      reference: 'Coordinated codex-anon-status-20261019: pytest tests/services/test_sensitive_meta_verification.py
+        tests/services/test_sensitive_meta_update.py tests/views/anonymization/test_validate_view.py tests/views/anonymization/test_sensitive_metadata_view.py
+        tests/services/test_anonymization_quality_evaluation.py tests/import_files/test_sensitive_metadata_concurrency_postgresql.py
+        -q --tb=short --show-capture=no: 102 passed,133 warnings,233.73s,exit0; PostgreSQL.'
+    - kind: command
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_metadata_validation.py
+        tests/services/test_sensitive_meta_external_id_validation.py tests/services/test_report_artifact_integrity.py
+        tests/models/video/test_validation_deletion.py tests/services/test_media_security_lifecycle.py
+        -q --tb=short --show-capture=no --disable-warnings --maxfail=5: 27 passed,133 warnings,383.24s,exit0;
+        PostgreSQL. Pytest temporary-directory cleanup warnings remain outside changed paths.'
+    note: 'Typisierte Gesamtmigration und historische Quellwiedererkennung bleiben erhalten. Vier Hashauflösungsbefunde
+      geschlossen: zentrumsgebundener Hub-Reimport, schreibfreie autorisierte Serializer-Auflösung, konsistente
+      automatische Fallzuordnung und zentrumsgebundene Untersuchungsfassade. Opaque aktuelle Kennungen
+      bleiben explizit unterstützt; historische Aliase bleiben streng validiert. Autorisierte PDF-/Video-Metadatenkorrekturen
+      prüfen alte Verknüpfungen und binden nach erfolgreicher Änderung atomar neu; Identitätsfence vor
+      Zeilensperren. Initialer kombinierter Lauf: 147 bestanden, 3 Fehler; zwei Metadaten-Defaultassertionen
+      und ein realer PDF-Korrekturfehler behoben. Gesamter betroffener Endpunktlauf anschließend im koordinierten
+      102-Test-Lauf bestanden; zusätzliche 27 Validierungs-/Speicherintegrationstests bestanden. Vollständiger
+      Pyright 0 Fehler/24 bestehende Warnungen, fokussiert 0/0, Ruff sauber. Historische Untersuchungsexporte
+      sowie produktionsnahe Restore-/Flottenabnahme und koordinierte Secret-Freigaben bleiben offen. Keine
+      Produktionsmigration oder Secret-Änderung.'
+    assessed_by: codex-hash-audit-20261019
+    assessed_at: '2026-10-19T08:33:28.030324Z'
+- id: legacy_key_read_only_recovery
+  category: security
+  title: Alte verschlüsselte Dateien bleiben über explizite Leseschlüssel wiederherstellbar
+  acceptance:
+  - Dieses Kriterium besitzt nur die Backend-Lese-/Migrationsverträge. Secret-Kustodie und verschlüsselte
+    Schlüsselablage gehören zu LuxNix, Prozessintegration zu wg-lux/lx-annotate feature-tracking/LuxNixPressingIssues.yml
+    Kriterium managed_secret_consumer_acceptance.
+  - Alle unterstützten historischen verschlüsselten Dateiformate und tatsächlichen Schlüsselgenerationen
+    werden inventarisiert, einschließlich Backups und bisher unregistrierter Artefakte. Schlüssel- oder
+    Versionsgrenzen wie maximal acht retiring-Einträge dürfen vorhandene Dateien nicht still unlesbar
+    machen; explizite sichere Migration oder Generationauflösung ist erforderlich.
+  - Ausschließlich neue aktive Schlüssel erzeugen neue Ciphertexte. Alte Schlüssel dienen nur authentifizierten
+    Reads oder expliziter Re-Verschlüsselung; unbekannte Schlüssel, manipulierte Tags, unvollständige
+    Dateien und widersprüchliche Provenienz scheitern geschlossen ohne Klartext- oder Default-Key-Fallback.
+  - Python-, Rust-, Streaming- und Hashleser verwenden denselben validierten Schlüssel-Snapshot und identische
+    Fehlersemantik. Prüfsummen über authentifizierten Klartext und klinische Referenzen bleiben bei Migration
+    erhalten; der letzte gültige Bestand wird niemals vor vollständiger Verifikation entfernt.
+  - Reconcile signing-key retirement in config/secret_keyring.py with LuxNix criterion legacy_decryption_only_compatibility;
+    legacy encrypted-file readability never authorizes obsolete request credentials, signing-key fallbacks
+    or weakened TLS. Keep media master keys local and separate from center identity salts and NetworkNode.shared_secret.
+  required: true
+  verification:
+    kind: manual
+    instructions: Vor pytest Pyright ausführen; tests/services/test_secret_rotation.py, tests/environment/test_secret_resolution.py
+      und native Reader-Verträge um mehrere reale Formatgenerationen, falsche/fehlende Schlüssel, Retirement
+      nach Restore und Unterbrechung ergänzen. Keine produktiven Schlüssel in Testfixtures übernehmen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+    note: Nur TODO-Erfassung am 16.10.2026. config/secret_keyring.py unterstützt aktive und begrenzt viele
+      retiring-Generationen; frühere Reader-Tests sind unter online_secret_rotation und StorageSecurity.yml
+      dokumentiert. Die neue vollständige Bestands- und Retirement-Anforderung wurde nicht ausgeführt
+      oder verifiziert.
 - id: bounded_video_reimport
   category: functionality
   title: Video re-import has bounded workload budgets and actionable timeout failures
@@ -344,6 +582,12 @@ definition_of_done:
   category: testing
   title: Anonymizer metadata resolves consistently through persistence, identity hashing, and review
   acceptance:
+  - scripts/benchmark_sha256.py misst begrenzte Kandidatensuche mit bekanntem Salt für HMAC-SHA-256 und
+    SHA-256-Varianten; Zeichenvorrat, Längen, UTF-8-Präfix/Suffix, Zeit- und Versuchslimit sind konfigurierbar.
+    Tests prüfen Treffer, Erschöpfung, Abbruchgrenzen und ungültige Eingaben ohne Datenbank.
+  - Reproduzierbare synthetische Hashversuche unterscheiden Eingabemehrdeutigkeit, demografische Gleichheit
+    und kryptografische Kollisionen; Wörterbuchabgleich mit bekanntem Salt und Grenzen der Kollisionswahrscheinlichkeitsrechnung
+    sind dokumentiert, ohne Produktionsdaten zu verwenden.
   - Normal validation and privacy-policy application share complete idempotent direct-identifier erasure;
     committed hashes, collision fingerprints and clinical links survive, and later saves do not recreate
     erased examiner relations.
@@ -358,6 +602,9 @@ definition_of_done:
   - Preanonymized imports with a source-scoped external patient identifier may create a pseudonymous patient
     without demographic data. Repeated imports reuse the mapping, different source scopes remain distinct,
     cross-center mappings fail, and transactional creation leaves no orphan patient on failure.
+  - Aktive Identitätssalze und explizite Hashparameter durchlaufen die gemeinsame Salt-Validierung; wiederholte
+    Validierung erhält die exakten UTF-8-Schlüsselbytes. Nur explizit registrierte historische Lesegenerationen
+    dürfen schwaches Altmaterial zur Wiedererkennung verwenden.
   - Identity hashing reads the typed Django setting at call time. Production requires a private DJANGO_SALT_FILE,
     rejects default or invalid salts, and never generates a replacement.
   - Additive keyed identity fingerprints reject ambiguous legacy concatenation and incompatible salt reuse,
@@ -485,14 +732,21 @@ definition_of_done:
         in devenv nach agent:sync. PostgreSQL-Parallelität und vollständige Testsuite nicht erneut ausgeführt.'
     - kind: test
       reference: tests/import_files/test_sensitive_identity_guards.py
+    - kind: document
+      reference: feature-tracking/reports/sensitive_meta_hash_security.md
+    - kind: test
+      reference: '2026-10-16: tests/utils/test_sensitive_meta_hash_security.py: 11 passed, 1 pytest plugin
+        warning; full Pyright 0 errors/24 warnings; Ruff passed; 65 structure manifests valid. Synthetic
+        no_db characterization only; database concurrency, production keys and clinical homonym rates
+        not assessed.'
     note: 'Shared metadata erasure serves normal validation and policy application, retaining hashes,
       fingerprints and clinical links. Focused Pyright passed with zero errors/warnings. Initial identity/rotation/privacy/validation
       suite: 60 passed. Final stale-identity/resurrection guard recheck: 18 passed, 133 existing terminology/plugin
       warnings. Sender integration: 26 passed, then final 2 focused tests passed using sibling backend
       and lx-data-models sources. No production migration or deployment; legacy/hub reconciliation and
       coordinated package rollout remain required.'
-    assessed_by: codex-identity-audit-20261012
-    assessed_at: '2026-10-12T10:18:40.491915Z'
+    assessed_by: codex-smh-audit-20261016
+    assessed_at: '2026-10-16T08:12:28.116109Z'
 - id: quality_evidence
   category: data_integrity
   title: Approval is based on persisted, traceable quality evidence
@@ -588,6 +842,8 @@ definition_of_done:
   category: security
   title: Online secret rotation preserves readable media and stable clinical links
   acceptance:
+  - Central identity injection is prohibited; preserve established local keyrings and reject SecretSpec
+    bundles before file access.
   - Repository rotation guidance links to the canonical LuxNix secrets-management.yml coordination catalog
     and matches the installed command's explicit partial-commit contract; no duplicate readiness record
     is created.
@@ -607,11 +863,11 @@ definition_of_done:
     original.
   - HTTP Live Streaming content keys remain readable during overlap and compromised-key recovery regenerates
     content keys and segments through the existing generation workflow.
-  - Identity salt rotation explicitly supports legacy default_salt as migration input only, retains patient
-    and examination links, and refuses incomplete or ambiguous source identities rather than inventing
-    replacements.
-  - Django signing-key rotation is distinguished from media encryption; compromised signing keys are not
-    retained as verification fallbacks.
+  - Identity salt rotation explicitly supports enrolled legacy default_salt for reviewed migration and
+    source recognition only, retains patient and examination links, and refuses incomplete or ambiguous
+    source identities rather than inventing replacements.
+  - Django signing-key rotation is distinguished from media encryption; previous signing keys are never
+    verification fallbacks, including planned rotation. Consumer reload invalidates old signatures.
   - Focused type, integrity, failure, streaming and identity tests pass; deployment requires staged reader
     rollout and reviewed retirement evidence.
   required: true
@@ -665,10 +921,32 @@ definition_of_done:
         assertion rerun: all 11 sensitive identity guard tests passed. Total 104 distinct passing tests,1
         skipped across identity guards, rotation, report anonymization and report import service. No production
         migration performed by hotfix.'
-    note: '2026-10-13: Linked the canonical LuxNix secrets-management.yml rotation catalog and corrected
-      the Markdown procedure to default rollback and explicit --allow-partial. Backend runtime unchanged.
-      Full Pyright: 0 errors/18 warnings; 65 structure manifests valid. Consumer tests against this checkout:
-      64 passed. LuxNix catalog/project-map/documentation tests: 55 passed. No live secret changes; production
-      migration and retirement acceptance remain outstanding.'
-    assessed_by: codex-secret-rotation-20261013
-    assessed_at: '2026-10-13T08:43:21.524580Z'
+    - kind: command
+      reference: '2026-10-19: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_secret_rotation.py
+        tests/services/test_identity_salt_rotation.py tests/services/test_historical_identity_resolution.py
+        tests/environment/test_secret_resolution.py tests/environment/test_identity_hashing.py tests/utils/test_encryption_range.py
+        tests/import_files/test_sensitive_identity_guards.py -q --tb=short --show-capture=no --disable-warnings:
+        136 passed, 1 stale active-salt fixture failed, 133 warnings, 252.47s. Full Pyright 0 errors/24
+        existing warnings; changed-file Pyright 0/0; Ruff and 65 structure manifests passed. LX-Annotate
+        tests/system/test_config_unit.py: 49 passed with PYTHONPATH=/home/admin/endoreg-db:/home/admin/lx-data-models;
+        installed lx_dtypes alone lacks ReportExtractionReceipt. Backend now exports empty signing fallbacks,
+        matching the canonical LuxNix catalog; required media/identity historical readers unchanged. No
+        live rotation; fleet activation, installed dependency alignment, restore and retirement acceptance
+        remain outstanding.'
+    - kind: command
+      reference: '2026-10-19 final regression: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_secret_rotation.py::test_default_salt_is_only_explicit_retiring_material
+        tests/services/test_secret_rotation.py::test_signing_rotation_rejects_previous_signatures -q --tb=short
+        --show-capture=no --disable-warnings: 3 passed, 1 warning, 50.74s. Replaced only the obsolete
+        active-salt test fixture; enrollment rejection and active-only signing assertions preserved. Final
+        focused Pyright 0 errors/0 warnings; Ruff and structure validation passed. Broader run plus targeted
+        repair verifies all 137 selected backend cases across runs; pytest temporary-directory cleanup
+        warnings remain.'
+    - kind: command
+      reference: '2026-10-19: Full backend Pyright 0 errors (24 existing warnings); focused final Pyright
+        0 errors. Configuration/secret-resolution lane 88 passed. Identity rotation suite 22 passed, 1
+        fixture center mismatch rejected as intended; after binding injected fixture to its actual center,
+        both repeat-import delivery variants passed. Real SecretSpec integration in LX-Annotate 59 passed;
+        LuxNix launcher/Nix/catalog 38 passed. All three structure maps valid. No live rotation or plaintext-file
+        absence certification; fleet migration and recovery acceptance outstanding.'
+    assessed_by: codex-secret-rotation-01a15374
+    assessed_at: '2026-10-19T10:47:42.859875Z'

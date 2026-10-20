@@ -1,4 +1,4 @@
-# Typed Hub Transfer Contract 3.0
+# Typed Hub Transfer Contract 5.0
 
 [Deutsche Fassung](hub_transfer_typed_contract.md)
 
@@ -9,7 +9,7 @@ status is recorded exclusively in
 
 The guide is intended especially for implementations that still use payload
 schema `1.0` or untyped `dict[str, Any]` payloads. Do not weaken the receiver to
-accommodate those implementations. Migrate them to shared contract `3.0`
+accommodate those implementations. Migrate them to shared contract `5.0`
 before the first network request.
 
 ## Authoritative sources and layer boundaries
@@ -30,7 +30,7 @@ models.
 
 ## Non-negotiable rules
 
-- `payload_schema_version` is exactly `"3.0"`. Versions `"1.0"` and `"2.0"`
+- `payload_schema_version` is exactly `"5.0"`. Versions `"1.0"`, `"2.0"`, `"3.0"` and `"4.0"`
   are rejected.
 - The only implemented transfer mode is `metadata_and_processed_media`. Raw
   media is neither registered nor uploaded. Implementation does not imply a
@@ -42,9 +42,12 @@ models.
   A Django user session is neither the source of nor a substitute for center
   scope on these machine-to-machine endpoints.
 - Direct identity fields such as names or dates of birth are prohibited.
-  `sensitive_meta` contains only `patient_hash` and `examination_hash`, each a
-  canonical lowercase 64-character Secure Hash Algorithm 256-bit (SHA-256)
-  hexadecimal value.
+  `sensitive_meta` contains only `patient_uuid` and `examination_uuid`, following
+  lx-data-models' persisted random UUID policy. The sender reads UUIDs from the
+  linked records; retries never generate new identifiers. The receiver preserves
+  those UUIDs and rejects conflicting source ownership or patient linkage.
+  Content hashes identify artifacts, not patients; demographic hashes and salts
+  never leave the source.
 - Reports contain only `anonymized_text`; `text` is prohibited.
 - Recalculate the SHA-256 digest of the exact processed artifact before
   constructing the payload. For videos it appears in
@@ -110,7 +113,7 @@ Video and report transfers use the same top-level fields:
 | `processing_policy` | Currently `preserve_processing_state` |
 | `processing_intent` | Currently `sender_requests_state_preservation` |
 | `cleanup_policy` | Conservative default `retain_all` |
-| `payload_schema_version` | Literal `3.0` |
+| `payload_schema_version` | Literal `5.0` |
 | `resource_rows` | Payload discriminated by `resource_kind` |
 | `processing_snapshot` | Currently `sender_processing_success: true` |
 | `provenance` | Optional anonymized transport provenance without local primary keys |
@@ -120,7 +123,7 @@ portable identities and do not belong in the wire payload.
 
 ## Video payload
 
-A minimal processed-video payload for contract `3.0` is:
+A minimal processed-video payload for contract `5.0` is:
 
 ```json
 {
@@ -134,7 +137,7 @@ A minimal processed-video payload for contract `3.0` is:
   "processing_policy": "preserve_processing_state",
   "processing_intent": "sender_requests_state_preservation",
   "cleanup_policy": "retain_all",
-  "payload_schema_version": "3.0",
+  "payload_schema_version": "5.0",
   "resource_rows": {
     "video_file": {
       "video_hash": "<resource_sha256>",
@@ -147,8 +150,8 @@ A minimal processed-video payload for contract `3.0` is:
       "height": 720
     },
     "sensitive_meta": {
-      "patient_hash": "<patient_sha256>",
-      "examination_hash": "<examination_sha256>"
+      "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03001",
+      "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03002"
     },
     "video_state": {
       "processing_started": true,
@@ -206,15 +209,15 @@ Reports transfer only the anonymized derivative in Portable Document Format
   "processing_policy": "preserve_processing_state",
   "processing_intent": "sender_requests_state_preservation",
   "cleanup_policy": "retain_all",
-  "payload_schema_version": "3.0",
+  "payload_schema_version": "5.0",
   "resource_rows": {
     "raw_pdf_file": {
       "pdf_hash": "<resource_sha256>",
       "anonymized_text": "Anonymized report text"
     },
     "sensitive_meta": {
-      "patient_hash": "<patient_sha256>",
-      "examination_hash": "<examination_sha256>"
+      "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03001",
+      "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03002"
     },
     "raw_pdf_state": {
       "processing_started": true,
@@ -314,10 +317,10 @@ Apply these replacements when porting isolated ideas from an older branch:
 | Custom `HubTransferClient` in `endoreg_db` | Sender workflow in `lx_annotate.hub.hub_export_worker` |
 | `verify_tls: bool` and an untyped keyword-argument dictionary | `HubTransportConfig` and `HubTransportRequestKwargs` with `verify: str | bool` |
 | Command-line flags with an optional client certificate | Production profile requires complete mTLS material and fails before a request otherwise |
-| Payload schema `1.0` | Strict discriminated `3.0` schema from `lx_dtypes` |
+| Payload schema `1.0` | Strict discriminated `5.0` schema from `lx_dtypes` |
 | Continue using `dict[str, Any]` after validation | Replace the original mapping with the validator return value |
 | `ANONYMIZED` or `sensitive_meta_processed` is sufficient | Require explicit `anonymization_validated=true` |
-| Transmit patient data so the receiver can derive hashes | Transmit only locally derived `patient_hash` and `examination_hash` |
+| Transmit patient data so the receiver can derive hashes | Transmit only node-scoped patient and examination record IDs |
 | Report fields `text` and `anonymized_text` | Only `anonymized_text` |
 | Report upload without a separate processed digest | Require `raw_pdf_state.processed_file_sha256` |
 | Filesystem implementation under `endoreg_db.utils.filesystem.file_operations` | Mutate through canonical `endoreg_db.utils.filesystem.file_operations`; do not make compatibility imports a new ownership boundary |
@@ -332,7 +335,7 @@ assumptions.
 
 | Error or status | Cause | Correction |
 | --- | --- | --- |
-| `Only privacy-preserving hub payload_schema_version '3.0' is accepted` | Stale sender | Upgrade sender and `lx_dtypes` together; do not add a receiver fallback |
+| `Only privacy-preserving hub payload_schema_version '5.0' is accepted` | Stale sender | Upgrade sender and `lx_dtypes` together; do not add a receiver fallback |
 | `extra_forbidden` | Stale or directly identifying field | Remove the field or model it in the shared contract first |
 | `anonymization_status=... is not eligible` | Explicit validation is incomplete | Complete clinical anonymization validation |
 | `processed_file_sha256 is required` | Processed bytes were not hashed locally | Calculate SHA-256 from the exact artifact to be sent |
@@ -370,3 +373,12 @@ lost acknowledgement, and worker restart.
 - [`wiki/hub_ingest_current_state.md`](wiki/hub_ingest_current_state.md)
 - [`video_storage_normalization.md`](video_storage_normalization.md)
 - `/home/admin/dev/lx-annotate/docs/guides/hub-export-workflow.md`
+
+## UUID migration and rollout
+
+Apply `0103_patient_examination_uuid` on source and hub before enabling schema
+`5.0`. It backfills a distinct UUID per existing patient and examination, then
+enforces uniqueness and non-null values. Local primary keys and foreign keys
+remain unchanged. Pause writers during migration and coordinate all three
+packages. Existing version 4 jobs and received identities need explicit
+reconciliation; do not rewrite queued payloads or infer a UUID from a local ID.

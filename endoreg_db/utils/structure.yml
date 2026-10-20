@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: verify_salt.py
+  role: Shared identity salt strength validation preserving established UTF-8 key material.
 - file: video/executable_discovery.py
   role: Shared media executable discovery and bounded worker/deployment preflight.
 - file: file_operations.py
@@ -30,6 +32,12 @@ entrypoints:
 - name: get_file_hash
   file: hashs.py
   purpose: Canonical file content hashing.
+- name: get_bytes_hash
+  file: hashs.py
+  purpose: SHA-256 of serialized byte payloads; keyed identity helpers remain separate.
+- name: get_identity_hash
+  file: hashs.py
+  purpose: Domain-separated HMAC-SHA-256 with centrally validated active or enrolled identity salts.
 dependencies:
   internal:
   - endoreg_db/services/video_files

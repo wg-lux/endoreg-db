@@ -201,7 +201,9 @@ class HubTransferEnvelopeTests(SimpleTestCase):
 
     def test_legacy_plaintext_service_entrypoint_rejects_before_staging(self) -> None:
         with (
-            patch.object(transfers, "_write_uploaded_file_to_temp") as stage_upload,
+            patch(
+                "endoreg_db.utils.file_operations.atomic_handoff_file"
+            ) as stage_upload,
             self.assertRaisesRegex(ValueError, "Plaintext.*prohibited"),
         ):
             transfers.attach_transfer_media(

@@ -11,7 +11,7 @@ boundaries:
 entrypoints:
 - name: build_patient_examination_fhir_bundle
   file: fhir_r4.py
-  purpose: Build and validate one read-only, pseudonymized FHIR R4 Bundle.
+  purpose: Validate FHIR export inputs and publish local record IDs without source identity hashes.
 - name: import_dicom_export_manifest
   file: dicom_import.py
   purpose: Validate and idempotently catalogue one anonymized DICOM study.
@@ -36,6 +36,7 @@ dependencies:
   - endoreg_db/models
   - endoreg_db/schemas
   - endoreg_db/services/imports
+  - endoreg_db/services/privacy
   - endoreg_db/services/reference_data
   - endoreg_db/utils
   external:

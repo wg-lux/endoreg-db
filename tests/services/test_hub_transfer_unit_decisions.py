@@ -12,9 +12,163 @@ from django.test import TestCase
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models import Center, NetworkNode, TransferJob
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.hub import transfers
+from endoreg_db.services.patient_identity.hash_aliases import record_patient_hash_alias
+
+
+@pytest.mark.django_db
+def test_hub_reimport_rejects_even_known_historical_patient_alias() -> None:
+    center = Center.objects.create(name="hub-alias")
+    patient = Patient.objects.create(
+        center=center, patient_hash="a" * 64, is_real_person=False
+    )
+    record_patient_hash_alias(
+        patient=patient, center=center, patient_hash="a" * 64, salt_fingerprint="b" * 64
+    )
+    Patient.objects.filter(pk=patient.pk).update(patient_hash="c" * 64)
+    examination = PatientExamination.objects.create(patient=patient, hash="d" * 64)
+    payload: JsonObject = {"patient_hash": "a" * 64, "examination_hash": "d" * 64}
+
+    for patient_hash in ("a" * 64, "c" * 64):
+        payload["patient_hash"] = patient_hash
+        with pytest.raises(ValueError, match="must remain on the source"):
+            transfers._upsert_sensitive_meta(
+                existing=None, payload=payload, center=center
+            )
+    patient.refresh_from_db()
+    examination.refresh_from_db()
+    assert patient.patient_hash == "c" * 64
+    assert examination.patient_id == patient.pk
+    assert Patient.objects.filter(center=center).count() == 1
+    assert PatientExamination.objects.filter(patient=patient).count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "conflict",
+    [
+        "other_center",
+        "foreign_only",
+        "other_patient",
+        "real_patient",
+        "ambiguous_alias",
+    ],
+)
+def test_hub_identity_conflicts_roll_back(conflict: str) -> None:
+    center = Center.objects.create(name="hub-conflict")
+    patient = Patient.objects.create(
+        center=center, patient_hash="a" * 64, is_real_person=conflict == "real_patient"
+    )
+    examination_patient = patient
+    if conflict == "foreign_only":
+        Patient.objects.filter(pk=patient.pk).update(
+            center=Center.objects.create(name="hub-foreign")
+        )
+    if conflict in {"other_center", "other_patient"}:
+        examination_patient = Patient.objects.create(
+            center=Center.objects.create(name="hub-other")
+            if conflict == "other_center"
+            else center,
+            patient_hash="a" * 64 if conflict == "other_center" else "c" * 64,
+            is_real_person=False,
+        )
+    if conflict == "ambiguous_alias":
+        record_patient_hash_alias(
+            patient=patient,
+            center=center,
+            patient_hash="a" * 64,
+            salt_fingerprint="b" * 64,
+        )
+        Patient.objects.filter(pk=patient.pk).update(patient_hash="c" * 64)
+        Patient.objects.create(
+            center=center, patient_hash="a" * 64, is_real_person=False
+        )
+    examination = PatientExamination.objects.create(
+        patient=examination_patient, hash="d" * 64
+    )
+    patient_count = Patient.objects.count()
+    meta_count = SensitiveMeta.objects.count()
+
+    with pytest.raises(ValueError):
+        transfers._upsert_sensitive_meta(
+            existing=None,
+            payload={"patient_hash": "a" * 64, "examination_hash": "d" * 64},
+            center=center,
+        )
+
+    assert Patient.objects.count() == patient_count
+    assert SensitiveMeta.objects.count() == meta_count
+    examination.refresh_from_db()
+    assert examination.patient_id == examination_patient.pk
+
+
+@pytest.mark.django_db
+def test_hub_rejects_patient_hash_without_creating_cross_center_identity() -> None:
+    center = Center.objects.create(name="hub-local")
+    other = Center.objects.create(name="hub-foreign")
+    foreign_patient = Patient.objects.create(
+        center=other, patient_hash="a" * 64, is_real_person=False
+    )
+
+    with pytest.raises(ValueError, match="must remain on the source"):
+        transfers._upsert_sensitive_meta(
+            existing=None,
+            payload={"patient_hash": "a" * 64, "examination_hash": "d" * 64},
+            center=center,
+        )
+    assert not Patient.objects.filter(center=center).exists()
+    foreign_patient.refresh_from_db()
+    assert foreign_patient.center_id == other.pk
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "conflict",
+    ["center", "patient", "examination", "unlinked_patient", "unlinked_examination"],
+)
+def test_hub_reimport_rejects_reassignment_of_existing_metadata(conflict: str) -> None:
+    center = Center.objects.create(name="hub-existing")
+    payload: JsonObject = {"patient_hash": "a" * 64, "examination_hash": "d" * 64}
+    patient = Patient.objects.create(
+        center=center, patient_hash="a" * 64, is_real_person=False
+    )
+    examination = PatientExamination.objects.create(patient=patient, hash="d" * 64)
+    # Represent a pre-policy imported row without invoking the now-prohibited transfer.
+    meta = SensitiveMeta(
+        center=center,
+        patient_hash="a" * 64,
+        examination_hash="d" * 64,
+        pseudo_patient=patient,
+        pseudo_examination=examination,
+    )
+    SensitiveMeta.objects.bulk_create([meta])
+    if conflict.startswith("unlinked_"):
+        SensitiveMeta.objects.filter(pk=meta.pk).update(
+            pseudo_patient=None, pseudo_examination=None
+        )
+        meta.refresh_from_db()
+    previous_patient_id = meta.pseudo_patient_id
+    previous_examination_id = meta.pseudo_examination_id
+    if conflict == "center":
+        center = Center.objects.create(name="hub-other")
+    elif conflict in {"patient", "unlinked_patient"}:
+        payload["patient_hash"] = "b" * 64
+    else:
+        payload["examination_hash"] = "e" * 64
+
+    with pytest.raises(ValueError, match="must remain on the source"):
+        transfers._upsert_sensitive_meta(existing=meta, payload=payload, center=center)
+
+    meta.refresh_from_db()
+    assert meta.patient_hash == "a" * 64
+    assert meta.examination_hash == "d" * 64
+    assert meta.pseudo_patient_id == previous_patient_id
+    assert meta.pseudo_examination_id == previous_examination_id
 
 
 def _transfer_job(**overrides: object) -> TransferJob:
@@ -126,16 +280,17 @@ def test_privacy_boundary_rejects_each_unsafe_payload_class(
         )
 
 
-def test_privacy_boundary_accepts_only_pseudonymous_linkage_fields() -> None:
-    transfers._assert_privacy_preserving_resource_rows(
-        {
-            "sensitive_meta": {
-                "patient_hash": "patient-hash",
-                "examination_hash": "examination-hash",
-            },
-            "reports": [{"anonymized_text": "validated anonymous report"}],
-        }
-    )
+def test_privacy_boundary_rejects_pseudonymous_linkage_fields() -> None:
+    with pytest.raises(ValueError, match="must remain on the source"):
+        transfers._assert_privacy_preserving_resource_rows(
+            {
+                "sensitive_meta": {
+                    "patient_hash": "patient-hash",
+                    "examination_hash": "examination-hash",
+                },
+                "reports": [{"anonymized_text": "validated anonymous report"}],
+            }
+        )
 
 
 @pytest.mark.parametrize(
@@ -163,7 +318,7 @@ def test_media_upload_rejects_terminal_transfer_before_staging(
     )
 
     with (
-        patch.object(transfers, "_write_uploaded_file_to_temp") as stage_upload,
+        patch("endoreg_db.utils.file_operations.atomic_handoff_file") as stage_upload,
         pytest.raises(ValueError, match="Plaintext Hub media attachment is prohibited"),
     ):
         transfers.attach_transfer_media(
@@ -177,7 +332,7 @@ def test_media_upload_rejects_terminal_transfer_before_staging(
 
 def test_media_upload_rejects_raw_role_before_staging() -> None:
     with (
-        patch.object(transfers, "_write_uploaded_file_to_temp") as stage_upload,
+        patch("endoreg_db.utils.file_operations.atomic_handoff_file") as stage_upload,
         pytest.raises(ValueError, match="Plaintext Hub media attachment is prohibited"),
     ):
         transfers.attach_transfer_media(
@@ -195,7 +350,7 @@ def test_media_upload_rejects_raw_role_before_staging() -> None:
 
 def test_media_upload_rejects_metadata_only_mode_before_staging() -> None:
     with (
-        patch.object(transfers, "_write_uploaded_file_to_temp") as stage_upload,
+        patch("endoreg_db.utils.file_operations.atomic_handoff_file") as stage_upload,
         pytest.raises(ValueError, match="Plaintext Hub media attachment is prohibited"),
     ):
         transfers.attach_transfer_media(
@@ -215,7 +370,7 @@ def test_plaintext_media_upload_rejects_unsupported_kind_before_staging() -> Non
     uploaded_file = SimpleUploadedFile("processed.bin", b"processed")
 
     with (
-        patch.object(transfers, "_write_uploaded_file_to_temp") as stage_upload,
+        patch("endoreg_db.utils.file_operations.atomic_handoff_file") as stage_upload,
         pytest.raises(ValueError, match="Plaintext Hub media attachment is prohibited"),
     ):
         transfers.attach_transfer_media(
@@ -444,29 +599,6 @@ def test_optional_boolean_coercion_has_stable_wire_semantics(
     expected: bool | None,
 ) -> None:
     assert transfers._coerce_optional_bool(value) is expected
-
-
-def test_sender_processing_snapshot_takes_precedence_over_history() -> None:
-    transfer_job = _transfer_job(
-        processing_snapshot={"sender_processing_success": False},
-        resource_rows={"processing_history": {"success": True}},
-    )
-
-    assert transfers._sender_processing_success(transfer_job) is False
-
-
-def test_sender_processing_success_falls_back_to_history() -> None:
-    transfer_job = _transfer_job(
-        processing_snapshot={},
-        resource_rows={"processing_history": {"success": True}},
-    )
-
-    assert transfers._sender_processing_success(transfer_job) is True
-
-
-def test_stored_field_name_rejects_missing_storage_reference() -> None:
-    with pytest.raises(RuntimeError, match="missing a storage name"):
-        transfers._stored_field_name(SimpleNamespace(name=""))
 
 
 def test_apply_metadata_rejects_unknown_resource_kind() -> None:

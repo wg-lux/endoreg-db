@@ -1,6 +1,7 @@
 # endoreg_db/management/commands/load_legacy_data.py
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -920,7 +921,7 @@ class Command(BaseCommand):
         self, *, center_id: int, old_examination_id: str
     ) -> str:
         identity = f"center:{center_id}:old_examination_id:{old_examination_id}"
-        digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:32]
+        digest = get_bytes_hash(identity.encode("utf-8"))[:32]
         return f"legacy_exam_c{center_id}_{digest}"
 
     def _resolve_staged_images_root(

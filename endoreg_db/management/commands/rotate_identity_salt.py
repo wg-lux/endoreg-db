@@ -1,31 +1,21 @@
 from __future__ import annotations
 
 import json
-import logging
-from contextlib import nullcontext
+from dataclasses import asdict
 from pathlib import Path
 
 import yaml
 from pydantic import BaseModel, ConfigDict, ValidationError
 from django.core.management.base import BaseCommand, CommandError, CommandParser
-from django.db import transaction
 
 from endoreg_db.config.secret_keyring import (
-    configured_identity_keyring,
     read_private_file,
 )
-from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.models.administration.person.examiner.examiner import Examiner
 from endoreg_db.services.secret_rotation.identity import (
     ReviewedIdentity,
-    migrate_identity_group,
-    salt_fingerprint,
     ReviewedExaminer,
-    migrate_reviewed_examiner,
 )
-from endoreg_db.utils.structured_logging import emit_structured_event
-
-logger = logging.getLogger(__name__)
+from endoreg_db.services.secret_rotation.migration import rotate_identity_salt
 
 
 class ReviewedIdentities(BaseModel):
@@ -39,6 +29,8 @@ class Command(BaseCommand):
 
     def add_arguments(self, parser: CommandParser) -> None:
         parser.add_argument("--apply", action="store_true")
+        parser.add_argument("--compromised", action="store_true")
+        parser.add_argument("--expected-active-fingerprint")
         parser.add_argument(
             "--allow-partial",
             action="store_true",
@@ -55,15 +47,9 @@ class Command(BaseCommand):
         allow_partial = options.get("allow_partial") is True
         if allow_partial and not apply:
             raise CommandError("--allow-partial requires --apply")
-        with transaction.atomic() if apply and not allow_partial else nullcontext():
-            self._migrate(options)
+        self._migrate(options)
 
     def _migrate(self, options: dict[str, object]) -> None:
-        ring = configured_identity_keyring()
-        if ring is None:
-            raise CommandError(
-                "An identity salt manifest must be explicitly configured"
-            )
         reviewed: dict[int, ReviewedIdentity] = {}
         examiners: tuple[ReviewedExaminer, ...] = ()
         path = options.get("review_file")
@@ -86,78 +72,25 @@ class Command(BaseCommand):
                 raise CommandError("Reviewed identity records must be unique")
             if len({item.examiner_id for item in examiners}) != len(examiners):
                 raise CommandError("Reviewed examiner records must be unique")
-        active = salt_fingerprint(ring.active)
-        migrated = blocked = rows = 0
-        groups: set[str] = set()
-        for row in (
-            SensitiveMeta.objects.filter(external_id__isnull=True)
-            .exclude(patient_hash__isnull=True)
-            .exclude(patient_hash="")
-            .exclude(identity_salt_fingerprint=active)
-            .select_related("center")
-            .iterator()
-        ):
-            if str(row.patient_hash) in groups:
-                continue
-            groups.add(str(row.patient_hash))
-            try:
-                count = migrate_identity_group(
-                    row, reviewed=reviewed, apply=options.get("apply") is True
-                )
-                if count == 0:
-                    blocked += 1
-                else:
-                    rows += count
-                    migrated += 1
-            except ValueError as exc:
-                blocked += 1
-                emit_structured_event(
-                    logger,
-                    "identity_rotation_blocked",
-                    level=logging.ERROR,
-                    sensitive_meta_id=int(row.pk),
-                    detail=str(exc),
-                )
-        examiner_failures = 0
-        for examiner in examiners:
-            try:
-                migrate_reviewed_examiner(examiner, apply=options.get("apply") is True)
-            except (ValueError, Examiner.DoesNotExist) as exc:
-                examiner_failures += 1
-                emit_structured_event(
-                    logger,
-                    "examiner_rotation_blocked",
-                    level=logging.ERROR,
-                    examiner_id=examiner.examiner_id,
-                    detail=str(exc),
-                )
-        pending_examiners = Examiner.objects.exclude(
-            identity_salt_fingerprint=active
-        ).count()
-        incomplete = bool(blocked or examiner_failures or pending_examiners)
-        rollback = (
-            options.get("apply") is True
-            and options.get("allow_partial") is not True
-            and incomplete
-        )
-        self.stdout.write(
-            json.dumps(
-                {
-                    "patient_groups": migrated,
-                    "metadata_rows": rows,
-                    "blocked_groups": blocked,
-                    "applied": options.get("apply") is True and not rollback,
-                    "rolled_back": rollback,
-                    "pending_examiners": pending_examiners,
-                    "examiner_failures": examiner_failures,
-                },
-                sort_keys=True,
+        expected = options.get("expected_active_fingerprint")
+        if expected is not None and not isinstance(expected, str):
+            raise CommandError("Expected active fingerprint must be a string")
+        try:
+            result = rotate_identity_salt(
+                apply=options.get("apply") is True,
+                allow_partial=options.get("allow_partial") is True,
+                compromised=options.get("compromised") is True,
+                expected_active_fingerprint=expected,
+                reviewed=reviewed,
+                examiners=examiners,
             )
-        )
-        if incomplete:
+        except ValueError as exc:
+            raise CommandError(str(exc)) from None
+        self.stdout.write(json.dumps(asdict(result), sort_keys=True))
+        if result.incomplete:
             raise CommandError(
                 "Migration incomplete: review missing identities, collisions and linked examination evidence"
             )
         self.stdout.write(
-            "Patient migration finished. Examiner mappings, replicas and historical audit records require separate retirement review."
+            "Patient migration finished. Source recognition, replicas and historical audit records require separate retirement review."
         )

@@ -2259,7 +2259,6 @@ models:
   - export:endoreg_db/export/frames/export_frames_with_labels.py
   - export:endoreg_db/services/datasets/exports.py
   - job:endoreg_db/management/commands/load_legacy_data.py
-  - service:endoreg_db/queries/annotations/legacy.py
   - service:endoreg_db/services/annotations/buckets.py
   - service:endoreg_db/services/annotations/segment_annotations.py
   - service:endoreg_db/services/datasets/training_manifests.py
@@ -2486,7 +2485,6 @@ models:
   - job:endoreg_db/management/commands/register_ai_model.py
   - job:endoreg_db/management/commands/setup_endoreg_db.py
   - service:endoreg_db/data/ai_model_label/label-set/polyp_classifications.yaml
-  - service:endoreg_db/queries/annotations/legacy.py
   - service:endoreg_db/services/ai/model_meta_from_hf.py
   - service:endoreg_db/services/annotations/buckets.py
   - service:endoreg_db/services/datasets/active_learning_shortlist.py
@@ -3618,6 +3616,32 @@ models:
   dynamic_model_references: []
   module_lx_dtypes_imports:
   - lx_dtypes.models.contracts.patient_finding_intervention.PatientFindingInterventionCore
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.PatientHashAlias
+  kind: registered
+  python_path: endoreg_db.models.administration.person.patient.patient_hash_alias.PatientHashAlias
+  source_path: endoreg_db/models/administration/person/patient/patient_hash_alias.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_patienthashalias
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: true
+  custom_save: true
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Center-scoped relational historical pseudonym lookup without an independent exchange payload.
+  ownership_evidence:
+  - endoreg_db/models/administration/person/patient/patient_hash_alias.py:PatientHashAlias
+  boundary_consumers:
+  - service:endoreg_db/services/patient_identity/hash_aliases.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
   exception_owner: null
   exception_review_by: null
@@ -5946,7 +5970,6 @@ models:
   - service:endoreg_db/services/video_storage/timelines.py
   - service:endoreg_db/tasks.py
   - service:endoreg_db/utils/maintenance/validate_video_detailed.py
-  - service:endoreg_db/utils/media/frame_anonymization_utils.py
   - service:endoreg_db/utils/storage/video_fields.py
   dynamic_model_references:
   - endoreg_db/helpers/count_db.py

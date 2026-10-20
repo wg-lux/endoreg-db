@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, TypeAlias, Any, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeAlias, cast
 
 from django.db import models
+
 from endoreg_db.services.secret_rotation.identity import (
+    examiner_identity_fields,
     identity_rotation_transaction,
     rotate_examiner_match,
-    examiner_identity_fields,
 )
-
-from endoreg_db.utils import create_mock_examiner_name, get_examiner_hash
+from endoreg_db.utils import create_mock_examiner_name
+from endoreg_db.utils.hashs import get_examiner_hash
 
 from ..person import Person
 
@@ -44,7 +45,7 @@ class Examiner(Person):
         portal_user_info: PortalUserInfo
 
     def __str__(self) -> str:
-        return self.first_name + " " + self.last_name
+        return f"{self.first_name} {self.last_name}"
 
     @classmethod
     @identity_rotation_transaction
@@ -58,20 +59,30 @@ class Examiner(Person):
         from ...person.names.first_name import FirstName
         from ...person.names.last_name import LastName
 
-        if isinstance(first_name, FirstName):
-            first_name = cast(_ExaminerNameSource, first_name).name
-
-        if isinstance(last_name, LastName):
-            last_name = cast(_ExaminerNameSource, last_name).name
-
-        real_hash = get_examiner_hash(
-            first_name=first_name,
-            last_name=last_name,
-            center_name=center.name,
+        raw_first = (
+            cast(_ExaminerNameSource, first_name).name
+            if isinstance(first_name, FirstName)
+            else str(first_name)
         )
+        raw_last = (
+            cast(_ExaminerNameSource, last_name).name
+            if isinstance(last_name, LastName)
+            else str(last_name)
+        )
+
+        center_key = center.center_key or center.name
+
+        # Calculate canonical hash using center_key directly (no extra DB query)
+        real_hash = get_examiner_hash(
+            first_name=raw_first,
+            last_name=raw_last,
+            center_key=center_key,
+        )
+
+        # Trigger rotation check for historical hash upgrades
         rotate_examiner_match(
-            first_name=first_name,
-            last_name=last_name,
+            first_name=raw_first,
+            last_name=raw_last,
             center_name=center.name,
             center_id=int(center.pk),
             active_hash=real_hash,
@@ -79,14 +90,15 @@ class Examiner(Person):
 
         if substitute_names:
             name_tuple = create_mock_examiner_name()
-
         else:
-            name_tuple = (first_name, last_name)
+            name_tuple = (raw_first, raw_last)
+
+        # Bind identity fields to center_key so hash and identity_fingerprint match
         defaults = dict(
             first_name=name_tuple[0],
             last_name=name_tuple[1],
             center=center,
-            **examiner_identity_fields(first_name, last_name, int(center.pk)),
+            **examiner_identity_fields(raw_first, raw_last, center_key),
         )
         examiner, created = cls.objects.get_or_create(hash=real_hash, defaults=defaults)
         return examiner, created

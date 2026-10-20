@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
@@ -79,6 +79,7 @@ def acquire_report_import_fence(
     content_hash: str,
     *,
     lease_seconds: int = DEFAULT_REPORT_IMPORT_LEASE_SECONDS,
+    before_claim: Callable[[], None] | None = None,
 ) -> ReportImportFence:
     normalized_hash = _validate_content_hash(content_hash)
     if lease_seconds < 1:
@@ -89,6 +90,8 @@ def acquire_report_import_fence(
             .filter(content_hash=normalized_hash)
             .first()
         )
+        if before_claim is not None:
+            before_claim()
         if expired_attempt is not None:
             now = _database_now(normalized_hash)
             if (
@@ -120,6 +123,8 @@ def acquire_report_import_fence(
                 content_hash=normalized_hash
             )
         )
+        if before_claim is not None:
+            before_claim()
         now = _database_now(normalized_hash)
         if (
             attempt.status == ReportImportAttempt.STATUS_ACTIVE

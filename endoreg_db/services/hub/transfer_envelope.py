@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import base64
 import hashlib
 import io
@@ -105,7 +107,7 @@ def _private_key_identifier(private_key: X25519PrivateKey) -> str:
         serialization.Encoding.Raw,
         serialization.PublicFormat.Raw,
     )
-    return hashlib.sha256(public_bytes).hexdigest()
+    return get_bytes_hash(public_bytes)
 
 
 def _load_recipient_private_key(path: Path) -> X25519PrivateKey:

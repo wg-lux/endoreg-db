@@ -30,7 +30,7 @@ files:
 - file: model_training_jobs.py
   role: Exports prepare_model_training_inputs, dispatch_due_model_training_retries, reconcile_model_training_artifacts.
 - file: report_llm_jobs.py
-  role: Exports get_report_llm_job_mode, get_report_llm_dispatch_delay_seconds, report_llm_job_payload.
+  role: Report job orchestration and API payloads with canonical attempt completion evidence.
 - file: stale_recovery.py
   role: Exports recover_stale_video_processing_history.
 - file: timeouts.py

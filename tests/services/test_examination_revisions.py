@@ -327,10 +327,10 @@ def _workbook_payload() -> JsonObject:
         }
     )
     payload: JsonObject = {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "generated_at": "2026-01-01T10:00:00Z",
         "case_id": "0b5c337e-3a39-4138-a911-8ba1cb95360a",
-        "patient_pseudonym": "pseudo",
+        "patient_id": 1,
         "center_key": None,
         "is_closed": False,
         "examinations": [
@@ -400,6 +400,6 @@ def test_workbook_rejects_ambiguous_identity_and_unfinalized_content() -> None:
 @pytest.mark.parametrize("text", ["x" * 32768, "control\x00character"])
 def test_workbook_rejects_content_excel_would_truncate_or_corrupt(text: str) -> None:
     payload = _workbook_payload()
-    payload["patient_pseudonym"] = text
+    payload["center_key"] = text
     with pytest.raises(ValueError, match="use JSON export"):
         case_export_workbook(payload)

@@ -167,12 +167,9 @@ class StudyCohortPreviewViewTests(TestCase):
         case = payload["cases"][0]
         assert case["patient_examination_id"] == self.patient_examination.pk
         assert case["patient_examination_ids"] == [self.patient_examination.pk]
-        assert case["case_hash"] == self.patient_examination.hash
-        assert case["case_hashes"] == [self.patient_examination.hash]
         assert case["examinations"] == [
             {
                 "patient_examination_id": self.patient_examination.pk,
-                "case_hash": self.patient_examination.hash,
                 "examination_name": self.examination.name,
                 "examination_date": "2026-06-01",
                 "findings": [
@@ -187,7 +184,7 @@ class StudyCohortPreviewViewTests(TestCase):
                 ],
             }
         ]
-        assert case["patient_hash"] == self.patient.patient_hash
+        assert case["patient_id"] == self.patient.pk
         assert case["center_keys"] == [self.center.center_key]
         assert case["findings"] == [finding.name]
         assert case["annotation_labels"] == [label.name]
@@ -261,7 +258,7 @@ class StudyCohortPreviewViewTests(TestCase):
         }
         assert len(payload["cases"]) == 1
         case = payload["cases"][0]
-        assert case["patient_hash"] == self.patient.patient_hash
+        assert case["patient_id"] == follow_up.patient_id
         assert case["patient_examination_ids"] == [
             follow_up.pk,
             self.patient_examination.pk,

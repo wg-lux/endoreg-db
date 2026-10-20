@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import re
 from dataclasses import asdict, dataclass
 from datetime import datetime
@@ -105,7 +106,7 @@ def _term_name(kind: str, value: str) -> str:
     candidate = f"sap_ish:{kind}:{normalized}"
     if len(candidate) <= 255:
         return candidate
-    digest = hashlib.sha256(candidate.encode("utf-8")).hexdigest()[:16]
+    digest = get_bytes_hash(candidate.encode("utf-8"))[:16]
     return f"{candidate[:238]}:{digest}"
 
 
@@ -142,7 +143,7 @@ def _case_hash(
     identity = "\0".join(
         ("sap_ish_case_v1", external_id_origin, patient_number, case_number)
     )
-    return f"sap_ish:v1:{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
+    return f"sap_ish:v1:{get_bytes_hash(identity.encode('utf-8'))}"
 
 
 def _medication_source_id(
@@ -168,7 +169,7 @@ def _medication_source_id(
             row.source_path.name,
             str(row.row_number),
         )
-    return hashlib.sha256("\0".join(identity_parts).encode("utf-8")).hexdigest()
+    return get_bytes_hash("\0".join(identity_parts).encode("utf-8"))
 
 
 def _parse_lab_measurement(value: str) -> tuple[float | None, str | None]:

@@ -14,7 +14,7 @@ The catalog checker validates all three source checkouts without reading secrets
 | --- | --- | --- |
 | Identity salt | Patient, examination and examiner hashes | Keep verified previous salts as retiring readers until all identities and references are accounted for. |
 | Media master key | Encrypted files and wrapped content keys | Keep previous keys until every file is migrated and authenticated, including backups and HLS. |
-| Django signing key | Sessions and signed tokens | Planned rotation may retain verification fallbacks; a compromised key must not remain trusted. |
+| Django signing key | Sessions and signed tokens | No verification fallbacks; coordinate consumer reload and invalidate previous sessions and signatures. |
 | LUKS key | Encrypted filesystem | Separate LuxNix/storage procedure; application rotation does not rotate LUKS. |
 
 ## Before changing a key
@@ -103,12 +103,10 @@ the backend and sender changes together. This is metadata erasure, not proof
 that redacted report text or processed media is free of residual identifiers.
 
 Identity salts are durable matching material. Routine credential renewal or
-recovery must not regenerate them. LuxNix can provision a center-scoped salt
-through the existing Vault machine-enrollment workflow, configured in inventory
-with `django.centerIdentitySalt`. Moving a machine to another center does not
-authorize replacing its historical salt or merging its existing patient records.
-The default compatibility path retains established generations; a different
-center source is an explicit migration blocker rather than silent key rotation.
+recovery must not regenerate them. Central Vault salt provisioning is disabled;
+`django.centerIdentitySalt` and `django.identitySaltViaSecretSpec` are rejected.
+Preserve established local generations. Moving a machine to another center does
+not authorize replacing historical salts or merging patient records.
 
 File-content SHA-256 hashes are unsalted integrity/deduplication identifiers;
 they are not patient pseudonyms. The legacy patient/examination helpers in

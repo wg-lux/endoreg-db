@@ -5,9 +5,16 @@ from pathlib import Path
 
 import pytest
 from pytest import MonkeyPatch
-from django.db import transaction
+from lx_dtypes.models.contracts.report_anonymization import (
+    ReportExtractionEvidence,
+    ReportExtractionReceipt,
+)
 
 from endoreg_db.services.reports.import_lifecycle import ReportImportLifecycle
+from endoreg_db.services.reports.import_fencing import (
+    acquire_report_import_fence,
+    report_import_finalization_guard,
+)
 
 from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import Center, RawPdfFile, UploadJob
@@ -24,6 +31,7 @@ from endoreg_db.utils.storage import save_local_file
 def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_content(
     monkeypatch: MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
     unique_suffix = uuid.uuid4().hex[:8]
 
     paths = paths_module.get_runtime_paths()
@@ -39,6 +47,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     )
     atomic_write_file(destination=first_drop, content=(payload,))
     atomic_write_file(destination=second_drop, content=(payload,))
+    content_hash = get_file_hash(first_drop)
 
     assert first_drop.is_relative_to(paths.import_dir)
     assert second_drop.is_relative_to(paths.import_dir)
@@ -65,6 +74,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             assert center_name == center.name
             assert retry is True
             file_hash = get_file_hash(normalized_file_path)
+            fence = acquire_report_import_fence(file_hash)
             report = RawPdfFile(pdf_hash=file_hash, center=center)
             save_local_file(
                 report.file,
@@ -78,9 +88,22 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 name=f"{file_hash}.processed.pdf",
                 save=False,
             )
+            report.raw_meta = {
+                "report_extraction_receipt": ReportExtractionReceipt(
+                    attempt_id=fence.owner_id.hex,
+                    source_sha256=file_hash,
+                    staged_artifact_sha256=file_hash,
+                    extraction_evidence=ReportExtractionEvidence(
+                        outcome="empty",
+                        backend="configured_llm",
+                        finding_count=0,
+                        provider_attempted=True,
+                    ),
+                ).model_dump(mode="json")
+            }
             report.save()
             report.get_or_create_state().mark_anonymization_validated()
-            with transaction.atomic():
+            with report_import_finalization_guard(fence):
                 self.lifecycle.succeeded(report)
             return report
 
@@ -90,10 +113,14 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     )
 
     def _verified_processed_report_hash(*_args: object, **_kwargs: object) -> str:
-        return get_file_hash(first_drop)
+        return content_hash
 
     monkeypatch.setattr(
         "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        _verified_processed_report_hash,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.completion.require_usable_completed_report",
         _verified_processed_report_hash,
     )
 

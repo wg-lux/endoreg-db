@@ -33,7 +33,7 @@ from django.test.utils import override_settings
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context import ImportContext
-from endoreg_db.models import VideoFile
+from endoreg_db.models import Center, VideoFile
 from endoreg_db.schemas.video_storage import (
     VideoArtifactProbe,
     VideoStorageNormalizationEvidence,
@@ -1116,7 +1116,11 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     canonical_path = tmp_path / "video-hash.mp4"
     canonical_path.write_bytes(b"previous-processed-video")
     staged_path = tmp_path / "video-hash.part.mp4"
-    video = VideoFile(id=73, raw_video_hash="video-hash")
+    video = VideoFile(
+        id=73,
+        raw_video_hash="video-hash",
+        center=Center(name="center", center_key="reimport-center"),
+    )
     failure_paths: list[Path] = []
 
     class DummyAnonymizer:
@@ -1213,11 +1217,17 @@ def test_reanonymize_existing_video_skips_import_staging(
     source_path.write_bytes(b"raw-video")
     events: list[tuple[object, ...]] = []
 
-    video = VideoFile(raw_video_hash="video-hash")
+    video = VideoFile(
+        raw_video_hash="video-hash",
+        center=Center(
+            name="university_hospital_wuerzburg", center_key="reimport-center"
+        ),
+    )
     monkeypatch.setattr(video, "resolved_import_context", False, raising=False)
 
     class DummyAnonymizer:
         def anonymize_video(self, ctx: ImportContext) -> ImportContext:
+            assert ctx.center_key == "reimport-center"
             events.append(
                 (
                     "anonymize",

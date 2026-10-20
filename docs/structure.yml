@@ -8,6 +8,18 @@ responsibilities:
 boundaries:
 - Feature scope and readiness evidence belong in feature-tracking YAML.
 files:
+- file: patient_matching_2pc_assessment.md
+  role: German evidence-based evaluation of exact existing-HMAC two-party matching, prototype measurements and proof obligations.
+- file: source_patient_matching.md
+  role: Local identity boundaries, exact-HMAC evaluation entrypoint and separate verified-identifier matching architecture.
+- file: endoreg-db-threat-model.md
+  role: German recipient-specific assessment of identity linkage, token protection and research export disclosure.
+- file: annotation_export_guide.md
+  role: Annotation export selection, canonical artifact identity and shared browser/file export contracts.
+- file: image_hash_publication.md
+  role: German scientific protocol, data dictionary, figure captions and reproduction instructions.
+- file: report_import_concurrency_implementation.md
+  role: Report ownership, publication, extraction receipts and native lifecycle contract.
 - file: implementation_standards_review.md
   role: Technical standards and security review snapshot linked to authoritative feature definitions.
 - file: annotation_comparisons.md

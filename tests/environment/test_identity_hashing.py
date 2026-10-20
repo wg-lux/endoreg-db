@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import secrets
 from datetime import date
 from pathlib import Path
 
@@ -12,7 +13,16 @@ from endoreg_db.config.identity_hashing import (
     validate_identity_salt,
 )
 from endoreg_db.utils.file_operations import atomic_write_file
-from endoreg_db.utils.hashs import get_patient_hash
+from endoreg_db.utils.hashs import (
+    calculate_patient_hash,
+    get_examiner_hash,
+    get_patient_examination_hash,
+    get_patient_identity_fingerprint,
+    get_identity_salt_fingerprint,
+    get_identity_salt,
+)
+
+pytestmark = pytest.mark.no_db
 
 
 @pytest.mark.parametrize(
@@ -24,26 +34,29 @@ def test_invalid_identity_salts_fail_without_disclosing_values(value: object) ->
 
 
 def test_identity_hash_uses_current_typed_setting() -> None:
-    args = ("Ada", "Lovelace", date(1980, 12, 10), "center")
-    with override_settings(DJANGO_SALT="first-test-salt"):
-        first = get_patient_hash(*args)
-        assert first == get_patient_hash(*args, salt="first-test-salt")
-    with override_settings(DJANGO_SALT="second-test-salt"):
-        assert get_patient_hash(*args) != first
+    args = ("Ada", "Lovelace", date(1980, 12, 10))
+    with override_settings(DJANGO_SALT=secrets.token_hex(32)):
+        first = calculate_patient_hash(*args, center_key="center")
+        assert first == calculate_patient_hash(*args, center_key="center")
+    with override_settings(DJANGO_SALT=secrets.token_hex(32)):
+        assert calculate_patient_hash(*args, center_key="center") != first
     with override_settings(DJANGO_SALT=""):
         with pytest.raises(ImproperlyConfigured):
-            get_patient_hash(*args)
+            calculate_patient_hash(*args, center_key="center")
 
 
 def test_private_file_precedes_inline_salt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    salt = secrets.token_hex(32)
     path = atomic_write_file(
-        destination=tmp_path / "salt", content=(b"file-test-salt\n",), file_mode=0o600
+        destination=tmp_path / "salt",
+        content=((salt + "\n").encode(),),
+        file_mode=0o600,
     )
     monkeypatch.setenv("DJANGO_SALT_FILE", str(path))
     monkeypatch.setenv("DJANGO_SALT", "inline-test-salt")
-    assert load_identity_salt(required=True, allow_inline=False) == "file-test-salt"
+    assert load_identity_salt(required=True, allow_inline=False) == salt
 
 
 @pytest.mark.parametrize("mode", [0o644, 0o640, 0o666])
@@ -93,3 +106,160 @@ def test_production_requires_file_and_optional_config_does_not_invent_salt(
         load_identity_salt(required=True, allow_inline=False)
     monkeypatch.delenv("DJANGO_SALT")
     assert load_identity_salt() == ""
+
+
+@pytest.mark.parametrize("encoding", ["hex", "base64", "urlsafe"])
+def test_validation_preserves_key_material(encoding: str) -> None:
+    import base64
+    import hashlib
+    import hmac
+
+    raw = secrets.token_bytes(32)
+    salt = (
+        raw.hex()
+        if encoding == "hex"
+        else (
+            base64.b64encode(raw)
+            if encoding == "base64"
+            else base64.urlsafe_b64encode(raw)
+        ).decode()
+    )
+    assert validate_identity_salt(salt) == salt
+    assert validate_identity_salt(salt.encode()) == salt
+    assert validate_identity_salt(validate_identity_salt(salt)) == salt
+    with override_settings(DJANGO_SALT=salt):
+        assert get_identity_salt() == salt
+        assert get_identity_salt_fingerprint() == get_identity_salt_fingerprint(
+            salt.encode()
+        )
+        assert (
+            get_identity_salt_fingerprint()
+            == hmac.new(
+                salt.encode(), b"endoreg-identity-salt-v1", hashlib.sha256
+            ).hexdigest()
+        )
+
+
+@pytest.mark.parametrize(
+    "salt", ["default_salt", "a" * 64, "0123456789abcdef" * 4, b"short"]
+)
+def test_every_identity_helper_rejects_invalid_setting_and_explicit_salt(
+    salt: str | bytes,
+) -> None:
+    from typing import Callable
+
+    calls: tuple[Callable[[str | bytes | None], str], ...] = (
+        lambda candidate: calculate_patient_hash(
+            "Ada", "Lovelace", date(1980, 1, 2), center_key="center", salt=candidate
+        ),
+        lambda candidate: get_patient_identity_fingerprint(
+            "Ada", "Lovelace", date(1980, 1, 2), "center", salt=candidate
+        ),
+        lambda candidate: get_patient_examination_hash(
+            "Ada", "Lovelace", date(1980, 1, 2), center_key="center", salt=candidate
+        ),
+        lambda candidate: get_examiner_hash(
+            "Ada", "Lovelace", center_key="center", salt=candidate
+        ),
+        get_identity_salt_fingerprint,
+    )
+    with override_settings(DJANGO_SALT=salt):
+        for call in calls:
+            with pytest.raises(ImproperlyConfigured):
+                call(None)
+    with override_settings(DJANGO_SALT=secrets.token_hex(32)):
+        for call in calls:
+            with pytest.raises(ImproperlyConfigured):
+                call(salt)
+
+
+def test_keyring_validates_active_but_retains_enrolled_historical_material() -> None:
+    from endoreg_db.config.identity_hashing import identity_keyring_snapshot
+    from endoreg_db.config.secret_keyring import SecretKeyring
+
+    old = b"default_salt"
+    active = secrets.token_hex(32).encode()
+    token = identity_keyring_snapshot.set(SecretKeyring(active, (old,)))
+    try:
+        assert get_identity_salt() == active.decode()
+        assert get_identity_salt_fingerprint(old) != get_identity_salt_fingerprint()
+    finally:
+        identity_keyring_snapshot.reset(token)
+    token = identity_keyring_snapshot.set(SecretKeyring(old))
+    try:
+        with pytest.raises(ImproperlyConfigured):
+            get_identity_salt()
+    finally:
+        identity_keyring_snapshot.reset(token)
+
+
+def test_rotation_fingerprint_honors_explicit_generation() -> None:
+    from endoreg_db.services.secret_rotation.identity import (
+        IdentitySource,
+        identity_fingerprint,
+    )
+
+    source = IdentitySource(
+        first_name="Ada", last_name="Lovelace", dob=date(1980, 1, 2)
+    )
+    old, active = secrets.token_hex(32), secrets.token_hex(32)
+    with override_settings(DJANGO_SALT=active):
+        assert identity_fingerprint(
+            source, "center", old.encode()
+        ) == get_patient_identity_fingerprint(
+            source.first_name, source.last_name, source.dob, "center", salt=old
+        )
+        assert identity_fingerprint(
+            source, "center", old.encode()
+        ) != identity_fingerprint(source, "center")
+
+
+def test_sensitive_meta_delegates_salt_without_changing_key_material() -> None:
+    from endoreg_db.models import Center, SensitiveMeta
+
+    center = Center(name="center", center_key="center")
+    meta = SensitiveMeta(
+        patient_first_name="Ada",
+        patient_last_name="Lovelace",
+        patient_dob=date(1980, 1, 2),
+        examination_date=date(2026, 1, 2),
+        center=center,
+    )
+    salt = secrets.token_hex(32)
+    with override_settings(DJANGO_SALT=salt):
+        assert meta.calculate_patient_hash() == meta.calculate_patient_hash(salt=salt)
+        assert meta.get_patient_examination_hash() == meta.get_patient_examination_hash(
+            salt=salt
+        )
+        assert meta.calculate_patient_hash() == calculate_patient_hash(
+            "Ada", "Lovelace", date(1980, 1, 2), center_key="center", salt=salt
+        )
+        with pytest.raises(ImproperlyConfigured):
+            meta.calculate_patient_hash(salt="default_salt")
+        with pytest.raises(ImproperlyConfigured):
+            meta.get_patient_examination_hash(salt="default_salt")
+
+
+@pytest.mark.parametrize("salt", ["default_salt", "x" * 64])
+def test_private_keyring_cannot_activate_weak_salt(tmp_path: Path, salt: str) -> None:
+    import yaml
+    from endoreg_db.config.secret_keyring import load_keyring
+
+    secret = atomic_write_file(
+        destination=tmp_path / "salt", content=[salt.encode()], file_mode=0o600
+    )
+    manifest = atomic_write_file(
+        destination=tmp_path / "ring.yml",
+        content=[
+            yaml.safe_dump(
+                {
+                    "schema_version": 1,
+                    "active": str(secret),
+                    "allow_legacy_default_salt": True,
+                }
+            ).encode()
+        ],
+        file_mode=0o600,
+    )
+    with pytest.raises(ValueError):
+        load_keyring(manifest, kind="identity")

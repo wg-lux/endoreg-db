@@ -10,7 +10,6 @@ from endoreg_db.config.secret_keyring import (
     SecretKeyring,
     configured_identity_keyring,
     read_secret_line,
-    validate_salt_material,
 )
 
 from django.core.exceptions import ImproperlyConfigured
@@ -20,20 +19,25 @@ identity_keyring_snapshot: ContextVar[SecretKeyring | None] = ContextVar(
 )
 
 
+def validate_identity_salt(value: object) -> str:
+    """Expose invalid application settings as redacted configuration errors."""
+    # The utility package re-exports hashing helpers which import this module.
+    # Resolve its validator only after configuration module initialization.
+    from endoreg_db.utils.verify_salt import (
+        validate_identity_salt as _validate_identity_salt,
+    )
+
+    try:
+        return _validate_identity_salt(value)
+    except ValueError:
+        raise ImproperlyConfigured("Invalid identity salt configuration") from None
+
+
 def current_identity_keyring() -> SecretKeyring | None:
     try:
         return identity_keyring_snapshot.get()
     except LookupError:
         return configured_identity_keyring()
-
-
-def validate_identity_salt(value: object) -> str:
-    if not isinstance(value, str):
-        raise ImproperlyConfigured("A non-default identity salt is required")
-    try:
-        return validate_salt_material(value)
-    except ValueError as exc:
-        raise ImproperlyConfigured(str(exc)) from None
 
 
 def load_identity_salt(*, required: bool = False, allow_inline: bool = True) -> str:
@@ -44,7 +48,7 @@ def load_identity_salt(*, required: bool = False, allow_inline: bool = True) -> 
     """
     ring = current_identity_keyring()
     if ring is not None:
-        return validate_identity_salt(ring.active.decode("utf-8"))
+        return validate_identity_salt(ring.active)
     path = os.environ.get("DJANGO_SALT_FILE", "")
     if path:
         try:

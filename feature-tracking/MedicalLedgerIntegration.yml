@@ -24,6 +24,49 @@ source_documents:
   disposition: reference
   note: Beschreibt Ledger-Modelle, EndoReg-Adapter und den vorgesehenen Django-Host-Integrationspfad.
 definition_of_done:
+- id: reporting_clinical_import_adapters
+  category: interoperability
+  title: Versioned clinical source adapters support reviewed reporting imports
+  acceptance:
+  - Shared typed clinical contracts belong to lx_dtypes; endoreg_db owns adapter orchestration, authorization,
+    canonical persistence and transactions.
+  - MEONA tabular, FHIR R4 JSON and BMP XML are separately versioned adapters with declared capabilities
+    and explicit rejection of unsupported clinical content.
+  - Adapters normalize once into typed records and reuse terminology, patient identity and medical-ledger
+    helpers without duplicating persistence workflows.
+  - Source-scoped patient and encounter identifiers are resolved within the authorized center; no patient
+    demographics or case assignments are inferred from an upload destination alone.
+  - MEONA row identity includes verified component identity where required; repeated patient/id pairs
+    with conflicting drug names or units cannot overwrite or merge silently.
+  - MEONA numeric status definitions, null markers and source timezone are explicit profile configuration;
+    missing application time never falls back to preparation or creation time as evidence of administration.
+  - FHIR Medication, MedicationStatement, List, MedicationRequest and MedicationAdministration retain
+    distinct semantics and local reference resolution without remote URL fetching.
+  - Laboratory imports preserve supported Observation value types, comparators, absent reasons, reference
+    ranges, specimen, status and effective/issued times with report grouping.
+  - BMP retains plan identity, grouping and dosage text; plan entries do not generate administration events.
+  - Preview is read-only and commit revalidates source digest, adapter version, identity resolution, case
+    state and terminology mappings before an atomic write.
+  - Durable source identity, revision and content digest distinguish replay, correction and conflict;
+    changed imports never silently overwrite newer clinical facts.
+  - Protected source artifacts use encrypted storage and scoped materialization; logs and errors exclude
+    patient identifiers, clinical values and payload fragments.
+  - Tests cover cross-patient and cross-center rejection, conflicting component identities, unsupported
+    statuses, ambiguous timestamps, stale previews, rollback, replay and corrections.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the reporting clinical import contract, validate against the actual export dictionary
+      and extraction SQL, then run typed contract, adapter, persistence/API and frontend integration tests.
+    timeout_seconds: 1200
+  assessment:
+    status: blocked
+    evidence: []
+    note: Supplied MEONA export has conflicting patient/id groups, numeric statuses without a dictionary,
+      offset-free timestamps and no case identifier. Extraction SQL, status definitions and source timezone
+      are required before clinical normalization; runtime imports are not implemented.
+    assessed_by: codex-lab-integrations-20261015
+    assessed_at: '2026-10-15T14:18:23.889318Z'
 - id: case_medication_periods_and_measurements
   category: functionality
   title: Case setup records medication periods and laboratory measurements

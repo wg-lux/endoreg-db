@@ -42,10 +42,6 @@ accepted_findings:
     path: endoreg_db/serializers/misc/sensitive_patient_data.py
     message: "unused variable 'flat'"
   - <<: *protocol_signature
-    path: endoreg_db/utils/media/frame_anonymization_utils.py
-    message: "unused variable 'flat'"
-    occurrences: 2
-  - <<: *protocol_signature
     path: endoreg_db/utils/pydantic_models/db_config.py
     message: "unused variable 'ask_override'"
   - <<: *protocol_signature
@@ -163,30 +159,6 @@ deletion_candidates:
     risk: medium
     owner: endoreg_db maintainers
     review_after: 2026-08-31
-  - <<: *consumer_check
-    path: endoreg_db/queries/annotations/legacy.py
-    line_range: 1-119
-    symbol: legacy annotation dataset query implementation
-    evidence:
-      - No internal call site or test was found.
-      - Its two functions are deliberately re-exported through package __init__.py files.
-    reason: Internally unused legacy dataset API whose re-exports may be consumed downstream.
-  - <<: *consumer_check
-    path: endoreg_db/queries/annotations/__init__.py
-    line_range: 1-6
-    symbol: legacy annotation query re-exports
-    evidence:
-      - No internal import of get_legacy_annotations_for_labelset was found.
-      - generate_legacy_dataset_output is forwarded again by endoreg_db.queries.
-    reason: Public compatibility barrel for an internally unused legacy query module.
-  - <<: *consumer_check
-    path: endoreg_db/queries/__init__.py
-    line_range: 1-3
-    symbol: generate_legacy_dataset_output re-export
-    evidence:
-      - No repository consumer imports endoreg_db.queries.
-      - __all__ explicitly presents the symbol as a public package contract.
-    reason: Top-level public re-export requires downstream confirmation before removal.
   - <<: *consumer_check
     path: endoreg_db/api_urls.py
     line_range: 1-4

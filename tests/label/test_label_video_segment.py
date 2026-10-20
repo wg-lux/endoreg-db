@@ -104,12 +104,13 @@ class LabelVideoSegmentModelTest(TestCase):
         )
         self.prediction_meta = cast(_VideoPredictionMetaWithModel, prediction_meta)
 
-        self.start_frame = 10
         video_frame_count = _video_frame_count(self.video_file)
+        self.assertGreaterEqual(video_frame_count, 2)
+        self.start_frame = min(10, video_frame_count - 2)
         self.end_frame = min(self.start_frame + 20, video_frame_count)
         self.assertLess(
             self.start_frame,
-            self.end_frame + 1,
+            self.end_frame,
             "Start frame must be less than end frame",
         )
         self.segment = LabelVideoSegment.create_from_video(
@@ -209,16 +210,16 @@ class LabelVideoSegmentModelTest(TestCase):
         assert isinstance(segment.label, Label)
 
     def test_get_segment_len_in_s(self):
-        """
-        Tests that the segment's duration in seconds is correctly calculated based on its frame range and the video's FPS.
-        """
-        expected_fps = self.video_file.get_fps()
-
-        expected_duration = (
-            self.segment.end_frame_number - self.segment.start_frame_number
-        ) / expected_fps
-        actual_duration = self.segment.get_segment_len_in_s()
-        self.assertAlmostEqual(actual_duration, expected_duration, places=4)
+        """Persisted timestamps and the terminal duration define segment length."""
+        self.segment.start_frame_number = 0
+        self.segment.end_frame_number = _video_frame_count(self.video_file)
+        self.assertAlmostEqual(
+            self.segment.get_segment_len_in_s(), self.video_file.duration, places=4
+        )
+        self.video_file.frames.filter(frame_number=0).update(timestamp=0.25)
+        self.video_file.frames.filter(frame_number=1).update(timestamp=0.75)
+        self.segment.end_frame_number = 1
+        self.assertAlmostEqual(self.segment.get_segment_len_in_s(), 0.5, places=4)
 
     def test_get_frames_without_annotation(self):
         """Test retrieving frames that don't have annotations for the segment's label."""

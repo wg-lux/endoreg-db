@@ -175,8 +175,6 @@ class _FileOverviewPayload(TypedDict):
     upload_job: OverviewUploadJobMonitoringData | None
     hls_materializations: list[OverviewHlsMaterializationData]
     document_type: str | None
-    patient_hash_display: str | None
-    examination_hash_display: str | None
     pseudo_patient_id: int | None
     pseudo_examination_id: int | None
 
@@ -278,12 +276,6 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     document_type = serializers.CharField(
         read_only=True, allow_null=True, required=False
     )
-    patient_hash_display = serializers.CharField(
-        read_only=True, allow_null=True, required=False
-    )
-    examination_hash_display = serializers.CharField(
-        read_only=True, allow_null=True, required=False
-    )
     pseudo_patient_id = serializers.IntegerField(
         read_only=True, allow_null=True, required=False
     )
@@ -302,13 +294,9 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             getattr(instance, "_overview_upload_job", None),
         )
 
-    def _display_filename(self, instance: object, fallback: str) -> str:
-        upload_job = self._overview_upload_job(instance)
-        if upload_job is not None:
-            original_filename = self._safe_original_filename(upload_job)
-            if original_filename:
-                return original_filename
-        return fallback
+    def _display_filename(self, instance: object) -> str:
+        media_type = "video" if isinstance(instance, VideoFile) else "report"
+        return f"{media_type}-{getattr(instance, 'pk')}"
 
     def _upload_job_summary(
         self, instance: object
@@ -348,9 +336,6 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             for artifact in artifacts
         ]
 
-    def _hash_display(self, value: str | None) -> str | None:
-        return f"...{value[-8:]}" if value else None
-
     def _pdf_document_type(self, instance: RawPdfFile) -> str | None:
         report = getattr(instance, "anonym_examination_report", None)
         report_type = getattr(report, "type", None) if report is not None else None
@@ -379,11 +364,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         # 1. Extract Type-Specific Data
         if isinstance(instance, VideoFile):
             media_type = "video"
-            raw_file_name = getattr(instance.raw_file, "name", "") or ""
-            fallback_filename = instance.original_file_name or (
-                raw_file_name.split("/")[-1] if raw_file_name else "unknown_video"
-            )
-            filename = self._display_filename(instance, fallback_filename)
+            filename = self._display_filename(instance)
             created_at = instance.uploaded_at
             # Use the state relation optimized in the View
             state_obj = cast(object | None, instance.state)
@@ -401,13 +382,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
-            report_file_name = getattr(instance.file, "name", "") or ""
-            fallback_filename = (
-                report_file_name.split("/")[-1]
-                if report_file_name
-                else "unknown_report"
-            )
-            filename = self._display_filename(instance, fallback_filename)
+            filename = self._display_filename(instance)
             created_at = instance.date_created
             state_obj = cast(object | None, instance.state)
             sensitive_meta = cast(
@@ -441,16 +416,6 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             "upload_job": self._upload_job_summary(instance),
             "hls_materializations": self._hls_materializations(instance),
             "document_type": document_type,
-            "patient_hash_display": (
-                self._hash_display(sensitive_meta.patient_hash)
-                if sensitive_meta
-                else None
-            ),
-            "examination_hash_display": (
-                self._hash_display(sensitive_meta.examination_hash)
-                if sensitive_meta
-                else None
-            ),
             "pseudo_patient_id": (
                 getattr(sensitive_meta, "pseudo_patient_id", None)
                 if sensitive_meta
@@ -489,8 +454,6 @@ class CrossCenterProcessedOverviewSerializer(serializers.Serializer[VideoFile]):
             "upload_job": None,
             "hls_materializations": [],
             "document_type": None,
-            "patient_hash_display": None,
-            "examination_hash_display": None,
             "pseudo_patient_id": None,
             "pseudo_examination_id": None,
             "center_key": getattr(center, "center_key", None),

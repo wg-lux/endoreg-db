@@ -19,6 +19,7 @@ from endoreg_db.services.imports.lease import (
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
     validate_upload_job_interrupted_retry,
+    validate_upload_job_interruption,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event
 
@@ -358,6 +359,7 @@ def reconcile_expired_upload_job_import_leases(*, limit: int = 100) -> int:
             ):
                 continue
             cancellation = job.status == UploadJob.Status.CANCEL_REQUESTED
+            validate_upload_job_interruption(current_status=job.status)
             job.processing_fencing_token += 1
             job.processing_lease_owner = ""
             job.processing_lease_expires_at = None

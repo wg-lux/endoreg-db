@@ -1,4 +1,5 @@
 from __future__ import annotations
+from uuid import UUID, uuid4
 import logging
 import random
 import unicodedata
@@ -174,6 +175,9 @@ class Patient(Person):
 
     """
 
+    uuid: models.UUIDField[UUID, UUID] = models.UUIDField(
+        default=uuid4, unique=True, editable=False
+    )
     first_name: models.CharField[Any, Any] = models.CharField(max_length=100)
     last_name: models.CharField[Any, Any] = models.CharField(max_length=100)
     dob: models.DateField[Any, Any] = models.DateField(null=True, blank=True)
@@ -233,12 +237,26 @@ class Patient(Person):
         """Resolve an unambiguous pseudonymous identity without changing records."""
         if not patient_hash or not patient_hash.strip():
             raise ValueError("Patient hash is required for pseudonym resolution")
-        try:
-            patient = cls.objects.get(patient_hash=patient_hash)
-        except cls.DoesNotExist:
-            return None
-        except cls.MultipleObjectsReturned as exc:
-            raise ValueError("Ambiguous patient hash requires identity review") from exc
+        if center is not None:
+            from endoreg_db.services.patient_identity.hash_aliases import (
+                resolve_patient_hash,
+            )
+
+            patient = resolve_patient_hash(
+                center=center, patient_hash=patient_hash, allow_opaque_current_hash=True
+            )
+            if patient is None:
+                return None
+        else:
+            # Centerless compatibility callers cannot resolve historical aliases.
+            try:
+                patient = cls.objects.get(patient_hash=patient_hash)
+            except cls.DoesNotExist:
+                return None
+            except cls.MultipleObjectsReturned as exc:
+                raise ValueError(
+                    "Ambiguous patient hash requires identity review"
+                ) from exc
         if patient.is_real_person:
             raise ValueError("Patient hash resolves to a real person, not a pseudonym")
         if center is not None and patient.center_id != center.pk:

@@ -62,6 +62,9 @@ from lx_dtypes.models.contracts.django_settings import (
 )
 
 DJANGO_SALT = load_identity_salt()
+DEFAULT_EXCEPTION_REPORTER_FILTER = (
+    "endoreg_db.config.exception_reporter.IdentitySecretExceptionReporterFilter"
+)
 
 django_stubs_ext.monkeypatch()
 
@@ -296,6 +299,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "endoreg_db.services.privacy.response_boundary.IdentityHashResponseMiddleware",
 ]
 
 # Use a distinct module name to avoid ambiguity and mount API surfaces centrally.

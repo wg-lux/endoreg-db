@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import io
 import json
 import random
@@ -122,7 +123,7 @@ def _load_lx_ai_training_contracts() -> tuple[Any, ...]:
 
 
 def _write_bytes_atomic(destination: Path, payload: bytes) -> tuple[str, int]:
-    checksum = hashlib.sha256(payload).hexdigest()
+    checksum = get_bytes_hash(payload)
     atomic_write_file(
         destination=destination,
         content=[payload],

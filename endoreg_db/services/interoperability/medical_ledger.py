@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import json
 import time
 from collections.abc import Generator
@@ -475,7 +476,7 @@ def _canonical_medical_ledger_request_hash(
         ensure_ascii=False,
         allow_nan=False,
     ).encode("utf-8")
-    return hashlib.sha256(serialized).hexdigest()
+    return get_bytes_hash(serialized)
 
 
 def _normalize_idempotency_key(idempotency_key: str) -> str:

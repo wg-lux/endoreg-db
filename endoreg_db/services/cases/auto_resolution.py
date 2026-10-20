@@ -1,13 +1,18 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections.abc import Generator
+from contextlib import contextmanager
 from datetime import date
 from typing import Literal, Protocol, cast
 
 from django.db import transaction
 
+from endoreg_db.models.administration.center.center import Center
+from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.services.cases.resolution_state import (
@@ -80,6 +85,92 @@ def _resolved_examination(
     if pseudo_examination is not None:
         return cast(Examination, _model_relation(pseudo_examination, "examination"))
     return None
+
+
+def _validate_inferred_identity(
+    media_obj: RawPdfFile | VideoFile,
+    patient_examination: PatientExamination | None = None,
+) -> Center:
+    sensitive_meta = _model_relation(media_obj, "sensitive_meta")
+    if sensitive_meta is None:
+        raise ValueError("Automatic case resolution requires sensitive metadata.")
+    center = _model_relation(sensitive_meta, "center")
+    if not isinstance(center, Center):
+        raise ValueError("Automatic case resolution requires a center.")
+    if media_obj.center_id is not None and media_obj.center_id != center.pk:
+        raise ValueError("Media and sensitive metadata centers conflict.")
+    patient = Patient.get_pseudo_patient_by_hash(
+        str(_model_value(sensitive_meta, "patient_hash") or ""), center=center
+    )
+    if patient is None:
+        raise ValueError("Automatic case resolution requires a known patient.")
+    for linked_patient_id in (
+        _model_optional_int(sensitive_meta, "pseudo_patient_id"),
+        _model_optional_int(media_obj, "patient_id"),
+    ):
+        if linked_patient_id is not None and linked_patient_id != patient.pk:
+            raise ValueError("Persisted patient links conflict with the patient hash.")
+    pseudo_examination = _model_relation(sensitive_meta, "pseudo_examination")
+    if pseudo_examination is not None:
+        if _model_optional_int(
+            pseudo_examination, "patient_id"
+        ) != patient.pk or _model_value(pseudo_examination, "hash") != _model_value(
+            sensitive_meta, "examination_hash"
+        ):
+            raise ValueError("Persisted examination conflicts with sensitive metadata.")
+    if patient_examination is not None and (
+        patient_examination.patient_id != patient.pk
+        or patient_examination.hash != _model_value(sensitive_meta, "examination_hash")
+    ):
+        raise ValueError("Linked examination conflicts with sensitive metadata.")
+    return center
+
+
+@contextmanager
+def correct_inferred_case_identity(
+    *, media_type: Literal["video", "pdf"], media_obj: RawPdfFile | VideoFile
+) -> Generator[None]:
+    """Rebind a consistent inferred case only around an authorized metadata edit.
+
+    The caller must hold ``identity_rotation_transaction`` before entering this
+    context so the identity fence precedes media and metadata row locks.
+    """
+    with transaction.atomic():
+        type(media_obj).objects.select_for_update().get(pk=media_obj.pk)
+        media_obj.refresh_from_db()
+        if media_obj.sensitive_meta_id is not None:
+            media_obj.sensitive_meta = SensitiveMeta.objects.select_for_update().get(
+                pk=media_obj.sensitive_meta_id
+            )
+        resolution = get_case_resolution_meta(media_obj)
+        inferred = (
+            media_obj.examination_id is not None
+            and not resolution.get("is_explicitly_resolved")
+            and not resolution.get("deferred")
+        )
+        if inferred:
+            _validate_inferred_identity(media_obj, media_obj.examination)
+        sensitive_meta = media_obj.sensitive_meta
+        previous_hashes = (
+            (sensitive_meta.patient_hash, sensitive_meta.examination_hash)
+            if sensitive_meta is not None
+            else None
+        )
+        yield
+        sensitive_meta = media_obj.sensitive_meta
+        current_hashes = (
+            (sensitive_meta.patient_hash, sensitive_meta.examination_hash)
+            if sensitive_meta is not None
+            else None
+        )
+        if inferred and current_hashes != previous_hashes:
+            # The old relationship was checked before the edit. Only this
+            # authorized transition may replace it with the corrected identity.
+            media_obj.examination = None
+            media_obj.patient = None
+            result = auto_resolve_media_case(media_type=media_type, media_obj=media_obj)
+            if result.status != "linked":
+                raise ValueError("Corrected metadata must resolve to a clinical case.")
 
 
 def link_media_to_patient_examination(
@@ -165,6 +256,7 @@ def auto_resolve_media_case(
             and not case_resolution_meta.get("is_explicitly_resolved")
             and not case_resolution_meta.get("deferred")
         ):
+            _validate_inferred_identity(media_obj, patient_examination)
             persist_auto_case_resolution_state(
                 media_obj=media_obj,
                 patient_examination_id=_model_required_int(
@@ -192,43 +284,13 @@ def auto_resolve_media_case(
     if not patient_hash or not examination_hash:
         return AutoCaseResolutionResult(status="unresolved", reason="missing_hashes")
 
-    exact_matches = list(
-        PatientExamination.objects.select_related("patient", "examination")
-        .filter(hash=examination_hash)
-        .order_by("-id")
-    )
-    if len(exact_matches) > 1:
-        return AutoCaseResolutionResult(status="ambiguous", reason="multiple_matches")
-
-    if exact_matches:
-        patient_examination = exact_matches[0]
-        _hydrate_inferred_patient_examination(
-            patient_examination=patient_examination,
-            media_obj=media_obj,
-        )
-        link_media_to_patient_examination(
-            media_type=media_type,
-            media_obj=media_obj,
-            patient_examination=patient_examination,
-        )
-        persist_auto_case_resolution_state(
-            media_obj=media_obj,
-            patient_examination_id=_model_required_int(patient_examination, "pk"),
-            patient_id=_model_required_int(patient_examination, "patient_id"),
-            created=False,
-        )
-        return AutoCaseResolutionResult(
-            status="linked",
-            patient_examination=patient_examination,
-            created=False,
-            reason="matched_by_hash",
-        )
-
+    center = _validate_inferred_identity(media_obj)
     inferred_examination = _resolved_examination(media_obj)
     patient_examination, created = (
         PatientExamination.get_or_create_pseudo_patient_examination_by_hash(
             patient_hash=patient_hash,
             examination_hash=examination_hash,
+            center=center,
             examination_name=(
                 str(_model_value(inferred_examination, "name"))
                 if inferred_examination is not None
@@ -255,12 +317,13 @@ def auto_resolve_media_case(
         status="linked",
         patient_examination=patient_examination,
         created=created,
-        reason="created_from_sensitive_meta" if created else "reused_by_hash",
+        reason="created_from_sensitive_meta" if created else "matched_by_hash",
     )
 
 
 __all__ = [
     "AutoCaseResolutionResult",
     "auto_resolve_media_case",
+    "correct_inferred_case_identity",
     "link_media_to_patient_examination",
 ]

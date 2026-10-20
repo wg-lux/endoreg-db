@@ -124,8 +124,7 @@ class PdfMediaView(APIView):
 
             pdf_data: dict[str, JsonValue] = {
                 "id": cast(int | None, pdf.pk),
-                "filename": cast(str | None, getattr(file_obj, "name", None))
-                or "Unknown",
+                "filename": f"report-{pdf.pk}.pdf",
                 "file_size": _safe_get_file_size(file_obj),
                 "pdf_hash": pdf_hash,
                 "uploaded_at": (
@@ -224,8 +223,7 @@ class PdfMediaView(APIView):
 
                 result: dict[str, JsonValue] = {
                     "id": cast(int | None, pdf.pk),
-                    "filename": cast(str | None, getattr(file_obj, "name", None))
-                    or "Unknown",
+                    "filename": f"report-{pdf.pk}.pdf",
                     "file_size": _safe_get_file_size(file_obj),
                     "pdf_hash": cast(str | None, getattr(pdf, "pdf_hash", None)),
                     "has_anonymized_text": bool(resolved_anonymized_text),

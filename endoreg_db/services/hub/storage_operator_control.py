@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-import hashlib
 import json
 from uuid import UUID
+
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import IntegrityError, transaction
 
@@ -132,7 +133,7 @@ def _fingerprint(request: _NormalizedRequest) -> str:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _safe_retry_rows(

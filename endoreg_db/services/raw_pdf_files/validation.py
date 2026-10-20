@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from django.db import transaction
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
+from endoreg_db.services.secret_rotation.identity import identity_rotation_transaction
 
 from endoreg_db.services.patient_identity.external_ids import (
     assign_patient_external_id,
@@ -43,6 +44,7 @@ def _report_is_failed_or_lost(report: "RawPdfFile") -> bool:
     )
 
 
+@identity_rotation_transaction
 def validate_report_metadata_annotation(
     report: "RawPdfFile",
     extracted_data_dict: PdfFileMetaJsonObject | None = None,
@@ -50,6 +52,8 @@ def validate_report_metadata_annotation(
     delete_original_raw: bool = True,
     enforce_processed_artifact: bool = True,
 ) -> bool:
+    from endoreg_db.services.cases.auto_resolution import correct_inferred_case_identity
+
     if _report_is_failed_or_lost(report):
         raise ValueError(
             f"RawPdfFile {report.pdf_hash} is marked failed/lost and cannot be validated."
@@ -63,24 +67,25 @@ def validate_report_metadata_annotation(
         require_usable_completed_report(report) if enforce_processed_artifact else None
     )
 
-    sensitive_meta = report.sensitive_meta
-    if sensitive_meta is None:
-        logger.error("No sensitive meta attached to report %s.", report.pk)
-        return False
+    with correct_inferred_case_identity(media_type="pdf", media_obj=report):
+        sensitive_meta = report.sensitive_meta
+        if sensitive_meta is None:
+            logger.error("No sensitive meta attached to report %s.", report.pk)
+            return False
 
-    model_payload, external_id_pair = split_patient_external_id(extracted_data_dict)
-    validated_sensitive_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
-    validated_sensitive_meta.update_from_dict(
-        cast(PdfFileMetaJsonObject, model_payload)
-    )
-    if external_id_pair is not None:
-        assign_patient_external_id(
-            sensitive_meta=sensitive_meta,
-            external_id_pair=external_id_pair,
+        model_payload, external_id_pair = split_patient_external_id(extracted_data_dict)
+        validated_sensitive_meta = cast(_ValidatedSensitiveMeta, sensitive_meta)
+        validated_sensitive_meta.update_from_dict(
+            cast(PdfFileMetaJsonObject, model_payload)
         )
-    validated_sensitive_meta.save()
+        if external_id_pair is not None:
+            assign_patient_external_id(
+                sensitive_meta=sensitive_meta,
+                external_id_pair=external_id_pair,
+            )
+        validated_sensitive_meta.save()
 
-    report.save()
+        report.save()
 
     logger.info("Metadata for report %s validated and updated successfully.", report.pk)
 

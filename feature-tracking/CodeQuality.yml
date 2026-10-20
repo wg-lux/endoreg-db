@@ -10,6 +10,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/image_hash_publication.md
+  disposition: reference
+  note: Synthetic image-hash publication protocol and reproducible artifact export.
 - path: docs/agent_context.md
   disposition: reference
   note: Hierarchical navigation schema, maintenance rules and public context guidance.
@@ -23,6 +26,81 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: retired_media_shadow_implementations
+  category: functionality
+  title: Stillgelegte Medienpfade bilden keine konkurrierenden Produktionsimplementierungen
+  acceptance:
+  - Alte Video- und Bericht-Transferannahme samt exklusiven Rohupload-Helfern und Tests ist entfernt;
+    der öffentliche Klartext-Einstieg lehnt weiter ab und verschlüsselte Transfers bleiben geprüft.
+  - Der ungenutzte Streaming-Materializer samt exklusiven Tests, das verwaiste Frame-Anonymisierungsmodul
+    und die ausdrücklich zur Entfernung freigegebenen Legacy-Query-Exporte sind entfernt.
+  - Aufruferprüfung, Pyright, fokussierte Import-, Transfer-, Streaming- und Exportregressionen sowie
+    Strukturprüfung sind dokumentiert; bestehende globale Guard-Abweichungen bleiben sichtbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Siehe reports/retired_media_paths_removal.yml; Pyright vor den dort genannten Tests
+      ausführen.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: feature-tracking/reports/retired_media_paths_removal.yml
+    - kind: test
+      reference: 486 passed, 8 subtests; final trace 47 passed; full Pyright 0 errors, 24 warnings
+    note: Vier ausdrücklich freigegebene Altpfade samt exklusiven Helfern und Tests entfernt; erhaltene
+      Service-ASTs unverändert. Bestehende globale Dead-Code-, Boundary- und Modellinventar-Drift bleibt
+      offen; keine repositoryweite Produktionsfreigabe.
+    assessed_by: codex-dead-code-20261019-a
+    assessed_at: '2026-10-19T09:09:38.869272Z'
+- id: image_content_hash_pixel_experiment
+  category: testing
+  title: Reproduzierbares Ein-Pixel-Experiment unterscheidet Dateiidentität und Bildähnlichkeit
+  acceptance:
+  - Deterministische RGB-Beispielbilder werden verlustfrei gespeichert; pro Generation ändert sich genau
+    ein Pixel um eine Intensitätsstufe in einem Farbkanal, kumulativ über alle Pixel.
+  - Zwei Bildgrößen und alle drei Farbkanäle werden mit dem echten get_file_hash geprüft; jede veränderte
+    Generation unterscheidet sich vom Original und allen vorherigen Vorwärtsgenerationen.
+  - Byteidentische Kopien stimmen überein; schrittweise Rücknahme erreicht den Originalhash erst nach
+    vollständiger Wiederherstellung. Gleiche Pixel mit anderen PNG-Metadaten haben andere Dateihashes.
+  - Der endliche Versuch belegt keine allgemeine Kollisionsfreiheit und definiert keinen visuellen Schwellenwert.
+  - Ein reproduzierbarer Export archiviert alle tatsächlich gehashten PNG-Dateien, Einzelmesswerte, Quellcode-Snapshots,
+    Softwareversionen, Testprotokoll, Prüfsummen, Tabellen und Vektorgrafiken. Die Messwertzahl und die
+    archivierten Dateien werden gegen den tatsächlichen Testlauf geprüft.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - -m
+    - scripts.collect_image_hash_publication
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/utils/test_image_content_hash.py -q
+      note: Exit-Code 0
+    - kind: test
+      reference: 'tests/utils/test_image_content_hash.py: 7 passed, 1 warning in 1.12s'
+    - kind: command
+      reference: '.devenv/state/venv/bin/python -m scripts.collect_image_hash_publication: exit 0; 7 passed;
+        1934 rows; ZIP verified'
+    - kind: document
+      reference: docs/image_hash_publication.md
+    - kind: test
+      reference: data/publication-artifacts/export/image-hash-20261016T081010Z-8094c8de/pytest.log
+    note: 'Neutraler Publikationsexport gegen unveränderte Testfälle: 7 passed, 1 bestehende Plugin-Warnung
+      in 1.81s. 1934 PNG-Beobachtungen, 960 Vorwärts- und 960 Rücknahmeschritte; Messwerte, zwei CSV-Tabellen,
+      drei Grafiken in PDF/SVG/PNG, deutsches Protokoll, 15 Code-/Konfigurationssnapshots und Umgebungsversionen
+      archiviert. ZIP enthält 1964 Dateien; CRC und byteweiser Vergleich sämtlicher Mitglieder bestanden.
+      Vollständiger Pyright: 0 Fehler/24 bestehende Warnungen; finaler Exporter: 0 Fehler/0 Warnungen.
+      Ruff bestanden. Frühere Exportanbindung erfasste 0 Zeilen und wurde durch die Mengenprüfung abgewiesen;
+      Anbindung an tatsächliches pytest.Function.module korrigiert. Kein visueller Schwellenwert oder
+      unabhängiger Replikationsnachweis.'
+    assessed_by: codex-pixel-hash-20261016
+    assessed_at: '2026-10-16T08:11:49.727259Z'
 - id: hierarchical_agent_context
   category: documentation
   title: Hierarchical agent context maps describe actual ownership and navigation
@@ -318,6 +396,13 @@ definition_of_done:
   category: testing
   title: Zentrale Medien-Hashes und Laufzeitpfade sind verbindliche Abnahmegrenzen
   acceptance:
+  - Serialisierte Hub-Steuerungsdaten, Interoperabilitätskennungen, DICOM-Manifeste, Evaluationskennungen,
+    Protokollreferenzen, Zugriffstoken und Modellprüfsummen verwenden get_bytes_hash aus utils.hashs ohne
+    Änderung ihrer Kodierung oder bestehenden SHA-256-Werte. Identitäts-Hashes bleiben schlüsselgebunden;
+    historische Migrationsformate und Kryptografieprotokolle werden nicht durch ungesalzene Dateihashes
+    ersetzt.
+  - Streambare Medien verwenden get_file_hash auch ohne lokalen Pfad; unvollständige Streams, negative
+    oder veränderte Klartextgrößen und Authentifizierungsfehler werden abgewiesen.
   - Zukünftige Medienänderungen verwenden die get_hash-Methoden der Artefaktfelder und den gemeinsamen
     get_file_hash-Helper; private Hashimplementierungen und Ciphertext-Hashes ersetzen diese nicht.
   - EndoregPathsModel aus endoreg_db.utils.paths und get_runtime_paths sind der alleinige Vertrag für
@@ -331,6 +416,8 @@ definition_of_done:
     command:
     - .devenv/state/venv/bin/pytest
     - tests/contracts/test_media_centralization.py
+    - tests/utils/test_file_hash_integrity.py
+    - tests/environment/test_identity_hashing.py
     - tests/utils/test_paths.py
     - tests/utils/test_file_operations.py
     - tests/services/test_video_source_hash.py
@@ -347,10 +434,26 @@ definition_of_done:
     - kind: command
       reference: 'pyright: 0 errors, 5 existing warnings; pytest --lf -vv --tb=short: 8 passed, 2 skipped,
         580 deselected (2026-09-21)'
-    note: Zentrale Hash- und Pfadgrenzen sind dokumentiert und durch parametrisierte Vertragstests abgesichert.
-      PostgreSQL-spezifische Tests im --lf-Lauf wurden übersprungen.
-    assessed_by: codex-pytest-lf-20260921
-    assessed_at: '2026-09-21T12:03:01.551853Z'
+    - kind: test
+      reference: '2026-10-19: devenv shell -- pytest tests/contracts/test_media_centralization.py tests/utils/test_file_hash_integrity.py
+        tests/environment/test_identity_hashing.py tests/utils/test_paths.py tests/utils/test_file_operations.py
+        tests/utils/test_structured_logging.py tests/services/test_video_source_hash.py tests/schemas/test_dicom_export_payloads.py
+        sowie fünf Report-Pseudonym-Resolver-Fälle: 220 passed, 133 warnings, 122.12s.'
+    - kind: command
+      reference: '2026-10-19: Fokussierter Pyright für Hash-Helfer/Audit-Payload/Vertragstests: 0 Fehler,
+        0 Warnungen. Integrierter vollständiger Pyright der koordinierten Fixture-Prüfung: 0 Fehler, 24
+        Warnungen. Ruff und git diff --check erfolgreich; 65 Strukturmanifeste und 37 Feature-Definitionen
+        gültig.'
+    note: Dateien verwenden den Klartext-Helper get_file_hash, serialisierte Bytes get_bytes_hash und
+      aktive Identitäten den validierenden get_identity_hash. Kodierung und Hashkürzungen der gewöhnlichen
+      Aufrufstellen bleiben erhalten. Streambare Dateien erben vollständige Größen- und Authentifizierungsprüfungen.
+      Direkte HMAC-Schreiber und Report-Auflösung wurden mit der separaten Identitätsmigration integriert.
+      Ein breiterer Lauf wurde nach 60 bestandenen Fällen und drei durch bereits ersetzte Report-Implementierung
+      verursachten Fehlern gestoppt; alle fünf Resolver-Fälle bestanden im frischen 220-Test-Lauf. Keine
+      vollständige Repository-Testfreigabe; native Streaming-/Kryptografie- und historische Migrationsprimitive
+      bleiben spezialisiert.
+    assessed_by: codex-hash-standardization-01a1530a
+    assessed_at: '2026-10-19T08:02:29.911607Z'
 - id: dead_code_baseline
   category: requirements
   title: Toter Code ist repositoryweit belastbar inventarisiert und klassifiziert
@@ -867,14 +970,27 @@ definition_of_done:
         19 warnings; Ruff und git diff --check bestanden. Vollsuite nicht wiederholt. Tracker-CLI nach
         paralleler Änderung an ImportPipelineRobustness.yml ungültig: ingest_helper_modules fehlen assessed_by/assessed_at;
         Evidenz über vorhandene validierte Tracker-Funktionen gespeichert, keine Produktionsfreigabe.'
+    - kind: test
+      reference: '2026-10-16, koordinierter Elternagent: kombinierter Lauf über acht Lifecycle-, Import-Monitoring-,
+        UploadJob-/Lease-/PostgreSQL-/Cancellation-, Hub-Dispatch- und Overview-Dateien: 261 passed, 1
+        Plugin-Warnung, keine Skips, 69.26s, Exit 0. RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false;
+        devenv-Profil bin/lib explizit gesetzt. Bestehende temporäre Cleanup-Warnungen nach Zusammenfassung.
+        Vollständiger Pyright zuvor: 0 Fehler/24 Warnungen; abschließend sieben geänderte Python-Dateien:
+        0 Fehler/0 Warnungen. Ruff und git diff --check für tests/services/test_lifecycle_state_machine.py
+        bestanden.'
     note: 'Regression 2026-09-29: Basisdaten innerhalb der Testtransaktion, Migrationsteardown auf aktuelle
       Migrationsblätter und vertragskonforme Job-/PDF-Testaufbauten. Gemeinsame Regression: 205 bestanden,
       3 übersprungen. Aktivierte Report-Importfälle über Haupt-/Nachlauf bestanden; einmaliger SQLite-Schreibkonflikt
       bleibt als sporadischer Befund dokumentiert. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen;
       sieben geänderte Testdateien: 0 Fehler/0 Warnungen, Ruff bestanden. Breite Fast-Lane wegen fremder
-      laufender lx-annotate-Suite nicht gestartet; keine vollständige Suite oder Produktionsfreigabe behauptet.'
-    assessed_by: codex-test-fixes-20261013
-    assessed_at: '2026-10-13T07:46:19.977709Z'
+      laufender lx-annotate-Suite nicht gestartet; keine vollständige Suite oder Produktionsfreigabe behauptet.
+
+      Rust-Lifecycle-Grenzen 2026-10-16: Beide Python-Adapter verweigern fehlende native Bindings und
+      inkompatible Vertragsversionen; native Fehler behalten ihre Ursache und ihre öffentliche Fehlerklasse.
+      Übergangsregeln bleiben unverändert in Rust. 15 zusätzliche parametrisierte Fälle; keine Produktionsänderung
+      oder Gesamtfreigabe.'
+    assessed_by: codex-20261016-quality-fsm
+    assessed_at: '2026-10-16T07:52:17.978384Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
@@ -1171,3 +1287,45 @@ definition_of_done:
       database migration performed.'
     assessed_by: codex-persistence-move-20261009
     assessed_at: '2026-10-09T08:26:51.923855Z'
+- id: sensitive_meta_verification_authority
+  category: functionality
+  title: Sensitive-Meta-Verifikation hat einen zentralen Schreibweg
+  acceptance:
+  - Verifikations-Service, Metadaten-PATCH und Modellfassaden schreiben Prüfflags über dieselbe transaktionale
+    Operation; Video- und PDF-Validierung bestätigen beide Flags gemeinsam.
+  - is_verified bleibt aus Namen- und Geburtsdatumsprüfung abgeleitet; fehlender Zustand ergibt auch für
+    state_verified false.
+  - Persistierte Änderungen an Namen oder Geburtsdatum widerrufen ausschließlich die betroffene Prüfung;
+    unveränderte Werte und nicht gespeicherte Felder erhalten sie. Explizite Bestätigung im selben PATCH
+    gilt für die neuen Werte.
+  - Auditierte Identitätslöschung erhält geprüfte Identität; fehlgeschlagene Updates rollen Daten und
+    Prüfflags gemeinsam zurück. Konkurrierende Teilupdates verlieren keine Bestätigung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor Service-, Modellfassaden-, Validierungs-, Import- und PostgreSQL-Nebenläufigkeitstests
+      ausführen.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-19: pytest tests/services/test_sensitive_meta_verification.py tests/services/test_sensitive_meta_update.py
+        tests/views/anonymization/test_validate_view.py tests/views/anonymization/test_sensitive_metadata_view.py
+        tests/services/test_anonymization_quality_evaluation.py tests/import_files/test_sensitive_metadata_concurrency_postgresql.py
+        -q --tb=short --show-capture=no: 102 passed, 133 warnings, exit 0. Echte PostgreSQL-Nebenläufigkeit,
+        fehlender Zustand, Widerruf, unveränderte/ungespeicherte Werte, Neubestätigung, Rollback und auditierte
+        Löschung geprüft.'
+    - kind: test
+      reference: '2026-10-19: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/import_files/test_sensitive_meta_storage.py
+        tests/import_files/test_report_anonymization_contract.py tests/import_files/test_video_anonymization.py
+        -q --tb=short --show-capture=no --disable-warnings: 59 passed, 134 warnings, exit 0.'
+    - kind: command
+      reference: 'Gesamt-Pyright: 0 Fehler, 24 bestehende Warnungen. Fokussierter Pyright: 0 Fehler/0
+        Warnungen. Ruff, scoped git diff --check, 65 Strukturmanifeste und 37 Feature-Definitionen bestanden.
+        Pytest meldet bestehende Terminologie-/Plugin- und temporäre Aufräumwarnungen.'
+    note: Zentrale transaktionale Verifikation und Zustandserzeugung, Modellfassaden und atomarer Widerruf
+      bei gespeicherten Identitätsänderungen. Explizite Neubestätigung und auditierte Löschung bleiben
+      unterstützt. Medienstatus und Datenbankschema unverändert.
+    assessed_by: codex-anon-status-20261019
+    assessed_at: '2026-10-19T08:36:30.270523Z'

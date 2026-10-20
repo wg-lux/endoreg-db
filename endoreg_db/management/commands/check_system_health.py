@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import json
 import os
 import shutil
@@ -73,7 +74,7 @@ class _UploadSourceCleanupStats(TypedDict):
 
 
 def _secret_key_fingerprint() -> str:
-    return hashlib.sha256(settings.SECRET_KEY.encode("utf-8")).hexdigest()
+    return get_bytes_hash(settings.SECRET_KEY.encode("utf-8"))
 
 
 def _path_within(root: Path, candidate: Path) -> bool:

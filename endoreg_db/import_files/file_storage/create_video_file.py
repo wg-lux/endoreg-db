@@ -18,6 +18,7 @@ from endoreg_db.services.hub.media_integrity import (
 )
 from endoreg_db.services.video_files import (
     get_video_by_content_hash,
+    get_video_import_processor,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,12 +39,26 @@ def _context_source_path(ctx: ImportContext) -> Path:
     return ctx.sensitive_path if isinstance(ctx.sensitive_path, Path) else ctx.file_path
 
 
+def _bind_video_processor(
+    ctx: ImportContext, video: VideoFile, *, required: bool = True
+) -> None:
+    processor = get_video_import_processor(video)
+    if processor is None or not processor.name:
+        if required:
+            raise ValueError(f"Video {video.pk} has no canonical import processor")
+        return
+    ctx.processor_name = str(processor.name)
+
+
 def _load_current_video(
     ctx: ImportContext, file_hash: str, *, require_raw_source: bool = True
 ) -> VideoFile | None:
     if isinstance(ctx.current_video, VideoFile):
         if require_raw_source:
             require_reusable_video_raw_source(ctx.current_video)
+        _bind_video_processor(
+            ctx, ctx.current_video, required=require_raw_source or ctx.force_reprocess
+        )
         return ctx.current_video
     try:
         ctx.current_video = get_video_by_content_hash(file_hash)
@@ -51,6 +66,10 @@ def _load_current_video(
         ctx.current_video = None
     if require_raw_source and isinstance(ctx.current_video, VideoFile):
         require_reusable_video_raw_source(ctx.current_video)
+    if isinstance(ctx.current_video, VideoFile):
+        _bind_video_processor(
+            ctx, ctx.current_video, required=require_raw_source or ctx.force_reprocess
+        )
     return ctx.current_video if isinstance(ctx.current_video, VideoFile) else None
 
 
@@ -119,6 +138,7 @@ def _get_or_create_video_instance(
     if isinstance(ctx.current_video, VideoFile):
         video = ctx.current_video
         require_reusable_video_raw_source(video)
+        _bind_video_processor(ctx, video)
         logger.info("Using existing VideoFile from context: pk=%s", video.pk)
         return video
 
@@ -135,6 +155,7 @@ def _get_or_create_video_instance(
         raw_video_hash=file_hash,
         initialize=not bool(getattr(ctx, "defer_video_initialization", False)),
     )
+    _bind_video_processor(ctx, video)
 
     center = cast(
         _NamedCenter, ensure_center(video, ctx.center_name, center_key=ctx.center_key)

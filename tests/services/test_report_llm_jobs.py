@@ -296,9 +296,27 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
         service: ReportImportService, **_kwargs: object
     ) -> RawPdfFile:
         assert service.lifecycle is not None
-        with report_import_finalization_guard(
-            acquire_report_import_fence(report.pdf_hash)
-        ):
+        fence = acquire_report_import_fence(report.pdf_hash)
+        from lx_dtypes.models.contracts.report_anonymization import (
+            ReportExtractionReceipt,
+            ReportExtractionEvidence,
+        )
+
+        report.raw_meta = {
+            "report_extraction_receipt": ReportExtractionReceipt(
+                attempt_id=fence.owner_id.hex,
+                source_sha256=report.pdf_hash,
+                staged_artifact_sha256="a" * 64,
+                extraction_evidence=ReportExtractionEvidence(
+                    outcome="empty",
+                    backend="configured_llm",
+                    finding_count=0,
+                    provider_attempted=True,
+                ),
+            ).model_dump(mode="json")
+        }
+        report.save(update_fields=["raw_meta"])
+        with report_import_finalization_guard(fence):
             service.lifecycle.succeeded(report)
         return report
 
@@ -318,6 +336,10 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
         fake_require_usable_completed_report,
     )
 
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.completion.require_usable_completed_report",
+        fake_require_usable_completed_report,
+    )
     result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
 
     assert result.status == "completed", result.reason

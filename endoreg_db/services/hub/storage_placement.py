@@ -4,9 +4,10 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import StrEnum
 from fractions import Fraction
-import hashlib
 import json
 from uuid import UUID
+
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import IntegrityError, transaction
 from django.utils import timezone
@@ -137,7 +138,7 @@ def _request_fingerprint(request: PlacementRequest) -> str:
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _reservation_transition_fingerprint(
@@ -151,7 +152,7 @@ def _reservation_transition_fingerprint(
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _select_node(

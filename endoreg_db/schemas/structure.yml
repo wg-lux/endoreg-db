@@ -7,10 +7,12 @@ responsibilities:
 boundaries:
 - Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
 files:
+- file: report_llm.py
+  role: Report job contracts, immutable attempt references and read-only completion projections.
 - file: annotation_comparisons.py
   role: Typed annotation and clinical finding comparison results shared by service and API.
 - file: persisted_json.py
-  role: Persistence-specific payload validators.
+  role: Persistence-specific payload validators, shared hub UUID identity validation and owner-bound report extraction receipts.
 - file: hub_payloads.py
   role: Hub request and provenance shapes.
 - file: video_storage.py
@@ -24,6 +26,7 @@ files:
 dependencies:
   internal:
   - endoreg_db/integrations
+  - endoreg_db/utils
   external:
   - pydantic
   - lx_dtypes

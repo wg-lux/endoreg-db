@@ -31,10 +31,10 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.utils.hashs import (
-    get_identity_salt,
     get_patient_examination_hash,
-    get_patient_hash,
+    calculate_patient_hash,
 )
+from endoreg_db.services.secret_rotation.identity import legacy_hash
 
 
 @dataclass(frozen=True)
@@ -114,22 +114,17 @@ def test_extraction_resolves_same_identity_and_review_for_video_and_report(
     assert video_meta.patient_last_name == "Lovelace"
     assert _identity(video_meta) == _identity(report_meta)
 
-    # Preserve the deployed double-SHA256 identity convention exactly.
-    expected_patient_hash = sha256(
-        get_patient_hash(
-            "Ada", "Lovelace", date(1980, 12, 10), center.name, get_identity_salt()
-        ).encode()
-    ).hexdigest()
-    expected_examination_hash = sha256(
-        get_patient_examination_hash(
-            "Ada",
-            "Lovelace",
-            date(1980, 12, 10),
-            center.name,
-            date(2026, 9, 21),
-            get_identity_salt(),
-        ).encode()
-    ).hexdigest()
+    # Imports and migration use the same canonical identity HMAC.
+    expected_patient_hash = calculate_patient_hash(
+        "Ada", "Lovelace", date(1980, 12, 10), center_key=center.center_key
+    )
+    expected_examination_hash = get_patient_examination_hash(
+        "Ada",
+        "Lovelace",
+        date(1980, 12, 10),
+        center_key=center.center_key,
+        examination_date=date(2026, 9, 21),
+    )
     assert video_meta.patient_hash == expected_patient_hash
     assert video_meta.examination_hash == expected_examination_hash
 
@@ -146,10 +141,19 @@ def test_extraction_resolves_same_identity_and_review_for_video_and_report(
         response = client.get(f"/api/media/{media_type}/{media.pk}/sensitive-metadata/")
         assert response.status_code == 200
         data = cast(dict[str, object], response.json())
+        assert "id" in data, data
         assert media.sensitive_meta is not None
         assert data["id"] == media.sensitive_meta.pk
+        assert data["pseudo_patient_id"] == media.sensitive_meta.pseudo_patient_id
+        assert (
+            data["pseudo_examination_id"] == media.sensitive_meta.pseudo_examination_id
+        )
         assert data["patient_first_name"] == "Ada"
         assert data["patient_last_name"] == "Lovelace"
+        assert data["patient_hash_display"] == f"...{expected_patient_hash[-8:]}"
+        assert (
+            data["examination_hash_display"] == f"...{expected_examination_hash[-8:]}"
+        )
 
 
 @pytest.mark.django_db
@@ -193,10 +197,19 @@ def test_review_read_does_not_create_missing_sensitive_metadata(
 
 
 @pytest.mark.parametrize("dob", [date(1980, 12, 10), datetime(1980, 12, 10, 17, 30)])
+@pytest.mark.no_db
 def test_legacy_hash_encoding_is_stable(dob: date) -> None:
     # Pin the historical duplicated date-of-birth encoding; changing it needs migration.
     raw = "AdaLovelace1980-12-10contract-center1980-12-10contract-salt"
     assert (
-        get_patient_hash("Ada", "Lovelace", dob, "contract-center", "contract-salt")
+        legacy_hash(
+            "Ada",
+            "Lovelace",
+            dob,
+            "contract-center",
+            None,
+            b"contract-salt",
+            double_hash=False,
+        )
         == sha256(raw.encode()).hexdigest()
     )

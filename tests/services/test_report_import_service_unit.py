@@ -743,7 +743,7 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         finally:
             guard_open = False
 
-    def require_guard(_report: RawPdfFile) -> None:
+    def require_guard(_report: RawPdfFile, *, reused: bool = False) -> None:
         assert guard_open, "Job callbacks must execute inside the content guard"
 
     lifecycle = Mock()
@@ -859,7 +859,10 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
                 create.assert_called_once_with(context)
             retry_cleanup.assert_not_called()
     if with_lifecycle and failure is None:
-        lifecycle.succeeded.assert_called_once_with(report)
+        if existing or (not needs_processing and not retry):
+            lifecycle.succeeded.assert_called_once_with(report, reused=True)
+        else:
+            lifecycle.succeeded.assert_called_once_with(report)
     if with_lifecycle and (existing or (not needs_processing and not retry)):
         lifecycle.started.assert_not_called()
     assert context.file_hash == CONTENT_HASH

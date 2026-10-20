@@ -32,6 +32,8 @@ from endoreg_db.schemas.video_storage import (
 )
 from endoreg_db.services.media.operation_gate import video_artifact_mutation
 from endoreg_db.services.media.export_downloads import leased_video_bytes
+from endoreg_db.services.media.export_policy import assert_video_media_export_ready
+from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.hashs import get_file_hash
@@ -98,6 +100,7 @@ class VideoExportDownloadTests(TestCase):
         self.state.anonymization_validated = True
         self.state.processed_file_sha256 = self.video.processed_video_hash
         self.state.save()
+        self.video.state = self.state
         self.frame = Frame.objects.create(
             video=self.video,
             frame_number=7,
@@ -189,6 +192,49 @@ class VideoExportDownloadTests(TestCase):
     def test_hash_mismatch_is_blocked(self) -> None:
         VideoFile.objects.filter(pk=self.video.pk).update(processed_video_hash="0" * 64)
         assert self.client.get(self.url()).status_code == 409
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="standalone")
+    def test_shared_policy_checks_content_outside_local_study_mode(self) -> None:
+        assert (
+            assert_video_media_export_ready(self.video)
+            == self.video.processed_video_hash
+        )
+        self.video.processed_video_hash = "0" * 64
+        self.state.processed_file_sha256 = self.video.processed_video_hash
+        with self.assertRaisesRegex(ValueError, "Integritätsprüfung"):
+            assert_video_media_export_ready(self.video)
+
+    def test_identity_only_policy_still_rejects_stale_approval(self) -> None:
+        self.state.processed_file_sha256 = "0" * 64
+        with self.assertRaisesRegex(ValueError, "Videogeneration"):
+            assert_video_media_export_ready(self.video, verify_content=False)
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="standalone")
+    def test_canonical_identity_does_not_require_optional_standalone_approval(
+        self,
+    ) -> None:
+        self.state.processed_file_sha256 = ""
+        assert (
+            assert_video_media_export_ready(self.video, verify_content=False)
+            == self.video.processed_video_hash
+        )
+
+    def test_shared_csv_encoding_preserves_numbers_and_escapes_text(self) -> None:
+        values: list[object] = [
+            "=x",
+            "+x",
+            "-x",
+            "@x",
+            "\tx",
+            "\rx",
+            "\nx",
+            -3,
+            "plain",
+        ]
+        rows = list(csv.reader(io.StringIO("".join(csv_lines([values])))))
+        assert rows == [
+            ["'=x", "'+x", "'-x", "'@x", "'\tx", "'\rx", "'\nx", "-3", "plain"]
+        ]
 
     def test_readiness_proof_must_belong_to_the_processed_generation(self) -> None:
         self.state.processed_file_sha256 = "0" * 64

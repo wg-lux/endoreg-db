@@ -6,6 +6,7 @@ from endoreg_db.services.hub.upload_job_files import (
 )
 
 import logging
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import timedelta
@@ -14,6 +15,14 @@ from typing import Any, Literal, Protocol, cast
 from django.db import transaction
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
+from lx_dtypes.models.contracts.report_anonymization import ReportExtractionReceipt
+from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
+from endoreg_db.schemas.report_llm import ReportImportAttemptReference
+from endoreg_db.services.reports.completion import (
+    report_completion_projection,
+    require_report_job_completion,
+    ReportCompletionUnverifiedError,
+)
 
 from endoreg_db.config.env import env_choice, env_int
 from endoreg_db.import_files.report_import_service import InvalidReportDocumentError
@@ -52,6 +61,7 @@ from endoreg_db.services.reports.import_fencing import (
     StaleReportImportAttemptError,
 )
 from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.structured_logging import emit_structured_event
@@ -84,6 +94,15 @@ def _record_celery_handoff_failure(
     exc: Exception,
 ) -> None:
     job.refresh_from_db()
+    if isinstance(exc, ReportCompletionUnverifiedError):
+        emit_structured_event(
+            logger,
+            "report_llm.completion_unverified",
+            level=logging.ERROR,
+            job_id=job.job_key,
+            retryable=False,
+        )
+        return
     execution_failed = job.status in {
         ReportLlmInferenceJob.STATUS_FAILURE,
         ReportLlmInferenceJob.STATUS_LOST,
@@ -318,6 +337,9 @@ def report_llm_job_payload(job: ReportLlmInferenceJob) -> dict[str, JsonValue]:
         report_id = int(pdf.pk)
     payload: dict[str, JsonValue] = {
         "status": job.status,
+        "completion_evidence": report_completion_projection(job).model_dump(
+            mode="json"
+        ),
         "operation": job.operation,
         "job_id": job.job_key,
         "task_id": job.task_id,
@@ -409,6 +431,9 @@ class _ReportJobLifecycle:
     processing_upload_jobs: int = 0
 
     def validate_source(self, content_hash: str) -> None:
+        self.job.refresh_from_db()
+        if self.job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
+            raise ReportJobAlreadyCompleted("Report delivery already completed")
         if self.reimport:
             report = self.job.pdf
             if report is None or report.pdf_hash != content_hash:
@@ -442,7 +467,7 @@ class _ReportJobLifecycle:
             raise RuntimeError("Report LLM import job has no associated upload job.")
         return upload_job
 
-    def succeeded(self, report: RawPdfFile) -> None:
+    def succeeded(self, report: RawPdfFile, *, reused: bool = False) -> None:
         self._refresh_owned_job(report)
         if self.job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
             self.completed = True
@@ -457,7 +482,43 @@ class _ReportJobLifecycle:
             source_sha256=pdf.pdf_hash,
             require_artifact=False,
         )
+        attempt = ReportImportAttempt.objects.get(content_hash=pdf.pdf_hash)
+        if (
+            attempt.owner_id is None
+            or attempt.status != ReportImportAttempt.STATUS_ACTIVE
+        ):
+            raise RuntimeError(
+                "Report job completion requires its active content fence"
+            )
+        receipt_payload = (report.raw_meta or {}).get("report_extraction_receipt")
+        receipt = (
+            ReportExtractionReceipt.model_validate_json(json.dumps(receipt_payload))
+            if receipt_payload is not None
+            else None
+        )
+        if not reused and (
+            receipt is None or receipt.attempt_id != attempt.owner_id.hex
+        ):
+            raise ReportCompletionUnverifiedError(
+                "Fresh report completion requires owner-bound extraction evidence"
+            )
+        if receipt is not None and (
+            receipt.source_sha256 != pdf.pdf_hash
+            or receipt.staged_artifact_sha256 != processed_file_sha256
+        ):
+            raise ReportCompletionUnverifiedError(
+                "Report completion extraction artifact identity differs"
+            )
+        reference = ReportImportAttemptReference(
+            content_hash=pdf.pdf_hash,
+            fencing_token=int(attempt.fencing_token),
+            owner_id=attempt.owner_id.hex,
+            reused=reused,
+            extraction_attempt_id=receipt.attempt_id if receipt else None,
+            staged_artifact_sha256=receipt.staged_artifact_sha256 if receipt else None,
+        )
         result: JsonObject = {
+            "attempt_reference": reference.model_dump(mode="json"),
             "pdf_id": int(pdf.pk),
             "pdf_hash": pdf.pdf_hash,
             "sensitive_meta_id": pdf.sensitive_meta_id,
@@ -522,6 +583,7 @@ def _run_report_llm_import_job(job_id: str) -> bool:
 def _run_report_job(job_id: str, *, reimport: bool) -> bool:
     job = _get_report_llm_job(job_id)
     if job.status == ReportLlmInferenceJob.STATUS_SUCCESS:
+        require_report_job_completion(job)
         return True
     if job.status == ReportLlmInferenceJob.STATUS_CANCELLED:
         return False
@@ -569,6 +631,9 @@ def _run_report_job(job_id: str, *, reimport: bool) -> bool:
                 record_media_files(inventory_job, report)
         if not lifecycle.completed:
             raise RuntimeError("Report service returned without fenced job completion.")
+    except ReportJobAlreadyCompleted:
+        require_report_job_completion(_get_report_llm_job(job_id))
+        return True
     except (ReportImportBusyError, StaleReportImportAttemptError):
         # The losing delivery has no authority to change the winning job.
         raise
@@ -611,6 +676,8 @@ def _run_report_job(job_id: str, *, reimport: bool) -> bool:
                 else:
                     mark_upload_job_error(upload_job, str(exc))
         raise
+    lifecycle.job.refresh_from_db()
+    require_report_job_completion(lifecycle.job)
     if not reimport:
         cleanup_upload_job_source(lifecycle.upload_job())
     return True

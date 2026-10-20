@@ -50,7 +50,7 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
     examination_id = serializers.IntegerField(source="examination.id", read_only=True)
     video_id = serializers.SerializerMethodField()
     video_ids = serializers.SerializerMethodField()
-    patient_hash = serializers.CharField(source="patient.patient_hash", read_only=True)
+    patient_id = serializers.IntegerField(read_only=True)
 
     # Nested findings data
     findings = serializers.SerializerMethodField()
@@ -59,17 +59,16 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
         model = PatientExamination
         fields = [
             "id",
-            "hash",
             "examination_id",
             "examination_name",
             "video_id",
             "video_ids",
-            "patient_hash",
+            "patient_id",
             "date_start",
             "date_end",
             "findings",
         ]
-        read_only_fields = ["hash", "patient_hash"]
+        read_only_fields = ["patient_id"]
 
     def get_findings(
         self, obj: PatientExamination

@@ -486,41 +486,6 @@ class UploadEndpointTests(TestCase):
         assert response.status_code == 403, response.content
         assert "do not have access" in response.json()["error"]
 
-    # ADD THIS TO PREVENT USERS FROM UPLOADING DATA
-    # def test_upload_rejects_authenticated_center_override(self):
-    #     center = Center.objects.create(name="hub-center", display_name="Hub Center")
-    #     user = User.objects.create_user(username="hub-user", password="secret")
-
-    #     # --- NEW: Link the User to the Center ---
-    #     examiner = Examiner.objects.create(
-    #         first_name="Hub",
-    #         last_name="User",
-    #         hash="hub-user-hash",
-    #         center=center  # This is the crucial link
-    #     )
-    #     PortalUserInfo.objects.create(user=user, examiner=examiner)
-
-    #     uploaded = SimpleUploadedFile(
-    #         name="upload-test.pdf",
-    #         content=MINIMAL_PDF_BYTES,
-    #         content_type="application/pdf",
-    #     )
-
-    #     self.client.force_login(user)
-    #     with (
-    #         patch("endoreg_db.views.misc.upload_views.CELERY_AVAILABLE", False),
-    #         patch(
-    #             "endoreg_db.services.hub.ingest.start_upload_job_processing",
-    #             return_value="inline",
-    #         ),
-    #     ):
-    #         response = self.client.post(
-    #             "/api/upload/",
-    #             data={"file": uploaded, "center_key": center.center_key},
-    #         )
-
-    #     assert response.status_code == 403, response.content
-
     def test_upload_status_is_center_scoped_for_authenticated_users(self):
         center_a = Center.objects.create(name="center-a", display_name="Center A")
         center_b = Center.objects.create(name="center-b", display_name="Center B")

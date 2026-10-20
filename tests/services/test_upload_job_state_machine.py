@@ -5,6 +5,7 @@ import pytest
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
     validate_upload_job_interrupted_retry,
+    validate_upload_job_interruption,
     validate_upload_job_status_transition,
 )
 
@@ -90,3 +91,15 @@ def test_upload_job_terminal_outcome_is_not_an_interrupted_attempt(
 ) -> None:
     with pytest.raises(ValueError, match="invalid operation lifecycle transition"):
         validate_upload_job_interrupted_retry(current_status=current_status)
+
+
+@pytest.mark.parametrize("current_status", list(UploadJob.Status) + ["invented"])
+def test_upload_job_interruption_requires_active_execution(current_status: str) -> None:
+    if current_status in (
+        UploadJob.Status.PROCESSING,
+        UploadJob.Status.CANCEL_REQUESTED,
+    ):
+        validate_upload_job_interruption(current_status=current_status)
+    else:
+        with pytest.raises(ValueError, match="no active execution to interrupt"):
+            validate_upload_job_interruption(current_status=current_status)

@@ -360,6 +360,35 @@ def test_failure_state_save_error_propagates_before_cleanup(
     assert not ProcessingHistory.objects.filter(file_hash="b" * 64).exists()
 
 
+@pytest.mark.django_db
+def test_failure_after_video_replacement_updates_only_current_video(
+    tmp_path: Path,
+) -> None:
+    from endoreg_db.models.state.anonymization import AnonymizationState
+
+    center = Center.objects.create(name="failure-replacement")
+    previous = VideoFile.objects.create(center=center, raw_video_hash="d" * 64)
+    replacement = VideoFile.objects.create(center=center, raw_video_hash="e" * 64)
+    previous_state = previous.get_or_create_state()
+    previous_status = previous_state.anonymization_status
+    replacement_state = replacement.get_or_create_state()
+    ctx = ImportContext(
+        mutation_guard=nullcontext,
+        file_path=tmp_path / "source.mp4",
+        file_hash="e" * 64,
+        center_name=center.name,
+        file_type="video",
+        current_video=previous,
+    )
+    assert ctx.instance is previous
+    ctx.current_video = replacement
+    state_management.finalize_failure(ctx, preserve_existing_video_artifacts=True)
+    previous_state.refresh_from_db()
+    replacement_state.refresh_from_db()
+    assert previous_state.anonymization_status == previous_status
+    assert replacement_state.anonymization_status == AnonymizationState.FAILED
+
+
 @pytest.mark.parametrize("unsaved", [False, True])
 def test_video_finalization_rejects_invalid_instance(
     tmp_path: Path, unsaved: bool

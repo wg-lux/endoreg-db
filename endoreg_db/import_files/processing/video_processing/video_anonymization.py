@@ -1,5 +1,6 @@
+from endoreg_db.utils.hashs import get_bytes_hash
+
 from endoreg_db.utils.storage.files import canonical_media_name
-import hashlib
 import json
 import logging
 from endoreg_db.services.hub.upload_job_files import record_working_file
@@ -1106,7 +1107,7 @@ class VideoAnonymizer:
         height: float,
     ) -> str:
         box_payload = f"{x:.3f}:{y:.3f}:{width:.3f}:{height:.3f}"
-        box_hash = hashlib.sha256(box_payload.encode("utf-8")).hexdigest()[:16]
+        box_hash = get_bytes_hash(box_payload.encode("utf-8"))[:16]
         return f"{raw_video_hash}:{frame_number}:{source}:{box_hash}"
 
     def _get_processor_roi_info(

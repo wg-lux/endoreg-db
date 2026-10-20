@@ -24,9 +24,17 @@ def _running_under_pytest() -> bool:
     )
 
 
+def gen_salt() -> str:
+    """Generate a 256-bit CSPRNG salt as both string and UTF-8 bytes."""
+    import secrets
+
+    s = secrets.token_hex(32)
+    return s
+
+
 DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
-DJANGO_SALT = "test-identity-salt-not-for-production"
+DJANGO_SALT = gen_salt()
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 # -----------------------------------------------------------------------------
