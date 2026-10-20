@@ -107,6 +107,7 @@ class VideoFrameScoreResult:
     frame_count: int
     frame_numbers: List[int] | None = None
     timestamps: List[float] | None = None
+    terminal_boundary: tuple[int, float] | None = None
 
 
 empty_scores: NDArray[np.float64] = np.empty((0, 0), dtype=np.float64)
@@ -124,6 +125,7 @@ def _frame_score_result_from_merged_predictions(
     device: str,
     frame_numbers: List[int] | None = None,
     timestamps: List[float] | None = None,
+    terminal_boundary: tuple[int, float] | None = None,
 ) -> VideoFrameScoreResult:
     columns: List[np.ndarray[Any, Any]] = []
     for label in labels:
@@ -154,6 +156,7 @@ def _frame_score_result_from_merged_predictions(
             frame_numbers[:frame_count] if frame_numbers is not None else None
         ),
         timestamps=timestamps[:frame_count] if timestamps is not None else None,
+        terminal_boundary=terminal_boundary,
     )
 
 
@@ -550,7 +553,7 @@ def _stream_predictions_from_video(
     test_run: bool,
     n_test_frames: int,
     frame_source_file_type: str,
-) -> Tuple[List[List[float]], List[int], List[float]]:
+) -> tuple[List[List[float]], List[int], List[float], tuple[int, float] | None]:
     import torch
     from PIL import Image
     from torchvision import transforms
@@ -573,6 +576,7 @@ def _stream_predictions_from_video(
     frame_numbers: List[int] = []
     timestamps: List[float] = []
     batch_tensors: List[torch.Tensor] = []
+    terminal_boundary: tuple[int, float] | None = None
 
     def flush_batch() -> None:
         if not batch_tensors:
@@ -595,6 +599,7 @@ def _stream_predictions_from_video(
             file_type=frame_source_file_type,
         ):
             if test_run and len(frame_numbers) >= n_test_frames:
+                terminal_boundary = (sample.frame_number, sample.timestamp)
                 break
             cropped = cropper(
                 sample.rgb_frame,
@@ -613,7 +618,7 @@ def _stream_predictions_from_video(
         raise RuntimeError(
             f"Streaming inference produced no predictions for video {video.raw_video_hash}."
         )
-    return predictions, frame_numbers, timestamps
+    return predictions, frame_numbers, timestamps, terminal_boundary
 
 
 @dataclass(frozen=True)
@@ -656,6 +661,7 @@ class _InferenceOutput:
     timestamps: List[float] | None
     classifier: Any
     device: Any
+    terminal_boundary: tuple[int, float] | None = None
 
 
 def _load_ai_pipeline_components() -> _AiPipelineComponents:
@@ -1152,15 +1158,17 @@ def _perform_inference(
             device=loaded_model.device,
             started_at=started_at,
         )
-        predictions, frame_numbers, timestamps = _stream_predictions_from_video(
-            video=video,
-            model=loaded_model.model,
-            classifier_config=classifier_config,
-            crop_template=cache_inputs.crop_template,
-            device=loaded_model.device,
-            test_run=test_run,
-            n_test_frames=n_test_frames,
-            frame_source_file_type=source.file_type,
+        predictions, frame_numbers, timestamps, terminal_boundary = (
+            _stream_predictions_from_video(
+                video=video,
+                model=loaded_model.model,
+                classifier_config=classifier_config,
+                crop_template=cache_inputs.crop_template,
+                device=loaded_model.device,
+                test_run=test_run,
+                n_test_frames=n_test_frames,
+                frame_source_file_type=source.file_type,
+            )
         )
         _stream_inference_log(
             event="streaming_inference_complete",
@@ -1177,6 +1185,7 @@ def _perform_inference(
             timestamps,
             loaded_model.classifier,
             loaded_model.device,
+            terminal_boundary,
         )
     logger.info(
         "Starting inference on %d frames for video %s...",
@@ -1419,6 +1428,7 @@ def _postprocess_predictions(
             device=str(inference_output.device),
             frame_numbers=inference_output.frame_numbers,
             timestamps=inference_output.timestamps,
+            terminal_boundary=inference_output.terminal_boundary,
         )
         if return_frame_scores:
             logger.info(

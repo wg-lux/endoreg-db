@@ -1,254 +1,244 @@
-# Verknüpfung und Identifizierbarkeit: Implementierungsprüfung vom 19.10.2026
+# Linkage and Identification
 
 ## Executive summary
 
-Die aktuelle Implementierung unterstützt deterministische, geheimnisgebundene
-Patientenverknüpfung. Die frühere Beschreibung als Doppel-SHA-256 mit mehrdeutiger
-Feldverkettung trifft auf den aktuellen demografischen Schreibpfad nicht mehr zu.
-Ein Nachweis vollständiger Anonymität folgt daraus nicht: Forschungsartefakte
-enthalten weiterhin Originaldatei-Hashes, stabile Kennungen und teilweise
-Originaldateinamen. Damit sind Identitätszuordnungen durch bekannte Quelldateien
-auch ohne Schlüssel möglich. Klinisch korrekte Personenverknüpfung bleibt von
-demografischer Eindeutigkeit und Eingabequalität abhängig.
+The current implementation is able to link patients based on deterministic hashes that are secret bound. Therefore, the linkage is bound to the distribution of secrets and the correctness of data entry.
 
 ## Scope and assumptions
 
-Geprüft wurde der lokale Arbeitsbaum auf Basis von Commit
-`08c1ac0da110343dfc6d0314b24998a1937d9aeb`, einschließlich umfangreicher bereits
-vorhandener Änderungen. Dies ist keine Aussage über einen ausgerollten Server
-oder den Migrationszustand seiner Datenbank. Andere Agenten bearbeiten denselben
-Arbeitsbaum; insbesondere Schlüsselrotation ist parallel in Arbeit.
+The local working tree based on commit
+`08c1ac0da110343dfc6d0314b24998a1937d9aeb` was reviewed, including extensive
+preexisting changes. This makes no claim about a deployed server or its database
+migration state. Other agents are editing the same tree; key rotation in
+particular is being developed concurrently.
 
-Der Nutzer bestätigte folgendes Empfängermodell: Ein Forscher erhält Exporte,
-kennt Algorithmen und kann benannte Kandidatenakten oder Quelldateien besitzen.
-Er hat keinen Zugriff auf Klinikschlüssel, Datenbank oder Tokenisierungsdienst.
-Bewertet werden Hashhelper, demografische Identitätsauflösung, ausgewählte
-Datensatz-, Fall- und CSV-Exporte sowie deren unmittelbare Aufrufer.
-Nicht bewertet werden die gesamte API-Autorisierung, reale Schlüsselentropie,
-produktive Dateien, reale Reidentifikationsraten oder rechtliche Anonymität.
-Tests verwenden ihre bestehenden Testdaten; Produktionsgeheimnisse wurden nicht gelesen.
+The user confirmed this recipient model: a researcher receives exports, knows
+the algorithms, and may possess named candidate records or source files. The
+researcher has no access to clinic keys, the database, or a tokenization service.
+The review covers hash helpers, demographic identity resolution, selected
+dataset, case, and CSV exports, and their immediate callers. It does not cover
+all API authorization, actual key entropy, production files, real reidentification
+rates, or legal anonymity. Tests use their existing test data; production secrets
+were not read.
 
-Scope und Produktionsreife bleiben ausschließlich in
-[Anonymization.yml](../feature-tracking/Anonymization.yml), insbesondere
-`documented_scope`, `privacy_controls`, `sensitive_metadata_resolution` und
-`strict_legacy_hmac_inventory`. Dieser Bericht ist eine technische Referenz,
-kein paralleler Freigabetracker. Der [Bericht vom 16.10.2026](../feature-tracking/reports/sensitive_meta_hash_security.md)
-bleibt als historische Untersuchung erhalten.
+Scope and production readiness remain exclusively in
+[Anonymization.yml](../feature-tracking/Anonymization.yml), particularly
+`documented_scope`, `privacy_controls`, `sensitive_metadata_resolution`, and
+`strict_legacy_hmac_inventory`. This report is a technical reference, not a
+parallel approval tracker. The [report of October 16, 2026](../feature-tracking/reports/sensitive_meta_hash_security.md)
+remains as a historical investigation.
 
-Offen bleiben die tatsächlich an Forscher ausgelieferten Exportvarianten,
-deren erlaubter studienübergreifender Verknüpfungsumfang, der produktive
-Migrationsstand und empirische Fehlzuordnungs-/Identifizierungsraten.
+Open questions include which export variants researchers actually receive,
+their permitted linkage scope across studies, production migration state, and
+empirical misattribution/identification rates.
 
 ## System model
 
 ### Primary components
 
-Python/Django-Dienste übernehmen Identitätsberechnung und Export; typisierte
-lx-dtypes-Verträge validieren Datenformen. Der Patientenwert ist aktuell:
+Python/Django services calculate identities and generate exports; typed lx-dtypes
+contracts validate data shapes. The current patient value is:
 
 ```text
-K = UTF-8 des validierten aktiven Identitätsgeheimnisses
-x = UTF-8(JSON(["patient-identity-v1", trim(Vorname), trim(Nachname),
-               ISO(Geburtsdatum), trim(center_key)],
+K = UTF-8 of the validated active identity secret
+x = UTF-8(JSON(["patient-identity-v1", trim(first_name), trim(last_name),
+               ISO(date_of_birth), trim(center_key)],
               ensure_ascii=False, separators=(",", ":")))
 patient_hash = hex(HMAC-SHA-256(K, x))
 ```
 
-Belege: `endoreg_db/utils/hashs.py:31`, `:53`, `:75`, `:99`;
-`endoreg_db/models/metadata/sensitive_meta_logic.py:304` gibt den HMAC direkt
-zurück. Der Untersuchungshash bindet Patienten-HMAC, Untersuchungsdatum und
-Zentrum in einer zweiten, separat markierten HMAC-Nachricht (`hashs.py:125`).
-Ein Studien- oder Empfängerbezeichner gehört nicht zur Patientennachricht.
+Evidence: `endoreg_db/utils/hashs.py:31`, `:53`, `:75`, `:99`;
+`endoreg_db/models/metadata/sensitive_meta_logic.py:304` returns the HMAC directly.
+The examination hash binds the patient HMAC, examination date, and center in a
+second, separately tagged HMAC message (`hashs.py:125`). The patient message
+contains no study or recipient identifier.
 
 ### Data flows and trust boundaries
 
-- Importdaten → klinische Identitätsauflösung: Namen, Geburtsdatum und Zentrum
-  passieren Validierung und Datenbanktransaktionen. Historische Zuordnung prüft
-  Zentrum und Konflikte (`services/patient_identity/hash_aliases.py:28`).
-- Private Konfiguration → Hashdienst: Schlüsselmaterial aus privaten Dateien
-  oder registriertem Schlüsselring; ungültige aktive Werte scheitern explizit
-  (`config/identity_hashing.py:43`, `utils/verify_salt.py:31`). Mindestlänge und
-  Zeichenvielfalt beweisen keine zufällige Erzeugung. Historisch registrierte
-  Leseschlüssel sind ausdrücklich ausgenommen (`utils/hashs.py:38`).
-- Geschützte Datenbank/Medien → Exportdatei → Forscher: JSON, CSV, XLSX und
-  verarbeitete Medien. Der Datensatzdienst entfernt `sensitive_meta` bei der
-  äußeren JSON-Serialisierung (`services/datasets/exports.py:346`); interne
-  Zwischenobjekte enthalten diese Daten weiterhin. Die Artefakterzeugung nutzt
-  genau diese Serialisierung (`services/application_settings/ai_dataset_export.py:392`).
-- Verarbeitetes Video → Download: Freigabe und Inhaltsintegrität werden geprüft,
-  laufende Downloads binden ihre Lease an die Generation
-  (`services/media/export_policy.py:32`, `export_downloads.py:27`). Das bewertet
-  nicht automatisch die Identifizierbarkeit der zugehörigen Tabellen.
+- Imported data → clinical identity resolution: names, date of birth, and center
+  pass through validation and database transactions. Historical resolution checks
+  center and conflicts (`services/patient_identity/hash_aliases.py:28`).
+- Private configuration → hash service: key material from private files or a
+  registered keyring; invalid active values fail explicitly
+  (`config/identity_hashing.py:43`, `utils/verify_salt.py:31`). Minimum length and
+  character diversity do not prove random generation. Historically registered
+  read keys are explicitly exempt (`utils/hashs.py:38`).
+- Protected database/media → export file → researcher: JSON, CSV, XLSX, and
+  processed media. The dataset service removes `sensitive_meta` during outer JSON
+  serialization (`services/datasets/exports.py:346`); internal intermediate
+  objects still contain these data. Artifact generation uses exactly this
+  serialization (`services/application_settings/ai_dataset_export.py:392`).
+- Processed video → download: approval and content integrity are checked; active
+  downloads bind their lease to the generation
+  (`services/media/export_policy.py:32`, `export_downloads.py:27`). This does not
+  automatically assess identifiability of the associated tables.
 
-Transportkonfiguration und reale Zugriffsrechte wurden nicht als Laufzeitbeweis
-geprüft. Der Angreifer erhält die Dateien im Modell bereits rechtmäßig;
-Authentifizierung oder Transportverschlüsselung verhindern seinen lokalen Abgleich nicht.
+Transport configuration and actual access rights were not verified as runtime
+evidence. In this model the attacker already receives the files legitimately;
+authentication or transport encryption does not prevent local comparison.
 
 #### Diagram
 
 ```mermaid
 flowchart LR
-  subgraph Klinik
-    A["Import und Identitätsprüfung"] --> B["Klinische Daten und Medien"]
-    K["Privates Identitätsgeheimnis"] --> H["HMAC Berechnung"]
+  subgraph Clinic
+    A["Import and identity verification"] --> B["Clinical data and media"]
+    K["Private identity secret"] --> H["HMAC calculation"]
     A --> H
     H --> B
-    B --> E["Export und Freigabe"]
+    B --> E["Export and approval"]
   end
-  E --> R["Forscher mit Exportdateien"]
-  C["Benannte Kandidatenakten"] --> R
+  E --> R["Researcher with export files"]
+  C["Named candidate records"] --> R
 ```
 
 ## Assets and security objectives
 
-| Schutzgut | Bedeutung | Ziel |
+| Asset | Significance | Objective |
 |---|---|---|
-| Identitätsgeheimnis und Zuordnung | Verhindern eigenständige Kandidatentokenberechnung | Vertraulichkeit |
-| Patienten-/Untersuchungszuordnung | Falsche Zusammenführung verfälscht klinische Daten | Integrität |
-| Exportierte Inhalte und Verknüpfungsgraph | Offenlegung kann alle verbundenen Befunde identifizieren | Vertraulichkeit |
-| Registrierte Medienidentität | Gleiche Bytes erkennen, Manipulation erkennen | Integrität |
+| Identity secret and mapping | Prevent independent candidate token calculation | Confidentiality |
+| Patient/examination linkage | Incorrect merging corrupts clinical data | Integrity |
+| Exported content and linkage graph | Disclosure can identify all linked findings | Confidentiality |
+| Registered media identity | Recognize identical bytes and detect tampering | Integrity |
 
 ## Attacker model
 
 ### Capabilities
 
-Empfangene Dateien vergleichen, bekannte Originale hashen, Namen in Dateinamen
-erkennen, mehrere Veröffentlichungen verbinden und klinisches Zusatzwissen nutzen.
+Compare received files, hash known originals, recognize names in filenames,
+combine releases, and use supplementary clinical knowledge.
 
 ### Non-capabilities
 
-Keine Klinikschlüssel, Datenbankabfragen, frei nutzbare Tokenisierungsabfragen oder
-Änderung des vertrauenswürdigen Digestbestands. Schlüsselkompromittierung wird
-als Grenze der Tokenaussage behandelt, nicht als Voraussetzung der Hauptbefunde.
+No clinic keys, database queries, unrestricted tokenization queries, or changes
+to the trusted digest inventory. Key compromise is treated as a limit of the
+token claim, not a prerequisite for the main findings.
 
 ## Entry points and attack surfaces
 
-| Oberfläche | Erreichbarkeit / Grenze | Relevante Inhalte | Beleg |
+| Surface | Reachability / boundary | Relevant content | Evidence |
 |---|---|---|---|
-| AI-Datensatz-JSON | Ausgeliefertes Forschungsartefakt | `sensitive_meta` entfernt; `raw_video_hash`, `original_file_name`, Pfade, Zeitstempel und IDs bleiben in Frame-Einträgen | `services/datasets/exports.py:101`, `:346` |
-| Patientenvideo im Datensatz | Bestandteil desselben Artefakts | `external_ids.raw_video_hash`, verarbeiteter Hash, Patient-/Untersuchungs-ID, Dateipfad | `services/video_files/clinical_contracts.py:312` |
-| Annotationen-CSV | Browser-/Dateiexport | Rohhash und verarbeitete Artefaktidentität nebeneinander | `export/frames/export_frames_with_labels.py:112`, `:1672`; `services/media/export_downloads.py:50` |
-| Zeitstempel-CSV | Export mit `original=True` | Digest der gespeicherten Original-Zeitstempelfolge; nur mit passenden Originalbytes vergleichbar | `services/media/export_downloads.py:61` |
-| Fall-JSON/XLSX | Ausgewählte pseudonyme Fälle | Unverändertes Patientenpseudonym, Zentrum, Revisionen, klinische Snapshots und Zeiten | `services/studies/revision_export.py:58`, `:138` |
+| AI dataset JSON | Delivered research artifact | `sensitive_meta` removed; `raw_video_hash`, `original_file_name`, paths, timestamps, and IDs remain in frame entries | `services/datasets/exports.py:101`, `:346` |
+| Patient video in dataset | Part of the same artifact | `external_ids.raw_video_hash`, processed hash, patient/examination ID, file path | `services/video_files/clinical_contracts.py:312` |
+| Annotation CSV | Browser/file export | Raw hash alongside processed artifact identity | `export/frames/export_frames_with_labels.py:112`, `:1672`; `services/media/export_downloads.py:50` |
+| Timestamp CSV | Export with `original=True` | Digest of the stored original timestamp sequence; comparable only with matching original bytes | `services/media/export_downloads.py:61` |
+| Case JSON/XLSX | Selected pseudonymous cases | Unchanged patient pseudonym, center, revisions, clinical snapshots, and times | `services/studies/revision_export.py:58`, `:138` |
 
-Ein gespeicherter Rohhash stammt im normalen Import aus dem Quelldatei-Hash
+In normal import, a stored raw hash comes from the source file hash
 (`import_files/video_import_service.py:283`, `file_storage/create_video_file.py:155`).
-Bei transformierten Generationen muss stets geklärt werden, auf welche exakten
-Bytes ein Digest verweist. Nicht jeder Digest passt zu jeder Version derselben Aufnahme.
+For transformed generations, always establish exactly which bytes a digest
+references. Not every digest matches every version of the same recording.
 
 ## Top abuse paths
 
-1. Forscher kennt ein benanntes Original → berechnet dessen SHA-256 → gleicht
-   `raw_video_hash` ab → identifiziert Exportdatensatz und verbundene Befunde.
-2. Originaldateiname oder Pfad enthält Patienteninformation → Forscher liest
-   den exportierten Wert → direkte Zuordnung ohne kryptografischen Angriff.
-   Ob konkrete Dateien solche Namen tragen, wurde nicht geprüft.
-3. Ein Befund ist klinisch wiedererkennbar → stabile Patient-/Fallkennung
-   verbindet weitere Befunde → Identifikation breitet sich auf die Gruppe aus.
-4. Mehrere Studienexporte enthalten denselben Patientenhash oder dieselben IDs →
-   Forscher verbindet Veröffentlichungen → mehr Zusatzwissen pro Person.
-5. Zwei Personen haben dasselbe demografische Tupel oder eine Person hat
-   Schreibvarianten → identische bzw. unterschiedliche Token trotz anderer
-   Personenrelation → falsche Zusammenführung bzw. Aufspaltung. Dies ist ein
-   Datenqualitätsfehler, kein vom Empfänger benötigter HMAC-Angriff.
+1. Researcher knows a named original → calculates its SHA-256 → compares
+   `raw_video_hash` → identifies the export record and linked findings.
+2. Original filename or path contains patient information → researcher reads
+   the exported value → direct attribution without a cryptographic attack.
+   Whether actual files have such names was not checked.
+3. A finding is clinically recognizable → stable patient/case identifier links
+   further findings → identification spreads across the group.
+4. Multiple study exports contain the same patient hash or IDs → researcher
+   links releases → more supplementary knowledge per person.
+5. Two people have the same demographic tuple, or one person has spelling
+   variants → identical or different tokens despite a different person relation
+   → false merge or split. This is a data quality error, not an HMAC attack
+   required by the recipient.
 
 ## Threat model table
 
 | Threat ID | Threat source | Prerequisites | Threat action | Impact | Impacted assets | Existing controls (evidence) | Gaps | Recommended mitigations | Detection ideas | Likelihood | Impact severity | Priority |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| TM-001 | Empfänger | Passende benannte Originalbytes | Rohhashvergleich | Identitätszuordnung | Befundvertraulichkeit | Verarbeitete Medien geprüft; `export_policy.py:32` | Rohhash bleibt im Export | Originalfingerprints intern halten; externe Objektkennungen pro Freigabebereich | Exportfeld-Inventar und Kandidatendatei-Test | hoch bei passenden Bytes | hoch | high |
-| TM-002 | Empfänger | Identifizierender Name/Pfad tatsächlich vorhanden | Metadaten lesen | Direkte Identifikation | Identität | `sensitive_meta` ausgeschlossen; `exports.py:369` | Andere Stringfelder bleiben | Explizite Forschungs-Allowlist und bereinigte Artefaktnamen | Negativtest mit identifizierendem Quelldateinamen | mittel, bestandsabhängig | hoch | high |
-| TM-003 | Empfänger | Erkennbarer Befund oder verknüpfbare frühere Freigabe | Klinische Merkmale und stabile IDs verbinden | Gruppenweite Attribution | Verknüpfungsgraph | Menschliche Medienfreigabe | Keine allgemeine Zusatzwissens-/Kompositionsgarantie | Gesamtexport und kumulative Freigaben prüfen; studienspezifische Kennungen | Empfängerbezogene Angriffsversuche, Einzelfallanalyse | mittel, datenabhängig | hoch | high |
-| TM-004 | Klinische Eingaben | Homonyme oder Varianten | Demografische Gleichheit als Personengleichheit behandeln | False merges / false splits | Zuordnungsintegrität | Strukturierte Kodierung; zentrumsgebundene Konfliktprüfung | Keine eindeutige Personenquelle im demografischen Token | Verifizierte Identitätsquelle und fachlicher Mehrdeutigkeitsprozess | Referenzkorpus mit fachlich bestätigten Identitäten | nicht quantifiziert | hoch | medium |
-| TM-005 | Betreiber-/Publikationsannahmen | Altbestand oder altes Gutachten wird als aktueller Beweis verwendet | Falsche Konstruktion oder Migration voraussetzen | Unbelegte Sicherheitsbehauptung | Nachweisqualität | Migrationsdienst und Feature-Evidenz vorhanden | Produktive Anwendung nicht geprüft | Schlüsselgeneration und Migration separat belegen; historische Befunde kennzeichnen | Bestandsprüfung ohne Identifikatoren im Bericht | mittel | mittel | medium |
+| TM-001 | Recipient | Matching named original bytes | Raw hash comparison | Identity attribution | Findings confidentiality | Processed media checked; `export_policy.py:32` | Raw hash remains in export | Keep original fingerprints internal; external object identifiers per release scope | Export field inventory and candidate file test | high with matching bytes | high | high |
+| TM-002 | Recipient | Identifying name/path actually present | Read metadata | Direct identification | Identity | `sensitive_meta` excluded; `exports.py:369` | Other string fields remain | Explicit research allowlist and sanitized artifact names | Negative test with identifying source filename | medium, inventory-dependent | high | high |
+| TM-003 | Recipient | Recognizable finding or linkable earlier release | Combine clinical features and stable IDs | Group-wide attribution | Linkage graph | Human media approval | No general auxiliary-information/composition guarantee | Review complete export and cumulative releases; study-specific identifiers | Recipient-specific attack attempts, individual case analysis | medium, data-dependent | high | high |
+| TM-004 | Clinical input | Homonyms or variants | Treat demographic equality as person equality | False merges / false splits | Linkage integrity | Structured encoding; center-bound conflict checks | No unique person source in demographic token | Verified identity source and domain ambiguity process | Reference corpus with clinically confirmed identities | not quantified | high | medium |
+| TM-005 | Operational/publication assumptions | Legacy inventory or old assessment used as current evidence | Assume incorrect construction or migration | Unsupported security claim | Evidence quality | Migration service and feature evidence exist | Production application not checked | Establish key generation and migration separately; label historical findings | Inventory review without identifiers in report | medium | medium | medium |
 
-Die Tabellenprioritäten betreffen das bestätigte Forschungsmodell. TM-001 ist
-keine nachgewiesene unautorisierte Serverexfiltration; die kritische Offenlegung
-entsteht durch den Inhalt eines erlaubten Exports.
+Table priorities concern the confirmed research model. TM-001 is not demonstrated
+unauthorized server exfiltration; critical disclosure arises from the contents
+of an authorized export.
 
 ## Criticality calibration
 
-`critical` wäre unmittelbare breite Offenlegung von Klaridentitäten oder
-Klinikschlüsseln; beides wurde hier nicht nachgewiesen. `high` umfasst den
-nachvollziehbaren Originaldateiabgleich und identifizierende Exportmetadaten.
-`medium` umfasst unquantifizierte demografische Zuordnungsfehler und veraltete
-Nachweisdokumentation. `low` wären reine Bezeichnungsfehler oder Dokumentations-
-unklarheiten ohne zusätzliche Offenlegung; sie tragen die Hauptbewertung nicht.
+`critical` would mean immediate broad disclosure of direct identities or clinic
+keys; neither was demonstrated here. `high` covers the reproducible original-file
+comparison and identifying export metadata. `medium` covers unquantified
+demographic linkage errors and outdated evidence documentation. `low` would
+cover naming errors or documentation ambiguity without additional disclosure;
+these do not drive the main assessment.
 
-## Bewertung der angefragten Behauptungen
+## Assessment of the requested claims
 
-| Behauptung | Bewertung im aktuellen Code |
+| Claim | Assessment in current code |
 |---|---|
-| Gleiche vollständige Eingaben liefern denselben Patientenwert | Unterstützt bei gleichem Schlüssel und Zentrum. Äußere Leerzeichen werden entfernt. |
-| Gleiche reale Person wird immer korrekt erkannt | Nicht bewiesen. Groß-/Kleinschreibung, Unicode-Varianten, Namensänderungen und geänderte Geburtsdaten können aufspalten; Homonyme können zusammenfallen. |
-| Die alte Feldverkettungsmehrdeutigkeit betrifft den aktuellen HMAC | Nein. JSON-Feldgrenzen beheben diese konkrete Mehrdeutigkeit. Legacy-Migration und historische Aliase bleiben gesondert zu prüfen. |
-| Der Forscher kann Kandidatentoken allein aus Demografie berechnen | Für den aktuellen HMAC unter dem bestätigten Modell nicht möglich, sofern das Geheimnis ausreichend zufällig und geschützt ist. |
-| Token geben nur Gleichheitsinformation preis | Als bedingte Token-Schicht-Aussage begründbar; keine Aussage über die restliche Exportansicht. |
-| Token sind studienspezifisch | Nicht im untersuchten Patientenpfad: kein Studienbezeichner, derselbe gespeicherte Wert wird exportiert. |
-| Datei-Hashes erkennen Dateien zuverlässig | Sie vergleichen exakte Bytes; `get_file_hash` verarbeitet authentifizierten Klartextstream bzw. stabile lokale Dateiidentität. Das beweist keine semantische Gleichheit umkodierter Dateien. |
-| Datei-Hashes verhindern Patientenidentifikation | Falsch bei verfügbarem passenden benannten Original und veröffentlichtem Digest. |
-| Vollständige Exporte sind anonym / Reidentifikation unmöglich | Nicht unterstützt; die beschriebenen Abgleichwege widersprechen einer unbedingten Aussage. |
+| Identical complete inputs yield the same patient value | Supported with the same key and center. Outer whitespace is trimmed. |
+| The same real person is always recognized correctly | Not proven. Case, Unicode variants, name changes, and changed dates of birth can split identities; homonyms can merge. |
+| Legacy field concatenation ambiguity affects the current HMAC | No. JSON field boundaries resolve this specific ambiguity. Legacy migration and historical aliases still require separate checks. |
+| The researcher can calculate candidate tokens from demographics alone | Not possible for the current HMAC under the confirmed model, provided the secret is sufficiently random and protected. |
+| Tokens disclose only equality information | Defensible as a conditional token-layer statement; no claim about the rest of the export view. |
+| Tokens are study-specific | Not in the examined patient path: no study identifier; the same stored value is exported. |
+| File hashes reliably recognize files | They compare exact bytes; `get_file_hash` processes an authenticated plaintext stream or stable local file identity. This does not prove semantic equality of re-encoded files. |
+| File hashes prevent patient identification | False when a matching named original and published digest are available. |
+| Complete exports are anonymous / reidentification is impossible | Unsupported; the described comparison paths contradict an unconditional claim. |
 
-### Bedingte kryptografische Aussage
+### Conditional cryptographic claim
 
-HMAC ist eine geheimnisgebundene Konstruktion; ihre Pseudozufallsfunktions-
-Eigenschaft benötigt kryptografische Annahmen und hinreichend zufällige Schlüssel.
-Sie folgt nicht allein aus Kollisionsresistenz. Quellen:
+HMAC is a secret-bound construction; its pseudorandom function (PRF) property
+requires cryptographic assumptions and sufficiently random keys. It does not
+follow from collision resistance alone. Sources:
 [RFC 2104](https://www.rfc-editor.org/rfc/rfc2104),
 [Bellare, New Proofs for NMAC and HMAC](https://eprint.iacr.org/2006/043).
 
-Für die aktuelle Patientenfunktion kann unter dieser Annahme ein Simulator
-jedem unterschiedlichen normalisierten Eingabetupel unabhängig einen zufälligen
-256-Bit-Wert zuweisen und ihn bei Wiederholung erneut ausgeben. Die Unterscheidung
-vom echten Tokenvektor ist durch den entsprechenden PRF-Vorteil begrenzt.
-Die übrigen Exportinformationen gehören vollständig in die modellierte
-Zusatzinformation Z. Insbesondere müssen andere Ausgaben desselben Schlüssels,
-bekannte Identität-Token-Paare und frühere Freigaben in einem vollständigen
-gemeinsamen Modell berücksichtigt werden. Ein Beweis für den Patientenvektor
-allein ist kein Beweis für die zusammengesetzte Anwendung.
+Under this assumption, a simulator for the current patient function can assign
+an independently random 256-bit value to each distinct normalized input tuple
+and return it again on repetition. Distinguishing this from the real token vector
+is bounded by the corresponding PRF advantage. All remaining export information
+belongs in the modeled auxiliary information Z. In particular, other outputs
+under the same key, known identity/token pairs, and previous releases must be
+included in a complete joint model. A proof for the patient vector alone is not
+a proof for the composed application.
 
-Die Labels müssen unabhängig gezogen werden, nicht künstlich kollisionsfrei:
-für n verschiedene Eingaben ist die ideale Kollisionsschranke
-`n(n-1)/2^257`, bei einer Million ungefähr `4,32 × 10^-66`, zuzüglich des
-Übertragungsfehlers aus der PRF-Annahme. Das ist keine Reidentifikationsrate.
-Der Docstring „collision-free“ in `utils/hashs.py:83` ist daher zu stark.
+Labels must be sampled independently, rather than made artificially collision-free:
+for n distinct inputs, the ideal collision bound is `n(n-1)/2^257`, approximately
+`4.32 × 10^-66` for one million, plus the reduction error from the PRF assumption.
+This is not a reidentification rate. The “collision-free” docstring in
+`utils/hashs.py:83` is therefore too strong.
 
-Die Konfigurationsprüfung weist kurze und offensichtlich schwache aktive Werte
-zurück. Eine empirische Byte-Entropieprüfung beweist aber keine 256 Bit
-Schlüsselentropie; die zufällige Provisionierung bleibt eine Betriebsannahme.
-Bei bekanntem Schlüssel funktioniert Kandidatenprüfung weiterhin, wie der
-bestehende synthetische Geburtsdatumstest demonstriert.
+Configuration validation rejects short and obviously weak active values. An
+empirical byte-entropy check does not prove 256 bits of key entropy; random
+provisioning remains an operational assumption. Candidate checking still works
+with a known key, as the existing synthetic date-of-birth test demonstrates.
 
-### Verbleibende Inhalte und Freigabeverfahren
+### Remaining content and release procedures
 
-Das Entfernen von `sensitive_meta` am tatsächlichen AI-Export ist eine wirksame
-vorhandene Kontrolle; das interne Vorhandensein dieses Objekts wird hier nicht
-als tatsächlicher Namensabfluss berichtet. Rohhashes, Dateinamen und Pfade sind
-von dieser Ausschlussregel jedoch nicht umfasst. Fallrevisionen werden als
-klinische Snapshots exportiert, nicht durch einen allgemeinen Anonymitätsbeweis
-abgesichert. Auch das interne Pseudopatientenprofil erhält Geburtsmonat und -jahr
-(`models/administration/person/patient/patient.py:125`); dies ist nur dann ein
-Empfängerrisiko, wenn ein konkreter Export diese Werte enthält.
+Removing `sensitive_meta` at the actual AI export is an effective existing
+control; the internal presence of this object is not reported here as actual
+name leakage. Raw hashes, filenames, and paths are not covered by that exclusion.
+Case revisions are exported as clinical snapshots, without a general anonymity
+proof. The internal pseudopatient profile also retains birth month and year
+(`models/administration/person/patient/patient.py:125`); this is a recipient risk
+only if a concrete export contains these values.
 
-Die vorhandene k-Pseudonymitätsfunktion ist ein separater, konfigurierbarer
-Tabellenworkflow (`services/privacy/k_pseudonymity.py:93`). Die untersuchten
-Datensatz- und Fall-Exporter rufen ihn nicht auf. Seine Existenz ist deshalb
-kein Nachweis einer entsprechenden Eigenschaft dieser Exporte. Ebenso wurden
-keine empirischen Identifizierungsversuche gegen reale Exportbestände durchgeführt.
+The existing k-pseudonymity function is a separate configurable table workflow
+(`services/privacy/k_pseudonymity.py:93`). The examined dataset and case exporters
+do not call it. Its existence therefore does not establish that property for
+these exports. No empirical identification attempts against actual export
+inventories were conducted either.
 
 ## Focus paths for security review
 
-| Pfad | Zweck | Befunde |
+| Path | Purpose | Findings |
 |---|---|---|
-| `endoreg_db/services/datasets/exports.py` | Forschungs-Allowlist statt alleiniger Entfernung eines Unterobjekts prüfen | TM-001–003 |
-| `endoreg_db/export/frames/export_frames_with_labels.py` | Rohhash und Pfade im CSV-Vertrag prüfen | TM-001–002 |
-| `endoreg_db/services/studies/revision_export.py` | Studie, stabile Kennungen und vollständige Snapshot-Inhalte zusammen bewerten | TM-003 |
-| `endoreg_db/utils/hashs.py` | Eingabesemantik, Schlüsselbindung und präzise Sicherheitsbegriffe | TM-004–005 |
-| `endoreg_db/services/secret_rotation/legacy_hashes.py` | Migrationsbelege vom tatsächlichen Bestandszustand trennen | TM-005 |
+| `endoreg_db/services/datasets/exports.py` | Review a research allowlist instead of merely removing a nested object | TM-001–003 |
+| `endoreg_db/export/frames/export_frames_with_labels.py` | Review raw hash and paths in CSV contract | TM-001–002 |
+| `endoreg_db/services/studies/revision_export.py` | Assess study, stable identifiers, and full snapshot contents together | TM-003 |
+| `endoreg_db/utils/hashs.py` | Input semantics, key binding, and precise security terminology | TM-004–005 |
+| `endoreg_db/services/secret_rotation/legacy_hashes.py` | Separate migration evidence from actual inventory state | TM-005 |
 
 ## Notes on use
 
-### Tatsächlich ausgeführte Verifikation
+### Verification actually performed
 
 ```sh
 .devenv/state/venv/bin/pytest tests/utils/test_sensitive_meta_hash_security.py tests/utils/test_file_hash_integrity.py tests/environment/test_identity_hashing.py -q --tb=short --show-capture=no
@@ -258,37 +248,34 @@ keine empirischen Identifizierungsversuche gegen reale Exportbestände durchgef�
 ./feature-tracking/tracker.py show anonymization
 ```
 
-Erster Lauf: **49 bestanden**, eine Plugin-Warnung, 0,57 Sekunden Testzeit.
-Zweiter Lauf: **33 bestanden, 12 fehlgeschlagen**, 133 Warnungen,
-67,13 Sekunden. Die Export-Scope-Tests und der Test zur tatsächlichen Entfernung
-von `sensitive_meta` bestanden. Alle zwölf Fehler liegen in
-`test_patient_identity_input_variations.py`: Zehn Namensvarianten und der
-Untersuchungsdatumstest scheitern an der Testfixture mit ungespeichertem Zentrum
-ohne `center_key`; der verbleibende Test erwartet entgegen der aktuellen
-Implementierung unterschiedliche Hashes bei äußeren Leerzeichen. Die Fehler
-wurden nicht verändert und sind keine erfolgreichen Verknüpfungsnachweise.
-Zusätzlich meldete Pytest bei beiden Läufen Aufräumwarnungen zu bereits
-vorhandenen temporären Verzeichnissen. Keine manuelle Bereinigung erfolgte.
+First run: **49 passed**, one plugin warning, 0.57 seconds test time.
+Second run: **33 passed, 12 failed**, 133 warnings, 67.13 seconds. Export scope
+tests and the test for actual removal of `sensitive_meta` passed. All twelve
+failures are in `test_patient_identity_input_variations.py`: ten name variants
+and the examination date test fail because the fixture has an unsaved center
+without `center_key`; the remaining test expects outer whitespace to produce
+different hashes, contrary to the current implementation. Failures were not
+changed and are not successful linkage evidence. Pytest also reported cleanup
+warnings for preexisting temporary directories in both runs. No manual cleanup
+was performed.
 
-65 Strukturmanifeste und 37 Feature-Definitionen wurden erfolgreich validiert;
-`tracker.py show anonymization` wurde gelesen, ohne Statusänderung.
-`git diff --check` für die geänderten Dokumentationspfade bestand.
-Kein Pyright-Lauf: Es wurden ausschließlich Dokumentation und deren YAML-Map
-geändert. Keine erneute Vollprüfung von Import, PostgreSQL-Parallelität oder
-Migration; vorhandene Tracker-Evidenz ersetzt hier keinen frischen Lauf.
-Eine fremde laufende Pytest-Suite wurde erkannt und nicht unterbrochen;
-es wurde keine breite Testsuite zusätzlich gestartet.
+65 structure manifests and 37 feature definitions validated successfully;
+`tracker.py show anonymization` was read without changing status.
+`git diff --check` passed for changed documentation paths. No Pyright run:
+only documentation and its YAML map changed. No new full import, PostgreSQL
+concurrency, or migration verification; existing tracker evidence does not
+replace a fresh run here. Another owner's running pytest suite was detected
+and left uninterrupted; no additional broad suite was started.
 
-Diese Prüfung ändert keine Anwendung, Datenbank, Schlüssel oder Freigabestatus.
-Build-/CI-Sicherheit liegt außerhalb des Empfängermodells. Alle hier aufgeführten
-Exportoberflächen und Datenübergänge wurden auf Quellcodeebene betrachtet;
-eine vollständige Inventarisierung aller Interoperabilitätsformate ist nicht enthalten.
-Das Empfängermodell wurde vom Nutzer bestätigt. Produktive und empirische Grenzen
-sind ausdrücklich offen.
+This review changes no application, database, keys, or approval status.
+Build/CI security is outside the recipient model. All listed export surfaces
+and data transitions were examined at source level; a complete inventory of
+all interoperability formats is not included. The user confirmed the recipient
+model. Production and empirical limits remain explicitly open.
 
-Vertretbare Manuskriptformulierung: „Die Implementierung verwendet strukturierte,
-zentrumsgebundene HMAC-SHA-256-Pseudonyme zur deterministischen Verknüpfung.
-Der Schutz der Token setzt geheimes, zufällig erzeugtes Schlüsselmaterial voraus.
-Fachliche Zuordnungsgüte und Identifizierbarkeit der vollständigen Exporte sind
-getrennte Eigenschaften. Die derzeitigen Exportverträge erlauben unter anderem
-die Wiedererkennung passender bekannter Quelldateien über veröffentlichte Digests.“
+Defensible manuscript wording: “The implementation uses structured, center-bound
+HMAC-SHA-256 pseudonyms for deterministic linkage. Token protection requires
+secret, randomly generated key material. Domain linkage quality and identifiability
+of complete exports are separate properties. Current export contracts allow,
+among other things, recognition of matching known source files through published
+digests.”

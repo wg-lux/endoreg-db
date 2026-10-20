@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from typing import cast
 from unittest.mock import Mock
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
 
 import numpy as np
 import pytest
@@ -62,6 +63,88 @@ def test_replaced_generation_is_rejected(
     monkeypatch.setattr(service, "verified_video_source_hash", verified_hash)
     with pytest.raises(ValueError):
         service.artifact_frame_timestamps(_video(), file_type=kind)
+
+
+@pytest.mark.parametrize("receipt_kind", ["verified", "unresolved"])
+@pytest.mark.parametrize(
+    "history", ["missing", "matching", "conflicting", "stale", "wrong_recording"]
+)
+def test_received_processed_coordinates_require_current_unambiguous_evidence(
+    monkeypatch: pytest.MonkeyPatch, receipt_kind: str, history: str
+) -> None:
+    from lx_dtypes.models.contracts.video_provenance import (
+        VideoFrameProvenancePayload,
+        VideoProvenanceBundle,
+        VideoProvenanceRecovery,
+    )
+    from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+
+    video = _video()
+    entries = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert entries
+    raw, processed = entries[0].before, entries[1].after
+    metadata: VideoFileMetaJsonObject = {}
+    if history == "stale":
+        processed = processed.model_copy(update={"content_hash": "c" * 64})
+    if receipt_kind == "verified":
+        value = VideoProvenanceBundle(
+            transformations=[
+                VideoFrameProvenancePayload(
+                    source=raw,
+                    output=processed,
+                    source_frame_indices=[0, 1, 2],
+                )
+            ]
+        )
+        metadata["video_frame_provenance"] = value.model_dump(mode="json")
+    else:
+        recovery = VideoProvenanceRecovery(
+            recording_hash=video.raw_video_hash,
+            processed_timeline=processed,
+        )
+        metadata["video_provenance_recovery"] = recovery.model_dump(mode="json")
+    if history in {"matching", "conflicting"}:
+        snapshot = entries[1].after.model_dump(mode="json")
+        if history == "conflicting":
+            snapshot["presentation_timestamps"] = [3000, 3050, 3200]
+        metadata["canonical_timeline_history"] = [
+            {"artifact_kind": "processed", "before": snapshot, "after": snapshot}
+        ]
+    video.meta = metadata
+    if history == "wrong_recording":
+        video.raw_video_hash = "d" * 64
+
+    def verified_hash(_field: object) -> str:
+        return "b" * 64
+
+    monkeypatch.setattr(service, "verified_video_source_hash", verified_hash)
+    if history in {"conflicting", "stale", "wrong_recording"}:
+        with pytest.raises(ValueError, match="unambiguous|another recording"):
+            service.artifact_frame_timestamps(video, file_type="processed")
+    else:
+        assert service.artifact_frame_timestamps(video, file_type="processed") == (
+            3.0,
+            3.04,
+            3.2,
+        )
+    with pytest.raises(ValueError, match="unambiguous"):
+        service.artifact_frame_timestamps(video, file_type="raw")
+
+
+def test_missing_canonical_coordinates_are_not_inferred_from_rate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _video()
+    video.meta = {}
+    video.fps = 25
+    video.frame_count = 3
+
+    def verified_hash(_field: object) -> str:
+        return "b" * 64
+
+    monkeypatch.setattr(service, "verified_video_source_hash", verified_hash)
+    with pytest.raises(ValueError, match="unambiguous"):
+        service.artifact_frame_timestamps(video, file_type="processed")
 
 
 def test_invalid_artifact_kind_is_not_raw() -> None:

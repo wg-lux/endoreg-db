@@ -7,6 +7,11 @@ from django.db import connection, models, transaction
 from lx_dtypes.models.contracts.core_concepts import CoreConceptBase
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
+from lx_dtypes.models.contracts.package_snapshot import (
+    PackageSnapshot,
+    build_package_snapshot,
+    restore_package_snapshot,
+)
 from lx_dtypes.models.contracts.knowledge_base_graph import (
     GraphNodeKind,
     KnowledgeBaseGraphSnapshot,
@@ -352,8 +357,15 @@ def _difference(
 
 
 def plan_clinical_reference_import(
-    snapshot: KnowledgeBaseGraphSnapshot, *, adopt_existing: bool = False
+    snapshot: KnowledgeBaseGraphSnapshot,
+    *,
+    adopt_existing: bool = False,
+    package_snapshot: PackageSnapshot | None = None,
 ) -> ClinicalReferencePlan:
+    if package_snapshot is not None:
+        ClinicalReferenceReceipt(
+            snapshot=snapshot, package_snapshot=package_snapshot, bindings=[]
+        )
     definitions = compile_clinical_references(snapshot)
     module = snapshot.identity.knowledge_base_module
     version = snapshot.identity.knowledge_base_version
@@ -370,6 +382,13 @@ def plan_clinical_reference_import(
             existing_receipt = receipt
             if receipt_row.snapshot_id != snapshot.snapshot_id:
                 conflicts.append("Same module/version already has different content")
+            if package_snapshot is not None and (
+                receipt.package_snapshot is None
+                or receipt.package_snapshot.snapshot_id != package_snapshot.snapshot_id
+            ):
+                conflicts.append(
+                    "Full package content differs or the historical receipt lacks it"
+                )
         for binding in receipt.bindings:
             imported.setdefault(binding.identity, set()).add(binding.row_id)
             previous_meanings.setdefault(binding.identity, []).append(receipt.snapshot)
@@ -440,7 +459,10 @@ def plan_clinical_reference_import(
 
 
 def import_clinical_references(
-    snapshot: KnowledgeBaseGraphSnapshot, *, adopt_existing: bool = False
+    snapshot: KnowledgeBaseGraphSnapshot,
+    *,
+    adopt_existing: bool = False,
+    package_snapshot: PackageSnapshot | None = None,
 ) -> ClinicalReferencePlan:
     snapshot = KnowledgeBaseGraphSnapshot.model_validate(snapshot.model_dump())
     definitions = compile_clinical_references(snapshot)
@@ -454,7 +476,11 @@ def import_clinical_references(
         if connection.vendor == "postgresql":
             with connection.cursor() as cursor:
                 cursor.execute("SELECT pg_advisory_xact_lock(%s, %s)", [20260928, 1])
-        plan = plan_clinical_reference_import(snapshot, adopt_existing=adopt_existing)
+        plan = plan_clinical_reference_import(
+            snapshot,
+            adopt_existing=adopt_existing,
+            package_snapshot=package_snapshot,
+        )
         if not plan.can_import:
             raise ValueError(
                 "Clinical reference conflicts; inspect the dry-run plan before importing"
@@ -497,7 +523,11 @@ def import_clinical_references(
                 cast(ReferenceRelation, getattr(row, field)).set(
                     rows[ref.identity] for ref in refs
                 )
-        receipt = ClinicalReferenceReceipt(snapshot=snapshot, bindings=bindings)
+        receipt = ClinicalReferenceReceipt(
+            snapshot=snapshot,
+            package_snapshot=package_snapshot,
+            bindings=bindings,
+        )
         ClinicalReferenceImport.objects.create(
             module=plan.module,
             version=plan.version,
@@ -517,3 +547,24 @@ def import_clinical_references(
             )
         )
         return plan
+
+
+def load_imported_package(module: str, version: str) -> KnowledgeBase:
+    """Restore all typed record families without consulting active registrations."""
+    row = ClinicalReferenceImport.objects.get(module=module, version=version)
+    row.clean()
+    receipt = ClinicalReferenceReceipt.model_validate(row.payload)
+    if receipt.package_snapshot is None:
+        raise ValueError("Historical clinical receipt has no complete package snapshot")
+    return restore_package_snapshot(receipt.package_snapshot)
+
+
+def import_clinical_package(
+    knowledge_base: KnowledgeBase, *, adopt_existing: bool = False
+) -> ClinicalReferencePlan:
+    """Persist a complete package with its legacy clinical ORM projections."""
+    return import_clinical_references(
+        clinical_snapshot(knowledge_base),
+        adopt_existing=adopt_existing,
+        package_snapshot=build_package_snapshot(knowledge_base),
+    )

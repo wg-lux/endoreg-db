@@ -1,190 +1,187 @@
-# Empfindlichkeit der Dateihashprüfung gegenüber Pixeländerungen
+# Sensitivity of file hash checks to pixel changes
 
-## Gegenstand und Einordnung
+## Subject and context
 
-Dieses Material beschreibt einen deterministischen technischen Validierungsversuch der
-SHA-256-Dateihashprüfung in Endoreg-db. Untersucht wird, ob kontrollierte Änderungen an
-synthetischen PNG-Bildern und deren Metadaten die Gleichheit der Dateihashes verändern.
-Es handelt sich weder um eine klinische Studie noch um eine Schätzung menschlicher
-Bildähnlichkeit. Die kleinste untersuchte Pixeländerung beträgt eine Intensitätsstufe
-in einem Farbkanal eines Pixels. Ein universeller Ähnlichkeitsschwellenwert wird nicht
-geschätzt. Die Scope- und Verifikationsevidenz wird ausschließlich unter
-`image_content_hash_pixel_experiment` in `feature-tracking/CodeQuality.yml` geführt.
+This material describes a deterministic technical validation experiment for
+Endoreg-db's SHA-256 file hash checks. It examines whether controlled changes to
+synthetic PNG images and their metadata change file hash equality. It is neither
+a clinical study nor an estimate of human visual similarity. The smallest pixel
+change examined is one intensity level in one color channel of one pixel. No
+universal similarity threshold is estimated. Scope and verification evidence are
+maintained exclusively under `image_content_hash_pixel_experiment` in
+`feature-tracking/CodeQuality.yml`.
 
-## Versuchsprotokoll
+## Experimental protocol
 
-Zwei RGB-Ausgangsbilder mit Seitenlängen 8 und 16 Pixeln werden aus der Bytefolge
-`bytes(index % 251 for index in range(side * side * 3))` erzeugt. Die Kanäle sind
-8-Bit-Ganzzahlen. Ein separater Metadatenversuch verwendet ein drittes synthetisches
-8 × 8-Bild aus `bytes(range(192))`. Es werden keine Patientendaten verwendet.
+Two baseline RGB images with side lengths of 8 and 16 pixels are generated from
+`bytes(index % 251 for index in range(side * side * 3))`. Channels are 8-bit
+integers. A separate metadata experiment uses a third synthetic 8 × 8 image
+from `bytes(range(192))`. No patient data are used.
 
-Für jede Seitenlänge werden Rot, Grün und Blau in getrennten Reihen verändert. In
-Generation g wird im g-ten Pixel in zeilenweiser Reihenfolge genau der untersuchte
-Kanal um eins erhöht; vorherige Änderungen bleiben erhalten. Alle Ausgangswerte
-liegen höchstens bei 250, sodass kein Überlauf entsteht. Jede Reihe enthält N = side²
-Vorwärtsgenerationen. Die sechs Reihen ergeben 3 × (64 + 256) = 960 Zustände.
+For each side length, red, green, and blue are changed in separate series. In
+generation g, exactly the channel under investigation in the g-th pixel in
+row-major order is increased by one; previous changes remain. All baseline values
+are at most 250, preventing overflow. Each series contains N = side² forward
+generations. The six series yield 3 × (64 + 256) = 960 states.
 
-Pillow kodiert jeden Zustand mit `Image.save(format="PNG", pnginfo=None)` und den
-Defaults der aufgezeichneten Pillow-Version. Eine Dekodierung prüft anschließend die
-exakte Übereinstimmung mit den vorgesehenen Pixelbytes. Die Datei wird über den
-atomaren Repository-Wrapper geschrieben. `get_file_hash` berechnet ihren Hash mit
-dem tatsächlich installierten nativen Backend. Pro Reihe wird außerdem eine
-byteidentische Kopie unter anderem Dateinamen geprüft.
+Pillow encodes each state with `Image.save(format="PNG", pnginfo=None)` and the
+defaults of the recorded Pillow version. Decoding then checks exact agreement
+with the intended pixel bytes. The file is written through the repository's
+atomic wrapper. `get_file_hash` hashes it using the actually installed native
+backend. Each series also checks a byte-identical copy under a different filename.
 
-Die Änderungen werden anschließend in umgekehrter Reihenfolge zurückgenommen.
-Jeder Rücknahmeschritt muss den Hash des entsprechenden früheren Zustands reproduzieren.
-Der letzte Zustand muss zusätzlich dieselben Datei-Bytes wie das Original besitzen.
-Beim Metadatenkontrollpaar wird ausschließlich ein PNG-Textfeld mit dem Schlüssel
-`experiment` und dem Wert `identical pixels, different metadata` ergänzt.
+Changes are then reversed in the opposite order. Each reversal must reproduce
+the hash of the corresponding earlier state. The final state must also have the
+same file bytes as the original. The metadata control pair adds only a PNG text
+field with key `experiment` and value `identical pixels, different metadata`.
 
-Der Exporter ersetzt während des Testlaufs ausschließlich den lokalen Verweis auf
-`get_file_hash` im Testmodul durch einen beobachtenden Wrapper. Dieser ruft den echten
-Helper auf und gibt dessen unverändertes Ergebnis zurück. Die verwendeten Dateien
-werden unmittelbar archiviert und erneut mit demselben Helper geprüft. Der Exporter
-ist damit keine unabhängige kryptografische Referenzimplementierung. Er ergänzt die
-bestehenden Assertions um ein überprüfbares Messarchiv.
+During the test run, the exporter replaces only the test module's local reference
+to `get_file_hash` with an observation wrapper. It calls the real helper and
+returns its unchanged result. The files used are immediately archived and checked
+again with the same helper. The exporter is therefore not an independent
+cryptographic reference implementation. It supplements existing assertions with
+an inspectable measurement archive.
 
-## Endpunkte und Auswertung
+## Endpoints and analysis
 
-Primärer Endpunkt ist die exakte Gleichheit des hexadezimalen Dateihashes mit dem
-Ausgangshash derselben Reihe. Zusätzlich prüft der Test, dass innerhalb jeder
-Vorwärtsreihe kein früherer Hash erneut auftritt. Vergleiche über unterschiedliche
-Reihen hinweg sind nicht Teil dieses Endpunkts.
+The primary endpoint is exact equality of the hexadecimal file hash with the
+baseline hash of the same series. The test also checks that no earlier hash
+recurs within each forward series. Comparisons across different series are not
+part of this endpoint.
 
-Der Export erfasst deskriptiv die Hamming-Distanz der 256 Digest-Bits zum Ausgangshash.
-Sie wird als Anzahl der Einsen im bitweisen exklusiven Oder beider Hashwerte berechnet.
-Sie ist kein Maß der visuellen Bildähnlichkeit. Es wird kein Schwellenwert an diese
-Distanz angepasst und kein Test auf eine theoretische Verteilung durchgeführt.
+The export descriptively records the Hamming distance of the 256 digest bits
+from the baseline hash. It is calculated as the number of set bits in the bitwise
+exclusive OR of both hashes. It is not a measure of visual similarity. No
+threshold is fitted to this distance and no theoretical distribution is tested.
 
-Die mittlere quadratische Kanalabweichung wird über alle 3 × N Kanalwerte berechnet:
+Mean squared channel error is calculated over all 3 × N channel values:
 
 `MSE = sum((original_channel - current_channel)²) / (3 × N)`.
 
-Für g kumulative Änderungen um eine Stufe gilt MSE = g/(3N). Der Anteil veränderter
-Pixel ist g/N. Beim ersten Schritt sind dies 1,5625 % für 8 × 8 und 0,390625 % für
-16 × 16. Die Kanaländerung relativ zur gesamten 8-Bit-Skala beträgt 1/255.
+For g cumulative one-level changes, MSE = g/(3N). The fraction of changed pixels
+is g/N. At the first step, this is 1.5625% for 8 × 8 and 0.390625% for 16 × 16.
+The channel change relative to the full 8-bit scale is 1/255.
 
-Die 960 Zustände sind voneinander abhängige Beobachtungen aus zwei Ausgangsbildern.
-Die 960 Rücknahmeschritte reproduzieren bereits besuchte Zustände. Weder diese Schritte
-noch wiederholte Testausführungen zählen als zusätzliche unabhängige Bildstichproben.
-Es werden daher keine populationsbezogenen Konfidenzintervalle, p-Werte oder
-allgemeinen Sensitivitäts- und Spezifitätsschätzungen angegeben.
+The 960 states are dependent observations from two baseline images. The 960
+reversal steps reproduce previously visited states. Neither these steps nor
+repeated test executions count as additional independent image samples.
+Consequently, no population confidence intervals, p-values, or general
+sensitivity and specificity estimates are reported.
 
-## Ergebnistabellen und Bildlegenden
+## Results tables and figure captions
 
-Die konkreten Messwerte befinden sich in `measurements.csv`, die sieben
-Versuchsreihen in `summary.csv`. Der vollständige Export enthält 1.934 Beobachtungen:
-7 Ausgangszustände, 6 Kopiekontrollen, 960 Vorwärtsgenerationen, 960 Rücknahmeschritte
-und 1 Metadatenänderung. Gleichartige Dateien werden pro Beobachtung separat abgelegt;
-die Dateizahl ist keine Zahl unabhängiger oder einzigartiger Bilder.
+Actual measurements are in `measurements.csv`, and the seven experimental series
+in `summary.csv`. The full export contains 1,934 observations: 7 baselines,
+6 copy controls, 960 forward generations, 960 reversals, and 1 metadata change.
+Equivalent files are stored separately for each observation; the file count is
+not a count of independent or unique images.
 
-**Abbildung 1, `example_images`.** Ausgangsbild und erste Änderung im roten Kanal für
-beide Seitenlängen. Die Vergrößerung verwendet den nächsten Nachbarn und keine
-Glättung. Rechts kennzeichnet eine binäre Maske den veränderten Pixel in Weiß;
-diese Maske zeigt den Ort, nicht die tatsächliche Intensität der Änderung.
+**Figure 1, `example_images`.** Baseline image and first change in the red channel
+for both side lengths. Enlargement uses nearest-neighbor interpolation without
+smoothing. On the right, a binary mask marks the changed pixel in white; the mask
+shows its location, not the actual intensity of the change.
 
-**Abbildung 2, `hash_distance`.** Hamming-Distanz zum Ausgangshash über der Anzahl
-kumulativ geänderter Pixel, getrennt nach Bildgröße und Farbkanal. Punkte sind
-abhängige Zustände einer deterministischen Reihe, keine unabhängigen Wiederholungen.
+**Figure 2, `hash_distance`.** Hamming distance from the baseline hash against the
+number of cumulatively changed pixels, by image size and color channel. Points
+are dependent states of a deterministic series, not independent repetitions.
 
-**Abbildung 3, `controls`.** Anteil gleicher Ausgangshashes bei byteidentischen
-Kopien, kumulativen Pixeländerungen und einer Metadatenänderung. Die unterschiedlichen
-Nenner werden direkt angegeben; die Darstellung ist rein deskriptiv und enthält
-keine inferenzstatistischen Fehlerbalken. Die Metadatenkontrolle hat null geänderte Pixel.
+**Figure 3, `controls`.** Proportion of matching baseline hashes for byte-identical
+copies, cumulative pixel changes, and a metadata change. The different
+denominators are stated directly; the chart is purely descriptive and has no
+inferential error bars. The metadata control has zero changed pixels.
 
-Alle Abbildungen werden als PDF und SVG für Vektorausgabe sowie als PNG mit 300 dpi
-bereitgestellt. Die originalen kleinen Versuchs-PNGs liegen unvergrößert unter `images/`.
+All figures are provided as PDF and SVG for vector output and as PNG at 300 dpi.
+The original small experimental PNGs are stored without enlargement in `images/`.
 
-## Datenwörterbuch
+## Data dictionary
 
-| Spalte | Bedeutung |
+| Column | Meaning |
 | --- | --- |
-| series | Pytest-Fallname mit Kanal und Seitenlänge beziehungsweise Metadatenkontrolle |
-| step | Nullbasierte Reihenfolge der tatsächlich beobachteten Hashaufrufe innerhalb der Reihe |
-| phase | baseline, copy, forward, reverse oder metadata |
-| side | Bildbreite und Bildhöhe in Pixeln |
-| changed_pixels | Pixel mit mindestens einem abweichenden Kanal gegenüber dem Ausgangsbild |
-| changed_channels | Anzahl abweichender Kanalwerte gegenüber dem Ausgangsbild |
-| changed_pixels_previous | Abweichende Pixel gegenüber der vorherigen Beobachtung; Ausgangszustand 0 |
-| max_channel_delta | Maximale absolute Kanalabweichung gegenüber dem Ausgangsbild, Intensitätsstufen |
-| mse | Mittlere quadratische Kanalabweichung in quadrierten Intensitätsstufen |
-| hash_distance_bits | Hamming-Distanz zum Ausgangshash, 0 bis 256 Bit |
-| matches_original | Exakte Hashgleichheit mit dem Ausgangszustand derselben Reihe |
-| sha256 | Vollständiger vom produktiven Helper gelieferter Dateihash |
-| bytes | Länge der PNG-Datei in Bytes |
-| image | Relativer Pfad zur tatsächlich gehashten und archivierten Datei |
+| series | Pytest case name with channel and side length, or metadata control |
+| step | Zero-based order of actually observed hash calls within the series |
+| phase | baseline, copy, forward, reverse, or metadata |
+| side | Image width and height in pixels |
+| changed_pixels | Pixels with at least one channel differing from the baseline |
+| changed_channels | Number of channel values differing from the baseline |
+| changed_pixels_previous | Pixels differing from the previous observation; baseline 0 |
+| max_channel_delta | Maximum absolute channel difference from baseline, in intensity levels |
+| mse | Mean squared channel error in squared intensity levels |
+| hash_distance_bits | Hamming distance from baseline hash, 0 to 256 bits |
+| matches_original | Exact hash equality with the baseline of the same series |
+| sha256 | Complete file hash returned by the production helper |
+| bytes | PNG file length in bytes |
+| image | Relative path to the file actually hashed and archived |
 
-`step` ist nicht mit der kumulativen Pixelzahl gleichzusetzen: Schritt 1 ist in den
-Pixelreihen die unveränderte Kopie, Schritt 2 die erste Pixeländerung.
+`step` is not the cumulative pixel count: in the pixel series, step 1 is the
+unchanged copy and step 2 is the first pixel change.
 
-## Interpretation und Grenzen
+## Interpretation and limitations
 
-Die kleinste untersuchte und unterschiedene Pixeländerung ist eine Intensitätsstufe
-in einem Kanal eines Pixels. Nur der erste Vorwärtsschritt jeder Reihe unterscheidet
-sich vom Original an genau einem Pixel. Spätere Positionen wurden nicht einzeln gegen
-das unveränderte Original geprüft. Ein Schwellenwert für beliebige Bilder, Positionen,
-Formate, Kodierer oder Skalierungen lässt sich daraus nicht ableiten.
+The smallest pixel change examined and distinguished is one intensity level in
+one channel of one pixel. Only the first forward step of each series differs
+from the original at exactly one pixel. Later positions were not individually
+tested against the unchanged original. This does not establish a threshold for
+arbitrary images, positions, formats, encoders, or scaling operations.
 
-Eine Metadatenänderung kann den Dateihash verändern, obwohl alle Pixel gleich bleiben.
-Deshalb beschreibt kein ausschließlich pixelbasierter Schwellenwert die Dateihashgleichheit
-vollständig. SHA-256 dient der Integritätsprüfung einer Nachricht beziehungsweise Datei [1].
-PNG erlaubt neben verlustfrei kodierten Pixelwerten zusätzliche Textinformationen [2].
-Die Pillow-Schnittstelle unterstützt solche zusätzlichen Informationen über `pnginfo` [3].
+A metadata change can change the file hash even when all pixels remain identical.
+Thus, no exclusively pixel-based threshold fully describes file hash equality.
+SHA-256 checks message or file integrity [1]. In addition to losslessly encoded
+pixel values, PNG permits supplementary text information [2]. Pillow supports
+such information through `pnginfo` [3].
 
-Das Experiment bestätigt erwartetes Implementierungsverhalten und erhebt keinen Anspruch
-auf eine neue kryptografische Eigenschaft. Es untersucht keine perzeptuellen Hashverfahren,
-JPEG-Rekodierung, klinischen Bilder oder menschliche Wahrnehmung. Keine beobachtete
-Kollision ist kein Beweis allgemeiner Kollisionsfreiheit. Die Testlaufzeit ist kein
-Hashleistungsbenchmark, da Kodierung, Assertions und Archivierung enthalten sind.
+The experiment confirms expected implementation behavior and claims no new
+cryptographic property. It does not examine perceptual hashing, JPEG re-encoding,
+clinical images, or human perception. Observing no collision is not proof of
+general collision freedom. Test duration is not a hash performance benchmark
+because it includes encoding, assertions, and archiving.
 
-## Reproduktion und Archivstruktur
+## Reproduction and archive structure
 
-Aus dem Repository-Root im eingerichteten Projektumfeld:
+From the repository root in the configured project environment:
 
 ```sh
 .devenv/state/venv/bin/pyright
 .devenv/state/venv/bin/python -m scripts.collect_image_hash_publication
 ```
 
-Der Exporter verwendet den kanonischen `get_runtime_paths().export_dir` und erzeugt
-einen neuen Ordner mit Zeitstempel und eindeutiger Kennung. Pytest verwendet weiterhin
-seine eigenen isolierten Laufzeitpfade. Bereits vorhandene Exporte werden nicht überschrieben.
-Die benötigten Nix-Bibliotheken und Binutils müssen im Shell-Suchpfad liegen; der
-Testfall benötigt dank `no_db` keine Datenbank. Der Lauf muss mit sieben bestandenen
-Tests enden. Ein fehlgeschlagener Testlauf beendet den Export mit einem Fehler.
+The exporter uses the canonical `get_runtime_paths().export_dir` and creates a
+new directory with a timestamp and unique identifier. Pytest continues to use
+its own isolated runtime paths. Existing exports are not overwritten. Required
+Nix libraries and Binutils must be on the shell search path; thanks to `no_db`,
+the test case needs no database. The run must finish with seven passing tests.
+A failed test run terminates the export with an error.
 
-| Datei oder Ordner | Inhalt |
+| File or directory | Contents |
 | --- | --- |
-| PROTOKOLL.md | Dieses Protokoll einschließlich Datenwörterbuch und Literatur |
-| images/ | Alle 1.934 tatsächlich gehashten PNG-Dateien |
-| measurements.csv | Eine Zeile pro Hashbeobachtung |
-| summary.csv | Zusammenfassung der sieben Reihen |
-| figures/ | Drei Abbildungen, jeweils PDF, SVG und PNG |
-| code/ | Ausgewählte exakte Quellcode-Snapshots und Repository-Lizenz |
-| environment.yml | Versionen, Commit, Hinweis auf uncommittete Änderungen und nativer Backend-Hash |
-| pytest.log | Ausgabe der experimentellen Testausführung |
-| checksums.yml | SHA-256-Prüfsummen der Archivdateien außer der Prüfsummenliste selbst |
+| PROTOKOLL.md | This protocol, including data dictionary and references |
+| images/ | All 1,934 PNG files actually hashed |
+| measurements.csv | One row per hash observation |
+| summary.csv | Summary of the seven series |
+| figures/ | Three figures, each as PDF, SVG, and PNG |
+| code/ | Selected exact source snapshots and repository license |
+| environment.yml | Versions, commit, uncommitted-change indication, and native backend hash |
+| pytest.log | Output of the experimental test execution |
+| checksums.yml | SHA-256 checksums of archive files, excluding the checksum list itself |
 
-Der Ordner wird zusätzlich als ZIP mit separater SHA-256-Prüfsumme ausgegeben. Die
-Prüfsummen unterstützen die Integritätskontrolle; sie sind keine digitale Signatur.
-Der erfasste Commit allein beschreibt bei `dirty_worktree: true` nicht die gesamten
-ausgeführten Quellen. Die beigefügten Snapshots dokumentieren die ausgewählten relevanten
-Dateien; das vollständige Repository, alle transitive Abhängigkeiten und die native
-Binärdatei sind nicht Teil des Pakets. Ein identischer Lauf in einer unabhängig neu
-aufgesetzten Umgebung wird dadurch nicht behauptet.
+The directory is also exported as a ZIP with a separate SHA-256 checksum.
+Checksums support integrity checks; they are not digital signatures. With
+`dirty_worktree: true`, the recorded commit alone does not describe all executed
+sources. Included snapshots document selected relevant files; the complete
+repository, all transitive dependencies, and native binary are not included.
+This does not claim an identical run in an independently rebuilt environment.
 
-## Literatur
+## References
 
 1. National Institute of Standards and Technology. *Secure Hash Standard (SHS)*.
    FIPS PUB 180-4, August 2015. DOI: [10.6028/NIST.FIPS.180-4](https://doi.org/10.6028/NIST.FIPS.180-4).
-   [Offizielle Publikationsseite](https://csrc.nist.gov/pubs/fips/180-4/upd1/final).
+   [Official publication page](https://csrc.nist.gov/pubs/fips/180-4/upd1/final).
 2. World Wide Web Consortium. *Portable Network Graphics (PNG) Specification, Third Edition*.
-   W3C Recommendation, 24. Juni 2025.
-   [Versionierte Spezifikation](https://www.w3.org/TR/2025/REC-png-3-20250624/).
-3. Pillow contributors. *Image file formats: PNG*. Online-Dokumentation,
-   [PNG-Speicheroptionen](https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#png).
-   Die tatsächlich eingesetzte Paketversion steht in `environment.yml`; die Online-Dokumentation
-   kann eine neuere Version beschreiben.
+   W3C Recommendation, June 24, 2025.
+   [Versioned specification](https://www.w3.org/TR/2025/REC-png-3-20250624/).
+3. Pillow contributors. *Image file formats: PNG*. Online documentation,
+   [PNG save options](https://pillow.readthedocs.io/en/stable/handbook/image-file-formats.html#png).
+   The package version actually used is recorded in `environment.yml`; the online
+   documentation may describe a newer version.
 
-Quellenzugriff: 16. Oktober 2026. Code und Protokoll wurden mit KI-Unterstützung erstellt;
-wissenschaftliche Interpretation und endgültige Publikationsfreigabe liegen bei den Autoren.
+Sources accessed: October 16, 2026. Code and protocol were created with AI assistance;
+scientific interpretation and final publication approval remain with the authors.

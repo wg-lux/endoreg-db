@@ -4,12 +4,13 @@ from datetime import date
 
 import pytest
 
-from endoreg_db.models import Center, SensitiveMeta
+from endoreg_db.models import SensitiveMeta
 from endoreg_db.models.metadata.sensitive_meta_logic import (
     calculate_examination_hash,
     calculate_patient_hash,
 )
 from endoreg_db.serializers.anonymization import SensitiveMetaValidateSerializer
+from endoreg_db.services.centers.defaults import resolve_local_center
 
 
 def _validated_identity(
@@ -38,7 +39,7 @@ def _validated_identity(
         patient_last_name=data["patient_last_name"],
         patient_dob=data["patient_dob"],
         examination_date=data["examination_date"],
-        center=Center(pk=1, name="identity-test-center"),
+        center=resolve_local_center(),
     )
 
 
@@ -91,7 +92,7 @@ def test_name_spelling_variants_produce_different_patient_hashes(
     assert calculate_examination_hash(variant) != calculate_examination_hash(baseline)
 
 
-def test_hash_calculator_itself_does_not_trim_names() -> None:
+def test_hash_calculator_normalizes_outer_name_whitespace() -> None:
     # Arrange
     baseline = _validated_identity()
     untrimmed = _validated_identity()
@@ -101,7 +102,7 @@ def test_hash_calculator_itself_does_not_trim_names() -> None:
     actual = calculate_patient_hash(untrimmed)
 
     # Assert
-    assert actual != calculate_patient_hash(baseline)
+    assert actual == calculate_patient_hash(baseline)
 
 
 @pytest.mark.parametrize(

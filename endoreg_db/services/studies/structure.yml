@@ -15,7 +15,14 @@ entrypoints:
 - name: import_table
   file: table_import.py
   purpose: Parse, validate and atomically persist a complete table (dry-run by default).
+- name: query_study_cohort_examinations
+  file: cohort.py
+  purpose: Reuse canonical cohort eligibility and filters without a preview limit for dataset analysis.
 files:
+- file: exchange.py
+  role: Explicit idempotent ledger capture, authorized study evidence export and transactional owner-bound import shared by Excel and hub.
+- file: collections.py
+  role: Authorized study collection capture using canonical KB and ledger evaluation.
 - file: __init__.py
   role: Studienvorgaben und Kohortenabfragen.
 - file: cohort.py
@@ -55,6 +62,7 @@ tests:
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_study_table_import.py tests/services/test_examination_revisions.py
     tests/services/test_study_cohort_identity.py
   files:
+  - tests/services/test_study_exchange.py
   - tests/services/test_study_table_import.py
   - tests/services/test_examination_revisions.py
   - tests/services/test_study_cohort_identity.py

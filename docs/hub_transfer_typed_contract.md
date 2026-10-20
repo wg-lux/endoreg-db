@@ -382,3 +382,25 @@ enforces uniqueness and non-null values. Local primary keys and foreign keys
 remain unchanged. Pause writers during migration and coordinate all three
 packages. Existing version 4 jobs and received identities need explicit
 reconciliation; do not rewrite queued payloads or infer a UUID from a local ID.
+
+## Standalone study ledger transfer
+
+Schema 5.0 also accepts `resource_kind: study` through the existing authenticated
+`media/hub/transfers/` endpoint. `resource_rows.study_exchange` uses the canonical
+`lx_dtypes` study exchange contract shared with Excel workbooks. The complete
+package snapshots, study/cohort rules and historical ledger evaluations travel
+together; host-local database IDs and dataset memberships do not. The resource
+hash binds the canonical bundle, and the source-scoped deterministic transfer key
+makes exact replay idempotent while changed payloads are rejected.
+
+Study transfers use metadata-only, archive-only, retain-all policies. Existing
+TLS, deployment mTLS, network-node authentication and source-center checks apply.
+An `applied` receipt means the source evidence was archived, not that local studies
+were created. A local researcher explicitly accepts the receipt through
+`accept_study_transfer`, using their authorized examination scope. Existing
+persistent examination/patient UUIDs and the authenticated source center must
+match; packages must already be installed with the identical snapshot. The shared
+study importer rejects ownership conflicts and never imports sender access rights.
+Definitions without observations use the separately authorized study authoring
+workflow. This path never publishes media, changes live clinical records, or
+implicitly installs global terminology.

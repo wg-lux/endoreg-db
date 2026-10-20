@@ -7,6 +7,12 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/collect_study_examination.py
+  role: Explicit authorized stdin ledger collection with server-computed package evaluation.
+- file: commands/terminology_packages.py
+  role: Import, build or export immutable terminology packages under configured runtime storage.
+- file: commands/import_clinical_reference_data.py
+  role: Validate an exact local or registered package and transactionally project its clinical references.
 - file: commands/migrate_legacy_hashes.py
   role: Strict atomic identity HMAC migration with write-free dry-run diffs and private reviewed-source input.
 - file: commands/rotate_identity_salt.py

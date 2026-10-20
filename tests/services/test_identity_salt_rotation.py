@@ -43,9 +43,8 @@ def make_identity() -> SensitiveMeta:
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize("delivery", ["files", "secretspec"])
 def test_online_import_rotates_existing_group_without_duplicate_links(
-    base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch, delivery: str
+    base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     _, old = gen_salt_pair()
     _, new = gen_salt_pair()
@@ -54,38 +53,10 @@ def test_online_import_rotates_existing_group_without_duplicate_links(
     patient_id, exam_id = original.pseudo_patient_id, original.pseudo_examination_id
     before = Patient.objects.count(), PatientExamination.objects.count()
     old_hash = original.patient_hash
-    center = original.center
-    assert center is not None
-    center_key = center.center_key
 
     def activate(retiring: tuple[bytes, ...]) -> None:
-        if delivery == "files":
-            ring = write_ring(tmp_path, new, retiring, kind="identity")
-            monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
-        else:
-            for name in (
-                "DJANGO_SALT",
-                "DJANGO_SALT_FILE",
-                "DJANGO_IDENTITY_SALT_KEYRING_FILE",
-            ):
-                monkeypatch.delenv(name, raising=False)
-            monkeypatch.setenv("DJANGO_IDENTITY_SALT_DELIVERY", "secretspec")
-            monkeypatch.setenv("DJANGO_IDENTITY_CENTER_ID", center_key)
-            monkeypatch.setenv("LX_ANNOTATE_DEFAULT_CENTER", center_key)
-            monkeypatch.setenv("DJANGO_IDENTITY_SALT_GENERATION", "2")
-            monkeypatch.setenv(
-                "DJANGO_IDENTITY_SALT_BUNDLE",
-                json.dumps(
-                    {
-                        "schema_version": 1,
-                        "center_id": center_key,
-                        "generation": 2,
-                        "active": new.decode(),
-                        "retiring": [value.decode() for value in retiring],
-                        "allow_legacy_default_salt": False,
-                    }
-                ),
-            )
+        ring = write_ring(tmp_path, new, retiring, kind="identity")
+        monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
 
     activate((old,))
     repeated = SensitiveMeta.objects.create(

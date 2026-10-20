@@ -4,22 +4,22 @@ requires = ["maturin>=1.7,<2"]
 
 [project]
 authors = [
-  {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
-  {name = "Max Hild", email = "hild_m@ukw.de"},
-  {name = "Hamza Zahid"},
+  { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
+  { name = "Max Hild", email = "hild_m@ukw.de" },
+  { name = "Hamza Zahid" },
 ]
 description = "EndoReg Db Django App"
 maintainers = [
-  {name = "Thomas J. Lux", email = "lux_t1@ukw.de"},
-  {name = "Max Hild", email = "hild_m@ukw.de"},
-  {name = "Hamza Zahid"},
+  { name = "Thomas J. Lux", email = "lux_t1@ukw.de" },
+  { name = "Max Hild", email = "hild_m@ukw.de" },
+  { name = "Hamza Zahid" },
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.5.8.dev1"
+version = "1.6.0"
 
 requires-python = ">=3.12,<3.13"
-license = {file = "LICENSE"}
+license = { file = "LICENSE" }
 
 classifiers = [
   "Development Status :: 3 - Alpha",
@@ -29,68 +29,68 @@ classifiers = [
 ]
 
 dependencies = [
-    "django-bootstrap5>=25.2",
-    "django-cors-headers>=4.8.0",
-    "django-extensions>=3.2.3",
-    "django>=5.2.4",
-    "djangorestframework>=3.16.1",
-    "dotenv>=0.9.9",
-    "faker>=37.6.0",
-    "icecream>=2.1.4",
-    "numpy>=2.2.3",
-    "opencv-python-headless>=4.11.0.86",
-    "pandas>=2.2.3",
-    "pillow>=11.3.0",
-    "pydantic>=2.10.6",
-    "pytesseract>=0.3.13",
-    "python-ffmpeg>=2.0.12",
-    "pytorch-lightning>=2.5.1",
-    "pyyaml>=6.0.2",
-    "regex>=2024.11.6",
-    "scikit-learn>=1.5.2",
-    "scipy>=1.16.1",
-    "sphinx-rtd-theme>=3.0.2",
-    "sphinx>=8.2.3",
-    "tesseract>=0.1.3",
-    "llvmlite>=0.44.0",
-    "tqdm>=4.67.0",
-    "urllib3>=2.2.3",
-    "openpyxl>=3.1.5",
-    "xlrd>=2.0.2",
-    "pyjwt>=2.10.1",
-    "cryptography>=44.0.2",
-    "whitenoise>=6.10.0",
-    "requests>=2.32.3",
-    "gunicorn>=23.0.0",
-    "django-filter>=25.1",
-    "django-ninja==1.5.3",
-    "optimum==1.26.1",
-    "torch==2.5.1",
-    "torchaudio==2.5.1",
-    "torchvision==0.20.1",
-    "transformers==4.45.0",
-    "librosa==0.11.0",
-    "soundfile==0.12.1",
-    "vector-quantize-pytorch==1.18.5",
-    "vocos==0.1.0",
-    "moviepy==2.2.1",
-    "safetensors>=0.4.5",
-    "celery[redis]>=5.5.3",
-    "python-magic>=0.4.27",
-    "python-jose[cryptography]>=3.5.0",
-    "mozilla-django-oidc>=4.0.1",
-    "lx-anonymizer[gpu]==1.0.9",
-    "googlemaps>=4.10.0",
-    "numba>=0.63.1",
-    "ziglang>=0.15.2",
-    "ffprobe>=0.5",
-    "kombu>=5.6.1",
-    "report-pdf-renderer>=0.1.0",
-    "lx-ai-core[torch]==0.0.4",
-    "celery-types>=0.26.0",
-    "lightning-fabric>=2.6.5",
-    "lx-dtypes>=0.5.4.dev1",
-    "snakemake==9.23.1",
+  "django-bootstrap5>=25.2",
+  "django-cors-headers>=4.8.0",
+  "django-extensions>=3.2.3",
+  "django>=5.2.4",
+  "djangorestframework>=3.16.1",
+  "dotenv>=0.9.9",
+  "faker>=37.6.0",
+  "icecream>=2.1.4",
+  "numpy>=2.2.3",
+  "opencv-python-headless>=4.11.0.86",
+  "pandas>=2.2.3",
+  "pillow>=11.3.0",
+  "pydantic>=2.12",
+  "pytesseract>=0.3.13",
+  "python-ffmpeg>=2.0.12",
+  "pytorch-lightning>=2.5.1",
+  "pyyaml>=6.0.2",
+  "regex>=2024.11.6",
+  "scikit-learn>=1.5.2",
+  "scipy>=1.16.1",
+  "sphinx-rtd-theme>=3.0.2",
+  "sphinx>=8.2.3",
+  "tesseract>=0.1.3",
+  "llvmlite>=0.44.0",
+  "tqdm>=4.67.0",
+  "urllib3>=2.2.3",
+  "openpyxl>=3.1.5",
+  "xlrd>=2.0.2",
+  "pyjwt>=2.10.1",
+  "cryptography>=44.0.2",
+  "whitenoise>=6.10.0",
+  "requests>=2.32.3",
+  "gunicorn>=23.0.0",
+  "django-filter>=25.1",
+  "django-ninja==1.5.3",
+  "optimum==1.26.1",
+  "torch==2.5.1",
+  "torchaudio==2.5.1",
+  "torchvision==0.20.1",
+  "transformers==4.45.0",
+  "librosa==0.11.0",
+  "soundfile==0.12.1",
+  "vector-quantize-pytorch==1.18.5",
+  "vocos==0.1.0",
+  "moviepy==2.2.1",
+  "safetensors>=0.4.5",
+  "celery[redis]>=5.5.3",
+  "python-magic>=0.4.27",
+  "python-jose[cryptography]>=3.5.0",
+  "mozilla-django-oidc>=4.0.1",
+  "lx-anonymizer[gpu]==1.0.9",
+  "googlemaps>=4.10.0",
+  "numba>=0.63.1",
+  "ziglang>=0.15.2",
+  "ffprobe>=0.5",
+  "kombu>=5.6.1",
+  "report-pdf-renderer>=0.1.0",
+  "lx-ai-core[torch]==0.0.4",
+  "celery-types>=0.26.0",
+  "lightning-fabric>=2.6.5",
+  "lx-dtypes>=0.5.5",
+  "snakemake==9.23.1",
 ]
 
 [project.urls]
@@ -120,7 +120,7 @@ dev = [
   "types-tqdm>=4.67.0.20250809",
   "twine>=6.2.0",
   "pyright>=1.1.414",
-  "pylint>=4.0.5",  
+  "pylint>=4.0.5",
   "vulture>=2.16",
   "radon>=6.0.1",
   "pytest-postgresql>=9.1.0",
@@ -136,12 +136,8 @@ docs = [
 
 [dependency-groups]
 # Hardware explicitly controlled via uv groups
-cpu-runtime = [
-    "onnxruntime>=1.25.1"
-]
-gpu-runtime = [
-    "onnxruntime-gpu>=1.26.0"
-]
+cpu-runtime = ["onnxruntime>=1.25.1"]
+gpu-runtime = ["onnxruntime-gpu>=1.26.0"]
 
 
 [tool.setuptools]
@@ -154,21 +150,34 @@ bindings = "pyo3"
 python-source = "."
 python-packages = ["endoreg_db", "workflow"]
 include = [
-    { path = "LICENSE", format = "sdist" },
-    { path = "README.md", format = "sdist" },
-    "endoreg_db/endoreg_rust_backend.pyi",
-    "endoreg_db/data/study_import/*.yml",
-    "rust/endoreg_rust_backend/Cargo.toml",
-    "rust/endoreg_rust_backend/src/**/*",
-    "workflow/Snakefile",
-    "workflow/rules/**/*.smk",
-    "workflow/profiles/**/*.yaml",
+  { path = "LICENSE", format = "sdist" },
+  { path = "README.md", format = "sdist" },
+  "endoreg_db/endoreg_rust_backend.pyi",
+  "endoreg_db/data/study_import/*.yml",
+  "rust/endoreg_rust_backend/Cargo.toml",
+  "rust/endoreg_rust_backend/src/**/*",
+  "workflow/Snakefile",
+  "workflow/rules/**/*.smk",
+  "workflow/profiles/**/*.yaml",
 ]
 exclude = [
-  ".git", ".git/**", ".gitmodules", "tests", "tests/**",
-  "htmlcov", "htmlcov/**", "lx-ai-core", "lx-ai-core/**",
-  "lx-data-models", "lx-data-models/**", "storage", "storage/**",
-  "tools", "tools/**", "workflow/**/__pycache__", "workflow/**/*.pyc"
+  ".git",
+  ".git/**",
+  ".gitmodules",
+  "tests",
+  "tests/**",
+  "htmlcov",
+  "htmlcov/**",
+  "lx-ai-core",
+  "lx-ai-core/**",
+  "lx-data-models",
+  "lx-data-models/**",
+  "storage",
+  "storage/**",
+  "tools",
+  "tools/**",
+  "workflow/**/__pycache__",
+  "workflow/**/*.pyc",
 ]
 
 [tool.mypy]
@@ -193,18 +202,36 @@ strict_model_abstract_attrs = true
 
 [[tool.mypy.overrides]]
 module = [
-  "celery", "celery.*", "dateparser", "dateparser.*",
-  "gender_guesser", "gender_guesser.*", "lx_anonymizer", "lx_anonymizer.*",
-  "lx_dtypes", "lx_dtypes.*", "mozilla_django_oidc", "mozilla_django_oidc.*",
-  "pytesseract", "sklearn", "sklearn.*", "torchvision", "torchvision.*",
-  "kombu", "kombu.*"
+  "celery",
+  "celery.*",
+  "dateparser",
+  "dateparser.*",
+  "gender_guesser",
+  "gender_guesser.*",
+  "lx_anonymizer",
+  "lx_anonymizer.*",
+  "lx_dtypes",
+  "lx_dtypes.*",
+  "mozilla_django_oidc",
+  "mozilla_django_oidc.*",
+  "pytesseract",
+  "sklearn",
+  "sklearn.*",
+  "torchvision",
+  "torchvision.*",
+  "kombu",
+  "kombu.*",
 ]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
 module = ["endoreg_db.models.*"]
 disable_error_code = [
-  "var-annotated", "no-redef", "assignment", "name-defined", "attr-defined"
+  "var-annotated",
+  "no-redef",
+  "assignment",
+  "name-defined",
+  "attr-defined",
 ]
 
 [tool.pyprojectx.aliases]
@@ -212,7 +239,9 @@ test-features = "feature-tracking/tracker.py"
 
 [tool.uv]
 # The native anonymizer and the devenv runtime target Linux with CPython.
-environments = ["sys_platform == 'linux' and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'"]
+environments = [
+  "sys_platform == 'linux' and platform_machine == 'x86_64' and platform_python_implementation == 'CPython'",
+]
 
 [tool.uv.extra-build-dependencies]
 "antlr4-python3-runtime" = ["setuptools"]

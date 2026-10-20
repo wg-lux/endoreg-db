@@ -5,6 +5,7 @@ from uuid import uuid4
 
 import pytest
 from django.core.exceptions import ValidationError
+from lx_dtypes.models.contracts.patient_examination_report import ReportJsonObject
 
 from endoreg_db.models import Patient, PatientExamination, PatientExaminationReport
 
@@ -47,6 +48,8 @@ def test_patient_examination_report_canonicalizes_json_fields_on_direct_save() -
         ("editor_payload", ["not", "an", "object"]),
         ("patient_context_snapshot", {"captured_at": datetime.now()}),
         ("history_context_snapshot", {"history_depth": float("nan")}),
+        ("runtime_validation_snapshot", {"ok": True}),
+        ("runtime_validation_snapshot", {"unvalidated": "evaluation"}),
         ("dtypes_record", {"unknown_clinical_field": "invalid"}),
         ("dtypes_record", ["invalid"]),
     ],
@@ -65,6 +68,35 @@ def test_patient_examination_report_rejects_invalid_direct_json_writes(
         PatientExaminationReport.objects.create(**kwargs)
 
     assert field_name in exc_info.value.message_dict
+
+
+@pytest.mark.django_db
+def test_report_runtime_evaluation_roundtrip_and_template_identity() -> None:
+    result: ReportJsonObject = {
+        "template_name": "standard-report",
+        "ok": True,
+        "evaluated_findings_count": 0,
+        "classification_validators": [],
+        "intervention_validators": [],
+        "findings_validators": [],
+        "examination_validators": [],
+        "unit_validators": [],
+        "issues": [],
+    }
+    report = PatientExaminationReport.objects.create(
+        patient_examination=_patient_examination(),
+        template_name="standard-report",
+        runtime_validation_snapshot=result,
+    )
+    report.refresh_from_db()
+    assert report.runtime_validation_snapshot == result
+    report.template_name = "different-report"
+    with pytest.raises(ValidationError, match="template"):
+        report.save()
+    report.template_name = "standard-report"
+    report.runtime_validation_snapshot = {**result, "unknown_result": True}
+    with pytest.raises(ValidationError, match="runtime_validation_snapshot"):
+        report.save()
 
 
 @pytest.mark.django_db

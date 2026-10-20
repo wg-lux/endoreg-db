@@ -8,6 +8,7 @@ import uuid
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, Iterator, TypedDict, cast
+from unittest.mock import Mock
 
 import pytest
 from django.contrib.auth.models import User
@@ -324,11 +325,9 @@ def test_selector_rejects_invalid_finding_identity_without_mutations(
     ).exists()
 
 
-def _successful_runtime_validation(
-    *_args: object,
-    **_kwargs: object,
-) -> dict[str, object]:
-    return {"ok": True, "issues": []}
+from tests.helpers.report_validation import (
+    successful_runtime_validation as _successful_runtime_validation,
+)
 
 
 class _ReportHeaderPayload(TypedDict):
@@ -845,6 +844,11 @@ def test_explicit_frontend_identity_migrates_examination_and_report(
         "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_runtime_validation,
     )
+    persist_artifacts = Mock(return_value=(None, None))
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
+        persist_artifacts,
+    )
     resp = logged_in_client.post(
         f"{API_PREFIX}/save-submission",
         data=_json_body(
@@ -882,6 +886,7 @@ def test_explicit_frontend_identity_migrates_examination_and_report(
     assert patient_examination.knowledge_base_module == "star_upper_gi"
     assert patient_examination.knowledge_base_version == "0.1.2"
     assert report.rendered_text == "Rendered report text"
+    persist_artifacts.assert_called_once()
     assert data["history_context"]["previous_examinations"] == []
 
 

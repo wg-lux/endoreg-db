@@ -1,355 +1,350 @@
-# Ansatz A: privater Vergleich bestehender Patienten-HMACs
+# Approach A: private comparison of existing patient HMACs
 
-Bewertung vom 19. Oktober 2026. Umfang und Freigabestatus sind ausschließlich in
-[HubTransfer.yml](../feature-tracking/HubTransfer.yml),
-`existing_hmac_2pc_evaluation` und `cross_site_private_patient_matching`, geführt.
-Dies ist eine isolierte Evaluation, keine Betriebsfreigabe oder Migration.
+Assessment of October 19, 2026. Scope and approval status are maintained exclusively
+in [HubTransfer.yml](../feature-tracking/HubTransfer.yml),
+`existing_hmac_2pc_evaluation` and `cross_site_private_patient_matching`.
+This is an isolated evaluation, not operational approval or a migration.
 
-## A. Entscheidung
+## A. Decision
 
-| Aussage | Entscheidung | Begründung |
+| Claim | Decision | Rationale |
 |---|---|---|
-| Kryptografische Berechenbarkeit | **supported** | HMAC-SHA256 und Gleichheit sind endliche Boolesche Schaltungen. Eine tatsächliche Zwei-Prozess-Auswertung mit MP-SPDZ/Tinier wurde ausgeführt. A muss seinen Schlüssel nicht an B weitergeben. |
-| Exakter Tupelvergleich | **conditionally supported** | Referenztests stimmen mit der produktiven Kodierung überein. Der Versuchs-Schaltkreis verarbeitet vorserialisierte Bytes; er erzwingt nicht, dass ein bösartiges B gültige Patienten-JSON mit A als Zentrum eingibt. |
-| Authentifizierte Beziehung bestehender UUIDs | **not established by current evidence** | Die Berechnung bindet weder Datenbankzeilen noch UUIDs oder Berechtigungen. Signierte Abgleichsergebnisse und ein persistiertes Beziehungsmodell fehlen. |
-| Verifizierte Identität derselben realen Person | **not established by current evidence** | Gleiche Namen/Geburtstage können verschiedene Menschen bezeichnen; Namensänderungen oder Schreibweisen verhindern echte Treffer. Der verifizierte Ausstellervertrag bleibt unerfüllt. |
-| Praktische Leistung | **conditionally supported** | Lokale synthetische Messungen belegen ausschließlich die unten ausgewiesenen Größen; keine Aussage über Klinik-WAN, Parallelbetrieb oder Produktionskapazität. |
-| Betriebsbereitschaft | **not established by current evidence** | Unabhängige Zugriffsgrenzen, authentifizierte Eingabebindung, minimaler Ergebniskanal, Missbrauchsschutz, Integration und Sicherheitsprüfung fehlen. |
+| Cryptographic computability | **supported** | HMAC-SHA256 and equality are finite Boolean circuits. An actual two-process evaluation using MP-SPDZ/Tinier was executed. A need not disclose its key to B. |
+| Exact tuple comparison | **conditionally supported** | Reference tests agree with production encoding. The experimental circuit processes preserialized bytes; it does not enforce that a malicious B supplies valid patient JSON with A as the center. |
+| Authenticated relationship between existing UUIDs | **not established by current evidence** | The computation binds neither database rows nor UUIDs nor permissions. Signed matching results and a persisted relationship model are missing. |
+| Verified identity of the same real person | **not established by current evidence** | Identical names/birthdays can refer to different people; name changes or spelling variants prevent genuine matches. The verified issuer contract remains unfulfilled. |
+| Practical performance | **conditionally supported** | Local synthetic measurements establish only the quantities reported below; no claim about clinical wide-area networks, concurrency, or production capacity. |
+| Operational readiness | **not established by current evidence** | Independent access boundaries, authenticated input binding, a minimal result channel, abuse controls, integration, and security review are missing. |
 
-Die fünf auseinanderzuhaltenden Behauptungen sind: (1) die Bytes eines Kandidaten
-erzeugen den Ziel-HMAC unter dem gewählten Schlüssel; (2) der Zielwert gehört zur
-behaupteten Quell-UUID; (3) der Kandidat gehört zur behaupteten B-UUID;
-(4) beide betreffen dieselbe reale Person; (5) niemand erfährt mehr als die
-definierte Protokollleckage. Der Schaltkreis untersucht (1); daraus folgen
-(2) bis (5) nicht automatisch. Eine Signatur bestätigt eine Aussage eines
-Schlüsselinhabers, nicht die Wahrheit der Demografie. B erkennt einen bewusst
-verknüpften Quelldatensatz, wenn es den eigenen Patienten bereits kennt.
+Five claims must be distinguished: (1) a candidate's bytes produce the target
+HMAC under the selected key; (2) the target belongs to the claimed source UUID;
+(3) the candidate belongs to the claimed B UUID; (4) both concern the same real
+person; (5) nobody learns more than the defined protocol leakage. The circuit
+examines (1); (2) through (5) do not follow automatically. A signature confirms
+a key holder's statement, not the truth of demographics. B recognizes a
+deliberately linked source record if it already knows its own patient.
 
-## B. Aktuelle Befunde und Evidenz
+## B. Current findings and evidence
 
-Untersucht wurden die tatsächlichen Arbeitskopien, einschließlich vorhandener
-Änderungen: `/home/admin/endoreg-db`, Branch `prototype`, Commit
-`08c1ac0da110343dfc6d0314b24998a1937d9aeb`; `/home/admin/luxnix`, Branch
-`lx-annotate_ollama`, Commit `cda962d31bda2811cecdeaeb413c6c84f8a0063e`.
-Beide Arbeitsbäume waren bereits verändert. Es gab keinen Reset, Checkout,
-Produktionszugriff, Geheimnisabruf oder Datenbankumbau. Die Belege beziehen sich
-auf den geprüften Arbeitsbaum, nicht ausschließlich auf HEAD. LuxNix-Quellcode
-belegt deklarierte Konfiguration, keinen ausgerollten Zustand.
+The actual working copies, including preexisting changes, were examined:
+`/home/admin/endoreg-db`, branch `prototype`, commit
+`08c1ac0da110343dfc6d0314b24998a1937d9aeb`; `/home/admin/luxnix`, branch
+`lx-annotate_ollama`, commit `cda962d31bda2811cecdeaeb413c6c84f8a0063e`.
+Both working trees were already modified. No reset, checkout, production access,
+secret retrieval, or database restructuring occurred. Evidence refers to the
+reviewed working tree, not exclusively HEAD. LuxNix source establishes declared
+configuration, not deployed state.
 
-Pfade ohne Präfix liegen in endoreg-db; `luxnix/` bezeichnet die zweite Arbeitskopie.
-Zeilen sind eine Momentaufnahme und können durch parallele Änderungen wandern.
+Unprefixed paths are in endoreg-db; `luxnix/` denotes the second working copy.
+Line numbers are a snapshot and can shift with concurrent edits.
 
 | Claim | Status | Code or deployment evidence | Assumptions | Remaining gap |
 |---|---|---|---|---|
-| Exakte v1-Kodierung und HMAC | implementiert | `endoreg_db/utils/hashs.py:75–118` | Schema ist wirklich v1 | Altbestände nicht pauschal v1 |
-| Schlüsselstring bleibt UTF-8 | implementiert | `utils/hashs.py:31–55`, `utils/verify_salt.py:65–110` unter `endoreg_db/` | gültiges konfiguriertes Material | Stärkeprüfung beweist keine Zufallsentstehung |
-| Öffentlicher Generationsfingerprint | implementiert | `endoreg_db/utils/hashs.py:70–72` | erwarteter Wert authentifiziert | kein Ausstellerbeweis; Offline-Test schwacher Schlüssel möglich |
-| Historische Keys verfügbar | bedingt | `endoreg_db/config/secret_keyring.py:21–57,198–205`; `endoreg_db/services/secret_rotation/historical_resolution.py:53–63` | richtige lokal erhaltene Generation | keine individuellen Epochennummern im retiring-Tupel; Legacy-Doppel-SHA und HMAC koexistieren |
-| Retiring nur lesend | nicht erzwungen | `endoreg_db/utils/hashs.py:38–42` | Aufrufer hält Policy ein | Primitive erlaubt beliebige neue HMAC-Auswertung |
-| Datensatz/Hash-Verknüpfung | lokale Checks | `endoreg_db/models/metadata/sensitive_meta.py:145–157`; `models/administration/person/patient/patient_hash_alias.py:17–54` unter `endoreg_db/`; `services/secret_rotation/historical_resolution.py:82–134` | vertrauenswürdige lokale Persistenz | keine signierte Scheme-/Epoch-/UUID-Aussage; Felder teils leer |
-| Zentrum eindeutig | nicht generell | `endoreg_db/models/administration/center/center.py:29–33,85–89,109–125` | kontrollierter Bestand | nicht unique; resolve_identity nimmt ersten Treffer; save-Schutz nicht DB-unumgehbar |
-| B besitzt Originaldemografie | nur manche Quellen | `endoreg_db/models/metadata/sensitive_meta.py:128–135`; `services/privacy/quality_evaluation.py:783–880` unter `endoreg_db/` | erhaltene, autorisierte Originalwerte | Löschung und Pseudonymisierung verhindern Rekonstruktion aus lokalem HMAC |
-| Patient-Modellwerte sind Originale | falsch als allgemeine Annahme | `endoreg_db/models/administration/person/patient/patient.py:119–138` | keine | Pseudonamen und randomisierter Geburtstag sind keine Abgleichseingaben |
-| Hub kann B sein | mit aktuellen Transferdaten nicht belegt | `endoreg_db/services/hub/transfers.py:2151–2182` | zusätzliche autorisierte Quelle nötig | Hub legt leere Namen und kein Geburtsdatum an |
-| Externe ID ist verifiziert | nicht belegt | `endoreg_db/models/administration/person/patient/patient_external_id.py:18–31` | Ausstellerprüfung hinzuzufügen | Herkunft/Wert ohne Verifikationsnachweis |
-| UUID bleibt erhalten | implementiert | `endoreg_db/models/administration/person/patient/patient.py:178–180`; `services/hub/transfers.py:2090–2112` unter `endoreg_db/` | autorisierter Quellknoten | bestehende Transferbindung ist kein Cross-Site-Matching |
-| Quellhash bleibt lokal | implementiert | `endoreg_db/services/privacy/response_boundary.py:14–55` | unveränderte Exportgrenzen | neuer Abgleich darf keine pauschale Freigabe schaffen |
-| Replay-/Transportschutz existiert | für Transfer | `endoreg_db/services/hub/transfers.py:535–575,887–908`; `views/media/hub/transfers.py:231–280` unter `endoreg_db/` | aktives mTLS-Profil korrekt | keine Matching-Session und keine Grenzen frischer adaptiver Abfragen |
-| Envelope bindet Metadaten | implementiert | `endoreg_db/services/hub/transfer_envelope.py:209–243` | legitime Sender | keine Signatur über ein tatsächliches Abgleichergebnis |
-| Hub und Vault auf gs-02 | deklariert | `luxnix/ansible/inventory/host_vars/gs-02.yml:84,146` | Konfiguration ausgerollt | schließt direkten A/B-Abgleich nicht aus |
-| Identity-Keys lokal provisioniert | deklariert | `luxnix/scripts/provision-identity-salts.py:186–203,233` | Dateirechte und Prozessisolation wirksam | Anwendung liest Schlüssel; Root liest Recovery |
-| Unabhängige Administration | nicht belegt | `luxnix/ansible/inventory/hosts.ini:177–183`; `group_vars/hub_enrollment_admin_access.yml:2–5` | tatsächliche sudo/DB/Backup-Rechte prüfen | gemeinsame Controller-SSH-Identität vorgesehen |
-| Recovery ist separate Vertrauensgrenze | nein | `luxnix/modules/nixos/services/lx-annotate-local/subservices/lx-annotate-identity-salts.nix:14–17,23,30–44` | keine | zwei Dateien desselben Hosts; Root-Service |
+| Exact v1 encoding and HMAC | implemented | `endoreg_db/utils/hashs.py:75–118` | Schema really is v1 | Legacy records are not universally v1 |
+| Key string remains UTF-8 | implemented | `utils/hashs.py:31–55`, `utils/verify_salt.py:65–110` under `endoreg_db/` | Valid configured material | Strength checking does not prove random generation |
+| Public generation fingerprint | implemented | `endoreg_db/utils/hashs.py:70–72` | Expected value authenticated | No issuer proof; weak keys permit offline testing |
+| Historical keys available | conditional | `endoreg_db/config/secret_keyring.py:21–57,198–205`; `endoreg_db/services/secret_rotation/historical_resolution.py:53–63` | Correct locally retained generation | No individual epoch numbers in retiring tuple; legacy double SHA and HMAC coexist |
+| Retiring keys read-only | not enforced | `endoreg_db/utils/hashs.py:38–42` | Caller follows policy | Primitive permits arbitrary new HMAC evaluation |
+| Record/hash binding | local checks | `endoreg_db/models/metadata/sensitive_meta.py:145–157`; `models/administration/person/patient/patient_hash_alias.py:17–54` under `endoreg_db/`; `services/secret_rotation/historical_resolution.py:82–134` | Trusted local persistence | No signed scheme/epoch/UUID statement; some fields empty |
+| Center unique | not generally | `endoreg_db/models/administration/center/center.py:29–33,85–89,109–125` | Controlled inventory | Not unique; resolve_identity takes first match; save protection is bypassable at database level |
+| B holds original demographics | only some sources | `endoreg_db/models/metadata/sensitive_meta.py:128–135`; `services/privacy/quality_evaluation.py:783–880` under `endoreg_db/` | Retained, authorized original values | Deletion and pseudonymization prevent reconstruction from local HMAC |
+| Patient model values are originals | false as a general assumption | `endoreg_db/models/administration/person/patient/patient.py:119–138` | None | Pseudonyms and randomized birthday are not matching inputs |
+| Hub can be B | not established with current transfer data | `endoreg_db/services/hub/transfers.py:2151–2182` | Additional authorized source required | Hub creates empty names and no date of birth |
+| External ID verified | not established | `endoreg_db/models/administration/person/patient/patient_external_id.py:18–31` | Issuer verification to be added | Origin/value without verification evidence |
+| UUID preserved | implemented | `endoreg_db/models/administration/person/patient/patient.py:178–180`; `services/hub/transfers.py:2090–2112` under `endoreg_db/` | Authorized source node | Existing transfer binding is not cross-site matching |
+| Source hash remains local | implemented | `endoreg_db/services/privacy/response_boundary.py:14–55` | Unchanged export boundaries | New matching must not create blanket disclosure permission |
+| Replay/transport protection exists | for transfer | `endoreg_db/services/hub/transfers.py:535–575,887–908`; `views/media/hub/transfers.py:231–280` under `endoreg_db/` | Active mutual Transport Layer Security (mTLS) profile correct | No matching session or limits on fresh adaptive queries |
+| Envelope binds metadata | implemented | `endoreg_db/services/hub/transfer_envelope.py:209–243` | Legitimate senders | No signature over an actual matching result |
+| Hub and Vault on gs-02 | declared | `luxnix/ansible/inventory/host_vars/gs-02.yml:84,146` | Configuration deployed | Does not rule out direct A/B matching |
+| Identity keys provisioned locally | declared | `luxnix/scripts/provision-identity-salts.py:186–203,233` | File permissions and process isolation effective | Application reads keys; root reads recovery |
+| Independent administration | not established | `luxnix/ansible/inventory/hosts.ini:177–183`; `group_vars/hub_enrollment_admin_access.yml:2–5` | Check actual sudo/database/backup permissions | Shared controller SSH identity intended |
+| Recovery is a separate trust boundary | no | `luxnix/modules/nixos/services/lx-annotate-local/subservices/lx-annotate-identity-salts.nix:14–17,23,30–44` | None | Two files on the same host; root service |
 
-### Produktionsfunktion und historische Auswahl
+### Production function and historical selection
 
-A hält `uuid_A`, `t_A`, `K_A`, `c_A` und Herkunftsbelege. B hält eine begrenzte
-Liste `(uuid_B, first_name, last_name, dob)` aus autorisierten Originaldatensätzen.
-Die Funktion lautet exakt `HMAC-SHA256(K_A, EncodePatient(d_i,c_A)) == t_A`.
-B's eigener Schlüssel und lokaler HMAC werden hierfür nicht gebraucht.
-Eine gelöschte Demografie lässt sich daraus nicht zurückgewinnen.
+A holds `uuid_A`, `t_A`, `K_A`, `c_A`, and provenance evidence. B holds a bounded
+list `(uuid_B, first_name, last_name, dob)` from authorized original records.
+The exact function is `HMAC-SHA256(K_A, EncodePatient(d_i,c_A)) == t_A`.
+B's own key and local HMAC are not needed. Deleted demographics cannot be
+recovered from this.
 
-Die JSON-Liste enthält `patient-identity-v1`, getrimmten Vor- und Nachnamen,
-ISO-Datum und getrimmten Quellzentrumsschlüssel. `datetime.date()` übernimmt
-das vorhandene Datum ohne Zeitzonenumrechnung. Python `strip()` entfernt auch
-Unicode-Randwhitespace; keine Kleinschreibung, Akzentangleichung oder NFC/NFD-
-Normalisierung. `ensure_ascii=False`, kompakte Separatoren und UTF-8 bleiben
-unverändert; Anführungszeichen, Backslashes und Steuerzeichen folgen JSON.
-Ungültige Unicode-Surrogate können nicht UTF-8-kodiert werden und müssen abbrechen.
-Hex- oder Base64-artige Schlüsselstrings werden **nicht dekodiert**.
+The JSON list contains `patient-identity-v1`, trimmed first and last names, ISO
+date, and trimmed source center key. `datetime.date()` takes the existing date
+without timezone conversion. Python `strip()` also removes outer Unicode
+whitespace; there is no lowercasing, accent folding, or NFC/NFD normalization.
+`ensure_ascii=False`, compact separators, and UTF-8 remain unchanged; quotation
+marks, backslashes, and control characters follow JSON. Invalid Unicode
+surrogates cannot be UTF-8 encoded and must cause failure. Hex- or Base64-like
+key strings are **not decoded**.
 
-Die Formulierung „collision-free“ in `hashs.py:83` ist unzutreffend:
-eindeutige Feldkodierung ist weder ein unendlicher kollisionsfreier Digest noch
-ein eindeutiger Menschenschlüssel. HMAC verarbeitet lange Schlüssel durch
-vorheriges Hashen und danach Blockpadding; gecachte innere/äußere Zustände
-sind wie Schlüssel zu schützen. [RFC 2104](https://www.rfc-editor.org/rfc/rfc2104.html)
+The “collision-free” wording in `hashs.py:83` is incorrect: unambiguous field
+encoding is neither an infinite collision-free digest nor a unique person key.
+HMAC handles long keys by hashing first, then block padding; cached inner/outer
+states must be protected like keys. [RFC 2104](https://www.rfc-editor.org/rfc/rfc2104.html)
 
-Der erwartete Generationsfingerprint ist
-`HMAC-SHA256(K_A,b"endoreg-identity-salt-v1")`. Er muss aus einer authentifizierten
-lokalen Record-/Issuer-Bindung kommen, nicht aus derselben unbeglaubigten Anfrage.
-Ein In-Circuit-Vergleich prüft Schlüsselkonsistenz, aber nicht, ob `t_A` zu
-`uuid_A` gehört. Veröffentlichte Fingerprints erlauben Offline-Tests geratener
-schwacher Keys. Legacy-Hashes sind vor Auswahl des v1-Schaltkreises auszuschließen.
-Retiring-Keys brauchen explizite erlaubte Zwecke, Ablauf und Widerruf;
-Kommentare im Hashhelper reichen nicht. Caches dürfen keine unabhängigen,
-ungeprüften HMAC-Zustände als Ersatz für den gebundenen Schlüssel einschleusen.
+The expected generation fingerprint is
+`HMAC-SHA256(K_A,b"endoreg-identity-salt-v1")`. It must come from an authenticated
+local record/issuer binding, not the same unauthenticated request. An in-circuit
+comparison checks key consistency, but not whether `t_A` belongs to `uuid_A`.
+Published fingerprints permit offline tests of guessed weak keys. Legacy hashes
+must be excluded before selecting the v1 circuit. Retiring keys need explicit
+permitted purposes, expiry, and revocation; comments in the hash helper are
+insufficient. Caches must not inject independent, unchecked HMAC states as a
+substitute for the bound key.
 
-## C. Protokollentwurf und Vertrauensgrenzen — noch nicht integriert
+## C. Protocol design and trust boundaries — not yet integrated
 
-Die zwei Endpunkte sind **A's lokaler Matching-Worker** und **B's lokaler
-Matching-Worker**. Ein Hub kann Anfragen vermitteln, erhält aber weder `K_A`
-noch `t_A` noch Kandidatentupel. Es wird kein zentraler gemeinsamer Matching-Key
-benötigt. mTLS authentifiziert Endpunkte und schützt Kanäle; es ersetzt keine 2PC.
-Ein Server, der beide Eingaben über TLS erhält, wäre keine private Zwei-Parteien-
-Berechnung. Passwort-Hashes, API-Geheimnisse und Master-Keys werden nicht zu
-asymmetrischen Schlüsseln umfunktioniert.
+The two endpoints are **A's local matching worker** and **B's local matching
+worker**. A hub may relay requests but receives neither `K_A`, `t_A`, nor
+candidate tuples. No central shared matching key is required. mTLS authenticates
+endpoints and protects channels; it does not replace two-party computation (2PC).
+A server receiving both inputs over TLS would not be private two-party
+computation. Password hashes, API secrets, and master keys are not repurposed
+as asymmetric keys.
 
-| Angreifer | Erwarteter Schutz / Grenze |
+| Attacker | Expected protection / boundary |
 |---|---|
-| Protokolltreuer neugieriger Teilnehmer | Nur festgelegte Ausgaben und öffentliche Metadaten, unter dem Backendmodell; keine fremden privaten Inputs. |
-| Bösartiges A oder B | Aktive Protokollsicherheit erkennt kryptografisches Fehlverhalten oder bricht ab; sie verhindert keine frei erfundenen, formal gültigen Eingaben. Berechtigungsbindung bleibt zusätzlich nötig. |
-| Neugieriger/kompromittierter Hub | Darf nur Vermittlungsmetadaten und später autorisierte UUID-Beziehung sehen; Netzwerktraffic braucht authentifizierte Verschlüsselung. |
-| Root-/App-/DB-/Backup-Administratoren | Können lokale Inputs auslesen. Derselbe entsprechend privilegierte Betreiber beider Endpunkte sieht beide Inputs; 2PC beseitigt diese Rechte nicht. |
-| Kollusion | Hub plus eine Partei besitzt deren Eingaben und erlaubte Ergebnisse; Kollusion beider Parteien hebt deren gegenseitige Vertraulichkeit auf. Gemeinsame Verwaltung darf nicht als Nichtkollusion gelten. |
-| Spätere Kompromittierung | Erhaltene Schlüssel plus Zieltoken erlauben Offline-Kandidatenprüfung. Logs, Crashdumps, Swap, Backups und Preprocessing-/Cachezustand gehören zur Grenze; kein pauschales Forward-Secrecy-Versprechen. |
+| Honest-but-curious participant | Only defined outputs and public metadata under the backend model; no other party's private inputs. |
+| Malicious A or B | Active protocol security detects cryptographic misconduct or aborts; it does not prevent fabricated, formally valid inputs. Authorization binding is additionally required. |
+| Curious/compromised hub | May see only relay metadata and subsequently authorized UUID relationship; network traffic requires authenticated encryption. |
+| Root/application/database/backup administrators | Can read local inputs. The same sufficiently privileged operator at both endpoints sees both inputs; 2PC does not remove those rights. |
+| Collusion | Hub plus one party holds that party's inputs and permitted results; collusion of both parties removes their mutual confidentiality. Shared administration must not be treated as non-collusion. |
+| Later compromise | Retained keys plus target token permit offline candidate checking. Logs, crash dumps, swap, backups, and preprocessing/cache state are within the boundary; no blanket forward-secrecy promise. |
 
-Vault schützt nicht unabhängig vor dem Host, der seine laufenden Geheimnisse
-verarbeitet; das dokumentierte Modell unterscheidet untrusted Storage und
-autorisierte Laufzeit-/Policy-Zugriffe. [Vault security model](https://developer.hashicorp.com/vault/docs/internals/security)
-Die LuxNix-SSH-Gruppe beweist allein keine Root-Rechte: siehe
-`luxnix/docs/vault-hub-machine-enrollment.md:1063–1066`. Tatsächliche Root-,
-App-, DB-, Deployment-, Backup- und Recovery-Rechte beider Kliniken müssen
-inventarisiert werden. Die bisherige Forderung nach separat geschützten Keys
-wird nicht aufgehoben, sondern auf die tatsächlichen A/B-Rollen angewandt.
+Vault does not independently protect against the host processing its live secrets;
+the documented model distinguishes untrusted storage from authorized runtime
+and policy access. [Vault security model](https://developer.hashicorp.com/vault/docs/internals/security)
+The LuxNix SSH group alone does not prove root rights: see
+`luxnix/docs/vault-hub-machine-enrollment.md:1063–1066`. Actual root, application,
+database, deployment, backup, and recovery rights at both clinics must be
+inventoried. The existing requirement for separately protected keys is retained
+and applied to the actual A/B roles.
 
-### Eingaben, Nachrichten und Bindungen
+### Inputs, messages, and bindings
 
-1. A autorisiert genau einen bestehenden Datensatz und erstellt einen signierten,
-   kurzlebigen Session-Auftrag: zufällige Request-ID, A/B-Knoten und Issuer,
-   Publikum, Zweck, Schema, Schaltkreisversion/-digest, Epoch-Referenz, Ablauf
-   und autorisierte Quell-UUID. Zieltoken bleibt im privaten A-Input.
-   Der lokale Autorisierungsdienst bindet `t_A ↔ uuid_A ↔ c_A ↔ scheme ↔ epoch`
-   an die ausgewählte unveränderliche Datensatzversion. Ein bloßes vom Worker
-   frei wählbares Feld ist hierfür kein Beweis.
-2. B erstellt aus zulässigen, tatsächlich vorhandenen Originalen einen
-   unveränderlichen Kandidatensatz mit lokalen UUIDs und Versionsbelegen.
-   Ein kontrollierter lokaler Adapter bindet Tupel und UUID; gegenüber einem
-   bösartigen Standort erfordert dies eine zusätzliche vertrauenswürdige
-   Aussteller-/Attestierungsgrenze oder ein geprüftes Credential-Verfahren.
-   Frei erfundene Kandidaten dürfen nicht als verifiziert erscheinen.
-3. Beide prüfen Session, Zertifikate, Zweck, erlaubte Keygeneration, Mengenlimit,
-   Ablauf und identischen Circuit. Sie führen den geprüften 2PC aus. Serialisierung
-   außerhalb der Schaltung ist für ehrliche Adapter korrekt; gegenüber bösartigem
-   B muss die Schaltung das Format und `c_A` erzwingen oder die Eingabe muss
-   nachweisbar an einen geprüften Serializer gebunden sein. Das ist noch offen.
-4. Minimaler fachlicher Output: B erhält nur `no_match`, `single_match` mit lokalem
-   Treffer oder `ambiguous_matches`; A zunächst lediglich Abschluss/Abbruch.
-   Erst nach autorisierter Freigabe eines eindeutigen Treffers erhalten A und Hub
-   die notwendige UUID-Beziehung. Für Ambiguität bleibt Kandidatenprüfung bei B.
-   Der aktuelle Versuch gibt stattdessen alle Matchbits beiden Parteien aus:
-   ausdrücklich mehr Leckage als dieses Ziel, kein fertiger Minimaloutput.
-5. Beide Parteien signieren dieselbe Ergebnisstruktur einschließlich Request-ID,
-   Teilnehmern, Publikum, Zweck, Schema, Epoch, Circuit-Digest, Kandidatensatz-
-   Referenz, Ergebnis, relevanten UUIDs und Ablauf. Signaturschlüssel sind separat
-   provisionierte asymmetrische Schlüssel. Nur nach erfolgreichem Backend-Abschluss
-   darf der vertrauenswürdige Wrapper signieren. Zwei Signaturen sind kein
-   allgemein öffentlich prüfbarer Beweis der tatsächlichen Berechnung.
-6. Der Empfänger prüft Signaturen, Widerruf, Ablauf, Session- und Audience-Bindung
-   und atomare Einmalverarbeitung. Er speichert eine explizite, widerrufbare
-   Beziehung `(issuer_A, uuid_A, issuer_B, uuid_B, evidence, status)` mit Auditspur.
-   UUIDs und lokale Hashes ändern sich nicht; es gibt keine automatische Zusammenführung.
+1. A authorizes exactly one existing record and creates a signed, short-lived
+   session request: random request ID, A/B nodes and issuers, audience, purpose,
+   schema, circuit version/digest, epoch reference, expiry, and authorized source
+   UUID. The target token remains in A's private input. The local authorization
+   service binds `t_A ↔ uuid_A ↔ c_A ↔ scheme ↔ epoch` to the selected immutable
+   record version. A field freely chosen by the worker is not evidence of this.
+2. B builds an immutable candidate set from permitted, actually existing originals,
+   with local UUIDs and version evidence. A controlled local adapter binds tuple
+   and UUID; against a malicious site, this requires an additional trusted issuer
+   or attestation boundary, or a reviewed credential mechanism. Fabricated
+   candidates must not appear verified.
+3. Both check session, certificates, purpose, allowed key generation, quantity
+   limit, expiry, and identical circuit. They run the reviewed 2PC. Serialization
+   outside the circuit is correct for honest adapters; against malicious B, the
+   circuit must enforce format and `c_A`, or input must be demonstrably bound to
+   a reviewed serializer. This remains open.
+4. Minimal domain output: B receives only `no_match`, `single_match` with a local
+   match, or `ambiguous_matches`; A initially receives only completion/abort.
+   Only after authorized release of a unique match do A and the hub receive the
+   necessary UUID relationship. Candidate review for ambiguity remains with B.
+   The current experiment instead outputs all match bits to both parties:
+   explicitly more leakage than this target, not a finished minimal output.
+5. Both parties sign the same result structure, including request ID, participants,
+   audience, purpose, schema, epoch, circuit digest, candidate-set reference,
+   result, relevant UUIDs, and expiry. Signing keys are separately provisioned
+   asymmetric keys. The trusted wrapper may sign only after successful backend
+   completion. Two signatures are not a generally publicly verifiable proof of
+   the actual computation.
+6. The recipient checks signatures, revocation, expiry, session/audience binding,
+   and atomic one-time processing. It stores an explicit revocable relationship
+   `(issuer_A, uuid_A, issuer_B, uuid_B, evidence, status)` with an audit trail.
+   UUIDs and local hashes remain unchanged; there is no automatic merging.
 
-Im Zielmodell kennt nur A `t_A` und `K_A`, nur B die Tupel. Beide kennen Session,
-Schema, zugelassene Größenklassen, öffentlich vereinbarte Key-/Zentrum-Metadaten
-und Verbindungsdauer. Eine öffentlich sichtbare Epoch-Referenz erlaubt deren
-Wiedererkennung; sie darf nur veröffentlicht werden, wenn dies freigegeben ist.
-Hub sieht Routing, Zeiten und freigegebene Beziehungen. Größenpadding kann
-Kandidatenzahl und Bytelängen teilweise verbergen, kostet aber zusätzliche
-Schaltungen; Dummy-Kandidaten müssen als solche intern maskiert werden.
-Fehler werden extern grob klassifiziert; sensible Detailfehler bleiben lokal.
+In the target model, only A knows `t_A` and `K_A`, and only B knows the tuples.
+Both know session, schema, allowed size classes, publicly agreed key/center
+metadata, and connection duration. A publicly visible epoch reference permits
+recognition of that epoch; it may be published only with approval. The hub sees
+routing, timing, and approved relationships. Size padding can partially hide
+candidate count and byte lengths but costs additional circuitry; dummy candidates
+must be masked internally. External errors are coarsely classified; sensitive
+details remain local.
 
-### Ergebnissemantik und wiederholte Abfragen
+### Result semantics and repeated queries
 
-| Ergebnis | Bedeutung |
+| Result | Meaning |
 |---|---|
-| `no_match` | Vollständige Auswertung genau des genehmigten Kandidatensatzes unter gewähltem Schema/Zentrum/Key ohne Treffer; keine globale Nichtexistenz. |
-| `single_match` | Genau ein passendes lokales Record im vollständigen Satz, keine automatisch verifizierte Person. |
-| `ambiguous_matches` | Mehrere Records passen, auch bei identischer Demografie verschiedener UUIDs; keine automatische Auswahl. |
-| `aborted_or_incomplete` | Timeout, Manipulation, fehlende Inputs, inkonsistente Bindung, Abbruch oder unvollständiger Satz; niemals Nonmatch. |
-| `key_epoch_unavailable` | Ausgewählte zugelassene Generation fehlt; kein Ausweichen auf aktive/fremde Generation. |
+| `no_match` | Complete evaluation of exactly the approved candidate set under the selected scheme/center/key without a match; not global nonexistence. |
+| `single_match` | Exactly one matching local record in the complete set, not an automatically verified person. |
+| `ambiguous_matches` | Multiple records match, including identical demographics under different UUIDs; no automatic selection. |
+| `aborted_or_incomplete` | Timeout, tampering, missing inputs, inconsistent binding, abort, or incomplete set; never a nonmatch. |
+| `key_epoch_unavailable` | Selected permitted generation missing; no fallback to active/foreign generation. |
 
-Replay-Schutz verhindert nicht Mitgliedschaftstests mit neuen Request-IDs,
-überlappenden Batches oder adaptiv ausgewählten Quell-UUIDs. Nötig sind
-patienten-/zweck-/standortübergreifende Abfragebudgets, geprüfte Kandidatensätze,
-Konsistenz bei Wiederholung, Audit und fachliche Zugriffskontrolle. Ein
-unbegrenztes autorisiertes Mitgliedschaftsorakel bleibt ein Identifizierungsrisiko.
-Ein abgebrochener Lauf darf keine verwertbaren Teilresultate publizieren.
+Replay protection does not prevent membership tests with new request IDs,
+overlapping batches, or adaptively selected source UUIDs. Query budgets across
+patients, purposes, and sites, reviewed candidate sets, repeat consistency,
+auditing, and domain access control are needed. An unrestricted authorized
+membership oracle remains an identification risk. An aborted run must not
+publish usable partial results.
 
-## Implementierungsvergleich: höchstens zwei Backends
+## Implementation comparison: at most two backends
 
-**MP-SPDZ v0.4.4**, Commit `113c4e47dd94bca9ecab029d2f0abe649bea5c52`,
-ist der ausgeführte Kandidat. Boolesche SHA-256-Schaltungen erlauben die
-HMAC-Komposition und Gleichheit; private Bits gehören je einer Partei.
-Tinier ist als malicious/dishonest-majority klassifiziert; mit zwei Parteien
-ist eine korrupte Partei vorgesehen, keine Fairness oder garantierte Ausgabe.
-Die Software bezeichnet sich als Benchmarkframework ohne zugesicherte
-Produktions-Sicherheitsprüfung. [Dokumentation](https://mp-spdz.readthedocs.io/en/latest/readme.html)
-Die Frameworkbeschreibung ist [Keller 2020](https://eprint.iacr.org/2020/521).
+**MP-SPDZ v0.4.4**, commit `113c4e47dd94bca9ecab029d2f0abe649bea5c52`,
+is the executed candidate. Boolean SHA-256 circuits permit HMAC composition and
+equality; private bits belong to one party each. Tinier is classified as
+malicious/dishonest-majority; with two parties, one corrupt party is covered,
+without fairness or guaranteed output. The software describes itself as a
+benchmarking framework without an assured production security audit.
+[Documentation](https://mp-spdz.readthedocs.io/en/latest/readme.html)
+The framework description is [Keller 2020](https://eprint.iacr.org/2020/521).
 
-Tinier nutzt authentifiziertes Secret Sharing und OT-basierte Vorverarbeitung
-nach [FKOS15](https://eprint.iacr.org/2015/901), mit der im
-[gepinnten Quelltext](https://github.com/data61/MP-SPDZ/tree/113c4e47dd94bca9ecab029d2f0abe649bea5c52)
-beschriebenen Cut-and-Choose-Anpassung nach
-[Furukawa et al.](https://eprint.iacr.org/2016/944).
-OT-/Symmetrieannahmen, korrekte Zufallsquellen, frisches geprüftes Preprocessing
-und nicht gemeinsam kompromittierte Endpunkte sind Voraussetzungen. Die
-Komposition aller Implementierungsoptimierungen mit diesen Beweisen wurde hier
-nicht unabhängig bewiesen oder auditiert. MAC-/Protokollfehler müssen abbrechen;
-fachlich falsche, aber syntaktisch akzeptierte Inputs bleiben möglich.
-Der FKOS15-Volltextabruf über ePrint und das IACR-Proceedings-Archiv scheiterte
-mit HTTP 403; zugänglich waren die Primärzusammenfassung, Quellenverweise und
-Implementierung. Eine vollständige Prüfung der publizierten Beweisannahmen ist
-daher ausdrücklich **nicht abgeschlossen**. Insbesondere ist die übernommene
-Cut-and-Choose-Analyse kein pauschaler Beweis eines Zwei-Parteien-Protokolls:
-die zitierte Furukawa-Arbeit behandelt als Gesamtprotokoll drei Parteien.
-BSD-3-Clause für den Hauptcode, zusätzliche Drittkomponentenlizenzen in
-`License.txt`. Aktuelle Distribution und umfangreicher Compiler, C++-Runtime,
-OT-, OpenSSL- und CPU-Abhängigkeiten bedeuten erheblichen Integrationsaufwand;
-kein vorhandener Django-Adapter oder Nix-Deploymentnachweis.
+Tinier uses authenticated secret sharing and oblivious transfer (OT)-based
+preprocessing according to [FKOS15](https://eprint.iacr.org/2015/901), with the
+cut-and-choose adaptation described in the
+[pinned source](https://github.com/data61/MP-SPDZ/tree/113c4e47dd94bca9ecab029d2f0abe649bea5c52)
+following [Furukawa et al.](https://eprint.iacr.org/2016/944).
+OT/symmetric cryptographic assumptions, correct randomness sources, fresh checked
+preprocessing, and endpoints not jointly compromised are prerequisites. The
+composition of all implementation optimizations with these proofs was not
+independently proved or audited here. Message authentication code (MAC) and
+protocol failures must abort; domain-invalid but syntactically accepted inputs
+remain possible. Fetching the FKOS15 full text through ePrint and the IACR
+proceedings archive failed with HTTP 403; the primary abstract, source references,
+and implementation were accessible. A complete review of published proof
+assumptions is therefore explicitly **not complete**. In particular, the adopted
+cut-and-choose analysis is not a blanket proof of a two-party protocol: the cited
+Furukawa paper addresses three parties as a complete protocol. BSD-3-Clause for
+main code, additional third-party licenses in `License.txt`. Current distribution
+and substantial compiler, C++ runtime, OT, OpenSSL, and CPU dependencies imply
+significant integration effort; no existing Django adapter or Nix deployment
+evidence.
 
-**EMP ag2pc**, Commit `a245ca0f67abaf2d48c711e3c050ce961e60ad29`, unterstützt
-Boolesche Schaltungen, private Teilnehmerinputs und empfängerbezogene Ausgabe.
-Das aktuelle API beschreibt aktive Sicherheit mittels authentifiziertem Garbling,
-OT-Konsistenzchecks vor Ausgabe und Fehlern bei ungültiger Wire-Lebensdauer.
-SHA-256/HMAC ist daraus konstruierbar, hier aber nicht ausgeführt. Der aktuelle
-Rewrite ist ausdrücklich nicht auditiert; Apache-2.0, C++20, CMake, OpenSSL,
-emp-tool/emp-ot und eigener Adapter erforderlich.
-[Aktueller Primärquelltext](https://github.com/emp-toolkit/emp-ag2pc/tree/a245ca0f67abaf2d48c711e3c050ce961e60ad29)
-Die referenzierte Sicherheitsanalyse ist
-[KRRW18](https://eprint.iacr.org/2018/578); ihre Annahmen zu authentifiziertem
-Garbling/OT und aktiver Sicherheit ersetzen keine Prüfung des neuen Codes.
-Auch hier: zwei getrennte Parteien, Authentisierung der Verbindungen,
-Abbruch statt verlässlicher Verfügbarkeit und keine automatische Eingabeechtheit.
-Kein zweiter Benchmark und keine Behauptung eines fertigen HMAC-Adapters.
+**EMP ag2pc**, commit `a245ca0f67abaf2d48c711e3c050ce961e60ad29`, supports
+Boolean circuits, private participant inputs, and recipient-specific output.
+The current API describes active security using authenticated garbling,
+OT consistency checks before output, and errors on invalid wire lifetime.
+SHA-256/HMAC can be constructed from these, but was not executed here. The current
+rewrite is explicitly unaudited; Apache-2.0, C++20, CMake, OpenSSL, emp-tool/emp-ot,
+and a custom adapter are required.
+[Current primary source](https://github.com/emp-toolkit/emp-ag2pc/tree/a245ca0f67abaf2d48c711e3c050ce961e60ad29)
+The referenced security analysis is [KRRW18](https://eprint.iacr.org/2018/578);
+its authenticated garbling/OT and active-security assumptions do not replace
+review of the new code. Here too: two separate parties, connection authentication,
+abort instead of reliable availability, and no automatic input authenticity.
+No second benchmark or claim of a finished HMAC adapter.
 
-[RFC 9497](https://www.rfc-editor.org/rfc/rfc9497.html) spezifiziert eine andere
-OPRF/VOPRF-Funktion. Ihre Auswertung reproduziert den bestehenden HMAC nicht;
-ein Wechsel wäre ein eigener Entwurf mit Migration. Die vorhandene begrenzte
-Kandidatensuche `scripts/benchmark_sha256.py:20–24,47–99` fixiert den Schlüssel
-und enumeriert Nachrichten. Sie ist weder Schlüsselrückgewinnung noch 2PC;
-Zeit-/Versuchslimits beweisen keine Erschöpfung außerhalb des deklarierten Raums.
+[RFC 9497](https://www.rfc-editor.org/rfc/rfc9497.html) specifies a different
+oblivious pseudorandom function (OPRF) / verifiable OPRF (VOPRF). Its evaluation
+does not reproduce the existing HMAC; a switch would require a separate design
+and migration. Existing bounded candidate search
+`scripts/benchmark_sha256.py:20–24,47–99` fixes the key and enumerates messages.
+It is neither key recovery nor 2PC; time/attempt limits do not prove exhaustion
+outside the declared space.
 
-## D. Revidierte Beweisverpflichtungen
+## D. Revised proof obligations
 
-1. **Korrektheit:** Differentialtests gegen den Produktionshelper, HMAC-Padding,
-   Byte-/Bitreihenfolge, Schlüssel über 64 Bytes und alle JSON-Randfälle; Circuit
-   bindet A's Zentrum und erlaubte versteckte Eingabeform oder kontrollierten Adapter.
-2. **Autorisierte Records:** Nachweis beider Record-/UUID-Bindungen einschließlich
-   Datensatzversion, Schema, Issuer und Epoch; bösartige Teilnehmer dürfen keinen
-   beliebigen Zieltoken oder erfundene Kandidaten als authentifiziert ausgeben.
-3. **Privatsphäre:** Explizite ideale Funktion, Korruptionsmodell und Leckagebudget;
-   keine Behauptung, bekannte lokal verknüpfte Personen blieben gegenüber B anonym.
-4. **Beweis zur Implementierung:** Pinning von Compiler, Circuit, Runtime und
-   Abhängigkeiten; Prüfung der OT-, MAC-, Sacrifice- und Ausgabeimplementierung
-   einschließlich gewählter Parameter und Abbruchverhalten. Funktionstests sind kein Sicherheitsbeweis.
-5. **Ergebnisintegrität:** Vertrauenswürdiger Abschlussmarker, keine Ausgabe vor
-   Checks; doppelte Signaturen, Audience/Zweck/Ablauf/Session-Bindung, atomarer Replay-Schutz.
-6. **Historische Schlüssel:** Authentifizierter Epoch-Fingerprint, tatsächliche
-   Retiring-Policy, Legacy-Ausschluss, Widerruf und sichere Cache-/Backup-Löschung;
-   keine Unbedenklichkeitsbehauptung nach Schlüsselkompromittierung.
-7. **Abfragen und Fehler:** Batchvollständigkeit, Ambiguität, keine partiellen
-   Resultate bei Abbruch, gemeinsame Budgets auch über neue Request-IDs und überlappende Sätze.
-8. **Klinische Identität:** Tupelgleichheit getrennt von verifiziertem Menschenbezug;
-   bei Bedarf zusätzliche issuerqualifizierte Verifikation und klinische Prüfung.
-9. **Komposition:** mTLS-/Exportgrenzen, lokale verschlüsselte Speicherung und
-   Phase-2-Envelope für externe Blobs bleiben wirksam. Artefakthashes identifizieren
-   Dateien. Gemeinsame Inhaltsdigests, Metadaten und exportierte klinische Inhalte
-   können unabhängig vom Matching identifizieren/verknüpfen; 2PC beweist keine
-   Anonymität des gesamten freigegebenen Datensatzes.
+1. **Correctness:** Differential tests against the production helper, HMAC
+   padding, byte/bit order, keys over 64 bytes, and all JSON edge cases; circuit
+   binds A's center and permitted hidden input shape or a controlled adapter.
+2. **Authorized records:** Evidence for both record/UUID bindings, including
+   record version, scheme, issuer, and epoch; malicious participants must not
+   present arbitrary target tokens or fabricated candidates as authenticated.
+3. **Privacy:** Explicit ideal functionality, corruption model, and leakage
+   budget; no claim that known locally linked people remain anonymous to B.
+4. **Proof to implementation:** Pin compiler, circuit, runtime, and dependencies;
+   review OT, MAC, sacrifice, and output implementations, including selected
+   parameters and abort behavior. Functional tests are not a security proof.
+5. **Result integrity:** Trusted completion marker, no output before checks;
+   dual signatures, audience/purpose/expiry/session binding, atomic replay protection.
+6. **Historical keys:** Authenticated epoch fingerprint, actual retiring policy,
+   legacy exclusion, revocation, and secure cache/backup deletion; no safety
+   claim after key compromise.
+7. **Queries and errors:** Batch completeness, ambiguity, no partial results on
+   abort, shared budgets even across new request IDs and overlapping sets.
+8. **Clinical identity:** Tuple equality distinguished from verified person
+   identity; additional issuer-qualified verification and clinical review if needed.
+9. **Composition:** mTLS/export boundaries, local encrypted storage, and phase-2
+   envelopes for external blobs remain effective. Artifact hashes identify
+   files. Shared content digests, metadata, and exported clinical content can
+   identify/link independently of matching; 2PC proves no anonymity of the
+   complete released dataset.
 
-## E. Kleinster gerechtfertigter nächster Schritt
+## E. Smallest justified next step
 
-Ein weiterer isolierter Integrationsversuch mit zwei tatsächlich getrennt
-administrierten Testendpunkten, synthetischen Daten und einem expliziten
-Record-Bindungsvertrag ist gerechtfertigt. Voraussetzungen: dokumentierte
-App-/Root-/DB-/Backup-Rechte, authentifizierte Epoch- und Record-Snapshots,
-überprüfter Circuit samt Formatbindung und minimaler empfängerbezogener Ausgabe,
-gepinntes Backend sowie authentifizierter Kanal. Noch keine Patientenzusammenführung.
+Another isolated integration experiment with two genuinely separately administered
+test endpoints, synthetic data, and an explicit record-binding contract is
+justified. Prerequisites: documented application/root/database/backup permissions,
+authenticated epoch and record snapshots, reviewed circuit with format binding
+and minimal recipient-specific output, pinned backend, and authenticated channel.
+No patient merging yet.
 
-Akzeptanz: beide UUID-Substitutionen, fremde/unzulässige Ziele, manipulierte
-Ergebnisse, abgelaufene/replayed Sessions, unbekannte Epochs, abgeschnittene
-Nachrichten, Prozessabbruch und überschrittene kumulative Abfragebudgets werden
-als Fehler ohne Beziehungspersistierung abgewiesen. Doppelte passende Records
-bleiben mehrdeutig. Signaturen binden dieselbe erfolgreiche Session. Ein
-Produktionsentscheid verlangt zusätzlich Sicherheitsreview, klinische
-Identitätsentscheidung und Messung im vorgesehenen Netzwerk.
+Acceptance: both UUID substitutions, foreign/disallowed targets, manipulated
+results, expired/replayed sessions, unknown epochs, truncated messages, process
+termination, and exceeded cumulative query budgets are rejected as errors
+without relationship persistence. Duplicate matching records remain ambiguous.
+Signatures bind the same successful session. A production decision additionally
+requires security review, a clinical identity decision, and measurement in the
+intended network.
 
-## Ausgeführte Validierung
+## Validation performed
 
-Die isolierte [Referenz](../scripts/patient_matching_2pc_reference.py) sieht
-beide Inputs und beansprucht **keine** Privatsphäre. Die
-[Tests](../tests/scripts/test_patient_matching_2pc_reference.py) verwenden nur
-synthetische Namen, UUIDs und Schlüssel unter isolierten Testsettings.
-39 Tests bestehen: Produktionsgleichheit, A/B-Schlüssel-/Zentrumtrennung,
-Whitespace, Case, Unicode/NFC-NFD, JSON-Escaping, Datum/datetime, lange und
-UTF-8-Schlüssel, fehlende/falsch gebundene historische Generation, mehrdeutige
-Tupel und unvollständige Suche. Ein ausdrücklicher Negativnachweis zeigt:
-UUID-Substitution bleibt im Referenzmodell unentdeckt. Signaturen, Replays und
-autorisierte Inputs sind dort **nicht implementiert**.
+The isolated [reference](../scripts/patient_matching_2pc_reference.py) sees both
+inputs and claims **no** privacy. The
+[tests](../tests/scripts/test_patient_matching_2pc_reference.py) use only synthetic
+names, UUIDs, and keys under isolated test settings. 39 tests pass: production
+equivalence, A/B key/center separation, whitespace, case, Unicode/NFC-NFD, JSON
+escaping, date/datetime, long and UTF-8 keys, missing/incorrectly bound historical
+generation, ambiguous tuples, and incomplete search. An explicit negative
+finding shows UUID substitution remains undetected in the reference model.
+Signatures, replays, and authorized inputs are **not implemented** there.
 
-Ausgeführt, in dieser Reihenfolge vor pytest:
+Executed in this order before pytest:
 
 ```text
 .devenv/state/venv/bin/pyright scripts/patient_matching_2pc_reference.py tests/scripts/test_patient_matching_2pc_reference.py
   0 errors, 0 warnings
 .devenv/state/venv/bin/pyright
-  20 errors, 24 warnings; vorhandene identity_resolve/generate_public_key.py (17)
-  und identity_resolve/sha_reverse.py (3), keine Fehler in den neuen Referenzdateien
+  20 errors, 24 warnings; existing identity_resolve/generate_public_key.py (17)
+  and identity_resolve/sha_reverse.py (3), no errors in the new reference files
 .devenv/state/venv/bin/pytest tests/scripts/test_patient_matching_2pc_reference.py -q
-  39 passed, 1 bestehende Plugin-Rewrite-Warnung, 0.16s
+  39 passed, 1 existing plugin rewrite warning, 0.16s
 ```
 
-Die nachfolgenden Backendmessungen sind getrennt von diesen Referenztests zu lesen.
+The backend measurements below must be read separately from these reference tests.
 
-### Reproduzierbarer synthetischer Zwei-Prozess-Versuch
+### Reproducible synthetic two-process experiment
 
-Der persistierte [Schaltkreis](../scripts/patient_matching_2pc.mpc) ist vom
-Produktionscode isoliert. Die externe Laborsteuerung unter `/tmp` besitzt beide
-synthetischen Inputs; die beiden MP-SPDZ-Prozesse erhalten getrennte Player-Inputs.
-Dies demonstriert echte 2PC, aber keine getrennten Administratoren: beide
-Prozesse und Eingabedateien liegen auf demselben Testhost. Keine klinischen
-Daten, Produktionsschlüssel, neuen Pakete im Anwendungsvenv oder Deploymentänderungen.
+The persisted [circuit](../scripts/patient_matching_2pc.mpc) is isolated from
+production code. The external laboratory controller under `/tmp` holds both
+synthetic inputs; the two MP-SPDZ processes receive separate player inputs.
+This demonstrates actual 2PC but not separate administrators: both processes
+and input files reside on the same test host. No clinical data, production
+keys, new packages in the application virtual environment, or deployment changes.
 
-Reproduktionspins:
+Reproduction pins:
 
-| Komponente | Version / SHA-256 |
+| Component | Version / SHA-256 |
 |---|---|
-| [Offizielles Releasearchiv](https://github.com/data61/MP-SPDZ/releases/download/v0.4.4/mp-spdz-0.4.4.tar.xz) | v0.4.4; `73d6473526101b4433999fc4f7521fdfdc53ddf018e5f64480518d6293f62760` |
-| Bristol-Schaltkreisrepository | `mkskeller/bristol-fashion`, Commit `1603ed6aa12348c2ef15ed8395b9b96e4c558b7f` |
+| [Official release archive](https://github.com/data61/MP-SPDZ/releases/download/v0.4.4/mp-spdz-0.4.4.tar.xz) | v0.4.4; `73d6473526101b4433999fc4f7521fdfdc53ddf018e5f64480518d6293f62760` |
+| Bristol circuit repository | `mkskeller/bristol-fashion`, commit `1603ed6aa12348c2ef15ed8395b9b96e4c558b7f` |
 | `sha256.txt` | `bd0a91bb7e97bb60c1468fe8caecc546af3f832bd4152d9c8c4e7527412dd11d` |
 | `bin/Linux-adx/tinier-party.x` | `d6c168f5c35c9c9c5fda31d03e930bcf2f883601824f5128f0ab4d85343f06c8` |
 
-Der anfängliche Quellbuild scheiterte an fehlendem `sodium.h`; das offizielle
-Linux-Binary war ausführbar. `tiny-party.x` brach beim OT-Setup an der Assertion
-`keyBits == ot_setup.base_receiver_inputs` ab. Die Prüfung wurde nicht entfernt;
-das ebenfalls unterstützte **Tinier**-Backend wurde verwendet.
+The initial source build failed because `sodium.h` was missing; the official
+Linux binary was executable. `tiny-party.x` aborted during OT setup at assertion
+`keyBits == ot_setup.base_receiver_inputs`. The check was not removed; the
+also-supported **Tinier** backend was used.
 
-Fixture: ASCII-Key `synthetic-key-not-for-clinical-use` (34 Bytes), JSON
+Fixture: ASCII key `synthetic-key-not-for-clinical-use` (34 bytes), JSON
 `["patient-identity-v1","Änne","Beispiel","1980-01-02","synthetic-center-a"]`
-(76 UTF-8-Bytes). Ziel-HMAC:
+(76 UTF-8 bytes). Target HMAC:
 `41697558cc6b66f36faab6bf713575f3d59041e04b58b54859e1ff7c3156bfe5`.
-Öffentliche Epoch:
+Public epoch:
 `e143ca424402580248ebc5d10a68d5f469bde4de5ddd8d04febad3b6a6a55250`.
-Der Key ist ein öffentliches Testfixture, kein zulässiges Produktionsgeheimnis.
+The key is a public test fixture, not an acceptable production secret.
 
-Im externen Releaseverzeichnis wird die `.mpc` nach `Programs/Source` und die
-gepinnten Bristol-Circuits in das erwartete `Programs/Circuits` eingebunden.
-`Player-Data/Input-P0-0` enthält die dezimalen Bytewerte des Keys, danach die
-32 dekodierten Bytes des **Ziel-Digests**, jeweils leerzeichengetrennt.
-`Input-P1-0` enthält die dezimalen UTF-8-Bytes der JSON-Nachricht, `COUNT`-mal.
-Nur der Digest wird aus Hex dekodiert, niemals der konfigurierte Schlüssel.
-Diese synthetischen Dateien werden ausschließlich außerhalb der Anwendung
-vorbereitet. Reproduktion benötigt eine isolierte Laborumgebung.
+In the external release directory, place the `.mpc` in `Programs/Source` and
+the pinned Bristol circuits in the expected `Programs/Circuits` location.
+`Player-Data/Input-P0-0` contains the key's decimal byte values followed by the
+32 decoded bytes of the **target digest**, separated by spaces.
+`Input-P1-0` contains the JSON message's decimal UTF-8 bytes, repeated `COUNT`
+times. Only the digest is decoded from hex, never the configured key. These
+synthetic files are prepared exclusively outside the application. Reproduction
+requires an isolated laboratory environment.
 
 ```text
 python3 compile.py -M -B 64 patient_matching_2pc 34 76 COUNT EPOCH
@@ -357,96 +352,95 @@ bin/Linux-adx/tinier-party.x 0 PROGRAM -N 2 -pn 19434 -h 127.0.0.1 -OF .
 bin/Linux-adx/tinier-party.x 1 PROGRAM -N 2 -pn 19434 -h 127.0.0.1 -OF .
 ```
 
-Hier ist `EPOCH` der obige Wert und
-`PROGRAM=patient_matching_2pc-34-76-COUNT-EPOCH`, mit ersetzten Platzhaltern.
-Die letzten beiden Prozesse laufen gleichzeitig unter einem Supervisor mit
-240-Sekunden-Limit, 2-GiB-Adressraumlimit je Prozess und deaktivierten Core-Dumps.
-Portbasis und Folgeport müssen frei sein. `-M` erhält Speicherreihenfolge beim
-Kompilieren; die zunächst sichtbare Compilerwarnung wird damit vermieden.
-Inputs sind byteweise, der Schaltkreis konvertiert explizit zur Bitreihenfolge
-des SHA-256-Bausteins. Öffentliche Grenzen: 1–1024 Keybytes, 1–4096 Payloadbytes,
-1–100 Kandidaten; Größe/Anzahl und Epoch sind nicht verborgen.
+Here `EPOCH` is the value above and
+`PROGRAM=patient_matching_2pc-34-76-COUNT-EPOCH`, with placeholders substituted.
+The final two processes run concurrently under a supervisor with a 240-second
+limit, a 2-GiB address-space limit per process, and disabled core dumps. The base
+port and following port must be free. `-M` preserves memory order during
+compilation, avoiding the initially observed compiler warning. Inputs are
+bytewise; the circuit explicitly converts to the SHA-256 component's bit order.
+Public limits: 1–1024 key bytes, 1–4096 payload bytes, 1–100 candidates;
+size/count and epoch are not hidden.
 
-Kein zusätzliches Datenschutzpadding: alle Kandidaten einer Instanz haben
-dieselbe öffentliche Bytelänge; SHA-256 verwendet sein normales kryptografisches
-Padding. B serialisiert außerhalb der Schaltung. A's Key und Ziel bleiben private
-Schaltkreisinputs. Die Epoch wird **innerhalb** der Schaltung mit derselben
-HMAC-Funktion geprüft. Es gibt keine exportierten oder gecachten HMAC-Zustände.
+No additional privacy padding: all candidates in an instance have the same
+public byte length; SHA-256 uses its normal cryptographic padding. B serializes
+outside the circuit. A's key and target remain private circuit inputs. The epoch
+is checked **inside** the circuit with the same HMAC function. There are no
+exported or cached HMAC states.
 
-Beide Parteien erhalten `epoch_valid` und anschließend pro Kandidat ein gegatetes
-Matchbit. `epoch_valid=0` darf nicht als Nonmatch interpretiert werden. Dies ist
-kein fertiger Workflow-Resulttyp. Die Ausgabe ist inkrementell: ein späterer
-Abbruch kann bereits ausgegebene Teilresultate nicht zurücknehmen. Die Referenz
-verhindert dagegen fachliche Teilresultate bei bekannter Unvollständigkeit.
-Es gibt keine UUIDs, Signaturen, Replay-Datenbank, Berechtigungsprüfung oder
-JSON-Formatvalidierung im Schaltkreis. Ein manipuliertes Ausgabeprotokoll ist
-nicht authentifiziert. Malformed-Input-/Transport-Fuzzing und eine vollständige
-Interruptions-Testmatrix wurden nicht ausgeführt.
+Both parties receive `epoch_valid`, followed by a gated match bit for each
+candidate. `epoch_valid=0` must not be interpreted as a nonmatch. This is not a
+finished workflow result type. Output is incremental: a later abort cannot
+retract partial results already output. By contrast, the reference prevents
+domain partial results when incompleteness is known. There are no UUIDs,
+signatures, replay database, authorization checks, or JSON format validation
+in the circuit. A manipulated output transcript is unauthenticated. Malformed
+input/transport fuzzing and a full interruption test matrix were not performed.
 
-Die Testverbindung verwendet localhost als Peeradresse, **kein mTLS**; ein
-weiteres Listen-Interface ist dadurch nicht ausgeschlossen. Das ist kein
-Transportprofil für ein feindliches Kliniknetz. Produktionsisolation, separate
-Dateirechte, sichere Eingabeadapter, Logging-, Swap-, Crashdump- und Backupregeln
-bleiben offen. Der Laborharness hält synthetische Inputdateien und Ausgaben;
-dieses Muster darf nicht für reale Geheimnisse übernommen werden.
+The test connection uses localhost as its peer address, **without mTLS**; this
+does not rule out another listening interface. This is not a transport profile
+for a hostile clinical network. Production isolation, separate file permissions,
+secure input adapters, logging, swap, crash dump, and backup rules remain open.
+The laboratory harness holds synthetic input files and outputs; this pattern
+must not be copied for real secrets.
 
-### Messungen und tatsächlich ausgeführte Backendprüfungen
+### Measurements and backend checks actually performed
 
-Intel Core i5-12450H, 12 logische CPUs, 16 GiB RAM, Linux 6.12.112 x86_64,
-Python 3.12.13;
-MP-SPDZ v0.4.4 Linux-adx-Binary. Alle Messungen sind einzelne lokale Läufe,
-keine Mittelwerte oder Hochrechnungen. Die Batchkandidaten wiederholen dieselbe
-synthetische 76-Byte-Nachricht, alle Bits sind 1. Sie messen keine heterogene
-klinische Suche oder UUID-Zuordnung.
+Intel Core i5-12450H, 12 logical CPUs, 16 GiB RAM, Linux 6.12.112 x86_64,
+Python 3.12.13; MP-SPDZ v0.4.4 Linux-adx binary. All measurements are single
+local runs, not averages or extrapolations. Batch candidates repeat the same
+synthetic 76-byte message; all bits are 1. They measure neither heterogeneous
+clinical search nor UUID association.
 
-| Kandidaten | Compile/Setup (s) | Laufzeit Wandzeit (s) | Runtime inkl. Preprocessing (s) | Wandzeit/Kandidat (s) | globale Backend-Kommunikation (MB) |
+| Candidates | Compile/setup (s) | Execution wall time (s) | Runtime including preprocessing (s) | Wall time/candidate (s) | Global backend communication (MB) |
 |---:|---:|---:|---:|---:|---:|
 | 1 | 20.589 | 3.633 | 3.53942 | 3.633 | 581.641 |
 | 10 | 9.941 | 21.392 | 21.295 | 2.1392 | 3 480.96 |
 | 100 | 20.41297 | 171.81484 | 171.736 | 1.71815 | 32 482.8 |
 
-„Compile/Setup“ ist nur die Circuit-Kompilation, nicht kryptografische
-Vorverarbeitung. Onlinezeit und kryptografisches Setup wurden **nicht separat
-instrumentiert**: die Runtimezahl umfasst beides. Compile plus gemessene Wandzeit
-betragen 24.222 s für 1, 31.333 s für 10 und 192.22781 s für 100 Kandidaten; einmaliger Download,
-Installation und Inputvorbereitung sind nicht enthalten. MB sind die vom Backend
-gemeldeten globalen Sendevolumina, keine Paketmitschnittmessung einschließlich
-aller Netzwerk-/TLS-Header. Kein extrapolierter 1 000er-Wert; wegen der bereits
-hohen Kommunikationskosten wurde 1 000 nicht versucht.
+“Compile/setup” is only circuit compilation, not cryptographic preprocessing.
+Online time and cryptographic setup were **not separately instrumented**: runtime
+includes both. Compilation plus measured wall time is 24.222 s for 1, 31.333 s
+for 10, and 192.22781 s for 100 candidates; one-time download, installation,
+and input preparation are excluded. MB denotes global transmitted volumes
+reported by the backend, not packet-capture measurements including all network
+and TLS headers. No extrapolated value for 1,000; 1,000 was not attempted because
+communication costs were already high.
 
-Der 10er-Lauf entstand vor dem Wechsel auf `-M` und zeigte die generische
-Speicherreihenfolgewarnung. Die endgültigen 1er-/100er-Läufe verwenden `-M`.
-Die Messwerte sind deshalb keine kontrollierte Skalierungsreihe; alle drei
-Läufe lieferten funktional die erwarteten Bits. Für belastbare Vergleiche
-braucht es Wiederholungen mit identischen Compiler-/Laufparametern.
+The 10-candidate run preceded the switch to `-M` and showed the generic memory
+order warning. Final 1/100-candidate runs use `-M`. These measurements therefore
+do not form a controlled scaling series; all three runs returned the expected
+bits functionally. Reliable comparisons require repetitions with identical
+compiler/runtime parameters.
 
-Die synthetischen Rohmessungen liegen temporär in
+Synthetic raw measurements reside temporarily in
 `/tmp/lx-matching-backend-1-preserved.json`,
 `/tmp/lx-matching-backend-10.json`,
 `/tmp/lx-matching-backend-100-preserved.json`,
-`/tmp/lx-matching-backend-negative.json` und
-`/tmp/lx-matching-backend-long-key.json`; sie sind keine dauerhaften
-Produktionsbelege. Fixture, Pins und Kommandos oben ermöglichen Wiederholung.
+`/tmp/lx-matching-backend-negative.json`, and
+`/tmp/lx-matching-backend-long-key.json`; they are not durable production
+evidence. The fixture, pins, and commands above enable repetition.
 
-Peak-RSS wurde nicht gemessen. Das Adressraumlimit von 2 GiB ist keine
-Speichermessung; eine punktuelle RSS-Beobachtung von ungefähr 47 MiB je Prozess
-beim 100er-Lauf ist ausdrücklich kein Peak. 100 Kandidaten erforderten laut
-Backend etwa 1 984 413 Kommunikationsrunden je Partei. LAN-/WAN-Latenz und
-gleichzeitige Transfers können das Ergebnis wesentlich verändern.
+Peak resident set size (RSS) was not measured. The 2-GiB address-space limit
+is not a memory measurement; a point-in-time RSS observation of approximately
+47 MiB per process during the 100-candidate run is explicitly not a peak.
+According to the backend, 100 candidates required approximately 1 984 413
+communication rounds per party. Local-area/wide-area network latency and
+concurrent transfers can substantially change the result.
 
-Tatsächlich erfolgreich: Unicode-JSON produziert den erwarteten HMAC;
-falscher Zielwert ergibt `epoch_valid=1, match=0`; falscher Key bei gebundener
-Epoch ergibt `0,0`; B's Zentrum statt A's ergibt `1,0`. Ein zusätzlicher
-HMAC-Langschlüsseltest (RFC-4231-Testvektor 6: 131 Bytes `0xaa`, Nachricht 54 Bytes)
-ergab `1,1`, Wandzeit 3.74453 s, 710.253 MB global. Diese Prüfungen ersetzen keine
-adversariale Protokollprüfung. Ein Portkonflikt im Labor verursachte einen
-Timeout; nach Wahl getrennter Ports liefen die Fälle. Der Timeout wurde nicht
-als Nonmatch gewertet. Ein gezielt unterbrochener vollständiger Workflow mit
-Signaturen und atomarer Beziehungspersistierung existiert noch nicht.
+Actually successful: Unicode JSON produces the expected HMAC; an incorrect
+target yields `epoch_valid=1, match=0`; an incorrect key with a bound epoch yields
+`0,0`; B's center instead of A's yields `1,0`. An additional HMAC long-key test
+(RFC-4231 test vector 6: 131 bytes `0xaa`, 54-byte message) yielded `1,1`, wall
+time 3.74453 s, 710.253 MB globally. These checks do not replace adversarial
+protocol review. A laboratory port conflict caused a timeout; cases ran after
+selecting separate ports. The timeout was not interpreted as a nonmatch. A
+deliberately interrupted complete workflow with signatures and atomic relationship
+persistence does not yet exist.
 
-Abschließende Strukturprüfung: 65 Manifeste erfolgreich; Feature-Validierung:
-37 Definitionen gültig. `tracker.py check hub_transfer` meldet erwartungsgemäß
-**NICHT PRODUKTIONSREIF (5/12)**. Der Whole-Project-Pyright-Fehlerbestand bleibt
-offen; die isolierten Referenzdateien sind typgeprüft. `.mpc` wird durch den
-MP-SPDZ-Compiler geprüft, nicht durch Pyright. Ruff für die Referenzdateien und
-der auf die geänderten Dateien begrenzte Whitespace-Diffcheck bestanden.
+Final structure check: 65 manifests passed; feature validation: 37 definitions
+valid. As expected, `tracker.py check hub_transfer` reports
+**NOT PRODUCTION READY (5/12)**. Whole-project Pyright errors remain open; the
+isolated reference files are type-checked. `.mpc` is checked by the MP-SPDZ
+compiler, not Pyright. Ruff for the reference files and the whitespace diff
+check scoped to changed files passed.

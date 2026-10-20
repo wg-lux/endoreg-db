@@ -1,122 +1,119 @@
-# Reversibilität und Kollisionen des Sensitive Meta Hash
+# Reversibility and collisions of the Sensitive Meta Hash
 
-## Aktuelle Einordnung und Policy vom 19.10.2026
+## Current assessment and policy of October 19, 2026
 
-Patienten- und Untersuchungshashes sind **lokale Pseudonyme**, keine anonymen
-Exportkennungen. Sie bleiben einschließlich Identitätsfingerprints und historischer
-Hash-Aliase am Quellknoten. Auch ein verschlüsseltes Transferpaket, ein gekürzter
-Hash oder ein umbenanntes Pseudonym erlaubt keine Weitergabe an Hub, Browser oder
-Forschungsexport. Datei-Inhaltsprüfsummen erfüllen einen anderen Integritätszweck;
-ihre Zulässigkeit beweist jedoch keine Anonymität der exportierten Daten.
+Patient and examination hashes are **local pseudonyms**, not anonymous export
+identifiers. They remain at the source node, including identity fingerprints and
+historical hash aliases. An encrypted transfer package, shortened hash, or renamed
+pseudonym does not permit disclosure to the hub, browser, or research export.
+File content checksums serve a different integrity purpose; their admissibility
+does not establish anonymity of the exported data.
 
-Die verbindlichen Verträge sind
-[lokale Patientenidentität](../../docs/source_patient_matching.md) und
-[lokale Identitäts-Keyrings](../../docs/identity_ring_enrollment.md). Umfang und
-Abnahme bleiben ausschließlich in [Anonymization.yml](../Anonymization.yml),
-insbesondere `identity_hash_response_boundary`, `central_identity_salts_disabled`,
-`strict_legacy_hmac_inventory` und `compromised_identity_salt_migration`, sowie
+The binding contracts are [local patient identity](../../docs/source_patient_matching.md)
+and [local identity keyrings](../../docs/identity_ring_enrollment.md). Scope and
+acceptance remain exclusively in [Anonymization.yml](../Anonymization.yml),
+particularly `identity_hash_response_boundary`, `central_identity_salts_disabled`,
+`strict_legacy_hmac_inventory`, and `compromised_identity_salt_migration`, and
 [HubTransfer.yml](../HubTransfer.yml), `local_identity_hash_boundary`.
 
-Die frühere Planung zentral verteilter Zentrumssalts ist damit abgelöst.
-Vault-/SecretSpec-Verteilung von Identitätssalts darf nicht wieder aktiviert
-werden. Etablierte lokale Schlüssel bleiben erhalten; fehlendes Material wird
-weder automatisch neu erzeugt noch durch zentral bezogene Werte ersetzt.
-Historische Salts sind am Quellzentrum weiterhin für die Wiedererkennung nötig,
-auch wenn direkte Identifikatoren gelöscht wurden. Ihre Unterstützung gestattet
-weder alte Authentifizierungsschlüssel noch neue Identitäten mit kompromittierten
-Salts. Historische Medienentschlüsselungsschlüssel haben eine getrennte Aufgabe.
+This supersedes the former plan for centrally distributed center salts.
+Vault/SecretSpec distribution of identity salts must not be reactivated.
+Established local keys remain; missing material is neither automatically
+regenerated nor replaced with centrally obtained values. Historical salts are
+still needed at the source center for recognition, even after direct identifiers
+have been deleted. Supporting them permits neither old authentication keys nor
+new identities with compromised salts. Historical media decryption keys serve
+a separate purpose.
 
-### Aktuelle Berechnung und Aussagegrenzen
+### Current calculation and limits of the claims
 
-Der aktuelle demografische Schreibpfad verwendet unmittelbar:
+The current demographic write path directly uses:
 
 ```text
-K = UTF-8 des validierten lokalen Identitätsgeheimnisses
-M = UTF-8(JSON(["patient-identity-v1", trim(Vorname), trim(Nachname),
-               ISO(Geburtsdatum), trim(center_key)],
+K = UTF-8 of the validated local identity secret
+M = UTF-8(JSON(["patient-identity-v1", trim(first_name), trim(last_name),
+               ISO(date_of_birth), trim(center_key)],
               ensure_ascii=False, separators=(",", ":")))
 patient_hash = hex(HMAC-SHA-256(K, M))
 ```
 
-Belege: `endoreg_db/utils/hashs.py`, Funktionen
-`get_patient_identity_fingerprint` und `calculate_patient_hash`. Das Geburtsdatum
-steht einmal in der Patientennachricht. JSON-Feldgrenzen beseitigen die unten
-beschriebene Legacy-Mehrdeutigkeit; das frühere Doppelhashing ist kein aktueller
-Patientenvertrag. Der Untersuchungshash verwendet eine gesondert markierte
-HMAC-Nachricht mit Patienten-HMAC, Untersuchungsdatum und Zentrum.
+Evidence: `endoreg_db/utils/hashs.py`, functions
+`get_patient_identity_fingerprint` and `calculate_patient_hash`. The date of
+birth appears once in the patient message. JSON field boundaries eliminate the
+legacy ambiguity described below; former double hashing is not the current
+patient contract. The examination hash uses a separately tagged HMAC message
+with patient HMAC, examination date, and center.
 
-`endoreg_db/utils/verify_salt.py::validate_identity_salt` prüft aktive Schlüssel
-auf Mindestlänge, gesperrte Muster und Bytevielfalt. Diese Prüfungen beweisen
-keine zufällige Erzeugung. Explizit registrierte historische Lesegenerationen
-bleiben in `hashs.py::_get_active_salt_bytes` unterstützt. Der Loader
-`config/secret_keyring.py::configured_identity_keyring` weist zentrale Bundles
-und den Modus `secretspec` zurück. Die Antwort-/Transfergrenze liegt in
-`services/privacy/response_boundary.py`; die vollständigen Vertragsdetails und
-Ausnahmen für Inhaltsprüfsummen gehören in die oben verlinkten Quellen.
+`endoreg_db/utils/verify_salt.py::validate_identity_salt` checks active keys for
+minimum length, blocked patterns, and byte diversity. These checks do not prove
+random generation. Explicitly registered historical read generations remain
+supported in `hashs.py::_get_active_salt_bytes`. The loader
+`config/secret_keyring.py::configured_identity_keyring` rejects central bundles
+and `secretspec` mode. The response/transfer boundary is in
+`services/privacy/response_boundary.py`; complete contract details and content
+checksum exceptions belong in the sources linked above.
 
-Bei bekanntem Geheimnis bleibt eine begrenzte Kandidatensuche auch gegen HMAC
-möglich. Homonyme bleiben fachlich mehrdeutig, Schreibvarianten können Identitäten
-aufspalten. Für den aktuellen einzelnen 256-Bit-HMAC gilt die unten erläuterte
-idealisierte Geburtstagsabschätzung; die Doppelhash-Obergrenze betrifft nur den
-historischen Algorithmus. Weder diese Modellrechnung noch die Übertragungssperre
-beweist die Anonymität vollständiger Exporte.
+With a known secret, bounded candidate search remains possible even against
+HMAC. Homonyms remain ambiguous in the domain; spelling variants can split
+identities. The idealized birthday estimate explained below applies to the
+current single 256-bit HMAC; the double-hash upper bound concerns only the
+historical algorithm. Neither this model calculation nor the transmission block
+proves anonymity of complete exports.
 
-Migration und lokale Wiedererkennung müssen historische Generationen und
-zentrumsgebundene Aliase erhalten, Konflikte ablehnen und klinische Beziehungen
-bewahren. Hub-Reidentifikation anhand übertragener Hashes ist kein zulässiges
-Migrationsziel mehr. Ein anderer Transfervertrag benötigt eine separate fachliche
-und technische Definition. Rotation schützt bereits entwendete Hash-/Schlüsselkopien
-nicht rückwirkend; eine Codeänderung löscht keine bereits verteilten Geheimnisse
-oder Hub-Daten und belegt keinen produktiven Migrationsstand.
+Migration and local recognition must retain historical generations and
+center-bound aliases, reject conflicts, and preserve clinical relationships.
+Hub reidentification using transferred hashes is no longer an admissible
+migration goal. A different transfer contract requires a separate domain and
+technical definition. Rotation does not retroactively protect stolen hash/key
+copies; a code change deletes no previously distributed secrets or hub data
+and establishes no production migration state.
 
-### Reproduzierbarkeit dieses Abgleichs
+### Reproducibility of this reconciliation
 
-Am 19.10.2026 wurde ausschließlich die Dokumentation mit dem lokalen Arbeitsbaum
-abgeglichen. Der bestehende Test
-`tests/utils/test_sensitive_meta_hash_security.py` prüft inzwischen ausdrücklich
-Legacy-Kodierungskollisionen **und deren Trennung im aktuellen HMAC**, Wiederholung,
-Salt-Wechsel, 366 Geburtsdaten sowie einen registrierten schwachen historischen
-Salt. Ausführung: `devenv shell -- .devenv/state/venv/bin/pytest
+On October 19, 2026, only documentation was reconciled with the local working
+tree. The existing test `tests/utils/test_sensitive_meta_hash_security.py` now
+explicitly checks legacy encoding collisions **and their separation in the current
+HMAC**, repetition, salt changes, 366 dates of birth, and a registered weak
+historical salt. Execution: `devenv shell -- .devenv/state/venv/bin/pytest
 tests/utils/test_sensitive_meta_hash_security.py -q --tb=short --show-capture=no
---disable-warnings`: **11 bestanden, 1 Warnung**, 0,26 Sekunden; kein Benchmark
-und kein Nachweis für Flottenzustand, Restore oder vollständige Exportabsicherung.
+--disable-warnings`: **11 passed, 1 warning**, 0.26 seconds; not a benchmark or
+evidence of fleet state, restore, or complete export protection.
 
-Die [Implementierungsbewertung vom 19.10.2026](../../docs/endoreg-db-threat-model.md)
-enthält ergänzende empfängerbezogene Risiken. Ihre Aussagen zu einzelnen
-Exportfeldern sind ein Arbeitsbaum-Snapshot und müssen gegen die neuere lokale
-Identitätspolicy geprüft werden; sie erlauben keine verbotene Hashausgabe.
+The [implementation assessment of October 19, 2026](../../docs/endoreg-db-threat-model.md)
+contains additional recipient-specific risks. Its statements about individual
+export fields are a working-tree snapshot and must be checked against the newer
+local identity policy; they permit no prohibited hash output.
 
-## Historische Untersuchung vom 16.10.2026
+## Historical investigation of October 16, 2026
 
-**Die folgenden Formeln, Zeilenverweise und Befunde beschreiben ausschließlich
-den damaligen Stand.** Insbesondere kurze aktive Salts, Doppelhashing und die
-Empfehlung eines künftigen HMAC-Wechsels sind keine Beschreibung des aktuellen
-Schreibpfads. Die historischen Versuche bleiben als Begründung der Migration
-erhalten; aktuelle Bereitschaft und offene Abnahmen stehen nur im Feature-YAML.
+**The following formulas, line references, and findings describe only the state
+at that time.** In particular, short active salts, double hashing, and the
+recommendation for a future HMAC transition do not describe the current write
+path. Historical experiments remain as migration rationale; current readiness
+and open acceptance decisions live only in feature YAML.
 
-Der demografische Patientenhash ist ein deterministisches Pseudonym. Er bietet
-keinen allgemeinen Nachweis der Anonymität: Mit bekanntem Salt können mögliche
-Identitäten nachgerechnet werden. Die größte konkrete Kollisionsquelle ist die
-mehrdeutige Verkettung der Eingabefelder; zufällige kryptografische Kollisionen
-sind unter dem Idealmodell dagegen extrem unwahrscheinlich. Der bestehende
-HMAC-Fingerprint schützt den regulären Speicherpfad vor unterschiedlichen
-Feldaufteilungen, kann aber zwei reale Menschen mit identischen Identitätsdaten
-nicht unterscheiden.
+The demographic patient hash is a deterministic pseudonym. It provides no
+general proof of anonymity: possible identities can be recalculated with a
+known salt. The largest concrete collision source is ambiguous input field
+concatenation; random cryptographic collisions are extremely unlikely under the
+ideal model. The existing HMAC fingerprint protects the regular persistence path
+against different field partitions, but cannot distinguish two real people
+with identical identity data.
 
-Untersuchungsdatum: 16.10.2026. Basis: Arbeitsbaum auf Commit
-`08c1ac0da110343dfc6d0314b24998a1937d9aeb`, einschließlich bereits vorhandener
-uncommitteter Änderungen. Methodische Vorlage:
+Investigation date: October 16, 2026. Basis: working tree at commit
+`08c1ac0da110343dfc6d0314b24998a1937d9aeb`, including preexisting uncommitted
+changes. Methodological template:
 `codex://threads/01a143b2-26ac-7ef2-a191-a0a43760aeda`.
-Anforderungen und Freigabestatus bleiben ausschließlich in
-[Anonymization.yml](../Anonymization.yml), Kriterium
-`sensitive_metadata_resolution`. Dies ist eine technische Untersuchung, keine
-Produktionsfreigabe oder rechtliche Bewertung.
+Requirements and approval status remain exclusively in
+[Anonymization.yml](../Anonymization.yml), criterion
+`sensitive_metadata_resolution`. This is a technical investigation, not
+production approval or a legal assessment.
 
-## Tatsächliche Berechnung
+## Actual calculation
 
-Mit `H = SHA-256`, `hex` als Hexadezimaldarstellung, `||` als Verkettung,
-Vorname `V`, Nachname `N`, ISO-Geburtsdatum `D`, Zentrumsname `C` und Salt `S`
-berechnet der demografische Pfad:
+With `H = SHA-256`, `hex` as hexadecimal representation, `||` as concatenation,
+first name `V`, last name `N`, ISO date of birth `D`, center name `C`, and salt
+`S`, the demographic path calculates:
 
 ```text
 M = UTF-8(V || N || D || C || D || S)
@@ -124,169 +121,164 @@ calculate_patient_hash = hex(H(M))
 SensitiveMeta.patient_hash = hex(H(UTF-8(hex(H(M)))))
 ```
 
-Das Geburtsdatum kommt zweimal vor. Diese Wiederholung liefert keine zusätzliche
-Entropie. Der zweite SHA-256-Aufruf verarbeitet die 64 ASCII-Hexzeichen des ersten
-Digests, nicht dessen 32 Rohbytes. Die Ausgabe bleibt 256 Bit, nicht 512 Bit.
-Belege: `endoreg_db/utils/hashs.py:118–159` und
+The date of birth appears twice. This repetition adds no entropy. The second
+SHA-256 call processes the first digest's 64 ASCII hexadecimal characters, not
+its 32 raw bytes. Output remains 256 bits, not 512 bits. Evidence:
+`endoreg_db/utils/hashs.py:118–159` and
 `endoreg_db/models/metadata/sensitive_meta_logic.py:295–318`.
 
-Der Untersuchungshash fügt das Untersuchungsdatum vor dem Salt ein und wird
-ebenfalls doppelt gehasht (`sensitive_meta_logic.py:321–356`). Ein Patientenhash
-identifiziert somit weder einen Bericht noch zwingend eine einzelne Untersuchung.
-Externe, quellenspezifische Patientenkennungen besitzen einen eigenen Pfad und
-fallen nicht unter die obige demografische Formel.
+The examination hash inserts the examination date before the salt and is also
+double-hashed (`sensitive_meta_logic.py:321–356`). A patient hash therefore
+identifies neither a report nor necessarily a single examination. External,
+source-specific patient identifiers have their own path and are outside the
+demographic formula above.
 
-Der zusätzliche `identity_fingerprint` ist dagegen ein HMAC-SHA-256 über eine
-JSON-Liste mit Versionskennung, getrennten Namen, ISO-Geburtsdatum und numerischer
-Zentrums-ID (`hashs.py:33–52`). Der `identity_salt_fingerprint` ist ein HMAC desselben
-Schlüsselmaterials über die konstante Zeichenfolge `endoreg-identity-salt-v1`
-(`hashs.py:25–30`). Die vier Hash-/Fingerprintfelder speichern jeweils bis zu
-64 Zeichen (`models/metadata/sensitive_meta.py:145–157`). HMAC ist eine standardisierte
-Konstruktion mit geheimem Schlüssel; sie ist nicht mit bloßem Anhängen eines Salt
-gleichzusetzen. [RFC 2104](https://www.rfc-editor.org/rfc/rfc2104.txt)
+The additional `identity_fingerprint`, by contrast, is an HMAC-SHA-256 over a
+JSON list with version tag, separate names, ISO date of birth, and numeric center
+ID (`hashs.py:33–52`). The `identity_salt_fingerprint` is an HMAC under the same
+key material over the constant string `endoreg-identity-salt-v1`
+(`hashs.py:25–30`). The four hash/fingerprint fields each store up to 64
+characters (`models/metadata/sensitive_meta.py:145–157`). HMAC is a standardized
+secret-key construction; it is not equivalent to simply appending a salt.
+[RFC 2104](https://www.rfc-editor.org/rfc/rfc2104.txt)
 
-## Befunde nach Sicherheitsrelevanz
+## Findings by security relevance
 
-### 1 Hohe Relevanz bei bekanntem oder schwachem Salt
+### 1 High relevance with a known or weak salt
 
-Ein Hash ist keine Verschlüsselung mit Rückwärtsfunktion. Reidentifikation kann
-dennoch durch einen Vorwärtsvergleich erfolgen: Kandidaten bilden, mit demselben
-Salt berechnen, mit dem Ziel vergleichen. Sind Name und Zentrum bekannt, besteht
-die Suche möglicherweise nur noch aus Geburtsdaten. Der Test verwendet einen
-bekannten Namen, ein Zentrum und die 366 Tage des Jahres 1980. Das Ziel ist
-synthetisch und ausdrücklich Teil der Kandidatenmenge. Ein Treffer identifiziert
-ein kompatibles Eingabetupel, nicht zwingend eine eindeutige reale Person.
+A hash is not encryption with a reverse function. Reidentification can still
+use forward comparison: construct candidates, calculate with the same salt,
+compare with the target. If name and center are known, the search may consist
+only of dates of birth. The test uses a known name, one center, and the 366 days
+of 1980. The target is synthetic and explicitly part of the candidate set. A
+match identifies a compatible input tuple, not necessarily a unique real person.
 
-Der als Salt bezeichnete Wert wirkt hier als gemeinsames Geheimnis. Bei starkem,
-unbekanntem und geschütztem Schlüssel ist der einfache Offline-Abgleich ohne
-Schlüssel nicht möglich; ein erreichbarer Berechnungsdienst könnte jedoch als
-Vergleichsorakel dienen. Ein solcher Dienst wurde hier nicht nachgewiesen.
-Bei offengelegtem Salt schützt auch der HMAC-Fingerprint nicht vor Kandidatenprüfung.
-Zweimal schnelles SHA-256 ersetzt keine speicherintensive Schlüsselableitung.
+The value called a salt acts here as a shared secret. With a strong, unknown,
+protected key, simple offline comparison without the key is impossible; an
+accessible calculation service could nevertheless act as a comparison oracle.
+No such service was demonstrated here. With a disclosed salt, even the HMAC
+fingerprint does not prevent candidate checking. Two fast SHA-256 applications
+do not replace memory-hard key derivation.
 
-`config/secret_keyring.py:60–84` lehnt leere, mehrzeilige und bestimmte Standardwerte
-ab, erzwingt aber weder Mindestlänge noch zufällige Erzeugung. Ein einzelnes Zeichen
-wird akzeptiert. Wer den gespeicherten Salt-Fingerprint kennt, kann schwache
-Salt-Kandidaten anhand der öffentlichen konstanten Nachricht prüfen, ohne einen
-Patientennamen zu kennen. Das ist kein HMAC-Bruch, sondern eine Folge erratbarer
-Schlüssel. Die tatsächliche Qualität produktiver Schlüssel wurde nicht geprüft.
-Private Schlüsseldateien und explizite Fehler bei ungültiger Konfiguration sind
-bereits vorhanden (`config/identity_hashing.py:30–70`).
+`config/secret_keyring.py:60–84` rejects empty, multiline, and certain default
+values, but enforces neither minimum length nor random generation. A single
+character is accepted. Anyone knowing the stored salt fingerprint can check
+weak salt candidates against the public constant message without knowing a
+patient name. This is not an HMAC break, but a consequence of guessable keys.
+Actual production key quality was not checked. Private key files and explicit
+invalid-configuration failures already exist (`config/identity_hashing.py:30–70`).
 
-### 2 Hohe Integritätsrelevanz durch mehrdeutige Eingabekodierung
+### 2 High integrity relevance of ambiguous input encoding
 
-`AB` plus `C` und `A` plus `BC` ergeben bei sonst identischen Feldern dieselbe
-Bytefolge vor dem Hashen. Für dieses Paar ist Hashgleichheit garantiert. Es handelt
-sich um eine Kodierungskollision, nicht um zwei verschiedene SHA-256-Nachrichten
-mit demselben Digest. Jede Aufteilung von `ABCDEFGH` in zwei nichtleere Namen
-ergibt denselben Legacy-Hash: sieben Feldaufteilungen und 21 gleiche Paare.
+`AB` plus `C` and `A` plus `BC` yield the same pre-hash byte sequence when all
+other fields are identical. Hash equality is guaranteed for this pair. This is
+an encoding collision, not two different SHA-256 messages with the same digest.
+Every partition of `ABCDEFGH` into two nonempty names yields the same legacy
+hash: seven field partitions and 21 equal pairs.
 
-Die reguläre `SensitiveMeta.save()`-Logik berechnet den getrennt kodierten
-Fingerprint und prüft vorhandene Zeilen mit gleichem Patientenhash. Unterschiedliche
-Fingerprints führen zu einem Fehler; auf PostgreSQL wird die Prüfung durch eine
-transaktionale Advisory-Sperre serialisiert
-(`sensitive_meta_logic.py:85–177, 518–535`). Bestehende Integrationstests prüfen die
-Zurückweisung sowohl vor als auch nach Löschung direkter Identifikatoren:
+Regular `SensitiveMeta.save()` logic calculates the separately encoded fingerprint
+and checks existing rows with the same patient hash. Different fingerprints
+raise an error; PostgreSQL serializes the check through a transactional advisory
+lock (`sensitive_meta_logic.py:85–177, 518–535`). Existing integration tests check
+rejection both before and after deletion of direct identifiers:
 `tests/import_files/test_sensitive_identity_guards.py`,
 `test_legacy_name_concatenation_collision_fails_without_partial_writes`.
 
-Dieser Schutz darf nicht dem Hash selbst zugeschrieben werden. Der separate Dienst
-`services/privacy/patient_pseudonyms.py:43–60` berechnet beispielsweise den Legacy-Hash
-und speichert direkt am Patient-Modell, ohne die SensitiveMeta-Konfliktprüfung
-aufzurufen. Dessen vollständiges Verhalten bei Konflikten ist hier nicht dynamisch
-geprüft; eine repositoryweite Garantie für alle Schreibwege wäre daher unbelegt.
+This protection must not be attributed to the hash itself. For example, the
+separate service `services/privacy/patient_pseudonyms.py:43–60` calculates the
+legacy hash and saves directly to the Patient model without invoking the
+SensitiveMeta conflict check. Its complete conflict behavior was not dynamically
+tested here; a repository-wide guarantee for all write paths would be unsupported.
 
-### 3 Hohe fachliche Relevanz identischer demografischer Daten
+### 3 High domain relevance of identical demographic data
 
-Zwei reale Personen mit gleichem Vor- und Nachnamen, Geburtsdatum und Zentrum
-erhalten unter demselben Salt sowohl denselben Patientenhash als auch denselben
-Identitätsfingerprint. Keine größere Hashlänge behebt fehlende Unterscheidungsdaten.
-Die Wahrscheinlichkeit solcher Homonyme benötigt eine reale Verteilung der
-Identitätsmerkmale; sie lässt sich weder aus 256 Bit noch aus synthetischen Tests
-ableiten. Auch mehrere Untersuchungen desselben Patienten am selben Datum werden
-durch die beschriebene Untersuchungshash-Formel nicht auseinandergehalten.
+Two real people with identical first name, last name, date of birth, and center
+receive the same patient hash and identity fingerprint under the same salt.
+No longer hash fixes missing distinguishing data. The probability of such
+homonyms requires a real distribution of identity attributes; it cannot be
+derived from 256 bits or synthetic tests. The examination hash formula described
+also does not distinguish multiple examinations of the same patient on the same
+date.
 
-### 4 Mittlere Relevanz abweichender Schreibweisen und Verknüpfbarkeit
+### 4 Medium relevance of spelling variants and linkability
 
-Groß-/Kleinschreibung, Unicode-Darstellung und innere Leerzeichen werden vom
-Hashhelper nicht vereinheitlicht. Dadurch kann dieselbe Person mehrere Hashes
-erhalten. Äußere Leerzeichen werden in einem vorgelagerten Serializerpfad entfernt,
-nicht allgemein im Hashhelper. Die vorhandene
-[Untersuchung der Eingabevarianten](patient_hash_input_variations.yml) und
-`tests/services/test_patient_identity_input_variations.py` dokumentieren diese Grenze.
+The hash helper does not normalize case, Unicode representation, or internal
+whitespace. The same person can therefore receive multiple hashes. An upstream
+serializer path trims outer whitespace, rather than the hash helper doing so
+generally. The existing [input variation investigation](patient_hash_input_variations.yml)
+and `tests/services/test_patient_identity_input_variations.py` document this limit.
 
-Gleiche Eingaben bleiben mit gleichem Schlüssel verknüpfbar. Der Zentrumsname im
-Legacy-Hash begrenzt direkte Übereinstimmung zwischen unterschiedlich benannten
-Zentren, macht eine Umbenennung aber identitätsrelevant. Der HMAC-Fingerprint nutzt
-stattdessen die numerische Zentrums-ID. Das ist kein allgemeiner Schutz gegen
-Verknüpfung über Zusatzwissen. Solange direkte Identifikatoren noch gespeichert
-sind, kann ein berechtigter Datenbankzugriff außerdem die Zuordnung direkt lesen;
-eine Hashinversion ist dafür unnötig.
+Identical inputs remain linkable with the same key. The center name in the
+legacy hash limits direct matches between differently named centers, but makes
+renaming relevant to identity. The HMAC fingerprint instead uses the numeric
+center ID. This is not general protection against linkage through auxiliary
+knowledge. While direct identifiers remain stored, authorized database access
+can also read the mapping directly; no hash inversion is needed.
 
-## Quantitative Kollisionswahrscheinlichkeit
+## Quantitative collision probability
 
-SHA-256 hat 256 Ausgabebits. Die Sicherheitsbetrachtung muss unterschiedliche
-Hashnachrichten voraussetzen; demografische Gleichheit und identische Kodierungen
-sind davon ausgeschlossen. [NIST FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)
+SHA-256 has 256 output bits. Security analysis must assume distinct hash
+messages; demographic equality and identical encodings are excluded.
+[NIST FIPS 180-4](https://nvlpubs.nist.gov/nistpubs/FIPS/NIST.FIPS.180-4.pdf)
 
-Unter dem Modell unabhängiger, gleichverteilter 256-Bit-Ausgaben gilt für mindestens
-eine Kollision unter `n` unterschiedlichen Nachrichten:
+Under the model of independent, uniformly distributed 256-bit outputs, the
+probability of at least one collision among `n` distinct messages is:
 
 ```text
-p = 1 - Produkt(k = 0 … n-1, 1 - k / 2^256)
+p = 1 - product(k = 0 … n-1, 1 - k / 2^256)
 p ≈ 1 - exp(-n(n-1) / (2 × 2^256))
-p ≈ n(n-1) / (2 × 2^256)   für sehr kleines p
+p ≈ n(n-1) / (2 × 2^256)   for very small p
 ```
 
-| Unterschiedliche Nachrichten | Einzelner idealisierter 256-Bit-Hash | Zwei idealisierte Hashstufen, näherungsweise Obergrenze |
-| ---------------------------- | ------------------------------------ | ------------------------------------------------------- |
-| 1 Million                    | 4,318 × 10⁻⁶⁶                        | 8,636 × 10⁻⁶⁶                                           |
-| 1 Milliarde                  | 4,318 × 10⁻⁶⁰                        | 8,636 × 10⁻⁶⁰                                           |
-| 1 Billion                    | 4,318 × 10⁻⁵⁴                        | 8,636 × 10⁻⁵⁴                                           |
+| Distinct messages | Single idealized 256-bit hash | Two idealized hash stages, approximate upper bound |
+| --- | --- | --- |
+| 1 million | 4.318 × 10⁻⁶⁶ | 8.636 × 10⁻⁶⁶ |
+| 1 billion | 4.318 × 10⁻⁶⁰ | 8.636 × 10⁻⁶⁰ |
+| 1 trillion | 4.318 × 10⁻⁵⁴ | 8.636 × 10⁻⁵⁴ |
 
-Die zweite Spalte gilt unmittelbar nur für eine idealisierte Stufe. Beim konkreten
-Doppelhash können verschiedene Nachrichten bereits innen kollidieren oder
-verschiedene innere Digests außen kollidieren. Eine Vereinigungsschranke im Modell
-zweier idealer Stufen ergibt etwa den doppelten kleinen Wert. Beide Stufen nutzen
-hier dieselbe Funktion; dies ist eine Modellrechnung, kein Unabhängigkeitsbeweis
-für die Implementierung. Doppelhashing liefert keine verdoppelte Sicherheitsstärke.
-Die 50-Prozent-Grenze eines einzelnen idealen 256-Bit-Hashs liegt bei rund
-`4,01 × 10^38` Nachrichten. Das ist kein praktischer Patientenschwellenwert.
+The second column directly applies only to one idealized stage. With the actual
+double hash, different messages can collide internally, or different internal
+digests can collide externally. A union bound in a model of two ideal stages
+yields roughly twice the small value. Both stages here use the same function;
+this is a model calculation, not proof of implementation independence. Double
+hashing does not double security strength. The 50% threshold for a single ideal
+256-bit hash is approximately `4.01 × 10^38` messages. This is not a practical
+patient threshold.
 
-Bei einer Suche nach einer bestimmten Identität ist dagegen die Kandidatenmenge
-entscheidend. Für `K` gleichwahrscheinliche, bekannte Kandidaten und bekannten
-Salt wären im Mittel `(K+1)/2` Vergleiche bis zum Treffer nötig. Namen und
-Geburtsdaten sind real nicht gleichverteilt. Eine Angabe zur Reidentifikationsrate
-oder zu Sekunden pro Patient wäre ohne entsprechendes Experiment unbegründet.
+For a search for a particular identity, the candidate set is decisive instead.
+With `K` equally probable known candidates and a known salt, the average number
+of comparisons until a match would be `(K+1)/2`. Real names and dates of birth
+are not uniformly distributed. A reidentification rate or seconds per patient
+would be unjustified without a corresponding experiment.
 
-## Kontrollierte Versuche und Reproduktion
+## Controlled experiments and reproduction
 
-Die Tests in `tests/utils/test_sensitive_meta_hash_security.py` rufen den tatsächlichen
-Modellrechner und die zentralen Hashhelper auf. Sie verwenden ungespeicherte Modelle,
-öffentliche Testwerte und einen expliziten Experiment-Salt; keine Patientendatenbank
-und kein produktives Schlüsselmaterial werden als Versuchsquelle gelesen.
+Tests in `tests/utils/test_sensitive_meta_hash_security.py` call the actual
+model calculator and central hash helpers. They use unsaved models, public test
+values, and an explicit experimental salt; no patient database or production
+key material is read as an experimental source.
 
-| Versuch                               | Prüfaussage                                                                                                         |
-| ------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Wiederholung und Salt-Wechsel         | Identische Eingabe reproduziert den Hash; veränderter Salt ändert ihn im geprüften Fall                             |
-| Sieben Feldaufteilungen               | Sieben gleiche Legacy-Hashes; alle sechs alternativen Aufteilungen haben einen anderen Fingerprint als die Referenz |
-| 366 Geburtsdaten                      | Alle 366 Hashes sind in dieser Reihe verschieden                                                                    |
-| Bekannter Salt und Ziel im Datumsraum | Genau ein kompatibles Geburtsdatum wird aus 366 Kandidaten gefunden                                                 |
-| Drei kurze Salt-Kandidaten            | Der Ziel-Salt wird allein anhand des Salt-Fingerprints erkannt                                                      |
+| Experiment | Assertion |
+| --- | --- |
+| Repetition and salt change | Identical input reproduces the hash; changing the salt changes it in the tested case |
+| Seven field partitions | Seven equal legacy hashes; all six alternative partitions have a different fingerprint from the reference |
+| 366 dates of birth | All 366 hashes differ in this series |
+| Known salt and target in date space | Exactly one compatible date of birth is found among 366 candidates |
+| Three short salt candidates | The target salt is recognized solely from the salt fingerprint |
 
-Das sind elf Testfälle, keine elf unabhängigen klinischen Stichproben. Ein endlicher
-Versuch ohne zufällige Kollision beweist weder Kollisionsfreiheit noch eine
-populationsbezogene Fehlerrate. Die künstliche Namensaufteilung ist absichtlich
-adversarial; sie schätzt nicht deren Häufigkeit in realen Daten. Die Datumsreihe
-ist deterministisch und nicht repräsentativ für eine Patientenpopulation.
+These are eleven test cases, not eleven independent clinical samples. A finite
+experiment without a random collision proves neither collision freedom nor a
+population error rate. Artificial name partitioning is deliberately adversarial;
+it does not estimate its frequency in real data. The date series is deterministic
+and not representative of a patient population.
 
-Ausführung am 16.10.2026: **11 bestanden**, eine bestehende Pytest-Plugin-Warnung,
-0,11 Sekunden laut Pytest (keine Benchmarkmessung). Vollständiger Pyright-Lauf:
-0 Fehler, 24 Warnungen außerhalb der neuen Testdatei. Ruff erfolgreich; 65
-Strukturmanifeste und 37 Feature-Definitionen gültig. Der Aufruf erfolgte mit den
-bereits installierten Nix-Bibliothekspfaden für PostgreSQL und GCC sowie Binutils
-im `PATH`, entsprechend der lokalen Laufzeitvoraussetzung aus dem Vorlagenthread.
-Die reproduzierbaren Befunde beruhen auf den Testassertionen, nicht auf Laufzeitwerten.
+Execution on October 16, 2026: **11 passed**, one existing Pytest plugin warning,
+0.11 seconds according to Pytest (not a benchmark). Full Pyright: 0 errors,
+24 warnings outside the new test file. Ruff passed; 65 structure manifests and
+37 feature definitions valid. Execution used the already installed Nix library
+paths for PostgreSQL and GCC, with Binutils in `PATH`, matching the local runtime
+prerequisite from the template thread. Reproducible findings rest on test
+assertions, not timing values.
 
 ```sh
 .devenv/state/venv/bin/pyright
@@ -295,27 +287,27 @@ Die reproduzierbaren Befunde beruhen auf den Testassertionen, nicht auf Laufzeit
 ./feature-tracking/tracker.py validate
 ```
 
-Für Datenbank- und Parallelitätsaussagen müssen zusätzlich die vorhandenen
-Identitäts-, Salt-Rotations- und PostgreSQL-Parallelitätstests in einer eingerichteten
-Testumgebung ausgeführt werden. Der Review ersetzt keine solche Integrationsprüfung.
+Database and concurrency claims additionally require running the existing
+identity, salt rotation, and PostgreSQL concurrency tests in a configured test
+environment. This review does not replace such integration testing.
 
-## Folgerungen für die Architektur
+## Architectural implications
 
-Der bestehende versionierte HMAC mit getrennter Feldkodierung ist die geeignetere
-Grundlage für einen künftigen Identitätsschlüssel. Ein Wechsel benötigt eine explizite
-Migration bestehender Beziehungen und der Salt-Generationen; einfaches Ersetzen des
-Legacy-Hashhelpers würde gespeicherte Identitäten verändern. Starke, zufällig
-provisionierte Schlüssel und minimale Zugriffsmöglichkeiten auf Hashes,
-Fingerprints und Berechnungsfunktionen begrenzen Kandidatenangriffe. Ein unbekanntes
-Geheimnis darf dabei nicht durch die Bezeichnung „Salt“ als öffentlich behandelt werden.
+The existing versioned HMAC with separate field encoding is a more appropriate
+basis for a future identity key. A transition requires explicit migration of
+existing relationships and salt generations; simply replacing the legacy hash
+helper would change stored identities. Strong, randomly provisioned keys and
+minimal access to hashes, fingerprints, and calculation functions limit
+candidate attacks. An unknown secret must not be treated as public merely
+because it is called a “salt.”
 
-Alle identitätserzeugenden Schreibwege sollten dieselbe Konfliktprüfung verwenden.
-Demografische Gleichheit bleibt ein Zuordnungshinweis und benötigt bei Mehrdeutigkeit
-einen fachlichen Prüfweg oder eine verifizierte externe Patientenkennung. Ungeprüfte
-Normalisierung oder automatische Zusammenführung wäre keine sichere Korrektur.
+All identity-producing write paths should use the same conflict check.
+Demographic equality remains a linkage hint and requires domain review or a
+verified external patient identifier when ambiguous. Unchecked normalization
+or automatic merging would not be a safe correction.
 
-Publizierbare Kernaussage: Die untersuchte Implementierung erzeugt reproduzierbare
-Pseudonyme, zeigt konstruktiv nachweisbare Kollisionen ihrer Legacy-Feldkodierung
-und erlaubt bei bekanntem Salt eine Wiedererkennung innerhalb vorgegebener
-Kandidatenmengen. Ihre theoretisch geringe kryptografische Kollisionswahrscheinlichkeit
-ist von diesen fachlichen und kodierungsbedingten Risiken strikt zu unterscheiden.
+Publishable core statement: the examined implementation generates reproducible
+pseudonyms, exhibits constructively demonstrable collisions in its legacy field
+encoding, and permits recognition within predefined candidate sets when the salt
+is known. Its theoretically low cryptographic collision probability must be
+strictly distinguished from these domain and encoding risks.

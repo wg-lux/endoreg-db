@@ -641,11 +641,12 @@ definition_of_done:
     - kind: command
       reference: 'Focused Pyright: 0 errors, 0 warnings. Ruff and git diff --check passed. tracker validate:
         all 37 feature definitions valid. Changes remain local; no deployment or production acceptance.'
-    note: Automatic processed coordinate mapping introduces no human review gate. Stored average FPS is
-      not a substitute for decoded PTS. Processing errors preserve the existing generation. Full repository
-      type-check limitations remain as previously recorded.
-    assessed_by: codex-gc10-cleanup-review-20261007
-    assessed_at: '2026-10-08T11:37:41.985021Z'
+    - kind: test
+      reference: '2026-10-20: Partielle Streaming-Inferenz erhält unabhängig beobachtete exklusive Frame-/Zeitgrenze
+        ohne Framecache oder Bildratenableitung. Beide echten Gewichtsquellen und ungültige Grenzen in
+        abschließendem 222-bestanden-Lauf erfolgreich; fokussierter Pyright 0 Fehler/0 Warnungen.'
+    assessed_by: codex-test-review-20261020
+    assessed_at: '2026-10-20T11:24:15.886595Z'
 - id: clinical_frame_quality
   category: requirements
   title: Storage-Reduktion erhält die klinisch erforderliche Framequalität
@@ -1962,6 +1963,10 @@ definition_of_done:
     container timeline; rate-derived timestamp fallbacks are removed.
   - Regression tests compare timestamps and pixels for irregular variable-rate media and nonzero origins,
     and reject missing coordinates, invalid timestamps and replaced generations.
+  - Accepted verified or explicitly unresolved hub provenance supplies complete processed generation-bound
+    decoder coordinates without treating unresolved lineage as verified; conflicting sequences fail closed.
+  - Partial streaming inference retains the independently observed exclusive end boundary after the last
+    scored frame without deriving it from nominal frame rates or requiring an extracted-frame cache.
   - Unused FPS conversions in lx-annotate timeHelpers.ts and timeUtils.ts are removed; annotation navigation
     and export continue to use backend timestamps.
   - Prediction smoothing and minimum durations use persisted presentation-time windows without shifting
@@ -1999,9 +2004,16 @@ definition_of_done:
       reference: 'lx-annotate: vue-tsc --build --force, gezielter ESLint und 50 Vitest-Tests bestanden:
         timeHelpers, ExportAnnotations.pts-contract und VideoExaminationAnnotation.dropdown. Frontend-Strukturprüfung
         und 55 Feature-Definitionen gültig.'
-    note: 'Implementiert: beobachtete Decoder-Zeitstempel, Hash-gebundene kanonische Koordinaten, absolute
-      JPEG-Zeitsuche, zeitbasierte Modellfenster und beobachtete Metadaten. Unbenutzte Array-Einzeldecoder,
-      doppelte Vorhersagelogik, Classifier-Nachverarbeitung und Frontend-FPS-Konvertierungen entfernt.
-      Bestehende Import- und Segmentverträge durch Regressionen geprüft.'
-    assessed_by: codex-fps-20261015-a
-    assessed_at: '2026-10-15T08:33:13.327227Z'
+    - kind: test
+      reference: '2026-10-20: 222 passed, 3 subtests passed in 127.78s; nach ausschließlich testseitiger
+        Korrektur der Hub-Fixture 28 passed in 67.54s. Echte lokale und Hugging-Face-Gewichte, verschlüsselte
+        Frame-Dekodierung, Annahme verifizierter/ungeklärter Provenienz, ungültige Endgrenzen und bestehende
+        Frame-Stream-/Zeitachsenregressionen geprüft.'
+    note: 'Bestehende Decoder- und unveränderte Frontend-Evidenz erhalten. Ergänzt: empfangene verifizierte
+      oder ausdrücklich ungeklärte Provenienz liefert hashgebundene vollständige Koordinaten mit Aufnahmebindung
+      und Konfliktabweisung. Partielle Streaming-Inferenz übernimmt die tatsächlich beobachtete exklusive
+      Endgrenze. 250 Tests und 3 Subtests über abschließende Teilläufe bestanden; geänderte Python-Dateien
+      Pyright 0 Fehler/0 Warnungen. Gesamt-Pyright meldet 13 Fehler in nicht durch diesen Patch geänderten
+      Patient-Matching-Tests; keine repositoryweite oder neue Deployment-Freigabe.'
+    assessed_by: codex-test-review-20261020
+    assessed_at: '2026-10-20T11:24:14.432555Z'

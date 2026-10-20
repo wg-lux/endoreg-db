@@ -1,14 +1,14 @@
-# Wiki and Workflow Selection
+# Wiki workflow guides
 
-## Purpose
-This folder contains workflow guides that may be selected for a future generated
-GitHub Wiki. It is a topic selection, not the full documentation catalog. Start
-at the central [documentation index](../README.md) for maintained contracts,
-runbooks, API references, and setup guides. Repository Markdown remains the
-source of truth; feature scope and readiness evidence live in
-[`feature-tracking/`](../../feature-tracking/).
+These pages cover setup, data loading, annotation, and hub workflows. For the
+full catalog and a guided introduction, use the
+[documentation index](../README.md#contributor-roadmap).
+
+The [publication guide](../documentation_governance.md#publication-boundary)
+explains how repository pages may be selected for a generated Wiki.
 
 ## Pages
+
 - [New setup overview](new_setup_overview.md)
 - [General purpose and operating model](new_setup_general_purpose.md)
 - [Dataloader YAML authoring](dataloader_yaml_authoring.md)
@@ -20,8 +20,7 @@ source of truth; feature scope and readiness evidence live in
 
 ## Canonical companion guides
 
-These maintained pages complement the workflow material and are catalogued in
-the [documentation index](../README.md):
+Related guides:
 
 - [Configuration and environment](../../setup/CONFIGURATION_GUIDE.md)
 - [Data privacy](../../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
@@ -31,7 +30,6 @@ the [documentation index](../README.md):
 
 ## Historical Planning Context
 
-[Hub ingest gap closure](hub_ingest_gap_closure.md) retains design context. Its
-implementation status is owned by
-[`feature-tracking/done/HubIngest.yml`](../../feature-tracking/done/HubIngest.yml),
-not by checkboxes or verdicts in the Markdown document.
+[Hub ingest gap closure](hub_ingest_gap_closure.md) explains earlier design
+choices. See [HubIngest.yml](../../feature-tracking/done/HubIngest.yml) for its
+acceptance criteria and evidence.

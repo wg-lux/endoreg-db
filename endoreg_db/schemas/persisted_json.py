@@ -19,6 +19,7 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
     parse_dtypes_record_persistence_payload,
 )
 from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferStudyResourceRowsPayload,
     HubTransferSegmentProvenancePayload,
     HubTransferSensitiveMetaPayload,
     HubTransferVideoSegmentPayload,
@@ -771,7 +772,7 @@ def validate_transfer_resource_rows(
     *,
     resource_kind: str | None,
 ) -> dict[str, Any]:
-    if value is None or value == {}:
+    if (value is None or value == {}) and resource_kind != "study":
         return {}
     if not isinstance(value, dict):
         raise ValueError("resource_rows must be a JSON object")
@@ -779,6 +780,8 @@ def validate_transfer_resource_rows(
         model_cls: type[BaseModel] = TransferVideoResourceRows
     elif resource_kind == "report":
         model_cls = TransferReportResourceRows
+    elif resource_kind == "study":
+        model_cls = HubTransferStudyResourceRowsPayload
     else:
         raise ValueError(
             f"Unsupported transfer resource_kind for resource_rows: {resource_kind}"

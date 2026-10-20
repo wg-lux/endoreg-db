@@ -676,9 +676,10 @@ def _resolve_score_timeline(
         frame_numbers=frame_numbers,
         row_count=row_count,
     )
-    terminal_frame_number, terminal_timestamp = _terminal_score_boundary(
-        video,
-        final_frame_number=frame_numbers[-1],
+    terminal_frame_number, terminal_timestamp = (
+        score_result.terminal_boundary
+        if score_result.terminal_boundary is not None
+        else _terminal_score_boundary(video, final_frame_number=frame_numbers[-1])
     )
     if (
         terminal_frame_number <= frame_numbers[-1]

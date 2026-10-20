@@ -8,6 +8,10 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0106_study_transfer.py
+  role: Add standalone study ledger transfers to authenticated hub receipts.
+- file: migrations/0105_study_collection_entry.py
+  role: Add immutable study collection snapshots linked to existing clinical identities.
 - file: migrations/0103_patient_examination_uuid.py
   role: Backfill unique persistent patient and examination UUIDs without changing local primary keys.
 - file: migrations/0102_patient_hash_alias.py

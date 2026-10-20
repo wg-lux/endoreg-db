@@ -26,19 +26,35 @@ definition_of_done:
   category: security
   title: Ausführbarer Patientenresolver nach dem Lean-Annahmevertrag
   acceptance:
-  - Lokale Eingaben stammen aus autorisierten bestehenden Datensätzen und werden vor Ergebnisannahme erneut geprüft; fehlende oder gelöschte Originaldaten und unzulässige Schlüsselgenerationen werden abgewiesen.
-  - Der Resolver nutzt die bestehende Kodierung und HMAC-Funktion mit A-Schlüssel und A-Zentrum; vollständige Aggregation offenbart nur dem Empfänger den Ergebnisstatus und gegebenenfalls einen einzelnen Kandidaten.
-  - Signierte Ergebnisse binden Sitzung, Teilnehmer, Zweck, Publikum, Ablauf, Schema, Generation, Circuit und unveränderliche Datensatzreferenzen an einen lokal aufgezeichneten Workerabschluss.
-  - Atomare persistierte Sitzungsannahme verhindert Replay und konkurrierende Doppelannahme; begrenzte kumulative Anfragen und explizite UUID-Beziehungen ersetzen automatische Zusammenführung.
-  - Negative Tests decken Substitution, Manipulation, Ablauf, unzulässige Generationen, Mehrdeutigkeit und Abbruch ab; Backend- und Vertrauensannahmen bleiben explizit und die Funktion wird nicht automatisch ausgerollt.
+  - Lokale Eingaben stammen aus autorisierten bestehenden Datensätzen und werden vor Ergebnisannahme erneut
+    geprüft; fehlende oder gelöschte Originaldaten und unzulässige Schlüsselgenerationen werden abgewiesen.
+  - Der Resolver nutzt die bestehende Kodierung und HMAC-Funktion mit A-Schlüssel und A-Zentrum; vollständige
+    Aggregation offenbart nur dem Empfänger den Ergebnisstatus und gegebenenfalls einen einzelnen Kandidaten.
+  - Signierte Ergebnisse binden Sitzung, Teilnehmer, Zweck, Publikum, Ablauf, Schema, Generation, Circuit
+    und unveränderliche Datensatzreferenzen an einen lokal aufgezeichneten Workerabschluss.
+  - Atomare persistierte Sitzungsannahme verhindert Replay und konkurrierende Doppelannahme; begrenzte
+    kumulative Anfragen und explizite UUID-Beziehungen ersetzen automatische Zusammenführung.
+  - Negative Tests decken Substitution, Manipulation, Ablauf, unzulässige Generationen, Mehrdeutigkeit
+    und Abbruch ab; Backend- und Vertrauensannahmen bleiben explizit und die Funktion wird nicht automatisch
+    ausgerollt.
   required: true
   verification:
     kind: manual
-    instructions: Typprüfung, fokussierte ORM- und Workerprüfungen sowie tatsächliche Zwei-Prozess-Circuitprüfung ausführen; Bereitstellung und unabhängige Kryptografieprüfung separat bewerten.
+    instructions: Typprüfung, fokussierte ORM- und Workerprüfungen sowie tatsächliche Zwei-Prozess-Circuitprüfung
+      ausführen; Bereitstellung und unabhängige Kryptografieprüfung separat bewerten.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/patient_identity/matching_acceptance.py
+    note: Partial implementation exists in schemas, models, acceptance, input preparation and backend
+      adapter. Integration is unfinished and not deployed. Focused Pyright currently reports13 errors
+      in matching tests (Django User protocol mismatch and unused import); no clean implementation verification
+      claimed. Manuscript revision completed separately and does not use unfinished implementation as
+      study evidence.
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-20T11:37:54.259267Z'
 - id: existing_hmac_2pc_evaluation
   category: security
   title: Isolierte Bewertung privater Vergleiche bestehender Patienten-HMACs
@@ -71,12 +87,28 @@ definition_of_done:
       reference: '39 reference tests passed; focused Pyright and Ruff passed; full Pyright 20 existing
         errors/24 warnings; real Tinier batches 1/10/100 completed, 100: 171.815s and 32482.8MB; structure65/tracker37
         valid'
-    note: 'Isolierte Evaluation ausgeführt: exakter bestehender HMAC mit A-Key/A-Zentrum und in-circuit
-      Epoch-Prüfung; UUIDs und lokale Hashes unverändert. Produktionsbindung, minimaler/atomarer Output,
-      Signatur/Replay-Schutz, unabhängige Administration und vollständige Sicherheitsanalyse fehlen. Referenztests39
-      bestanden; Backendmessungen sind synthetische Einzelläufe, keine Betriebsfreigabe.'
+    - kind: document
+      reference: patient_matching_lean/infrastructure_lx_annotate_linkage_research_revised.docx
+    - kind: document
+      reference: docs/patient_matching_threat_model.md
+    - kind: document
+      reference: patient_matching_lean/manuscript_revision.yml
+    - kind: code
+      reference: scripts/evaluate_patient_hmac.py
+    - kind: test
+      reference: tests/scripts/test_evaluate_patient_hmac.py
+    - kind: command
+      reference: 47 focused tests passed, 1 warning, 57.25s; 18300 direct production-helper candidate
+        evaluations; focused Pyright/Ruff passed; full Pyright 13 existing errors/24 warnings; 66 maps/37
+        feature definitions valid.
+    note: Manuscript manifest now inventories S1–S3, references R1–R7 and two figures with source/data
+      checksums. DOCX contains matching current-source references/citations. Integrity checks passed:22
+      artifact checksums, ZIP CRC,18 XML parts,17 internal relationship targets,3 supplements,7 references,2
+      embedded PNGs identical to inventoried figures; duplicate-free YAML. DOCX reopened and rendered
+      to6 pages; reference page visually reviewed.2104 words.66 structure maps/37 feature definitions
+      valid. No implementation-readiness change.
     assessed_by: codex-patient-uuid-20261019
-    assessed_at: '2026-10-19T15:52:25.490456Z'
+    assessed_at: '2026-10-20T12:45:39.128995Z'
 - id: cross_site_private_patient_matching
   category: security
   title: Privater zentrenübergreifender Abgleich verifizierter gemeinsamer Patientenkennungen

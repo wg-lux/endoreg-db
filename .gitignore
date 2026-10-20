@@ -36,8 +36,11 @@ result-app
 standardized_dataset/ledger/*
 standardized_dataset/knowledge_base/*
 
+output
+output.xml
 
-
+/patient_matching_lean/
+.patient_matching_lean
 # C extensions
 *.so
 

@@ -73,6 +73,11 @@ def _scoped_record(
             for choice in group.patient_finding_classification_choices:
                 choice.uuid = uuid5(namespace, str(choice.uuid))
                 choice.patient_finding_classifications = str(group.uuid)
+                for (
+                    descriptor
+                ) in choice.patient_finding_classification_choice_descriptors:
+                    descriptor.uuid = uuid5(namespace, str(descriptor.uuid))
+                    descriptor.patient_finding_classification_choice = str(choice.uuid)
     return record
 
 
@@ -212,7 +217,9 @@ def _persist_row(
     sync_report_findings(
         examination, _finding_payload(record), user=owner, replace=False
     )
-    persist_patient_examination_dtypes_record_from_ledger(examination)
+    persist_patient_examination_dtypes_record_from_ledger(
+        examination, descriptor_source=record
+    )
     videos, reports = _match_media(meta, examination)
     receipt = TableImportReceiptPayload(
         patient_hash=patient_hash, examination_hash=examination_hash, record=record

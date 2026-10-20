@@ -779,6 +779,30 @@ def _log_transfer_node_auth_failure(
 
 
 def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
+    if transfer_job.resource_kind == TransferJob.ResourceKind.STUDY.value:
+        # Archive an authenticated source snapshot. Local ownership and dataset
+        # membership are resolved only by explicit researcher acceptance.
+        transfer_job.clean()
+        if transfer_job.source_center_id != transfer_job.source_node.owning_center_id:
+            raise ValueError(
+                "Study transfer is outside the authenticated source center"
+            )
+        transfer_job.transfer_status = TransferJob.TransferStatus.APPLIED
+        transfer_job.processing_decision = (
+            TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
+        )
+        transfer_job.status_detail = (
+            "Study bundle archived; local researcher acceptance required"
+        )
+        transfer_job.save(
+            update_fields=[
+                "transfer_status",
+                "processing_decision",
+                "status_detail",
+                "updated_at",
+            ]
+        )
+        return transfer_job
     if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
         return _apply_video_transfer_metadata(transfer_job)
     if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:

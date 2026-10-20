@@ -12,14 +12,21 @@ from endoreg_db.utils import hashs
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("different_source_center", [False, True])
 @pytest.mark.parametrize("different_source_secret", [False, True])
 @pytest.mark.parametrize("different_examination", [False, True])
 def test_source_hashes_are_rejected_without_central_salt(
     monkeypatch: pytest.MonkeyPatch,
+    different_source_center: bool,
     different_source_secret: bool,
     different_examination: bool,
 ) -> None:
     center = Center.objects.create(name="source-local-matching")
+    second_center = (
+        Center.objects.create(name="other-source-local-matching")
+        if different_source_center
+        else center
+    )
     source_secret = secrets.token_hex(32)
     second_secret = secrets.token_hex(32) if different_source_secret else source_secret
     birthday = date(1980, 1, 2)
@@ -32,20 +39,20 @@ def test_source_hashes_are_rejected_without_central_salt(
     payloads = [
         {
             "patient_hash": hashs.get_patient_identity_fingerprint(
-                "Synthetic", "Person", birthday, center.center_key, salt=secret
+                "Synthetic", "Person", birthday, source_center.center_key, salt=secret
             ),
             "examination_hash": hashs.get_patient_examination_hash(
                 "Synthetic",
                 "Person",
                 birthday,
-                center_key=center.center_key,
+                center_key=source_center.center_key,
                 examination_date=examination_date,
                 salt=secret,
             ),
         }
-        for secret, examination_date in (
-            (source_secret, first_examination),
-            (second_secret, second_examination),
+        for source_center, secret, examination_date in (
+            (center, source_secret, first_examination),
+            (second_center, second_secret, second_examination),
         )
     ]
 
@@ -61,9 +68,12 @@ def test_source_hashes_are_rejected_without_central_salt(
                     existing=None, payload=dict(payload), center=center
                 )
 
-    assert (
-        payloads[0]["patient_hash"] != payloads[1]["patient_hash"]
-    ) is different_source_secret
+    assert (payloads[0]["patient_hash"] != payloads[1]["patient_hash"]) is (
+        different_source_secret or different_source_center
+    )
+    assert (payloads[0]["examination_hash"] != payloads[1]["examination_hash"]) is (
+        different_source_secret or different_source_center or different_examination
+    )
     assert not Patient.objects.filter(center=center).exists()
     assert not PatientExamination.objects.filter(patient__center=center).exists()
 
@@ -136,7 +146,7 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
             center=center,
             source_node=nodes[1],
         )
-        with pytest.raises(ValueError, match="different patient"):
+        with pytest.raises(ValueError, match="different patient_hash"):
             transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
                 existing=None,
                 payload={
@@ -156,4 +166,6 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
     assert str(first.pseudo_examination.uuid) == "821d81f1-fb20-4e38-b777-01c67fe03002"
     assert other_node.pseudo_patient_id != first.pseudo_patient_id
     assert other_node.pseudo_examination_id != first.pseudo_examination_id
+    # UUID retries link records; independently created source records stay separate.
+    assert other_node.patient_hash != first.patient_hash
     assert Patient.objects.filter(center=center).count() == 2

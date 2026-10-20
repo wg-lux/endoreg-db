@@ -26,11 +26,9 @@ from endoreg_db.services.reports.pdf_renderer import build_report_template_pdf_p
 from endoreg_db.services.reports.runtime_validation import ReportRuntimeValidationError
 
 
-def _successful_runtime_validation(
-    *_args: object,
-    **_kwargs: object,
-) -> dict[str, object]:
-    return {"ok": True, "issues": []}
+from tests.helpers.report_validation import (
+    successful_runtime_validation as _successful_runtime_validation,
+)
 
 
 @pytest.mark.django_db

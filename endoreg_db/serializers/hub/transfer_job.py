@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from lx_dtypes.models.contracts.hub_transfer import (
     HubTransferSensitiveMetaPayloadData as _SensitiveMetaPayload,
+    HubTransferStudyTransferPayload,
 )
 
 from typing import TypedDict, cast
@@ -132,7 +133,21 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 source_node_key=source_node.node_key,
             )
 
-        self._validate_sensitive_meta_linkage(validated_resource_rows)
+        if resource_kind == TransferJob.ResourceKind.STUDY.value:
+            try:
+                HubTransferStudyTransferPayload.model_validate(
+                    {
+                        **attrs,
+                        "source_center_key": source_center.center_key
+                        if source_center
+                        else "",
+                        "target_node_key": target_node.node_key,
+                    }
+                )
+            except ValueError as exc:
+                raise serializers.ValidationError({"resource_rows": str(exc)}) from exc
+        else:
+            self._validate_sensitive_meta_linkage(validated_resource_rows)
 
         attrs["source_node"] = source_node
         attrs["target_node"] = target_node

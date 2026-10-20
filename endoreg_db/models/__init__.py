@@ -22,6 +22,7 @@ from .aidataset.ai_dataset_split_plan import AIDatasetSplitPlan
 from .other.clinical_reference_import import ClinicalReferenceImport
 from .other.reference_catalog_import import ReferenceCatalogImport
 from .other.study_table_import import StudyTableImport
+from .other.study_collection_entry import StudyCollectionEntry
 from .other.study import Study
 from .other.study_cohort import StudyCohort
 
@@ -421,6 +422,7 @@ __all__ = [
     "ClinicalReferenceImport",
     "ReferenceCatalogImport",
     "StudyTableImport",
+    "StudyCollectionEntry",
     "Study",
     "StudyCohort",
     "Material",

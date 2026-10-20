@@ -27,6 +27,8 @@ entrypoints:
   file: storage_placement.py
   purpose: Atomically reserve capacity and persist the primary placement intent.
 files:
+- file: study_transfer.py
+  role: Explicit owner-bound adoption of authenticated study archive receipts within source-center examination scope.
 - file: video_provenance_recovery.py
   role: Explicit audited acknowledgment of unresolved frame mapping with current hashes and retained original timestamps.
 - file: __init__.py
@@ -78,7 +80,7 @@ files:
 - file: transfer_logging.py
   role: Exports enabled, sanitize, section.
 - file: transfers.py
-  role: Version 5 persistent UUID linkage with authenticated source ownership and encrypted processed-media publication; retired plaintext attachment rejects before staging.
+  role: Version 5 persistent UUID linkage, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
 - file: upload_job_cancellation.py
   role: Persist import cancellation intent; only the owning worker acknowledges it.
 - file: upload_job_files.py
@@ -98,6 +100,7 @@ dependencies:
   - endoreg_db/import_files
   - endoreg_db/models
   - endoreg_db/schemas
+  - endoreg_db/services/studies
   - endoreg_db/services/cases
   - endoreg_db/services/centers
   - endoreg_db/services/imports
@@ -133,6 +136,7 @@ tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_unit.py tests/services/test_ingest_helper_compatibility.py
   files:
+  - tests/services/test_study_hub_transfer.py
   - tests/hub/test_ingest_postgresql_policy.py
   - tests/management/commands/test_import_sap_ish_txt.py
   - tests/management/commands/test_kcache_video_import.py

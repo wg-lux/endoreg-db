@@ -5,12 +5,14 @@ Testet die Logik ohne Django-Setup
 """
 
 import sys
-from datetime import datetime, date, timedelta
+from datetime import date, datetime, timedelta
 from hashlib import sha256
+
 import pytest
 
 from endoreg_db.models.metadata import sensitive_meta_logic
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.services.centers.defaults import resolve_local_center
 
 # Add the endoreg-db directory to the path
 # sys.path.insert(0, '//test/lx-annotate/endoreg-db')
@@ -19,6 +21,7 @@ from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 def generate_random_dob() -> datetime:
     """Generates a random timezone-aware datetime between 1920-01-01 and 2000-12-31."""
     import random
+
     import pytz  # type: ignore
 
     start_date = date(1920, 1, 1)
@@ -246,13 +249,12 @@ def test_sensitive_meta_logic_hashes_validate_required_fields():
         last_name="Lovelace",
         dob=date(1990, 1, 2),
         examination_date=date(2024, 3, 4),
-        center="center-a",
+        center=resolve_local_center(),
     )
 
     patient_hash = sensitive_meta_logic.calculate_patient_hash(instance)
     examination_hash = sensitive_meta_logic.calculate_examination_hash(
         instance,
-        salt="salt",
     )
 
     assert len(patient_hash) == 64

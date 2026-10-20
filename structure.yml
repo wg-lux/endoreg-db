@@ -28,10 +28,6 @@ files:
 - file: .github/workflows/ci.yml
   role: Continuous integration checks
 submodules:
-- name: patient_matching_lean
-  path: patient_matching_lean
-  manifest: patient_matching_lean/structure.yml
-  summary: Supplied formal matching and guarded UUID-link acceptance specification; cryptographic assumptions remain explicit.
 - name: endoreg_db
   path: endoreg_db
   manifest: endoreg_db/structure.yml

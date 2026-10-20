@@ -34,6 +34,20 @@ def artifact_frame_timestamps(
         for timeline in (entry.before, entry.after)
         if entry.artifact_kind == kind.value and timeline.content_hash == digest
     ]
+    if kind == VideoArtifactKind.PROCESSED:
+        proof = payload.video_frame_provenance
+        if (
+            proof is not None
+            and proof.transformations[-1].output.content_hash == digest
+        ):
+            if proof.transformations[0].source.content_hash != video.raw_video_hash:
+                raise ValueError("Verified timestamps belong to another recording.")
+            candidates.append(proof.transformations[-1].output)
+        recovery = payload.video_provenance_recovery
+        if recovery is not None and recovery.processed_timeline.content_hash == digest:
+            if recovery.recording_hash != video.raw_video_hash:
+                raise ValueError("Recovered timestamps belong to another recording.")
+            candidates.append(recovery.processed_timeline)
     if not candidates or any(item != candidates[0] for item in candidates):
         raise ValueError(
             "Selected media requires an unambiguous canonical timestamp sequence."

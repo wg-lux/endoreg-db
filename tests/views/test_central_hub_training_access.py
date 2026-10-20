@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -36,6 +35,11 @@ from endoreg_db.services.frames.materialize_training_frames import (
 )
 from endoreg_db.utils.file_operations import safe_rmtree
 from endoreg_db.utils.storage.files import delete_field_file
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.services.video_storage.canonical_timelines import (
+    capture_canonical_timeline,
+)
+from endoreg_db.services.video_storage.probes import probe_video_artifact
 
 pytestmark = pytest.mark.django_db
 
@@ -82,8 +86,40 @@ def retained_video(
         check=True,
         capture_output=True,
     ).stdout
+    raw_media = subprocess.run(
+        [
+            "ffmpeg",
+            "-v",
+            "error",
+            "-i",
+            "pipe:0",
+            "-c",
+            "copy",
+            "-metadata",
+            "title=retained-source",
+            "-movflags",
+            "frag_keyframe+empty_moov",
+            "-f",
+            "mp4",
+            "pipe:1",
+        ],
+        input=media,
+        check=True,
+        capture_output=True,
+    ).stdout
     center = Center.objects.create(name="Hub source", center_key="hub-source")
-    digest = hashlib.sha256(media).hexdigest()
+    video = VideoFile(
+        center=center,
+        fps=25.0,
+        frame_count=2,
+        duration=0.08,
+        width=64,
+        height=48,
+    )
+    video.raw_file.save("hub-source.mp4", ContentFile(raw_media), save=False)
+    video.processed_file.save("hub-processed.mp4", ContentFile(media), save=False)
+    video.raw_video_hash = get_file_hash(video.raw_file)
+    video.processed_video_hash = get_file_hash(video.processed_file)
     state = VideoState.objects.create(
         anonymized=True,
         sensitive_meta_processed=True,
@@ -96,21 +132,24 @@ def retained_video(
         ready_for_export=True,
         ready_for_export_at=timezone.now(),
         ready_for_export_by="test-suite",
-        processed_file_sha256=digest,
+        processed_file_sha256=video.processed_video_hash,
     )
-    video = VideoFile.objects.create(
-        center=center,
-        state=state,
-        raw_video_hash=digest,
-        processed_video_hash=digest,
-        fps=25.0,
-        frame_count=2,
-        duration=0.08,
-        width=64,
-        height=48,
-        raw_file=ContentFile(media, name="hub-source.mp4"),
-        processed_file=ContentFile(media, name="hub-processed.mp4"),
-    )
+    video.state = state
+    video.save()
+    with video.ensure_local_processed_file() as path:
+        timeline = capture_canonical_timeline(path, probe_video_artifact(path))
+    with video.ensure_local_raw_file() as path:
+        raw_timeline = capture_canonical_timeline(path, probe_video_artifact(path))
+    snapshot = timeline.model_dump(mode="json")
+    raw_snapshot = raw_timeline.model_dump(mode="json")
+    video.meta = {
+        "integrity_status": "ok",
+        "canonical_timeline_history": [
+            {"artifact_kind": "raw", "before": raw_snapshot, "after": raw_snapshot},
+            {"artifact_kind": "processed", "before": snapshot, "after": snapshot},
+        ],
+    }
+    video.save(update_fields=["meta"])
     raw_name = video.raw_file.name
     assert raw_name is not None
     assert video.raw_file.storage.exists(raw_name)
@@ -124,7 +163,9 @@ def retained_video(
     frame = Frame.objects.create(
         video=video,
         frame_number=0,
-        timestamp=0.0,
+        timestamp=timeline.presentation_timestamps[0]
+        * timeline.time_base_num
+        / timeline.time_base_den,
         relative_path="frame_0000000.jpg",
     )
     label = Label.objects.create(name="hub-training-label")
@@ -146,6 +187,65 @@ def retained_video(
     )
     dataset.image_annotations.add(annotation)
     return video, dataset, label_set, int(annotation.pk)
+
+
+@pytest.mark.parametrize("receipt_kind", ["verified", "unresolved"])
+def test_received_provenance_decodes_without_local_history(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+    receipt_kind: str,
+) -> None:
+    from lx_dtypes.models.contracts.video_provenance import (
+        VideoFrameTimeline,
+        VideoFrameProvenancePayload,
+        VideoProvenanceBundle,
+        VideoProvenanceRecovery,
+    )
+    from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+    from endoreg_db.services.hub.video_provenance import (
+        accept_video_provenance,
+        accept_video_provenance_recovery,
+        validate_received_video_timeline,
+    )
+    from endoreg_db.utils.frame_stream import read_video_file_frame_jpeg
+
+    video, _, _, _ = retained_video
+    history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert history
+    source_timeline = VideoFrameTimeline.model_validate(history[0].after.model_dump())
+    timeline = VideoFrameTimeline.model_validate(history[1].after.model_dump())
+    video.meta = {}
+    if receipt_kind == "verified":
+        receipt = VideoProvenanceBundle(
+            transformations=[
+                VideoFrameProvenancePayload(
+                    source=source_timeline,
+                    output=timeline,
+                    source_frame_indices=list(
+                        range(len(timeline.presentation_timestamps))
+                    ),
+                )
+            ]
+        )
+        accept_video_provenance(video, receipt.model_dump(mode="json"))
+    else:
+        recovery = VideoProvenanceRecovery(
+            recording_hash=video.raw_video_hash, processed_timeline=timeline
+        )
+        accept_video_provenance_recovery(video, recovery.model_dump(mode="json"))
+    video.save(update_fields=["meta"])
+    video.refresh_from_db()
+    validate_received_video_timeline(video)
+    decoded = read_video_file_frame_jpeg(video, frame_number=0, file_type="processed")
+    assert decoded.image_bytes.startswith(b"\xff\xd8")
+    assert decoded.timestamp == timeline.presentation_timestamps[0] * (
+        timeline.time_base_num / timeline.time_base_den
+    )
+    assert "canonical_timeline_history" not in (video.meta or {})
+    if receipt_kind == "unresolved":
+        parsed = VideoFileMetaPayload.model_validate(
+            video.meta
+        ).video_provenance_recovery
+        assert parsed is not None and not parsed.electrical_matching_eligible
 
 
 @pytest.mark.parametrize("membership", ["source", "other", "none"])

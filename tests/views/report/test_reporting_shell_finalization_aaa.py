@@ -86,13 +86,12 @@ def test_make_report_arranges_renderer_failure_and_asserts_finalization_rollback
     patient_examination, report = _reporting_context()
     original_draft = dict(patient_examination.report_draft)
 
-    def successful_validation(*_args: object, **_kwargs: object) -> dict[str, object]:
-        return {"ok": True, "issues": []}
+    from tests.helpers.report_validation import successful_runtime_validation
 
     monkeypatch.setattr(
         "endoreg_db.views.patient_report.patient_examination_report."
         "validate_final_report_submission",
-        successful_validation,
+        successful_runtime_validation,
     )
     monkeypatch.setattr(
         "endoreg_db.views.patient_report.patient_examination_report."
@@ -126,7 +125,9 @@ def test_make_report_arranges_identity_mismatch_and_asserts_no_callee_or_mutatio
 ) -> None:
     # Arrange
     patient_examination, report = _reporting_context()
-    validate = Mock(return_value={"ok": True, "issues": []})
+    from tests.helpers.report_validation import successful_runtime_validation
+
+    validate = Mock(side_effect=successful_runtime_validation)
     persist = Mock(return_value=(101, 202))
     monkeypatch.setattr(
         "endoreg_db.views.patient_report.patient_examination_report."
@@ -169,7 +170,9 @@ def test_make_report_arranges_no_frame_selections_and_asserts_empty_export(
 ) -> None:
     # Arrange
     patient_examination, report = _reporting_context()
-    validate = Mock(return_value={"ok": True, "issues": []})
+    from tests.helpers.report_validation import successful_runtime_validation
+
+    validate = Mock(side_effect=successful_runtime_validation)
     persist = Mock(return_value=(None, None))
     monkeypatch.setattr(
         "endoreg_db.views.patient_report.patient_examination_report."

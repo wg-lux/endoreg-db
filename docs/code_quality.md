@@ -4,41 +4,38 @@ This document describes the repository's executable quality controls. Current
 scope and readiness evidence remain in
 [`feature-tracking/CodeQuality.yml`](../feature-tracking/CodeQuality.yml).
 
-## Verbindliche Abnahme: zentrale Medien-Hashes und Laufzeitpfade
+## Mandatory acceptance: centralized media hashes and runtime paths
 
-Diese Grenzen gelten für jede zukünftige Änderung an Import, Speicherung,
-Streaming, Integritätsprüfung, Bereinigung und Export. Abweichende lokale
-Implementierungen sind ein Abnahmehindernis.
+These boundaries apply to every future change to import, storage, streaming,
+integrity checks, cleanup, and export. Divergent local implementations prevent
+acceptance.
 
-- Gespeicherte Video- und Reportartefakte verwenden
-  `VideoArtifactFieldFile.get_hash()` beziehungsweise
-  `ReportArtifactFieldFile.get_hash()`. Beide delegieren an
-  `endoreg_db.utils.hashs.get_file_hash`; Re-Exports dürfen keine eigene
-  Implementierung enthalten. Lokale Eingangsdateien verwenden denselben Helper.
-  Eine Prüfung von Größe, Änderungszeit und Hash derselben Quellgeneration darf
-  weiterhin den zentralen nativen `stable_file_identity`-Vertrag verwenden.
-- Der Artefakt-Hash beschreibt den Klartext. Verschlüsselte FieldFiles werden
-  über ihren authentifizierten Storage-Stream gelesen, nicht über ihren
-  Ciphertext-Pfad. Fehlende Dateien, Authentifizierungsfehler und nicht verfügbare
-  Hash-Backends müssen fehlschlagen; ein Ersatzwert ist unzulässig.
-- Die zentrale Pfadverwaltung (auch als „EndoregPathsModule“ bezeichnet) ist
-  `endoreg_db.utils.paths`. Ihr typisierter Vertrag heißt `EndoregPathsModel`;
-  Verbraucher verwenden `get_runtime_paths()` und die vorhandenen
-  StorageTier- und Boundary-Helper. `LX_RUNTIME_ROOT` ist die einzige
-  Konfigurationsquelle dieser Laufzeittopologie. Private Pfadmodelle,
-  importzeitlich aufgelöste Medienpfade, wiederbelebte Pfadkonstanten und
-  alternative Root-Umgebungsvariablen sind unzulässig.
-- Tests ändern den Root über `LX_RUNTIME_ROOT` und leeren anschließend den
-  Pfadcache; lokale Test-Seams ersetzen `get_runtime_paths()` durch ein
-  typisiertes Modell. Das Auflösen eines Pfades erzeugt keine Verzeichnisse.
-  Pfade außerhalb der jeweils erlaubten Grenze werden abgewiesen.
+- Stored video and report artifacts use `VideoArtifactFieldFile.get_hash()` and
+  `ReportArtifactFieldFile.get_hash()`, respectively. Both delegate to
+  `endoreg_db.utils.hashs.get_file_hash`; re-exports must not contain their own
+  implementation. Local input files use the same helper. Checking the size,
+  modification time, and hash of the same source generation may continue to use
+  the central native `stable_file_identity` contract.
+- The artifact hash describes plaintext. Encrypted FieldFiles are read through
+  their authenticated storage stream, not their ciphertext path. Missing files,
+  authentication errors, and unavailable hash backends must fail; substitute
+  values are prohibited.
+- Central path management (also called “EndoregPathsModule”) lives in
+  `endoreg_db.utils.paths`. Its typed contract is `EndoregPathsModel`; consumers
+  use `get_runtime_paths()` and the existing StorageTier and boundary helpers.
+  `LX_RUNTIME_ROOT` is the only configuration source for this runtime topology.
+  Private path models, media paths resolved at import time, revived path
+  constants, and alternative root environment variables are prohibited.
+- Tests change the root through `LX_RUNTIME_ROOT` and then clear the path cache;
+  local test seams replace `get_runtime_paths()` with a typed model. Resolving a
+  path creates no directories. Paths outside the applicable boundary are rejected.
 
-Die ausführbare Abnahme besteht aus `tests/contracts/test_media_centralization.py`,
-`tests/utils/test_paths.py`, `tests/utils/test_file_operations.py` und
-`tests/services/test_video_source_hash.py`. Nach Pyright müssen diese Tests sowie
-die betroffenen Import-/Streamingtests bestehen. Zusätzlich prüft das Review
-neue Aufrufstellen auf Umgehungen dieser zentralen APIs. Hashes für Patienten,
-Signaturen oder andere Nicht-Medieninhalte fallen nicht unter den Artefaktvertrag.
+Executable acceptance consists of `tests/contracts/test_media_centralization.py`,
+`tests/utils/test_paths.py`, `tests/utils/test_file_operations.py`, and
+`tests/services/test_video_source_hash.py`. After Pyright, these tests and the
+relevant import/streaming tests must pass. Review also checks new call sites for
+bypasses of these central APIs. Hashes for patients, signatures, or other non-media
+content are outside the artifact contract.
 
 ## Dead-code process
 
@@ -85,28 +82,27 @@ are desirable. Update it only as part of a named cohort:
 
 ## Reproducible quality run
 
-Die aktuellen Metriken werden aus den bestehenden Guards abgeleitet; historische
-Testergebnisse im Feature-Tracker sind keine aktuellen Sollzähler. Nach einer
-geprüften Architekturänderung werden nur die zugehörigen YAML-Inventare angepasst:
+Current metrics are derived from existing guards; historical test results in
+the feature tracker are not current target counts. After a reviewed architecture
+change, only the corresponding YAML inventories are updated:
 
 ```bash
 devenv tasks run quality:dead-code quality:boundaries
 .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
 ```
 
-Für die Berichtsauswahl liegt die Orchestrierung in
-`endoreg_db/services/reports/frame_selection.py`. Der HTTP-Adapter liegt unter
-`endoreg_db/views/patient_report/patient_examination_report.py`, die PDF-Redaktion
-unter `endoreg_db/views/pdf/pdf_redaction.py`. Die bestehenden Testdateien bleiben
-in `tests/views/report/`; Mock-Ziele müssen die neuen Python-Modulpfade verwenden.
-Die Auswahl wird ausschließlich im validierten `PatientExaminationReport.editor_payload`
-gespeichert. Zusätzliche Berichtsvideo-/Frame-Container sind kein zweiter Vertrag.
+Report selection orchestration lives in
+`endoreg_db/services/reports/frame_selection.py`. The HTTP adapter is in
+`endoreg_db/views/patient_report/patient_examination_report.py`, and PDF redaction
+in `endoreg_db/views/pdf/pdf_redaction.py`. Existing test files remain in
+`tests/views/report/`; mock targets must use the new Python module paths.
+Selection is stored exclusively in the validated `PatientExaminationReport.editor_payload`.
+Additional report video/frame containers do not constitute a second contract.
 
-Die fokussierte Prüfung dieser Grenzen lautet:
-Fehlende Entwicklungswerkzeuge werden vorher mit
-`devenv tasks run agent:sync` installiert. Die folgenden Aufrufe verwenden die
-vorbereitete Umgebung direkt; ein zusätzliches `devenv shell` kann eine erneute
-Umgebungssynchronisierung auslösen und gehört nicht in diese Testaufrufe.
+Focused verification of these boundaries follows below. Install missing
+development tools first with `devenv tasks run agent:sync`. These commands use
+the prepared environment directly; an additional `devenv shell` can trigger
+another environment synchronization and does not belong in these test calls.
 
 ```bash
 .devenv/state/venv/bin/pyright
@@ -119,10 +115,10 @@ Umgebungssynchronisierung auslösen und gehört nicht in diese Testaufrufe.
   tests/scripts/test_check_lx_dtypes_model_inventory.py -q
 ```
 
-Für Modell- und Query-Verträge werden die vorhandenen
-`tests/app/test_clean_layer_cohorts.py` und
-`tests/scripts/test_check_lx_dtypes_model_inventory.py` verwendet; die entfernte
-Datei `tests/app/test_model_import_boundaries.py` ist kein ausführbarer Testaufruf.
+Model and query contracts use the existing
+`tests/app/test_clean_layer_cohorts.py` and
+`tests/scripts/test_check_lx_dtypes_model_inventory.py`; the removed
+`tests/app/test_model_import_boundaries.py` is not an executable test call.
 
 `devenv tasks run quality:code-regression` runs Pyright, the dead-code guard,
 the boundary guard, and the fast Pytest marker lane in the synchronized project

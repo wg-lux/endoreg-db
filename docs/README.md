@@ -1,36 +1,51 @@
 # EndoReg-DB Documentation
 
-This directory contains architecture contracts, developer references, and
-operational runbooks for `endoreg-db`. Feature scope, implementation status, and
-production-readiness evidence live only in [`feature-tracking/`](../feature-tracking/README.md).
-Do not infer completion from a document title or checklist.
+Use this guide to learn the project, find a workflow, and choose a contribution.
+The [feature tracker](../feature-tracking/README.md) records scope, progress,
+and verification evidence.
 
-Generated Sphinx output belongs under `docs/build/` and must remain untracked.
-Cross-repository ownership, lifecycle, and publication rules are defined in the
-[documentation governance contract](documentation_governance.md).
+## Contributor roadmap
 
-## Start Here
+1. **Understand the project.** Read the [project overview](project_overview.md)
+   and [privacy guide](../setup/HOW_WE_KEEP_DATA_PRIVATE.md). Follow how reports,
+   videos, and clinical records connect.
+2. **Run a local checkout.** Follow the [quick start](../README.md#quick-start)
+   and [configuration guide](../setup/CONFIGURATION_GUIDE.md). Run
+   `devenv tasks run test:fast` to check the development environment.
+3. **Explore one workflow.** Try the [Django shell examples](developer_examples.md).
+   Choose reporting, media, data loading, or APIs from the topic lists below.
+   Read its contract and relevant tests alongside the implementation.
+4. **Choose a focused contribution.** Use [project development](#project-development)
+   to find an area that interests you. Read its feature YAML, acceptance criteria,
+   and existing evidence. Documentation fixes and test improvements are useful
+   starting points. Follow [AGENTS.md](../AGENTS.md) for coordination and locks.
+5. **Verify and explain the change.** Run the required checks and update the
+   relevant documentation. Record verification in the feature tracker. Describe
+   the problem, resulting behavior, and checks so a reviewer can assess the work.
 
-- [Repository overview and quick start](../README.md)
-- [Project capabilities and deployment roles](project_overview.md)
-- [Configuration and deployment settings](../setup/CONFIGURATION_GUIDE.md)
-- [Data privacy and protected storage](../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
-- [AI model setup](../setup/AI_MODEL_SETUP.md)
-- [CPU profiling quick start: imports and reimports](profiling.md)
-- [Feature readiness tracker](../feature-tracking/README.md)
-- [Model layer map for agents and maintainers](model_layer_map_for_agents.md)
-- [Interactive Django shell examples](developer_examples.md)
-- [Database backup and recovery](backup_recovery.md)
-- [Optional companion tools](companion_tools.md)
+## Project development
+
+These areas organize the work tracked in the repository. Open the linked YAML
+for current criteria and evidence. Use them to agree on a focused contribution
+with maintainers.
+
+| Area | Focus | Tracked work |
+| --- | --- | --- |
+| Reliable imports | Input validation, duplicate detection, retries, and recovery | [Import pipeline](../feature-tracking/ImportPipelineRobustness.yml) |
+| Media lifecycle | Bounded video storage, streaming, cleanup, and timeline integrity | [Video storage](../feature-tracking/VideoStorageNormalization.yml) |
+| Clinical reporting | Report import, editing, persistence, and assisted reporting | [Reporting](../feature-tracking/Reporting.yml), [API integration](../feature-tracking/AssistedReportingApiIntegration.yml) |
+| Shared clinical definitions | Typed, repeatable loading of terminology and YAML data | [Data loading](../feature-tracking/DataLoading.yml) |
+| APIs and privacy | Stable endpoints, access control, anonymization, and review | [API contracts](../feature-tracking/ApiContracts.yml), [anonymization](../feature-tracking/Anonymization.yml) |
+| Maintainability | Clear ownership, focused helpers, useful tests, and documentation | [Code quality](../feature-tracking/CodeQuality.yml), [documentation](../feature-tracking/Documentation.yml) |
 
 ## Browse by task
 
 - [Install, configure, or deploy](#deployment-and-operations)
-- [Understand data models and domain contracts](#architecture-and-domain-contracts)
-- [Integrate through APIs or manage access](#api-access-and-security)
-- [Load seed data or configure reports and AI](#data-loading-and-reporting)
-- [Import, store, stream, or annotate media](#media-and-annotation)
-- [Find historical design context](#historical-and-migrated-planning-documents)
+- [Understand data models](#architecture-and-domain-contracts)
+- [Use APIs or manage access](#api-access-and-security)
+- [Load data or configure reports and AI](#data-loading-and-reporting)
+- [Work with media and annotations](#media-and-annotation)
+- [Explore design history](#historical-and-migrated-planning-documents)
 
 ## Architecture and Domain Contracts
 
@@ -116,9 +131,8 @@ storage, transcoding, publication, or cleanup behavior.
 
 ## Historical and Migrated Planning Documents
 
-The following documents retain design history or durable rationale, but their
-checkboxes, verdicts, and progress statements are not authoritative. Use the
-linked feature definition for current status and evidence.
+These pages explain earlier designs and decisions. Their linked feature YAML
+records current scope and evidence.
 
 - [Colonoscopy requirements plan](colonoscopy-requirements-plan.md) →
   [`Colonoscopy.yml`](../feature-tracking/Colonoscopy.yml)
@@ -133,23 +147,24 @@ linked feature definition for current status and evidence.
 - [Hub ingest gap-closure plan](wiki/hub_ingest_gap_closure.md) →
   [`HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
 
-- [Report import concurrency implementation notes](report_import_concurrency_implementation.md) describe design and implementation context; current scope and readiness belong to [`Reporting.yml`](../feature-tracking/Reporting.yml).
-- [Video data-retention investigation](video_datenerhalt_gc02_gc10_20260923.md) is dated investigation evidence; current scope belongs to [`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml).
+- [Report import design](report_import_concurrency_implementation.md) →
+  [Reporting.yml](../feature-tracking/Reporting.yml)
+- [Historical video data-retention investigation](video_datenerhalt_gc02_gc10_20260923.md) →
+  [VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml)
 
 ## Authoring Rules
 
-- Write maintained documentation in English. Preserve exact identifiers,
-  commands, protocol values, and clinical terms where translation would change
-  their meaning.
-- Write current behavior as a contract or runbook, not as a completion claim.
-- Use **implemented** for behavior evidenced in this repository, **verified**
-  only when the feature tracker records reproducible evidence and an assessor,
-  and **deployed** only for an explicitly identified runtime environment.
-- Put new scope, acceptance criteria, and readiness evidence in the relevant
-  feature YAML before implementation.
-- Use repository-relative Markdown links; do not publish workstation paths.
-- Prefer YAML configuration over hardcoded setup instructions where applicable.
-- Use `load_base_db_data` for base dataset bootstrap instructions.
-- API examples use `snake_case`; frontend conversion happens at its central API boundary.
-- Video and report heavy endpoints belong under `/api/media/...` in examples.
-- Assign one canonical owner per topic and merge or clearly scope duplicates.
+- Write in English with short sentences and direct wording. Preserve exact
+  identifiers, commands, protocol values, and clinical terms.
+- Describe behavior in guides and runbooks. Keep scope, acceptance criteria,
+  and readiness evidence in the relevant feature YAML.
+- Distinguish **implemented**, **verified**, and **deployed**. See
+  [documentation governance](documentation_governance.md) for definitions,
+  review rules, and publication requirements.
+- Link to the main guide for a topic and keep related pages focused.
+  Use repository-relative links instead of workstation paths.
+- Prefer YAML configuration and `load_base_db_data` for base data setup.
+- Use `snake_case` in API examples. Frontend conversion happens at the central
+  API boundary. Heavy video and report endpoints use `/api/media/...`.
+- Regenerate generated references from their source. Keep Sphinx build output
+  under `docs/build/` and out of version control.

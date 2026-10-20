@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 files:
+- file: study_collection_entry.py
+  role: Immutable shared typed study ledger snapshots and server-computed evaluations linked to existing examinations.
 - file: unit.py
   role: Measurement-unit catalog.
 - file: study.py

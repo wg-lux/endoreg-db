@@ -150,10 +150,16 @@ def test_extraction_resolves_same_identity_and_review_for_video_and_report(
         )
         assert data["patient_first_name"] == "Ada"
         assert data["patient_last_name"] == "Lovelace"
-        assert data["patient_hash_display"] == f"...{expected_patient_hash[-8:]}"
-        assert (
-            data["examination_hash_display"] == f"...{expected_examination_hash[-8:]}"
-        )
+        # Hashes support local resolution only, including their shortened displays.
+        assert not {
+            "patient_hash",
+            "examination_hash",
+            "patient_hash_display",
+            "examination_hash_display",
+            "identity_fingerprint",
+        }.intersection(data)
+        assert expected_patient_hash.encode() not in response.content
+        assert expected_examination_hash.encode() not in response.content
 
 
 @pytest.mark.django_db

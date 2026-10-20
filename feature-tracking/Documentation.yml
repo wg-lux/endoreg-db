@@ -120,9 +120,12 @@ definition_of_done:
     across repository boundaries.
   - Pull requests run checks only for relevant changes, a periodic full check detects external link rot
     and drift, and exceptions include an owner, reason, and expiration date.
-  - Language validation distinguishes canonical English runbooks from historical German operational reports
-    required by AGENTS.md; converting prose YAML to Markdown preserves report evidence and does not introduce
-    an unreviewed language-policy exemption.
+  - Repository documentation prose, including historical operational and security reports, is available
+    in English as requested by the user. Translation preserves technical contracts, historical measurements,
+    verification outcomes, code identifiers, commands, and necessary quoted interface labels; clinical
+    report generation remains outside this documentation-only change.
+  - Converting prose YAML to Markdown preserves report evidence and does not introduce an unreviewed language-policy
+    exemption.
   required: true
   verification:
     kind: manual
@@ -144,27 +147,45 @@ definition_of_done:
         TEST_DB_HOST=/tmp/endoreg-idempotency-pg.Pv5sn3 TEST_DB_PORT=55439 TEST_DB_USER=admin TEST_DB_NAME=idempotency_evidence
         RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_video_import_service.py
         tests/views/media/test_video_ready_export.py tests/scripts/test_check_documentation_governance.py
-        -q --tb=short -x: 47 passed, 2 warnings, 4 subtests passed in 179.59s. Alle sieben vom Nutzer
-        gemeldeten Fehlerfaelle bestanden, einschliesslich teurem Videoimport. Pyright zuvor 0 errors,
-        0 warnings; Ruff bestanden.'
+        -q --tb=short -x: 47 passed, 2 warnings, 4 subtests passed in 179.59s. All seven user-reported
+        failure cases passed, including expensive video import. Prior Pyright: 0 errors, 0 warnings; Ruff
+        passed.'
     - kind: command
       reference: '.devenv/state/venv/bin/python scripts/check_documentation_governance.py: 2 non_english_source
         errors (historical report and existing standards review)'
+    - kind: command
+      reference: '2026-10-20: scoped git diff --check passed; link target, inline identifier and code-fence
+        preservation reviewed; 37 feature definitions valid'
     note: 'Seven governance tests check artifact classes, entry points, local links, workstation links,
       sensitive captures, generated-output exceptions, and canonical and related document paths. The live
       inventory and strict Sphinx lanes pass; continuous-integration wiring and executable examples remain
-      outstanding. 2026-09-07: Nach Nutzerfehlerbericht unterscheidet die vorhandene Link-Testfixture
-      root-relative Weblinks (/private.md) von verbotenen Workstation-Links (/home/test/private.md). Produktionsvalidator
-      unveraendert; 47 Tests der gemeinsamen Regression bestanden. Diese lokale Fixturekorrektur ist keine
-      vollstaendige Dokumentationsabnahme.
+      outstanding. 2026-09-07: Following a user-reported failure, the existing link test fixture distinguishes
+      root-relative web links (/private.md) from prohibited workstation links (/home/test/private.md).
+      Production validator unchanged; 47 tests in the combined regression passed. This local fixture correction
+      is not complete documentation acceptance.
 
       2026-10-15: prose YAML conversion exposed a governance policy conflict: docs/video_datenerhalt_gc02_gc10_20260923.md
       is a historical German operational report preserved under AGENTS.md, but the checker enforces English
       on every Markdown source. docs/implementation_standards_review.md already fails the same check.
       No checker exception or weakened policy was introduced. Language-aware report classification needs
-      implementation and verification.'
-    assessed_by: codex-docs-20261015-a
-    assessed_at: '2026-10-15T08:11:30.339793Z'
+      implementation and verification.
+
+
+      2026-10-20: At the user''s explicit request, translated German prose in eleven repository Markdown
+      documents, including historical operational and security reports. Preserved existing local edits,
+      link targets, technical inline identifiers (except translated metadata labels and decimal punctuation),
+      command structure, measurements, dates, and historical verification caveats. Existing application
+      behavior and clinical report generation remain unchanged. Prepared the English source_patient_matching.md
+      translation separately because its active feature lock belongs to codex-patient-uuid-20261019; requested
+      integration or release, including German language qualifiers in the locked docs/scripts manifests.
+      Feature report manifest language qualifier corrected. Scoped git diff --check passes. All 37 feature
+      definitions validate. Cross-repository documentation governance still reports three missing links
+      to preexisting deleted 2pc artifacts and the locked German source document. Structure validation
+      is blocked by the preexisting deleted patient_matching_lean domain and 2pc artifacts. No Python
+      code changed, so Pyright and pytest were not rerun. This editorial translation is not complete documentation-governance
+      or production-readiness acceptance.'
+    assessed_by: codex-docs-english-20261020
+    assessed_at: '2026-10-20T08:13:51.438902Z'
 - id: publication_safety
   category: security
   title: Only approved and sanitized content can be published publicly
@@ -271,6 +292,11 @@ definition_of_done:
     roles.
   - Dashboards or reports show at least inventory coverage, the review_due count, dead links, duplicates,
     expired exceptions, unassigned pages, and publication status.
+  - Introductory guides use short sentences and direct wording. Repeated source-of-truth disclaimers are
+    replaced with a clear link to the feature tracker; security requirements retain their meaning.
+  - The documentation index gives newcomers an ordered path from project overview through local setup,
+    workflow exploration, contribution selection, and verification. Development areas link to feature
+    YAML without duplicating readiness states or inventing delivery dates.
   required: true
   verification:
     kind: manual
@@ -288,8 +314,26 @@ definition_of_done:
       reference: docs/wiki/README.md
     - kind: document
       reference: /lx-parse/lx-data-models/AGENTS.md
-    note: Central navigation separates binding contracts, operations, generated references, and migrated
+    - kind: review
+      reference: '2026-10-20: six guides reviewed; 146 local links and anchors resolve; command blocks
+        unchanged; scoped whitespace and 37 feature definitions pass'
+    note: 'Central navigation separates binding contracts, operations, generated references, and migrated
       planning; wiki candidates and the source of truth are explained. Audience review, navigation metrics,
       and the publication report remain outstanding.
-    assessed_by: Codex
-    assessed_at: '2026-07-31T10:11:28.875645Z'
+
+
+      2026-10-20: Simplified six documentation entry points: README.md, docs/README.md, docs/project_overview.md,
+      docs/wiki/README.md, docs/documentation_governance.md, and feature-tracking/README.md. Shortened
+      introductory sentences and replaced repeated exclusive/source-of-truth disclaimers with direct guidance.
+      Added a five-step contributor roadmap, a data-flow introduction, and development-area links to existing
+      feature YAML. Preserved command examples, security requirements, and the distinction between implementation,
+      verification, and deployment. Reviewed root/docs/feature-tracking map roles: existing navigation
+      and reference responsibilities remain accurate; no ownership, file, or command changes require map
+      edits. All 146 local links and anchors across edited guides resolve; no incoming links target removed
+      headings. Code blocks are unchanged. Scoped git diff --check and all 37 feature definitions pass.
+      Structure validation still fails on previously deleted patient_matching_lean and 2pc artifacts.
+      Documentation governance still reports three preexisting missing 2pc links and the separately locked
+      German source_patient_matching.md. Documentation changes required no Pyright or pytest run. Cross-repository
+      audience review and navigation/report metrics remain outstanding.'
+    assessed_by: codex-docs-english-20261020
+    assessed_at: '2026-10-20T09:07:49.005459Z'

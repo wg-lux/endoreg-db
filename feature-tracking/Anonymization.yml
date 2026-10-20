@@ -31,6 +31,8 @@ definition_of_done:
     patient pseudonyms do not bypass the restriction.
   - File-integrity checksums and approved binary media streaming remain available; blocked responses never
     consume a deferred metadata stream.
+  - Explicit JSON artifact downloads validate identity fields before streaming; rejecting deferred responses
+    preserves normal request completion, resource cleanup and subsequent database access.
   required: true
   verification:
     kind: manual
@@ -51,16 +53,13 @@ definition_of_done:
       reference: tests/services/test_identity_response_boundary.py
     - kind: test
       reference: tests/services/test_fhir_r4_export.py
-    note: 'Local-ID browser and export contracts implemented. Hash matching and aliases stay local. FHIR
-      and selected-case exports use contract 2.0; workbook columns contain local IDs. CSV headers are
-      validated before streaming, OpenAPI type names no longer trigger data-field rejection, arbitrary
-      metadata streams remain closed. Verification: browser/case/timeline/identity suite 76 passed; expanded
-      export+metadata suite 87 passed and one stale version expectation corrected, then FHIR 12 passed;
-      final guard/cohort/download suite 60 passed; shared revision/cohort 16 passed; host workbook/guard
-      16 passed across corrected runs. Focused Pyright/Ruff and all manifests pass. Production approval
-      and deployment are outside this change.'
-    assessed_by: codex-patient-hash-01a1543d
-    assessed_at: '2026-10-19T13:56:18.020409Z'
+    - kind: test
+      reference: '2026-10-20: Datenschutz- und vollständige Anwendungseinstellungs-Suite im abschließenden
+        222-bestanden-Lauf erfolgreich; sichere JSON-Dateiausgabe, blockierte Identitätsfelder, einmaliger
+        Request-Abschluss und weitere Datenbankabfragen geprüft. Geänderte Python-Dateien: Pyright 0 Fehler/0
+        Warnungen.'
+    assessed_by: codex-test-review-20261020
+    assessed_at: '2026-10-20T11:24:13.076308Z'
 - id: central_identity_salts_disabled
   category: security
   title: Keine zentrale Bereitstellung von Identitätssalts
@@ -131,17 +130,17 @@ definition_of_done:
   acceptance:
   - LuxNix secrets-management.yml bleibt die einzige repositoryübergreifende Koordinationsquelle. Zentrale
     Identitätssalt-Auslieferung bleibt gemäß central_identity_salts_disabled deaktiviert; ältere Delivery-Kriterien
-    autorisieren keine Aktivierung. Verschlüsselte lokale Secret-Persistenz gehört zu wg-lux/luxnix
-    feature-tracking/luxnix_secret_lifecycle_readiness.yml, Kriterium encrypted_local_secret_persistence.
-    Der Backendservice übernimmt weder Provisionierung noch Secret-Verteilung.
+    autorisieren keine Aktivierung. Verschlüsselte lokale Secret-Persistenz gehört zu wg-lux/luxnix feature-tracking/luxnix_secret_lifecycle_readiness.yml,
+    Kriterium encrypted_local_secret_persistence. Der Backendservice übernimmt weder Provisionierung noch
+    Secret-Verteilung.
   - Ein typisierter Service verwendet die vorhandene Gruppenmigration und einen festen Schlüssel-Snapshot
     über Preview und Apply; kompatible PostgreSQL-Schreiber werden koordiniert. Preview und Wiederholung
     verändern keine Identitäten; unvollständige Kompromittierungs-Migration rollt vollständig zurück.
   - Ein explizit autorisierter lokaler Rotationsablauf bindet das neue aktive Salz an die erwartete Generation
     und erhält etablierte lokale Lesegenerationen. Keine zentrale Bundle-Injektion, automatische Zufallsgenerierung
     bei fehlendem Material, Default-Salze, stille Fallbacks oder Verwendung kompromittierter Salze für
-    neue Identitäten. Lokale Identitätsschreiber verwenden denselben validierten Schlüssel-Snapshot;
-    dieser Vertrag erlaubt keine zentrale Verteilung an Clients.
+    neue Identitäten. Lokale Identitätsschreiber verwenden denselben validierten Schlüssel-Snapshot; dieser
+    Vertrag erlaubt keine zentrale Verteilung an Clients.
   - Fehlende oder gelöschte Originalidentitäten benötigen unabhängig geprüfte autorisierte Quellen. Übereinstimmung
     mit einem kompromittierten Hash allein bestätigt keine Person. Reviewdateien und Recoverydaten unterliegen
     dem LuxNix-Vertrag für verschlüsselte Persistenz; keine Originaldaten in Logs.
@@ -155,14 +154,14 @@ definition_of_done:
     und mehrdeutige Treffer erfordern Review; klinische Beziehungen werden niemals blind zusammengeführt.
     Abgeschlossene Hashmigration allein erlaubt kein Retirement der Quellgenerationen.
   - Historische Patientenhash-Aliase bleiben lokal, zentrumsgebunden und transaktional mit der Migration
-    erhalten. Historische Untersuchungsreferenzen und bereits exportierte Altbestände benötigen eine
-    eigene geprüfte Kompatibilitätsstrategie ohne erneute Hashübertragung. Hub-Reimport mit Identitätshashes
+    erhalten. Historische Untersuchungsreferenzen und bereits exportierte Altbestände benötigen eine eigene
+    geprüfte Kompatibilitätsstrategie ohne erneute Hashübertragung. Hub-Reimport mit Identitätshashes
     wird gemäß HubTransfer.yml/local_identity_hash_boundary vor Registrierung abgewiesen, auch bei Wiederholungen.
-  - Lokale interne Auflösung verwendet die gemeinsame zentrumsgebundene Aliasauflösung. Browser- und
-    Exportverträge verwenden autorisierte lokale IDs gemäß identity_hash_response_boundary; keine Hashannahme
-    oder Hashausgabe als Kompatibilitätsfallback. Serializer-Validierung schreibt keine Patienten und
-    akzeptiert nur eindeutig aufgelöste Patienten aus autorisierten Zentren; unbekannte oder mehrdeutige
-    Referenzen werden abgewiesen. Allgemeine Untersuchungs-APIs behalten ihre Unterstützung realer Patienten.
+  - Lokale interne Auflösung verwendet die gemeinsame zentrumsgebundene Aliasauflösung. Browser- und Exportverträge
+    verwenden autorisierte lokale IDs gemäß identity_hash_response_boundary; keine Hashannahme oder Hashausgabe
+    als Kompatibilitätsfallback. Serializer-Validierung schreibt keine Patienten und akzeptiert nur eindeutig
+    aufgelöste Patienten aus autorisierten Zentren; unbekannte oder mehrdeutige Referenzen werden abgewiesen.
+    Allgemeine Untersuchungs-APIs behalten ihre Unterstützung realer Patienten.
   - Automatische Medienzuordnung und die Untersuchungs-Modellfassade prüfen den kanonischen Patienten,
     das Zentrum und vorhandene Pseudonymbeziehungen vor jeder Mutation. Historische Patientenaliase verwenden
     dieselben Primärschlüssel; widersprüchliche Untersuchungs- oder Metadatenbeziehungen sowie fehlender
@@ -607,6 +606,10 @@ definition_of_done:
     dürfen schwaches Altmaterial zur Wiedererkennung verwenden.
   - Identity hashing reads the typed Django setting at call time. Production requires a private DJANGO_SALT_FILE,
     rejects default or invalid salts, and never generates a replacement.
+  - Test settings honor configured DJANGO_SALT_FILE or DJANGO_SALT before generating isolated test material;
+    equivalent identities with the same salt and stable center key hash identically across processes.
+    Local test intake uses environment-backed center defaults, preserving explicit center scope and name
+    normalization.
   - Additive keyed identity fingerprints reject ambiguous legacy concatenation and incompatible salt reuse,
     including after identifier erasure. Erased legacy rows without enrollment evidence require explicit
     review.
@@ -739,14 +742,29 @@ definition_of_done:
         warning; full Pyright 0 errors/24 warnings; Ruff passed; 65 structure manifests valid. Synthetic
         no_db characterization only; database concurrency, production keys and clinical homonym rates
         not assessed.'
+    - kind: command
+      reference: '2026-10-20: pytest tests/environment/test_identity_hashing.py tests/services/test_center_defaults.py
+        tests/services/test_patient_identity_input_variations.py tests/media/report/test_sensitive_meta_logic.py
+        -q --tb=short --show-capture=no --disable-warnings: 90 passed, 1 warning in 44.00s. Test settings
+        retain the base profile configured salt and generate only when absent. Independent-process tests
+        cover inline salt, private file precedence, and isolated generation; center fixtures use environment-backed
+        local resolution. Focused Pyright: 0 errors, 1 existing unused-function warning. Ruff and git
+        diff --check passed. Repository Pyright: 13 unrelated patient-matching test errors, 24 warnings;
+        structure lint blocked by six references to previously deleted patient-matching artifacts.'
+    - kind: command
+      reference: '2026-10-20: pytest tests/import_files/test_sensitive_identity_guards.py tests/import_files/test_sensitive_metadata_resolution.py
+        tests/environment/test_secret_resolution.py -q --tb=short --show-capture=no --disable-warnings:
+        80 passed, 133 existing warnings in 142.01s. Import identity preservation, salt enrollment and
+        drift rejection, metadata resolution, and private secret configuration remain covered. Total 170
+        passing tests across both focused runs.'
     note: 'Shared metadata erasure serves normal validation and policy application, retaining hashes,
       fingerprints and clinical links. Focused Pyright passed with zero errors/warnings. Initial identity/rotation/privacy/validation
       suite: 60 passed. Final stale-identity/resurrection guard recheck: 18 passed, 133 existing terminology/plugin
       warnings. Sender integration: 26 passed, then final 2 focused tests passed using sibling backend
       and lx-data-models sources. No production migration or deployment; legacy/hub reconciliation and
       coordinated package rollout remain required.'
-    assessed_by: codex-smh-audit-20261016
-    assessed_at: '2026-10-16T08:12:28.116109Z'
+    assessed_by: codex-env-defaults-20261020
+    assessed_at: '2026-10-20T10:11:24.288575Z'
 - id: quality_evidence
   category: data_integrity
   title: Approval is based on persisted, traceable quality evidence

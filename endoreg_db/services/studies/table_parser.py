@@ -16,6 +16,7 @@ from xlrd.biffh import XLRDError
 
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
     DtypesRecordClassificationChoicePayload,
+    DtypesRecordClassificationChoiceDescriptorPayload,
     DtypesRecordClassificationGroupPayload,
     DtypesRecordFindingPayload,
     DtypesRecordPersistencePayload,
@@ -30,7 +31,7 @@ from lx_dtypes.models.contracts.table_import import (
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
 from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from lx_dtypes.models.meta.ReportMeta import ReportPatientInfo
-from lx_dtypes.terminology.terminology_loader import load_module_kb
+from lx_dtypes.packages import load_registered_package
 from lx_dtypes.utils.study_setup_yaml import MAX_SETUP_BYTES, parse_setup_yaml
 from pydantic import ValidationError
 
@@ -178,12 +179,12 @@ def _columns(spec: TableMapping) -> dict[str, TableColumn]:
     }
     for name, group in spec.finding_groups().items():
         columns[f"findings.{name}"] = group.finding
-        columns.update(
-            {
-                f"findings.{name}.{key}": value
-                for key, value in group.classifications.items()
-            }
-        )
+        for key, classification in group.classification_groups().items():
+            columns[f"findings.{name}.{key}"] = classification.choice
+            for name_descriptor, descriptor in classification.descriptors.items():
+                columns[f"findings.{name}.{key}.descriptors.{name_descriptor}"] = (
+                    descriptor.column
+                )
     return columns
 
 
@@ -259,7 +260,7 @@ def extract_table_records(
         for col in columns.values()
     ):
         raise ValueError("Mapping requests an unregistered extractor")
-    kb = load_module_kb(
+    kb = load_registered_package(
         spec.knowledge_base.knowledge_base_module,
         version=spec.knowledge_base.knowledge_base_version,
     )
@@ -316,6 +317,8 @@ def extract_table_records(
         seen.add(extracted["row_id"])
         try:
             records.append(_lx_record(spec, extracted, number, kb))
+        except TableExtractionError:
+            raise
         except (ValueError, KeyError, ValidationError) as error:
             raise TableExtractionError(
                 number, "record", "invalid_identity_or_terminology"
@@ -338,22 +341,65 @@ def _lx_record(
         finding_name = values[f"findings.{group_name}"]
         if not finding_name:
             if any(
-                values[f"findings.{group_name}.{key}"] for key in group.classifications
+                value
+                for key, value in values.items()
+                if key.startswith(f"findings.{group_name}.")
             ):
                 raise ValueError("Classification without finding")
             continue
         finding_id = uuid5(source_id, group_name)
-        choices = [
-            DtypesRecordClassificationChoicePayload(
-                uuid=uuid5(finding_id, classification),
-                created_at=timestamp,
-                classification=classification,
-                classification_choice=values[f"findings.{group_name}.{classification}"],
-                patient_finding_classifications=str(finding_id),
+        choices: list[DtypesRecordClassificationChoicePayload] = []
+        for classification, mapping in group.classification_groups().items():
+            target = f"findings.{group_name}.{classification}"
+            choice_name = values[target]
+            descriptor_values = {
+                name: values[f"{target}.descriptors.{name}"]
+                for name in mapping.descriptors
+            }
+            if not choice_name:
+                if any(descriptor_values.values()):
+                    raise ValueError("Descriptor without classification choice")
+                continue
+            choice_id = uuid5(finding_id, classification)
+            kb_choice = kb.get_classification_choice(choice_name)
+            descriptors: list[DtypesRecordClassificationChoiceDescriptorPayload] = []
+            for name, mapping_descriptor in mapping.descriptors.items():
+                value = descriptor_values[name]
+                if not value:
+                    continue
+                if name not in kb_choice.classification_choice_descriptors:
+                    raise ValueError(
+                        "Descriptor is not allowed for classification choice"
+                    )
+                try:
+                    typed_value = mapping_descriptor.parse_value(
+                        value, kb.get_classification_choice_descriptor(name)
+                    )
+                except ValueError as error:
+                    raise TableExtractionError(
+                        number,
+                        f"{target}.descriptors.{name}",
+                        "invalid_descriptor_value",
+                    ) from error
+                descriptors.append(
+                    DtypesRecordClassificationChoiceDescriptorPayload(
+                        uuid=uuid5(choice_id, name),
+                        created_at=timestamp,
+                        descriptor_value=typed_value,
+                        classification_choice_descriptor=name,
+                        patient_finding_classification_choice=str(choice_id),
+                    )
+                )
+            choices.append(
+                DtypesRecordClassificationChoicePayload(
+                    uuid=choice_id,
+                    created_at=timestamp,
+                    classification=classification,
+                    classification_choice=choice_name,
+                    patient_finding_classifications=str(finding_id),
+                    patient_finding_classification_choice_descriptors=descriptors,
+                )
             )
-            for classification in group.classifications
-            if values[f"findings.{group_name}.{classification}"]
-        ]
         findings.append(
             DtypesRecordFindingPayload(
                 uuid=finding_id,

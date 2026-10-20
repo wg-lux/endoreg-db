@@ -38,7 +38,7 @@ class VideoMediaViewTests(TestCase):
         payload = response.json()
         assert payload["count"] == 1
         assert payload["results"][0]["id"] == self.video.pk
-        assert payload["results"][0]["original_file_name"] == "video-media.mp4"
+        assert payload["results"][0]["original_file_name"] == f"video-{self.video.pk}"
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_centerless_hub_list_only_returns_anonymized_processed_videos(self) -> None:

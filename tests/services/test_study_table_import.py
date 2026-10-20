@@ -409,3 +409,257 @@ def test_concurrent_imports_create_one_receipt(
     assert sum(counts) == 1
     assert StudyTableImport.objects.count() == 1
     assert PatientFinding.objects.count() == 1
+
+
+DESCRIPTOR_SPEC = SPEC.replace(
+    "finding: {columns: [finding], required: false}",
+    """findings:
+  lesion_1:
+    finding: finding
+    classifications:
+      lesion_size_mm:
+        choice: {value: lesion_size_oval_mm}
+        descriptors:
+          lesion_size_mm_value:
+            column: {columns: [Durchmesser], values: {'zwölf': '12.5'}}
+            value_type: number
+""",
+)
+
+
+def test_descriptor_mapping_custom_words_and_stable_identity(
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    content = HEADER.rstrip() + ",Durchmesser\n" + ROW.rstrip() + ",zwölf\n"
+    records = extract_table_records(
+        parse_table_mapping(DESCRIPTOR_SPEC), content.encode(), ".csv"
+    )
+    assert records == extract_table_records(
+        parse_table_mapping(DESCRIPTOR_SPEC), content.encode(), ".csv"
+    )
+    choice = (
+        records[0]
+        .record.patient_findings[0]
+        .patient_finding_classifications[0]
+        .patient_finding_classification_choices[0]
+    )
+    descriptor = choice.patient_finding_classification_choice_descriptors[0]
+    assert descriptor.descriptor_value == 12.5
+    assert descriptor.patient_finding_classification_choice == str(choice.uuid)
+
+
+@pytest.mark.parametrize(
+    "value,code",
+    [
+        ("unbekannt", "unmapped_value"),
+        ("nan", "invalid_descriptor_value"),
+        ("201", "invalid_descriptor_value"),
+        ("-1", "invalid_descriptor_value"),
+        ("12,5", "invalid_descriptor_value"),
+    ],
+)
+def test_invalid_descriptor_mapping_values(
+    packaged_registry: Path, value: str, code: str
+) -> None:
+    del packaged_registry
+    spec = (
+        DESCRIPTOR_SPEC
+        if value == "unbekannt"
+        else DESCRIPTOR_SPEC.replace(
+            "{columns: [Durchmesser], values: {'zwölf': '12.5'}}", "Durchmesser"
+        )
+    )
+    content = HEADER.rstrip() + ",Durchmesser\n" + ROW.rstrip() + ',"' + value + '"\n'
+    with pytest.raises(TableExtractionError, match=code):
+        extract_table_records(parse_table_mapping(spec), content.encode(), ".csv")
+
+
+@pytest.mark.parametrize("replacement", ["text", "boolean", "integer"])
+def test_descriptor_type_is_owned_by_kb(
+    packaged_registry: Path, replacement: str
+) -> None:
+    del packaged_registry
+    content = HEADER.rstrip() + ",Durchmesser\n" + ROW.rstrip() + ",zwölf\n"
+    with pytest.raises(TableExtractionError, match="invalid_descriptor_value"):
+        extract_table_records(
+            parse_table_mapping(
+                DESCRIPTOR_SPEC.replace(
+                    "value_type: number", f"value_type: {replacement}"
+                )
+            ),
+            content.encode(),
+            ".csv",
+        )
+
+
+def test_classification_alias_rejects_unknown_choice_word(
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    raw = DESCRIPTOR_SPEC.replace(
+        "choice: {value: lesion_size_oval_mm}",
+        "choice: {columns: [finding], values: {Polyp: lesion_size_oval_mm}}",
+    )
+    content = HEADER.rstrip() + ",Durchmesser\n" + ROW.rstrip() + ",zwölf\n"
+    with pytest.raises(TableExtractionError, match="unmapped_value"):
+        extract_table_records(parse_table_mapping(raw), content.encode(), ".csv")
+
+
+@pytest.mark.django_db
+def test_descriptors_survive_import_replay_and_host_rebuild(
+    import_context: tuple[User, Center, Path, Path],
+) -> None:
+    from endoreg_db.models.medical.finding.finding_classification import (
+        FindingClassification,
+        FindingClassificationChoice,
+    )
+    from endoreg_db.services.reports.structured_records import (
+        persist_patient_examination_dtypes_record_from_ledger,
+    )
+    from lx_dtypes.models.contracts.dtypes_record_persistence import (
+        DtypesRecordPersistencePayload,
+    )
+
+    owner, center, _, source = import_context
+    classification, _ = FindingClassification.objects.get_or_create(
+        name="lesion_size_mm"
+    )
+    choice, _ = FindingClassificationChoice.objects.get_or_create(
+        name="lesion_size_oval_mm"
+    )
+    classification.choices.add(choice)
+    Finding.objects.get(name="colon_polyp").finding_classifications.add(classification)
+    raw = DESCRIPTOR_SPEC.replace(
+        "aea05eec-5f48-4b1a-8a75-744e2c7deebf", "aea05eec-5f48-4b1a-8a75-744e2c7deeb0"
+    )
+    spec = save_table_mapping(cast(int, owner.pk), raw)
+    mapping = mapping_path(cast(int, owner.pk), spec.mapping_id)
+    content = HEADER.rstrip() + ",Durchmesser\n" + ROW.rstrip() + ",zwölf\n"
+    atomic_write_file(destination=source, content=[content.encode()])
+    result = import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    examination = PatientExamination.objects.get(pk=result.patient_examination_ids[0])
+    for payload in (
+        examination.dtypes_record,
+        persist_patient_examination_dtypes_record_from_ledger(examination),
+    ):
+        record = DtypesRecordPersistencePayload.model_validate(payload)
+        descriptor = (
+            record.patient_findings[0]
+            .patient_finding_classifications[0]
+            .patient_finding_classification_choices[0]
+            .patient_finding_classification_choice_descriptors[0]
+        )
+        assert descriptor.descriptor_value == 12.5
+    replay = import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    assert replay.replayed_count == 1
+
+
+def test_coloreg_custom_text_linkage_uses_exact_package(
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    raw = (
+        DESCRIPTOR_SPEC.replace("dgvs_reporting", "coloreg")
+        .replace("0.1.0", "0.3.0")
+        .replace("lesion_size_mm:", "coloreg_lesion_id:")
+        .replace("lesion_size_oval_mm", "coloreg_lesion_id_documented")
+        .replace("lesion_size_mm_value", "coloreg_lesion_id_value")
+        .replace(
+            "{columns: [Durchmesser], values: {'zwölf': '12.5'}}",
+            "Meine_Laesionskennung",
+        )
+        .replace("value_type: number", "value_type: text")
+    )
+    content = (
+        HEADER.rstrip()
+        + ",Meine_Laesionskennung\n"
+        + ROW.replace("colon_polyp", "coloreg_polyp_resection").rstrip()
+        + ",lesion-A\n"
+    )
+    record = extract_table_records(parse_table_mapping(raw), content.encode(), ".csv")[
+        0
+    ].record
+    descriptor = (
+        record.patient_findings[0]
+        .patient_finding_classifications[0]
+        .patient_finding_classification_choices[0]
+        .patient_finding_classification_choice_descriptors[0]
+    )
+    assert descriptor.descriptor_value == "lesion-A"
+    assert record.knowledge_base_version == "0.3.0"
+
+
+@pytest.mark.parametrize(
+    "value_type,kb_type,value,expected",
+    [
+        ("integer", "numeric", "12", 12),
+        ("number", "numeric", "1.25e1", 12.5),
+        ("boolean", "boolean", "false", False),
+        ("boolean", "boolean", "true", True),
+        ("selection", "selection", '["a"]', ["a"]),
+        ("text", "text", "source-A", "source-A"),
+    ],
+)
+def test_descriptor_representation_retains_typed_values(
+    value_type: str,
+    kb_type: str,
+    value: str,
+    expected: object,
+) -> None:
+    from lx_dtypes.models.contracts.table_import import TableDescriptor
+    from lx_dtypes.models.knowledge_base.classification_choice_descriptor.ClassificationChoiceDescriptor import (
+        ClassificationChoiceDescriptor,
+    )
+
+    mapping = TableDescriptor.model_validate(
+        {"column": "custom", "value_type": value_type}
+    )
+    descriptor = ClassificationChoiceDescriptor.model_validate(
+        {
+            "name": "test",
+            "classification_choice_descriptor_type": kb_type,
+            "selection_options": ["a", "b"],
+        }
+    )
+    parsed = mapping.parse_value(value, descriptor)
+    assert parsed == expected
+    assert type(parsed) is type(expected)
+
+
+@pytest.mark.parametrize(
+    "value_type,kb_type,value",
+    [
+        ("boolean", "boolean", "yes"),
+        ("number", "numeric", "1_000"),
+        ("integer", "numeric", "12.5"),
+        ("selection", "selection", '["missing"]'),
+        ("selection", "selection", '["a", "a"]'),
+        ("selection", "selection", '["a", "b"]'),
+        ("selection", "selection", "[1]"),
+        ("selection", "selection", "[" * 2000 + "]" * 2000),
+        ("text", "text", "x" * 256),
+    ],
+)
+def test_descriptor_representation_rejects_ambiguous_or_invalid_values(
+    value_type: str,
+    kb_type: str,
+    value: str,
+) -> None:
+    from lx_dtypes.models.contracts.table_import import TableDescriptor
+    from lx_dtypes.models.knowledge_base.classification_choice_descriptor.ClassificationChoiceDescriptor import (
+        ClassificationChoiceDescriptor,
+    )
+
+    mapping = TableDescriptor.model_validate(
+        {"column": "custom", "value_type": value_type}
+    )
+    descriptor = ClassificationChoiceDescriptor.model_validate(
+        {
+            "name": "test",
+            "classification_choice_descriptor_type": kb_type,
+            "selection_options": ["a", "b"],
+        }
+    )
+    with pytest.raises(ValueError):
+        mapping.parse_value(value, descriptor)

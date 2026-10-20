@@ -1,7 +1,7 @@
 # pyright: reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from importlib import import_module
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -11,6 +11,7 @@ from uuid import uuid4
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AbstractBaseUser
 from django.core.management import call_command
+from django.http import StreamingHttpResponse
 from django.test import TestCase
 from django.test.utils import override_settings
 from django.utils import timezone
@@ -458,6 +459,36 @@ class ApplicationSettingsEndpointTests(TestCase):
         download_response = self.client.get(payload["download_url"])
         assert download_response.status_code == 200, download_response.content
         assert download_response["X-Content-SHA256"] == payload["sha256"]
+        assert isinstance(download_response, StreamingHttpResponse)
+        assert (
+            b"".join(cast(Iterator[bytes], download_response.streaming_content)).decode(
+                "utf-8"
+            )
+            == exported
+        )
+        assert AIDataSetExportArtifact.objects.filter(pk=artifact.pk).exists()
+
+    def test_ai_dataset_download_rejection_preserves_database_connection(self):
+        dataset = AIDataSet.objects.create(
+            name=f"dataset-rejected-export-{uuid4().hex[:8]}",
+            dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+            ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+        )
+        with patch(
+            "endoreg_db.services.application_settings.ai_dataset_export.export_to_standardized_structure",
+            return_value={"patient_hash": "source-only-identity", "summary": {}},
+        ):
+            response = self.client.post(
+                "/api/settings/application/ai_dataset_export/",
+                data={"dataset_id": dataset.pk},
+                content_type="application/json",
+            )
+        assert response.status_code == 201, response.content
+        rejection = self.client.get(response.json()["download_url"])
+        assert rejection.status_code == 409, rejection.content
+        assert rejection.json()["code"] == "identity_hash_response_blocked"
+        assert b"source-only-identity" not in rejection.content
+        assert AIDataSet.objects.filter(pk=dataset.pk).exists()
 
     def test_ai_dataset_dropdown_includes_existing_datasets(self):
         dataset = AIDataSet.objects.create(

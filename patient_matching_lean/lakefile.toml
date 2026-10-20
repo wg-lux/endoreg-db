@@ -1,7 +1,0 @@
-name = "patient_matching_lean"
-version = "0.1.0"
-defaultTargets = ["PatientMatching"]
-
-[[lean_lib]]
-name = "PatientMatching"
-

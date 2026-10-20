@@ -3,7 +3,14 @@
 from enum import StrEnum
 from typing import Literal, Self
 
-from lx_dtypes.models.contracts.knowledge_base_graph import KnowledgeBaseGraphSnapshot
+from lx_dtypes.models.contracts.knowledge_base_graph import (
+    KnowledgeBaseGraphSnapshot,
+    build_knowledge_base_graph_snapshot,
+)
+from lx_dtypes.models.contracts.package_snapshot import (
+    PackageSnapshot,
+    restore_package_snapshot,
+)
 from lx_dtypes.models.contracts.json_types import JsonValue
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -52,6 +59,7 @@ class ClinicalReferenceReceipt(BaseModel):
 
     schema_version: Literal["1.0"] = "1.0"
     snapshot: KnowledgeBaseGraphSnapshot
+    package_snapshot: PackageSnapshot | None = None
     bindings: list[ReferenceBinding]
 
     @model_validator(mode="after")
@@ -59,6 +67,18 @@ class ClinicalReferenceReceipt(BaseModel):
         keys = [binding.identity for binding in self.bindings]
         if len(keys) != len(set(keys)):
             raise ValueError("clinical reference bindings must have unique identities")
+        if (
+            self.package_snapshot is not None
+            and self.package_snapshot.identity != self.snapshot.identity
+        ):
+            raise ValueError("package and clinical graph identities must agree")
+        if self.package_snapshot is not None:
+            expected = build_knowledge_base_graph_snapshot(
+                restore_package_snapshot(self.package_snapshot),
+                identity=self.snapshot.identity,
+            )
+            if expected != self.snapshot:
+                raise ValueError("package snapshot differs from its clinical graph")
         return self
 
 

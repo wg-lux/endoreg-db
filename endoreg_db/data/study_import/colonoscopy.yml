@@ -33,3 +33,17 @@ finding:
   required: false
   values:
     Polyp: colon_polyp
+
+# To capture size, replace the finding shorthand above with a named group:
+# findings:
+#   polyp_1:
+#     finding: {columns: [Befund], values: {Polyp: colon_polyp}}
+#     classifications:
+#       lesion_size_mm:
+#         choice: {value: lesion_size_oval_mm}
+#         descriptors:
+#           lesion_size_mm_value:
+#             column: Durchmesser_mm
+#             value_type: number
+# Descriptor types and bounds belong to the selected KB, not this mapping.
+# For text lesion linkage in coloreg/0.3.0, see docs/study_table_import.md.

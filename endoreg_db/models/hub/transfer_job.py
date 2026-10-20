@@ -26,9 +26,13 @@ TransferJobUser: TypeAlias = "User | None"
 
 
 class TransferJob(models.Model):
+    if TYPE_CHECKING:
+        source_center_id: int | None
+
     class ResourceKind(models.TextChoices):
         VIDEO = "video", "Video"
         REPORT = "report", "Report"
+        STUDY = "study", "Study ledger"
 
     class TransferMode(models.TextChoices):
         METADATA_ONLY = "metadata_only", "Metadata Only"
@@ -289,6 +293,33 @@ class TransferJob(models.Model):
             )
         except ValueError as exc:
             raise ValidationError({"resource_rows": str(exc)}) from exc
+        if self.resource_kind == self.ResourceKind.STUDY:
+            from lx_dtypes.models.contracts.hub_transfer import (
+                HubTransferStudyTransferPayload,
+            )
+
+            try:
+                HubTransferStudyTransferPayload.model_validate(
+                    {
+                        "transfer_key": self.transfer_key,
+                        "source_node_key": self.source_node.node_key,
+                        "target_node_key": self.target_node.node_key,
+                        "source_center_key": self.source_center.center_key
+                        if self.source_center
+                        else "",
+                        "resource_kind": self.resource_kind,
+                        "resource_hash": self.resource_hash,
+                        "transfer_mode": self.transfer_mode,
+                        "processing_policy": self.processing_policy,
+                        "processing_intent": self.processing_intent,
+                        "cleanup_policy": self.cleanup_policy,
+                        "payload_schema_version": self.payload_schema_version,
+                        "resource_rows": self.resource_rows,
+                        "processing_snapshot": self.processing_snapshot,
+                    }
+                )
+            except ValueError as exc:
+                raise ValidationError({"resource_rows": str(exc)}) from exc
         try:
             self.processing_snapshot = validate_transfer_processing_snapshot(
                 self.processing_snapshot

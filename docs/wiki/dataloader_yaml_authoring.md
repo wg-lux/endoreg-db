@@ -188,6 +188,55 @@ existing/proposed values. Clinical graph imports preserve descriptors, templates
 and definition metadata in an immutable graph snapshot. A successful catalogue
 import is not evidence that a conflicting canonical graph can be adopted.
 
+### Portable packages and collected evaluations
+
+Endoreg maintainers own host publication and persistence; lx-dtypes owns package
+schemas, dependency resolution and validation. Operators can publish immutable
+folders or ZIP archives using the configured runtime terminology/export roots:
+
+```sh
+python manage.py terminology_packages build /srv/authoring/custom/config.yaml custom
+python manage.py terminology_packages export /srv/authoring/custom/config.yaml custom.zip
+python manage.py terminology_packages import /srv/import/custom.zip imported_custom
+python manage.py import_clinical_reference_data --module custom --module-version 1.0.0 --config-path /srv/authoring/custom/config.yaml --dry-run
+```
+
+Remove `--dry-run` after reviewing the plan. Building or importing an artifact
+does not activate a registry selection. Publication validates the complete
+dependency closure, refuses replacement, and uses the protected host filesystem
+operations. New clinical imports retain a typed complete package snapshot,
+including validators, report records, study presets, reference catalogs and
+employee lists. `load_imported_package(module, version)` restores that snapshot
+without consulting the active registry. Legacy graph-only receipts remain
+readable, but cannot silently become complete package receipts or supply study
+evaluations; they require an explicit separately reviewed migration.
+
+After creating an owned study and importing its package, collect an authorized
+examination explicitly:
+
+```sh
+python manage.py collect_study_examination --owner 1 --study 2 --patient-examination 3 --module custom --module-version 1.0.0 < record.json
+```
+
+The command checks the owner's center scope, computes validation using the
+persisted package, and saves the typed ledger and evaluation together with
+study provenance. Optional `--report-template` selects its exact definition.
+Cohort collection uses the service with an authorized, host-resolved membership
+queryset; the command collects study-level records only. Collection creates an
+immutable entry; amendments create another
+entry. Live cohort previews do not persist evaluations.
+Retained entries protect their referenced study, cohort, examination and package
+receipt from deletion. Report runtime snapshots
+also validate against the canonical runtime result schema; an empty object
+means no historical evaluation exists, while malformed nonempty results fail
+validation.
+
+Deploy this workflow with a coordinated lx-dtypes release containing the
+`packages` artifact APIs, `PackageSnapshot`, and `StudyCollectionRecord`.
+Publish and pin that compatible release before deploying these host consumers;
+a sibling source checkout is only a development verification arrangement.
+Pydantic 2.12 or newer is required for strict unknown-field rejection.
+
 ## Optional reference packages and authoring
 
 `endoreg_workforce@1.0.0` contains 39 profession, qualification and shift

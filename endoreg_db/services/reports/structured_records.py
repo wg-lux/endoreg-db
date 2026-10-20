@@ -8,6 +8,7 @@ from typing import Any, Protocol, cast
 from django.db import transaction
 from django.utils import timezone
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
+    DtypesRecordPersistencePayload,
     parse_dtypes_record_persistence_payload,
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
@@ -143,6 +144,7 @@ def persist_patient_examination_dtypes_record_from_ledger(
     patient_examination: object,
     *,
     route_module_name: str | None = None,
+    descriptor_source: DtypesRecordPersistencePayload | None = None,
 ) -> dict[str, Any]:
     from endoreg_db.integrations import lx_dtypes_host_models
     from lx_dtypes.django.api.findings_routes import (
@@ -158,6 +160,7 @@ def persist_patient_examination_dtypes_record_from_ledger(
     payload = build_p_examination_payload_from_host_ledger(
         patient_examination,
         route_module_name=module_name,
+        descriptor_source=descriptor_source,
         orm_models=lambda: dict(lx_dtypes_host_models.orm_models()),
         active_patient_findings_queryset=(
             lambda: lx_dtypes_host_models.active_patient_findings_queryset()

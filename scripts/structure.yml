@@ -5,14 +5,12 @@ parent: ../structure.yml
 summary: Repository checks, diagnostics and development utilities.
 responsibilities:
 - Provide reusable read-only quality and contract checks.
-- Export synthetic image-hash experiments and publication artifacts from existing tests.
+- Export synthetic image-hash and patient-HMAC experiments with publication artifacts.
 boundaries:
 - Quality checks must not perform clinical import or mutate runtime storage.
 files:
-- file: patient_matching_2pc.mpc
-  role: Synthetic MP-SPDZ Tinier HMAC/equality circuit with private party inputs and public epoch consistency check; no production integration.
-- file: patient_matching_2pc_reference.py
-  role: Isolated synthetic exact-HMAC reference and outcome semantics; no privacy or authentication claim.
+- file: evaluate_patient_hmac.py
+  role: Synthetic complete candidate scans through production HMAC helpers with shared/local keys; exports measurements and scientific figures.
 - file: benchmark_sha256.py
   role: Standalone bounded UTF-8 candidate-search timing for known-key HMAC and SHA-256 variants; no application identity writes.
 - file: benchmark_sha256.md

@@ -12,6 +12,7 @@ from endoreg_db.schemas.persisted_json import validate_dtypes_p_examination_payl
 from endoreg_db.schemas.report_persistence import (
     validate_persisted_report_json_object,
     validate_report_editor_payload,
+    validate_report_runtime_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -161,7 +162,6 @@ class PatientExaminationReport(models.Model):
         for field_name in (
             "patient_context_snapshot",
             "history_context_snapshot",
-            "runtime_validation_snapshot",
         ):
             try:
                 value = validate_persisted_report_json_object(
@@ -172,6 +172,20 @@ class PatientExaminationReport(models.Model):
                 errors[field_name] = str(exc)
             else:
                 setattr(self, field_name, value)
+        try:
+            self.runtime_validation_snapshot = validate_report_runtime_snapshot(
+                self.runtime_validation_snapshot
+            )
+            if (
+                self.runtime_validation_snapshot
+                and self.runtime_validation_snapshot["template_name"]
+                != self.template_name
+            ):
+                errors["runtime_validation_snapshot"] = (
+                    "Runtime validation template must match the report template"
+                )
+        except ValueError as exc:
+            errors["runtime_validation_snapshot"] = str(exc)
         try:
             self.editor_payload = validate_report_editor_payload(self.editor_payload)
         except ValueError as exc:

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import os
 import secrets
+import subprocess
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -16,13 +19,61 @@ from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.hashs import (
     calculate_patient_hash,
     get_examiner_hash,
+    get_identity_salt,
+    get_identity_salt_fingerprint,
     get_patient_examination_hash,
     get_patient_identity_fingerprint,
-    get_identity_salt_fingerprint,
-    get_identity_salt,
 )
 
 pytestmark = pytest.mark.no_db
+
+
+@pytest.mark.parametrize("source", ["inline", "file", "generated"])
+def test_test_profile_identity_salt_across_processes(
+    source: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    for name in tuple(os.environ):
+        if name.startswith("DJANGO_IDENTITY_") or name in {
+            "DJANGO_SALT",
+            "DJANGO_SALT_FILE",
+        }:
+            monkeypatch.delenv(name)
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
+    salt = secrets.token_hex(32)
+    if source == "inline":
+        monkeypatch.setenv("DJANGO_SALT", salt)
+    elif source == "file":
+        path = atomic_write_file(
+            destination=tmp_path / "salt", content=(salt.encode(),), file_mode=0o600
+        )
+        monkeypatch.setenv("DJANGO_SALT_FILE", str(path))
+        monkeypatch.setenv("DJANGO_SALT", secrets.token_hex(32))
+    script = """
+from datetime import date
+from endoreg_db.utils.hashs import get_patient_identity_fingerprint
+print(get_patient_identity_fingerprint('Ada', 'Lovelace', date(1980, 12, 10), 'site-a'))
+"""
+    hashes = [
+        subprocess.run(
+            [sys.executable, "-c", script],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+        ).stdout.strip()
+        for _ in range(2)
+    ]
+    assert all(len(value) == 64 for value in hashes)
+    if source == "generated":
+        assert hashes[0] != hashes[1]
+    else:
+        assert (
+            hashes[0]
+            == hashes[1]
+            == get_patient_identity_fingerprint(
+                "Ada", "Lovelace", date(1980, 12, 10), "site-a", salt=salt
+            )
+        )
 
 
 @pytest.mark.parametrize(
@@ -243,6 +294,7 @@ def test_sensitive_meta_delegates_salt_without_changing_key_material() -> None:
 @pytest.mark.parametrize("salt", ["default_salt", "x" * 64])
 def test_private_keyring_cannot_activate_weak_salt(tmp_path: Path, salt: str) -> None:
     import yaml
+
     from endoreg_db.config.secret_keyring import load_keyring
 
     secret = atomic_write_file(

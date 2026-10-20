@@ -46,6 +46,9 @@ from endoreg_db.services.datasets.frame_buckets import (
 from endoreg_db.services.datasets.training_manifests import (
     build_frame_multilabel_training_manifest,
 )
+from endoreg_db.services.privacy.response_boundary import (
+    IdentityValidatedJsonFileResponse,
+)
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 AI_DATASET_FRAME_FORMAT_STRATEGIES = {
@@ -1026,11 +1029,9 @@ def application_settings_ai_dataset_export_download(
     if file_path is None:
         return Response(result.payload, status=result.status_code)
 
-    response = FileResponse(
+    response = IdentityValidatedJsonFileResponse(
         file_path.open("rb"),
-        as_attachment=True,
         filename=result.filename,
-        content_type=result.content_type,
     )
     response["X-Content-SHA256"] = result.sha256
     response["X-Content-Length"] = str(result.byte_size)

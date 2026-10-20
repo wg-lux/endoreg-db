@@ -417,17 +417,29 @@ def _serialize_filters(filters: StudyCohortFilters) -> StudyFiltersPayload:
     }
 
 
+def query_study_cohort_examinations(
+    filters: StudyCohortFilters,
+    *,
+    case_scope: QuerySet[PatientExamination] | None = None,
+    include_without_media: bool = False,
+) -> QuerySet[PatientExamination]:
+    """Apply canonical cohort filters without the presentation-only preview limit."""
+    candidates = _base_case_queryset(include_without_media=include_without_media)
+    if case_scope is not None:
+        candidates = candidates.filter(pk__in=case_scope.values("pk"))
+    return _apply_filters(
+        candidates, filters, include_without_media=include_without_media
+    )
+
+
 def _build_cohort_scope(
     filters: StudyCohortFilters,
     *,
     case_scope: QuerySet[PatientExamination] | None = None,
     include_without_media: bool = False,
 ) -> _CohortScope:
-    candidates = _base_case_queryset(include_without_media=include_without_media)
-    if case_scope is not None:
-        candidates = candidates.filter(pk__in=case_scope.values("pk"))
-    filtered_cases = _apply_filters(
-        candidates, filters, include_without_media=include_without_media
+    filtered_cases = query_study_cohort_examinations(
+        filters, case_scope=case_scope, include_without_media=include_without_media
     )
     patient_count = filtered_cases.values("patient__patient_hash").distinct().count()
     reports = _eligible_report_queryset().filter(_report_case_filter(filtered_cases))

@@ -1,6 +1,6 @@
 # Importing Study Tables with YAML Mappings
 
-Responsible: endoreg_db, lx_dtypes, and lx-annotate. Scope and audit trails are exclusively located in [DtypesStudyDefinitions.yml](https://www.google.com/search?q=../feature-tracking/DtypesStudyDefinitions.yml), criteria `researcher_table_import`, `dataset_lifecycle`, and `study_persistence`.
+Responsible: endoreg_db, lx_dtypes, and lx-annotate. Scope and audit trails are exclusively located in [DtypesStudyDefinitions.yml](../feature-tracking/DtypesStudyDefinitions.yml), criteria `researcher_table_import`, `dataset_lifecycle`, and `study_persistence`.
 
 ## Persisted Studies
 
@@ -19,11 +19,11 @@ Existing Python imports from `lx_annotate.models.study_cohort` and `lx_annotate.
 ## Workflow for Researchers
 
 1. Save and select a cohort with a name and hypothesis in lx-annotate.
-2. Select **New mapping from template** or copy the [example mapping](https://www.google.com/search?q=../endoreg_db/data/study_import/colonoscopy.yml). Adapt column names to your own table, assign a custom UUID as the `mapping_id`, and select an existing knowledge base version. The template in the UI automatically receives a new UUID.
+2. Select **New mapping from template** or copy the [example mapping](../endoreg_db/data/study_import/colonoscopy.yml). Adapt column names to your own table, assign a custom UUID as the `mapping_id`, and select an existing knowledge base version. The template in the UI automatically receives a new UUID.
 3. In the **Import study table** section, load or edit the YAML file and select **Save mapping**. Already saved mappings are available in the dropdown list.
 4. Select the authorized center and the CSV, XLSX, or XLS file.
-5. **Validate table** executes full validation including database constraints; the database transaction is rolled back.
-6. **Import into cohort** validates again and saves all rows into a clinical dataset linked to the selected study. An error rolls back the entire import including the dataset and mapping. The preview is subsequently reloaded.
+5. **Validate table** executes the clinical import, dataset attachment, and study ledger capture, including database constraints and evaluation against the exact persisted full package snapshot; the complete transaction is rolled back.
+6. **Import into cohort** validates again and atomically saves clinical rows, the linked dataset, and immutable study collection entries for ledger Excel export or hub transfer. A missing package snapshot, invalid observation, or capture failure rolls back the clinical import, dataset attachment, and collection entries. Previously saved mapping files remain available. The preview is subsequently reloaded.
 
 One dataset is created per file import. The same user, mapping ID, center, and file content will reuse the same dataset upon repetition. The name comes from the mapping; the API allows `dataset_name`. Clinical datasets have `dataset_type: clinical` and `ai_model_type: null`. They can therefore be managed independently, even without videos or annotations.
 
@@ -60,9 +60,22 @@ Deletion modes are named `memberships_only` and `exclusive_imported_records`. Th
 
 A table row describes one examination. `row_id` must permanently identify this source row, even after re-sorting or re-exporting. Multiple findings from the same examination are mapped as named column groups. Multiple rows may supplement the same examination but then require different, stable source identities.
 
+## Research spreadsheets and LX exchange workbooks
+
+Use a YAML mapping for existing researcher CSV/XLS/XLSX files: it maps their
+wording into an exact versioned KB and creates validated clinical observations.
+The study ledger download is a separate lossless exchange workbook whose canonical
+payload retains study snapshots and assessments. Import that workbook through the
+ledger exchange action, not through an inferred column mapping. Human-readable
+worksheets support review; editing their display cells is not a clinical correction
+workflow. Hub transfer and ledger workbook exchange use the same shared exchange
+contract.
+
 ## Mapping Format 1.0
 
 The shared contract is `lx_dtypes.models.contracts.table_import.TableMapping`.
+The parser loads its exact registered package through `lx_dtypes.packages.load_registered_package`
+and validates ledger observations against that package before persistence.
 `TableMapping.model_json_schema()` provides the machine-readable schema.
 Unknown target fields, duplicate YAML keys, YAML aliases, and executable tags are rejected. A mapping cannot load Python modules or define permissions.
 
@@ -105,7 +118,44 @@ findings:
 
 ```
 
-This version supports identity fields, examination concepts, repeated findings, and categorical classifications. Free additional study endpoints, numerical descriptors, interventions, and laboratory aggregates are not permitted target fields in this version. They will be rejected and never silently discarded. New clinical concepts must be defined in the versioned terminology package and projected into existing database references; the compatibility route for this is `load_base_db_data`. The table import does not create terminology.
+Format 1.0 also accepts an expanded classification with a `choice` column and typed
+`descriptors`. Existing column shorthand is unchanged. For example, a researcher
+can retain their own lesion identifier column while targeting a ColoReg package:
+
+```yaml
+findings:
+  index_lesion:
+    finding: {value: coloreg_polyp_resection}
+    classifications:
+      coloreg_lesion_id:
+        choice: {value: coloreg_lesion_id_documented}
+        descriptors:
+          coloreg_lesion_id_value:
+            column: Meine_Laesionskennung
+            value_type: text
+      lesion_size_mm:
+        choice: {value: lesion_size_oval_mm}
+        descriptors:
+          lesion_size_mm_value:
+            column: {columns: [Durchmesser_mm], values: {'klein': '5', 'mittel': '15'}}
+            value_type: number
+```
+
+Use an exact ColoReg knowledge-base version that defines these concepts (for
+example `coloreg` / `0.3.0`). Source wording is local to the mapping; it never
+changes canonical concept names. Numeric aliases such as the example above must
+reflect the researcher's documented source convention, not inferred clinical
+measurements. A `number` uses a decimal point and must be finite; `integer`
+requires integral decimal spelling. `boolean` accepts exactly `true` or `false`
+after explicit `values` aliases, for example `values: {ja: 'true', nein: 'false'}`
+(quote YAML boolean outputs); `selection` accepts a JSON array of strings.
+The KB remains authoritative for descriptor type, numeric bounds, text length,
+selection options/cardinality, and choice membership. Empty optional cells omit
+an observation; they do not manufacture a zero or false. A descriptor without a
+finding or selected choice fails validation. Named groups and permanent row IDs
+preserve lesion identity when columns or rows are reordered.
+
+Interventions and laboratory aggregates are not permitted target fields in this version. They will be rejected and never silently discarded. New clinical concepts must be defined in the versioned terminology package and projected into existing database references; the compatibility route for this is `load_base_db_data`. The table import does not create terminology.
 
 ## spaCy and Custom Extractors
 
@@ -165,7 +215,7 @@ Mappings are located under `get_runtime_paths().table_mappings / <owner_id> / <m
 
 Uploads are temporarily processed within the protected runtime storage and subsequently removed. Source file and mapping are identified via `get_file_hash`. Limits: 20 MiB upload, 10,000 data rows, 500 columns, 100,000 characters per cell, and 1 MiB YAML. Unzipped XLSX files may not exceed 100 MiB. If multiple worksheets exist, `source.sheet` is required. XLSX formulas and error cells are rejected; XLS uses stored cell values read by xlrd and does not execute macros or formulas.
 
-Import responses contain `rows`, `created`, `replayed`, `videos`, `reports`, `dry_run`, `dataset_id`, and the saved `patient_examination_ids`. For a validation run, the ID list is empty. Row errors contain the row number, target field, and error code, not the original cell values. Database sequences can advance even during a rolled-back validation.
+Import responses contain `rows`, `created`, `replayed`, `videos`, `reports`, `captured_collections`, `dry_run`, `dataset_id`, and the saved `patient_examination_ids`. For a validation run, the ID list is empty. Row errors contain the row number, target field, and error code, not the original cell values. Database sequences can advance even during a rolled-back validation.
 
 ## Identity, Repetition, and Cohorts
 
@@ -177,6 +227,23 @@ Immutable `StudyTableImport` receipts store the source and mapping hash, mapping
 
 The selected cohort receives a reference to the import dataset. Its examination memberships determine the imported scope. During the preview, these are unified with examinations from linked datasets; study filters, eligibility criteria, and current center rights still apply. Imported examinations may appear without media. Without imported references, the existing preview semantics remain intact. References do not create annotations and do not expand permissions.
 
-Delivery requires the shared lx-dtypes contract, `xlrd`, EndoReg migration `0096_studycohort`, and lx-annotate migration `0015_move_studycohort_to_endoreg` (including their predecessors). Local source checking does not replace publishing the corresponding package versions. During deployment, the normal runtime bootstrap via `get_runtime_paths().ensure_directories()` must also create the new mapping directory.
+The baseline mapped-table workflow requires the shared lx-dtypes contract, `xlrd`,
+EndoReg migration `0096_studycohort`, and lx-annotate migration
+`0015_move_studycohort_to_endoreg`, including their predecessors. The current
+lx-annotate import-and-capture workflow additionally requires EndoReg migration
+`0105_study_collection_entry` and an already imported, validated full
+`PackageSnapshot` for the exact knowledge-base module/version used by each
+examination. A registered terminology package or historical graph-only import
+receipt alone does not satisfy this requirement. Both validation and committed
+imports exercise this capture boundary; imports cannot succeed with missing
+collection evidence.
+
+Standalone hub study exchange additionally requires EndoReg migration
+`0106_study_transfer`; see the canonical [hub transfer contract](hub_transfer_typed_contract.md#standalone-study-ledger-transfer)
+for authenticated receipt and explicit acceptance semantics. Publish matching
+lx-dtypes, endoreg-db, and lx-annotate versions together: local source checks do not
+replace coordinated release and migration delivery. Runtime bootstrap through
+`get_runtime_paths().ensure_directories()` must create the protected mapping
+storage directory.
 
 The migration transfers existing direct import assignments into datasets and retains their examinations. No clinical deletion ownership is retrospectively assumed for historical import receipts. Joint delivery of the contracts and both applications is required, since clinical datasets do not have an AI model type. The backward data migration does not remove already created datasets.

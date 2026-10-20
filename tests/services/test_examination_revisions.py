@@ -124,6 +124,9 @@ def test_persisted_draft_crud_selection_snapshot_export_and_follow_up() -> None:
     examination.dtypes_record["patient_findings"] = []
     examination.save()
     export = selected_case_export(case)
+    assert export["schema_version"] == "2.0"
+    assert export["patient_id"] == examination.patient.pk
+    assert "patient_hash" not in export
     records = export["examinations"]
     assert isinstance(records, list) and len(records) == 1
     workbook = load_workbook(BytesIO(case_export_workbook(export)))

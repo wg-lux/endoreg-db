@@ -224,43 +224,42 @@ Implementation order and readiness remain in `Reporting.yml`. Every stage must
 remain importable, leave existing stream endpoints unchanged, and retain a safe
 rollback to the previous fully validated state.
 
-## Gemeinsame Lease-Technik und Report-Jobintegration
+## Shared lease mechanisms and report job integration
 
-Die lokale Implementierung verwendet mit dem Upload-Job-Adapter gemeinsame
-Primitiven in `services/import_lease.py`: typisierte Datenbankzeit,
-Owner-/Token-/Ablaufprüfung sowie Heartbeat und Fehlerweitergabe. Die
-fachlichen Zustandsübergänge bleiben im jeweiligen Service.
-`ImportExecutionFence` aus `services/import_execution.py` ist der gemeinsame
-Vertrag für Versuch, synchrone Prüfung und transaktionale Mutation. Der
-Report-Service bindet seinen Content-Owner daran; Video verlangt denselben
-Vertrag am Verarbeitungseinstieg und erhält ihn vom Upload- oder Transferadapter. Der Report-Fence
-schützt einen Inhaltshash auch ohne UploadJob; die Upload-Lease schützt einen
-Auftrag mit Queue-Handoff, Abbruch und Quellenbereinigung. Eine Zusammenlegung
-der Ownership-Ledger würde diese verschiedenen Schutzbereiche verlieren.
+The local implementation shares primitives with the upload job adapter in
+`services/import_lease.py`: typed database time, owner/token/expiry checks,
+heartbeat, and error propagation. Domain state transitions remain in their
+respective services. `ImportExecutionFence` from `services/import_execution.py`
+is the shared contract for attempts, synchronous checks, and transactional
+mutation. The report service binds its content owner to it; video requires the
+same contract at the processing entry point and receives it from the upload or
+transfer adapter. The report fence protects a content hash even without an
+UploadJob; the upload lease protects a job with queue handoff, cancellation,
+and source cleanup. Combining the ownership ledgers would lose these distinct
+protection scopes.
 
-`ReportImportLifecycle` verbindet Reportjobs mit der intern erworbenen
-Content-Lease. Der Service ruft `started` im Mutationsguard, `succeeded` im
-Abschlussguard und `failed` nur beim weiterhin eigenen Fehlerabschluss auf.
-Der Reimport entfernt alte sensible Metadaten erst im `started`-Callback.
-Fehler beim Entfernen werden weitergegeben und rollen die Transaktion zurück.
-Report- und Joberfolg werden gemeinsam unter dem Content-Fence geschrieben;
-auch ein wiederverwendetes Ergebnis benötigt für den Jobabschluss einen
-geprüften Content-Fence. Vorabfehler dürfen keinen fremden Report oder dessen
-verknüpfte Aufträge verändern.
+`ReportImportLifecycle` connects report jobs to the internally acquired content
+lease. The service calls `started` inside the mutation guard, `succeeded` inside
+the completion guard, and `failed` only while it still owns failure finalization.
+Reimport removes old sensitive metadata only in the `started` callback. Removal
+errors propagate and roll back the transaction. Report and job success are
+written together under the content fence; even a reused result requires a
+verified content fence for job completion. Preliminary errors must not change
+another owner's report or its linked jobs.
 
-Erkannte Datenbankausfälle werden nicht als Beweis verlorener Ownership
-umklassifiziert. Ein Hintergrundfehler wird am nächsten synchronen Guard
-sichtbar. Die Heartbeat-Verbindung gehört ausschließlich ihrem Thread; der
-Aufrufer muss die Lease vor Threadstart durch Autocommit sichtbar machen.
+Detected database outages are not reclassified as proof of lost ownership. A
+background error becomes visible at the next synchronous guard. The heartbeat
+connection belongs exclusively to its thread; the caller must make the lease
+visible through autocommit before starting that thread.
 
-Der aktuelle Dateieinstieg akzeptiert PDF und TXT. TXT wird vollständig und
-reproduzierbar in PDF überführt. CSV, FHIR-Exporte und strukturierte LXDM-Reports
-benötigen ihre eigenen validierten Adapter und dürfen nicht allein aufgrund
-ihrer fachlichen Reportrolle an den PDF/TXT-Einstieg übergeben werden.
-Gemeinsame Übersicht: [Zustandsverwaltung](endoreg_db_state_management.md).
-Akzeptanz und Evidenz für diese Grenzen:
+The current file entry point accepts PDF and TXT. TXT is converted completely
+and reproducibly into PDF. CSV, FHIR exports, and structured LXDM reports require
+their own validated adapters and must not be passed to the PDF/TXT entry point
+solely because their domain role is a report. Shared overview:
+[state management](endoreg_db_state_management.md).
+Acceptance and evidence for these boundaries:
 [ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml)
-und [LongRunningServiceStateMachines.yml](../feature-tracking/LongRunningServiceStateMachines.yml).
+and [LongRunningServiceStateMachines.yml](../feature-tracking/LongRunningServiceStateMachines.yml).
 
 
 ## Extraction evidence and native lifecycle authority

@@ -3,9 +3,11 @@ import sys
 from pathlib import Path
 
 from endoreg_db.config.env import env_bool, env_str
-from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import ensure_directory
+from endoreg_db.utils.paths import get_runtime_paths
+
 from .base import *  # noqa: F401,F403
+from .base import DJANGO_SALT as BASE_DJANGO_SALT
 from .base import INSTALLED_APPS as BASE_INSTALLED_APPS
 
 type DatabaseOptions = dict[str, int]
@@ -34,7 +36,9 @@ def gen_salt() -> str:
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
 SECRET_KEY = env_str("DJANGO_SECRET_KEY", "test-insecure-key")
-DJANGO_SALT = gen_salt()
+# Honor an established identity across test processes/devices. Generate material
+# only for isolated test runs without configuration; production never does this.
+DJANGO_SALT = BASE_DJANGO_SALT or gen_salt()
 ALLOWED_HOSTS = env_str("DJANGO_ALLOWED_HOSTS", "*").split(",")
 
 # -----------------------------------------------------------------------------

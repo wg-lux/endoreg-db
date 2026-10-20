@@ -135,12 +135,16 @@ definition_of_done:
         project interpreter used by hook'
     - kind: document
       reference: docs/agent_context.md
-    note: Reviewed actual paths, ownership contracts and preserved compatibility metadata with scoped
-      agents. Validator, service import compatibility and tracker registry regressions passed. Documentation
-      governance, focused Ruff and whitespace checks passed. Global code_quality readiness remains governed
-      by its other criteria.
-    assessed_by: codex-structure-20261013
-    assessed_at: '2026-10-13T08:18:05.685761Z'
+    - kind: command
+      reference: '2026-10-20: python scripts/lint_structure.py: Successfully validated 66 structure.yml
+        manifests; Strukturtests im abschließenden 222-bestanden-Lauf erfolgreich; git diff --check bestanden.'
+    note: Veraltete Verweise auf gelöschte Referenzskripte und deren Test entfernt; parallel wiederhergestelltes
+      Lean-Modul bleibt am Root erreichbar. Ownership für JSON-Antwortlebenszyklus und empfangene Videokoordinaten
+      aktualisiert. 66 Strukturmanifeste gültig; Strukturregressionen im abschließenden 222-bestanden-Lauf
+      erfolgreich. Geänderte Python-Dateien ohne Pyright-Fehler; 13 Gesamt-Pyright-Fehler außerhalb dieses
+      Patches bleiben sichtbar.
+    assessed_by: codex-test-review-20261020
+    assessed_at: '2026-10-20T11:24:17.335913Z'
 - id: anonymization_validation_helpers
   category: maintainability
   title: Anonymisierungsvalidierung verwendet eindeutige Helper und den kanonischen Metadatenvertrag

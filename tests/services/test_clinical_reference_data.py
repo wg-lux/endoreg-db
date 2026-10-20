@@ -7,9 +7,18 @@ from unittest.mock import patch
 import pytest
 from django.core.exceptions import ValidationError
 from django.core.management import call_command
+from django.core.management.base import CommandError
 from django.db import connections
 from lx_dtypes.models.interface.DataLoader import DataLoader
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
+from lx_dtypes.models.knowledge_base.examination import (
+    Examination as ExaminationDefinition,
+)
+from lx_dtypes.packages import create_package
+from lx_dtypes.packages import load_package
+from lx_dtypes.models.contracts.package_snapshot import build_package_snapshot
+from lx_dtypes.models.knowledge_base.pydantic_main import KB_MODEL_NAMES_ORDERED
+from lx_dtypes.models.knowledge_base.study_preset import StudyPreset
 
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.examination.examination_indication import (
@@ -22,6 +31,8 @@ from endoreg_db.schemas.clinical_reference import ClinicalReferenceReceipt
 from endoreg_db.services.reference_data.clinical_projection import (
     clinical_snapshot,
     import_clinical_references,
+    import_clinical_package,
+    load_imported_package,
     plan_clinical_reference_import,
 )
 
@@ -171,7 +182,12 @@ def test_real_coloreg_closure_provisions_indications_and_interventions_without_l
     loader.load_module_configs()
     kb = loader.load_knowledge_base("coloreg")
     snapshot = clinical_snapshot(kb)
-    import_clinical_references(snapshot)
+    import_clinical_package(kb)
+    restored = load_imported_package(kb.config.name, kb.config.version)
+    assert (
+        build_package_snapshot(restored).snapshot_id
+        == build_package_snapshot(kb).snapshot_id
+    )
     assert ExaminationIndication.objects.count() == 14
     for indication in snapshot.concepts.indication:
         row = ExaminationIndication.objects.get(name=indication.name)
@@ -183,11 +199,12 @@ def test_real_coloreg_closure_provisions_indications_and_interventions_without_l
     assert import_clinical_references(snapshot).unchanged
 
 
-def test_command_dry_run_uses_explicit_shared_registry_identity() -> None:
+def test_command_dry_run_uses_explicit_shared_registry_identity(tmp_path: Path) -> None:
+    manifest = create_package(tmp_path / "empty", name="clinical_test", version="1.0.0")
     with patch(
-        "endoreg_db.management.commands.import_clinical_reference_data.get_terminology_service"
+        "endoreg_db.management.commands.import_clinical_reference_data.load_registered_package"
     ) as service:
-        service.return_value.load.return_value = package()
+        service.return_value = load_package(manifest)
         call_command(
             "import_clinical_reference_data",
             module="clinical_test",
@@ -195,8 +212,82 @@ def test_command_dry_run_uses_explicit_shared_registry_identity() -> None:
             dry_run=True,
             stdout=StringIO(),
         )
-        service.return_value.load.assert_called_once_with("clinical_test", "1.0.0")
+        service.assert_called_once_with("clinical_test", version="1.0.0")
     assert not Examination.objects.exists()
+
+
+def test_command_validates_local_package_and_rejects_identity_mismatch(
+    tmp_path: Path,
+) -> None:
+    manifest = create_package(
+        tmp_path / "clinical",
+        name="clinical_test",
+        version="1.0.0",
+        records=[
+            ExaminationDefinition(
+                name="inspection", name_de="Untersuchung", name_en="Inspection"
+            )
+        ],
+    )
+    options = {
+        "module": "clinical_test",
+        "module_version": "1.0.0",
+        "config_path": manifest,
+        "stdout": StringIO(),
+    }
+    call_command("import_clinical_reference_data", dry_run=True, **options)
+    assert not ClinicalReferenceImport.objects.exists()
+    with pytest.raises(CommandError):
+        call_command(
+            "import_clinical_reference_data",
+            module="wrong_module",
+            module_version="1.0.0",
+            config_path=manifest,
+            stdout=StringIO(),
+        )
+    assert not ClinicalReferenceImport.objects.exists()
+    call_command("import_clinical_reference_data", **options)
+    assert Examination.objects.get().name == "inspection"
+    restored = load_imported_package("clinical_test", "1.0.0")
+    snapshot = build_package_snapshot(restored)
+    assert set(snapshot.records) == set(KB_MODEL_NAMES_ORDERED)
+    assert restored.examination["inspection"].name_de == "Untersuchung"
+    assert import_clinical_package(load_package(manifest)).unchanged
+
+
+def test_historical_graph_receipt_requires_explicit_complete_package_migration() -> (
+    None
+):
+    import_clinical_references(clinical_snapshot(package()))
+    with pytest.raises(ValueError, match="no complete package"):
+        load_imported_package("clinical_test", "1.0.0")
+
+
+def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinition(
+    tmp_path: Path,
+) -> None:
+    manifest = create_package(
+        tmp_path / "preset",
+        name="preset",
+        version="1.0.0",
+        records=[StudyPreset(name="collection")],
+    )
+    kb = load_package(manifest)
+    import_clinical_package(kb)
+    restored = load_imported_package("preset", "1.0.0")
+    assert restored.study_preset["collection"].model_dump(
+        exclude={"source_file"}
+    ) == kb.study_preset["collection"].model_dump(exclude={"source_file"})
+    assert import_clinical_package(load_package(manifest)).unchanged
+    changed = load_package(manifest)
+    changed.study_preset["collection"].description = "Changed collection"
+    assert clinical_snapshot(changed) == clinical_snapshot(kb)
+    with pytest.raises(ValueError, match="conflicts"):
+        import_clinical_package(changed)
+    assert (
+        build_package_snapshot(load_imported_package("preset", "1.0.0")).snapshot_id
+        == build_package_snapshot(kb).snapshot_id
+    )
 
 
 def test_changed_transitive_meaning_cannot_reuse_a_row_in_another_version() -> None:

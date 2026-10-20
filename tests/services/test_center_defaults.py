@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
-
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -9,8 +8,8 @@ from threading import Barrier
 from unittest.mock import Mock, patch
 
 import pytest
-from django.test import override_settings
 from django.db import connections
+from django.test import override_settings
 from rest_framework.exceptions import ValidationError
 
 from endoreg_db.models import ApplicationSettings, Center, NetworkNode
@@ -67,6 +66,19 @@ def test_django_settings_override_environment(monkeypatch: pytest.MonkeyPatch) -
     with override_settings(LX_ANNOTATE_DEFAULT_CENTER="site-a", CENTER_NAME="Site A"):
         center = resolve_local_center()
     assert (center.center_key, center.name) == ("site-a", "Site A")
+
+
+def test_environment_defaults_preserve_center_identity(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delattr("django.conf.settings.LX_ANNOTATE_DEFAULT_CENTER")
+    monkeypatch.delattr("django.conf.settings.CENTER_NAME")
+    monkeypatch.setenv("LX_ANNOTATE_DEFAULT_CENTER", "site-a")
+    monkeypatch.setenv("CENTER_NAME", "Site A")
+    center = resolve_local_center()
+    assert (center.center_key, center.name) == ("site-a", "Site A")
+    assert resolve_import_center(None) == center
+    assert Center.objects.count() == 1
 
 
 def test_operator_selection_overrides_configuration_without_reassignment() -> None:
@@ -209,10 +221,10 @@ def test_key_selection_survives_duplicate_center_names(selection: str) -> None:
 def test_report_pipeline_persists_selected_key_with_duplicate_names(
     tmp_path: Path,
 ) -> None:
-    from endoreg_db.import_files.report_import_service import ReportImportService
     from endoreg_db.import_files.file_storage.create_report_file import (
         create_or_retrieve_report_file,
     )
+    from endoreg_db.import_files.report_import_service import ReportImportService
 
     Center.objects.create(name="Shared", center_key="unrelated")
     selected = Center.objects.create(name="Shared", center_key="selected")
@@ -232,8 +244,8 @@ def test_report_pipeline_persists_selected_key_with_duplicate_names(
 def test_transferred_video_with_same_name_cannot_cross_center_key(
     tmp_path: Path,
 ) -> None:
-    from endoreg_db.import_files.video_import_service import VideoImportService
     from endoreg_db.import_files.context.import_context import ImportContext
+    from endoreg_db.import_files.video_import_service import VideoImportService
     from endoreg_db.models.media.video.video_file import VideoFile
 
     other = Center.objects.create(name="Shared", center_key="other")

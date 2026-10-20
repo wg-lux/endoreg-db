@@ -17,7 +17,7 @@ entrypoints:
   purpose: Generate a pseudonym hash for an existing Patient using SensitiveMeta sensitive_meta_logic.
 files:
 - file: response_boundary.py
-  role: Identity-field rejection and HTTP response middleware; validate CSV headers before streaming and preserve binary streams.
+  role: Identity-field rejection and HTTP response middleware; validate CSV headers and explicit JSON artifacts before streaming, preserve binary streams and defer rejected-resource cleanup to request completion.
 - file: __init__.py
   role: Anonymisierung, Pseudonymisierung und Qualitätsmessung.
 - file: evaluation_manifest.py

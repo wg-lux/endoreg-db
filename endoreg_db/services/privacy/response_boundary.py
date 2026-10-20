@@ -7,9 +7,15 @@ import re
 import csv
 from itertools import chain
 from collections.abc import Callable, Iterable, Mapping
-from typing import cast
+from typing import BinaryIO, cast
 
-from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
+from django.http import (
+    FileResponse,
+    HttpRequest,
+    HttpResponse,
+    JsonResponse,
+    StreamingHttpResponse,
+)
 
 _IDENTITY_FIELD_MARKERS = (
     "patienthash",
@@ -72,6 +78,23 @@ class HeaderValidatedCsvResponse(StreamingHttpResponse):
         )
 
 
+class IdentityValidatedJsonFileResponse(FileResponse):
+    """Validate an explicitly selected JSON artifact before streaming its same handle."""
+
+    _json_file: BinaryIO
+
+    def __init__(self, file: BinaryIO, *, filename: str) -> None:
+        self._json_file = file
+        super().__init__(
+            file, as_attachment=True, filename=filename, content_type="application/json"
+        )
+
+    def validate_identity_fields(self) -> None:
+        self._json_file.seek(0)
+        reject_transferred_identity_hashes(json.load(self._json_file))
+        self._json_file.seek(0)
+
+
 class IdentityHashResponseMiddleware:
     """Withhold unsafe responses; never buffer or iterate deferred media streams."""
 
@@ -92,7 +115,11 @@ class IdentityHashResponseMiddleware:
         try:
             reject_identity_hash_fields(response.headers)
             if isinstance(response, StreamingHttpResponse):
-                if structured and not isinstance(response, HeaderValidatedCsvResponse):
+                if isinstance(response, IdentityValidatedJsonFileResponse):
+                    response.validate_identity_fields()
+                elif structured and not isinstance(
+                    response, HeaderValidatedCsvResponse
+                ):
                     raise ValueError(
                         "Deferred metadata cannot be inspected before disclosure"
                     )
@@ -102,10 +129,19 @@ class IdentityHashResponseMiddleware:
             elif structured and _HTML_IDENTITY_FIELD.search(response.content):
                 raise ValueError(_IDENTITY_ERROR)
         except (ValueError, RecursionError):
-            if isinstance(response, StreamingHttpResponse):
-                response.close()
-            return JsonResponse(
+            rejection = JsonResponse(
                 {"code": "identity_hash_response_blocked", "error": _IDENTITY_ERROR},
                 status=409,
             )
+            # Transfer resource ownership without firing request_finished inside
+            # middleware. The replacement response finishes the request once.
+            closers = cast(
+                list[Callable[[], object]], getattr(response, "_resource_closers")
+            )
+            rejection_closers = cast(
+                list[Callable[[], object]], getattr(rejection, "_resource_closers")
+            )
+            rejection_closers.extend(closers)
+            closers.clear()
+            return rejection
         return response

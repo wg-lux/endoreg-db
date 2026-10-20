@@ -146,13 +146,17 @@ definition_of_done:
     aktuelle Zugriffsrechte weiter gelten.
   - Dokumentation, YAML-Beispiel und Frontend erlauben Mappingauswahl, Validierung und expliziten Import;
     Tests prüfen ungültige Eingaben, Rollback, Reimport, Identität, Zugriff und Kohortenzuordnung.
+  - Researcher column headings and value wording map explicitly to exact-version concepts and typed numerical,
+    boolean and text descriptors through the existing shared mapping contract and importer. Unknown terms,
+    incompatible descriptor types and invalid values fail without silently dropping fields. Existing mappings
+    and repeated imports retain their identities.
   required: true
   verification:
     kind: manual
     instructions: Gemeinsame Verträge, Parser-, Persistenz-, API- und Frontendtests sowie Pyright ausführen.
     timeout_seconds: 900
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: code
       reference: endoreg_db/services/studies/table_import.py
@@ -166,23 +170,18 @@ definition_of_done:
       reference: ../dev/lx-annotate/frontend/src/components/StudyTableImport.test.ts
     - kind: code
       reference: ../lx-data-models/lx_dtypes/models/contracts/table_import.py
-    note: 'Source implementation verified on 2026-10-08. EndoReg full Pyright: 0 errors, 10 warnings,
-      including missing lx-anonymizer stubs; focused shared and annotate Pyright: 0 errors. Backend persistence/cohort/path
-      regressions: 139 passed. Importer plus existing report/video import unit tests: 164 passed. Final
-      importer file: 28 passed, including CSV/XLS/XLSX, malformed workbook containers, isolated real spaCy
-      extraction, PostgreSQL concurrent replay, full rollback, report/video matching and conflicting media
-      rejection. Parser-only selection initially exposed the existing test-harness missing lx_test setup;
-      complete focused file passed with normal database fixtures. Annotate API/cohort: 25 passed. Vue
-      typecheck and targeted ESLint passed; frontend importer/page/API: 16 passed. Shared study contracts:
-      40 passed. No migration drift in endoreg_db or lx_annotate. Dependency lock, diff whitespace and
-      all 37 feature definitions validate. Repository model inventory remains blocked by unrelated existing
-      UploadJobFile classification and other pre-existing metadata drift; new importer model and consumers
-      are registered. Release requires coordinated lx-dtypes/endoreg-db/lx-annotate packages, runtime
-      directory bootstrap and migrations 0093/0012; no production deployment or clinical data import performed.
-      Supported target scope is identity, examinations, findings and categorical classifications; unsupported
-      study targets fail explicitly.'
-    assessed_by: codex-lx-table-import-20261008
-    assessed_at: '2026-10-08T15:17:30.988249Z'
+    note: '2026-10-20 source implementation: schema1.0 legacy categorical mappings remain compatible;
+      explicit custom column/value aliases map to text, finite number, integer, boolean and selection
+      descriptors. ClassificationChoiceDescriptor.validate_value owns KB admissibility across parser and
+      ledger assessment. Exact identity reconciliation preserves descriptor values through host-ledger
+      rebuilds without parallel storage. Endoreg combined exchange/mapping65 tests passed and final invalid-representation9
+      passed (55 unique mapping cases). Annotate real mapped-import-to-collection-to-XLSX regression passed:
+      full validation capture rolls back, committed import captures evidence, replay remains idempotent.
+      All51 unique annotate cohort/Excel/table API tests and28 frontend tests passed. Final PostgreSQL DISTINCT-scope import/capture regressions2 passed; shared locking retains the authorized scope. Documentation describes0105
+      capture migration, full snapshot prerequisite, transactional import and0106 hub transfer. Final
+      deployment acceptance remains in progress; no production imports performed.'
+    assessed_by: codex-parser-warnings-20261020
+    assessed_at: '2026-10-20T09:46:33.279739Z'
 - id: independent_local_center_defaults
   category: interoperability
   title: Local center provisioning remains independent of study and clinical fixture loading
@@ -488,6 +487,9 @@ definition_of_done:
     partial active study.
   - Materialize only required ORM projections and preserve every remaining supported field in typed versioned
     payloads; do not add one Django table per dtypes class or silently store unvalidated dictionaries.
+  - Preserve every registered lx_dtypes knowledge-base record family, including validators, study presets,
+    reference catalogues and optional employee definitions, in a canonical typed package snapshot; validate
+    snapshots again on read and reject changed content under an existing imported identity.
   required: true
   verification:
     kind: manual
@@ -506,14 +508,20 @@ definition_of_done:
       reference: tests/services/test_clinical_reference_data.py
     - kind: test
       reference: tests/services/test_reference_catalog.py
-    note: Klinischer Graph und vollständige Referenzkataloge werden über separate typisierte Projektionen
-      atomar importiert. 673 bisherige Bootstrapdatensätze plus 153 Green-Endoscopy- und 39 Personal-/Schichtdefinitionen;
-      vollständiger Beziehungs-Roundtrip und Bestandsübernahme mit stabilen Primärschlüsseln geprüft.
-      Globale Referenzsperre, Rollback und wiederholte/konkurrierende Importe getestet. Unvereinbare bestehende
-      Bedeutungen werden blockiert; parallele klinische Namensräume und komplette Studienaktivierung bleiben
-      separate offene Phasen.
-    assessed_by: codex-dtypes-study-20260928-a
-    assessed_at: '2026-09-28T15:43:41.680198Z'
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/contracts/package_snapshot.py
+    - kind: code
+      reference: endoreg_db/services/reference_data/clinical_projection.py
+    note: '2026-10-20 source integration verified: canonical PackageSnapshot preserves all 28 registered
+      lx-dtypes families using owning validators, exact module configs and semantic digest; ClinicalReferenceReceipt
+      preserves and revalidates full snapshots. Real ColoReg roundtrip preserves aliases, infinite numeric
+      bounds, conditional queries and digest (10 shared snapshot tests with warnings-as-errors; combined
+      host129 passed/2 skipped). Existing graph-only receipts cannot silently reconstruct omitted families.
+      Focused Pyright clean. Remaining integration metadata is held by other active owners; full host
+      checks have unrelated patient-matching type/structure and Center migration drift. Coordinated releases
+      required; no production migration/deployment.'
+    assessed_by: codex-parser-warnings-20261020
+    assessed_at: '2026-10-20T09:00:03.772495Z'
 - id: immutable_identity_and_history
   category: data_integrity
   title: Phase 3 - Preserve study identity and historical meaning across versions
@@ -571,6 +579,19 @@ definition_of_done:
   - Export includes endpoint identifiers, values, units, missingness, study/definition provenance, and
     permitted source-evidence references; typed structured export is lossless and tabular flattening has
     an explicit mapping.
+  - Persist study collection entries and server-computed evaluation results through shared lx_dtypes contracts,
+    linked to existing study, cohort and patient-examination identities; reject mismatched terminology
+    identities and preserve values and evaluation provenance through reload.
+  - Terminology-editor authoring and lx-annotate report-template and study construction use the shared
+    packages API for validation, portable ZIP creation/import and explicit terminology-root folder building.
+    Study/cohort setup remains a separate typed contract and does not become a knowledge-base record.
+  - A single typed study exchange bundle preserves study and cohort UUIDs, rule definitions, ledger observations,
+    evaluations and exact package snapshots through standalone authenticated hub transfer and bounded
+    Excel download/import. Local database keys and sender permissions are not portable identity. Receivers
+    explicitly select an authorized local owner and resolve existing patient/examination UUIDs.
+  - Excel exposes readable observation and assessment sheets while retaining the complete canonical exchange
+    representation; formula execution, silent cell truncation, conflicting replay and partial imports
+    are rejected. Custom research spreadsheets use the canonical mapping workflow.
   required: true
   verification:
     kind: manual
@@ -591,8 +612,51 @@ definition_of_done:
       reference: 'lx-annotate: .devenv/state/venv/bin/python -m pytest tests/api/test_study_cohorts.py
         tests/api/test_study_excel_export.py tests/system/test_config_unit.py tests/system/test_secretspec_environment_contract.py
         -q --tb=short: 68 passed (2026-09-29), local editable lx-dtypes installed, no PYTHONPATH override'
-    assessed_by: codex-study-definitions-20260929
-    assessed_at: '2026-09-29T10:47:42.951478Z'
+    - kind: code
+      reference: endoreg_db/models/other/study_collection_entry.py
+    - kind: code
+      reference: endoreg_db/services/studies/collections.py
+    - kind: code
+      reference: endoreg_db/services/reference_data/package_deployment.py
+    - kind: test
+      reference: tests/services/test_study_collections.py
+    - kind: test
+      reference: tests/services/test_package_deployment.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/stats/study.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/stats/study_linkage.py
+    - kind: document
+      reference: ../lx-data-models/docs/guides/coloreg-resection-study.yml
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/services/study_eligibility.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/contracts/study_exchange.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/study_exchange.py
+    - kind: code
+      reference: endoreg_db/services/studies/exchange.py
+    - kind: test
+      reference: tests/services/test_study_exchange.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/hub/test_study_transfer.py
+    note: '2026-10-20 canonical study exchange implemented: current definitions plus immutable assessed
+      collections, exact package snapshots and persistent patient/examination UUIDs share one contract
+      for bounded, projection-verified XLSX and authenticated standalone hub transport. Import requires
+      explicit authorized owner, existing authorized identities and exact installed snapshot receipts;
+      transactions reject conflicts and identical replay is idempotent. Hub receipt archives evidence;
+      separate researcher acceptance invokes the same import service. Explicit idempotent capture and
+      export coverage gates prevent silently incomplete cohort exports. Core full suite1732 passed/1 skipped;
+      final strict guideline-date fix30 snapshot/exchange tests passed across all5 reporting packages;
+      final full Pyright0 and structure pass, Sphinx HTML/linkcheck pass. Endoreg combined exchange/mapping65
+      passed, final mapping boundary9 passed, hub receiver78 passed/7 skipped/3 subtests; annotate sender9
+      passed and all51 cohort/Excel/table API tests passed, frontend28 passed. Final PostgreSQL DISTINCT-scope import/capture regressions2 passed; application capture coverage and missing-snapshot rollback passed. Scoped host typing/lint
+      pass. Prior study rules/statistics implementation remains covered. Broader acceptance remains in
+      progress: endoreg structure has7 unrelated missing patient-matching references, migration-head metadata
+      remains externally locked at0104 although0105/0106 migration files exist, installed wheels require
+      coordinated releases, and no migration/deployment or real transfer was performed.'
+    assessed_by: codex-parser-warnings-20261020
+    assessed_at: '2026-10-20T09:44:10.706528Z'
 - id: legacy_migration
   category: data_integrity
   title: Phase 5 - Replace clinical fixture loading without breaking installed databases
@@ -743,6 +807,9 @@ definition_of_done:
     without logging patient values.
   - Use existing governed registry and filesystem services; YAML cannot choose host paths, arbitrary network
     dependencies, model imports, SQL, credentials, or permission rules.
+  - Package ZIP import validates bounded archive contents and the complete dependency closure before publication;
+    reject traversal, duplicate members, links, incomplete bundles and existing destination replacement.
+    Host publication uses its typed filesystem wrappers and never implicitly activates a study.
   - Audit definition import, activation, migration, and endpoint computation using immutable identities
     without logging patient values or secrets.
   required: true
@@ -752,8 +819,24 @@ definition_of_done:
       inputs, and expression injection; verify rejection before filesystem or database mutation.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../lx-terminology-editor/server.py
+    - kind: document
+      reference: ../dev/lx-annotate/docs/guides/terminology-delivery.md
+    note: '2026-10-20 final coordinated source verification: lx-dtypes full pytest1653 passed/1 skipped;
+      full Pyright0 errors/0 warnings; structure, Sphinx HTML and linkcheck pass. Editor7 JavaScript+6
+      Python tests and annotate57 focused tests pass. Endoreg focused129 passed/2 skipped/133 warnings;
+      scoped Pyright/Ruff clean. Shared canonical APIs own package validation, ZIP/folder construction
+      and exact registered reads; new authoring warnings block publication, historical registered reads
+      emit explicit advisories. Cohort collections require host-resolved membership scope. Endoreg full
+      verification is limited by13 unrelated matching Pyright errors, unrelated missing structure paths
+      and Center migration drift. Other active owners hold inventory/tests manifest/migration-head metadata
+      and have exact requested updates. Installed annotate endoreg wheel is older than coordinated source
+      requirements; matching releases required. No production migration/deployment.'
+    assessed_by: codex-parser-warnings-20261020
+    assessed_at: '2026-10-20T09:05:33.512401Z'
 - id: regression_and_field_coverage
   category: testing
   title: Every supported field and migration boundary has meaningful automated coverage

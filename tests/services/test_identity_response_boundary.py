@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from io import BytesIO
 from typing import cast
 from unittest.mock import patch
 
 import pytest
 from django.conf import settings
+from django.db import connection
 from django.http import HttpRequest, HttpResponse, JsonResponse, StreamingHttpResponse
 
 from endoreg_db.models import Patient, PatientExamination
@@ -22,6 +24,7 @@ from endoreg_db.services.interoperability.fhir_r4 import (
 from endoreg_db.services.privacy.response_boundary import (
     HeaderValidatedCsvResponse,
     IdentityHashResponseMiddleware,
+    IdentityValidatedJsonFileResponse,
 )
 from endoreg_db.services.studies.revision_export import case_export_workbook
 
@@ -95,6 +98,56 @@ def test_file_checksums_and_video_streaming_are_preserved() -> None:
     stream = StreamingHttpResponse(iter([b"processed-media"]), content_type="video/mp4")
     assert guarded(stream) is stream
     assert list(cast(Iterator[bytes], stream.streaming_content)) == [b"processed-media"]
+
+
+@pytest.mark.django_db
+def test_explicit_json_artifact_is_validated_and_rewound_before_streaming() -> None:
+    content = b'{"patient_id": 17, "sha256": "file-checksum"}'
+    file = BytesIO(content)
+    response = IdentityValidatedJsonFileResponse(file, filename="dataset.json")
+    assert guarded(response) is response
+    assert file.tell() == 0
+    assert b"".join(cast(Iterator[bytes], response.streaming_content)) == content
+    response.close()
+    assert file.closed
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "content",
+    [b'{"patient_hash": "secret"}', b'{"nested": [{"case_hashes": []}]}', b"not-json"],
+)
+def test_explicit_json_artifact_rejects_identity_fields_and_invalid_json(
+    content: bytes,
+) -> None:
+    file = BytesIO(content)
+    response = IdentityValidatedJsonFileResponse(file, filename="dataset.json")
+    rejection = guarded(response)
+    assert_withheld(rejection)
+    assert not file.closed
+    rejection.close()
+    assert file.closed
+
+
+@pytest.mark.django_db
+def test_rejected_stream_preserves_database_until_normal_request_completion() -> None:
+    file = BytesIO(b'{"patient_hash": "secret"}')
+    with patch("django.core.signals.request_finished.send") as finished:
+        # Open the atomic test connection before rejecting the response.
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+        rejection = guarded(
+            IdentityValidatedJsonFileResponse(file, filename="dataset.json")
+        )
+        assert_withheld(rejection)
+        finished.assert_not_called()
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT 1")
+            assert cursor.fetchone() == (1,)
+        # Suppress real cleanup at normal closure, as Django's test client does.
+        rejection.close()
+        finished.assert_called_once()
+        assert file.closed
 
 
 def test_hash_free_schema_names_are_metadata_not_identity_fields() -> None:

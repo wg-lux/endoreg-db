@@ -25,7 +25,7 @@ files:
 - file: __init__.py
   role: Package imports and compatibility exports.
 - file: _ai.py
-  role: Exports VideoFrameScoreResult.
+  role: Streaming frame scores and observed exclusive score boundaries.
 - file: _anonymization.py
   role: 'Internal helpers: _LocalRawFileProvider, _video_integrity_failure_detail, _video_has_integrity_failure.'
 - file: _imports.py
@@ -45,7 +45,7 @@ files:
 - file: direct_import.py
   role: Direct video imports bind the resolved center key and acquire the same durable ownership as queued imports.
 - file: frame_coordinates.py
-  role: Generation-bound decoded timestamps and persisted prediction windows.
+  role: Generation-bound decoded timestamps from canonical history or received verified/unresolved provenance, and persisted prediction windows.
 - file: frames.py
   role: Exports extract_video_frames, initialize_video_frames, delete_video_frames.
 - file: imports.py

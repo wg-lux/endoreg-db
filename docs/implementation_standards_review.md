@@ -1,126 +1,124 @@
-# Review der Implementierungsrichtung vom 14. Oktober 2026
+# Review of implementation direction, October 14, 2026
 
-Die untersuchten Änderungen verbessern Fehlerbehandlung und Artefaktbesitz deutlich.
-Eine vollständige Erfüllung aller Repository-Standards ist damit noch nicht belegt.
-Dieses Dokument ist eine technische Review-Aufnahme, kein zweiter Freigabetracker.
-Maßgeblich bleiben [VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml)
-und [Reporting.yml](../feature-tracking/Reporting.yml).
+The examined changes substantially improve error handling and artifact ownership.
+They do not yet establish full compliance with all repository standards. This
+technical review is a snapshot, not a second approval tracker.
+[VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml)
+and [Reporting.yml](../feature-tracking/Reporting.yml) remain authoritative.
 
-## Umfang und Nachweisgrenzen
+## Scope and evidence limits
 
-Geprüft wurden die vom Owner `codex-endoreg-durable-01a1398f` bestätigten Änderungen
-an Report-Retry, Video-Rebuild, Generation-Cleanup und Provenance-Recovery sowie
-die zugehörigen Tests und die Recovery-Komponente in lx-annotate. Der referenzierte
-Chat-Thread war nicht direkt lesbar; Änderungen und Tracker-Nachrichten waren zugänglich.
-Unabhängige Annotation- und Jumpmark-Änderungen im gemeinsamen Checkout wurden nicht
-diesem Agenten zugerechnet. Parallel laufende Bearbeitung kann Zeilennummern verschieben.
+The review covered changes confirmed by owner `codex-endoreg-durable-01a1398f`
+for report retries, video rebuilds, generation cleanup, and provenance recovery,
+together with their tests and the recovery component in lx-annotate. The referenced
+chat thread was not directly readable; changes and tracker messages were accessible.
+Independent annotation and jumpmark changes in the shared checkout were not
+attributed to this agent. Concurrent editing can shift line numbers.
 
-## Befunde
+## Findings
 
-### R1 — Hoch: Verschlüsselte Staging-Grenze bleibt unbewiesen
+### R1 — High: encrypted staging boundary remains unproven
 
-**Regel:** Lokale Medien einschließlich temporärer Rohdaten müssen innerhalb der
-freigegebenen verschlüsselten Speichergrenze verbleiben.
+**Rule:** Local media, including temporary raw data, must remain inside the
+approved encrypted storage boundary.
 
-**Beleg:** `endoreg_db/services/hub/video_provenance_recovery.py:88` und `:104`
-materialisieren verarbeitetes beziehungsweise Rohvideo über `ensure_local_file`.
-`endoreg_db/utils/storage/files.py:181` bis `:193` schreibt entschlüsselte Bytes
-atomar mit Modus `0600` unter `get_runtime_paths().transcoding`. Dieser Pfad prüft
-Containment und Dateirechte, aber keine tatsächlich verschlüsselte Ablage.
+**Evidence:** `endoreg_db/services/hub/video_provenance_recovery.py:88` and `:104`
+materialize processed and raw video, respectively, through `ensure_local_file`.
+`endoreg_db/utils/storage/files.py:181` through `:193` atomically writes decrypted
+bytes with mode `0600` under `get_runtime_paths().transcoding`. This path checks
+containment and permissions, but not whether storage is actually encrypted.
 
-**Auswirkung:** Ohne schützende Storage-Schicht können Rohdaten auf dem Datenträger
-im Klartext liegen. Normales Aufräumen schützt nicht gegen Prozessabbruch oder
-physischen Datenträgerzugriff. Dies ist eine bestehende Infrastruktur-/Helper-Lücke,
-die der neue Recovery-Pfad ebenfalls verwendet, keine neu eingeführte Kryptografie.
+**Impact:** Without a protective storage layer, raw data can reside on disk in
+plaintext. Normal cleanup does not protect against process termination or physical
+disk access. This is an existing infrastructure/helper gap also used by the new
+recovery path, rather than newly introduced cryptography.
 
-**Korrektur:** Freigegebene Speichergrenze im Deployment nachweisen und vor solchen
-Operationen verbindlich prüfen. Vorhandene LuxNix-Unterstützung und zentrale
-Storage-Helper verwenden. Keine eigene Verschlüsselung im Recovery-Service ergänzen.
-Ein Test mit verschlüsseltem Quellblob und anschließend gelöschtem Tempfile beweist
-die Verschlüsselung des temporären Datenträgers nicht. Bereits anderweitig attestierte
-Hardware-/Dateisystemverschlüsselung könnte diese Deployment-Lücke schließen; deren
-aktueller Nachweis ist nicht Bestandteil dieser Quellcodeprüfung.
+**Correction:** Establish the approved storage boundary in deployment and require
+its verification before such operations. Use existing LuxNix support and central
+storage helpers. Do not add custom encryption to the recovery service. A test
+with an encrypted source blob and subsequent temporary-file deletion does not
+prove encryption of the temporary disk. Independently attested hardware or
+filesystem encryption could close this deployment gap; current evidence for it
+is outside this source review.
 
-### R2 — Mittel: Wiederholte Recovery ist nicht vollständig idempotent
+### R2 — Medium: repeated recovery is not fully idempotent
 
-**Regel:** Wiederholung derselben logischen Operation darf keinen neuen fachlichen
-Zustandswechsel erzeugen.
+**Rule:** Repeating the same logical operation must not create a new domain state
+transition.
 
-**Beleg:** `video_provenance_recovery.py:130` bis `:143` speichert bei jedem
-`dry_run=False` erneut `meta` und `date_modified` und erzeugt einen neuen
-`AuditLedger`-Eintrag. Auch ein bereits identischer `previous`-Receipt wird nicht
-als Wiederholung erkannt. Die Tests prüfen Preview, Apply und Ablehnungen, aber
-keinen identischen zweiten Apply-Aufruf.
+**Evidence:** `video_provenance_recovery.py:130` through `:143` saves `meta` and
+`date_modified` again and creates a new `AuditLedger` entry on every
+`dry_run=False`. Even an already identical `previous` receipt is not recognized
+as a repeat. Tests cover preview, apply, and rejections, but not an identical
+second apply call.
 
-**Auswirkung:** Wiederholung nach verlorener HTTP-Antwort erzeugt zusätzliche
-Bestätigungen und erneute teure Medienprüfung. Die Medienbytes werden dadurch
-nicht automatisch verändert; der Befund betrifft fachliche Mutation und Audit.
+**Impact:** Retrying after a lost HTTP response creates additional confirmations
+and repeats expensive media checks. This does not automatically change media
+bytes; the finding concerns domain mutation and auditing.
 
-**Korrektur:** Gleichheit beziehungsweise einen stabilen Operationsschlüssel unter
-derselben Sperre prüfen und den vorhandenen Receipt zurückgeben. Falls jeder
-HTTP-Versuch auditiert werden soll, diesen Versuch vom einmaligen fachlichen
-Anerkennungsereignis unterscheiden. Regressionstest für zwei identische Aufrufe,
-abweichende Zeitangaben und konkurrierende Wiederholungen ergänzen.
+**Correction:** Check equality or a stable operation key under the same lock and
+return the existing receipt. If every HTTP attempt must be audited, distinguish
+it from the single domain acknowledgment event. Add regression tests for two
+identical calls, differing timestamps, and concurrent repeats.
 
-### R3 — Mittel: API-Vertrag mehrfach definiert, Zeitprüfung zu spät
+### R3 — Medium: duplicated API contract and late timestamp validation
 
-**Regel:** Externe Eingaben einmal an der Grenze validieren; gemeinsame Typen und
-generierte API-Verträge als maßgebliche Quelle verwenden.
+**Rule:** Validate external input once at the boundary; use shared types and
+generated API contracts as the authoritative source.
 
-**Beleg:** `endoreg_db/views/video/provenance_recovery.py:19` definiert ein lokales
-Request-Modell, `:27` separat einen DRF-Serializer. Beide akzeptieren Zeitangaben
-zunächst als Strings. Zeitzone und Reihenfolge prüft erst der gemeinsame
-`VideoProvenanceRecovery`-Konstruktor nach Hashing, Entschlüsselung und Timeline-Probe.
-Die lx-annotate-Komponente `VideoProvenanceRepairPanel.vue:59` definiert daneben
-`RecoveryResponse` von Hand mit `mappingStatus: string` und
-`electricalMatchingEligible: boolean`, obwohl der gemeinsame Vertrag engere
-Literal-Werte besitzt. Die Laufzeitprüfung einzelner Antwortfelder ist positiv,
-ersetzt aber keine gemeinsame Typquelle.
+**Evidence:** `endoreg_db/views/video/provenance_recovery.py:19` defines a local
+request model and `:27` a separate DRF serializer. Both initially accept timestamps
+as strings. Only the shared `VideoProvenanceRecovery` constructor checks timezone
+and order, after hashing, decryption, and timeline probing. The lx-annotate
+component `VideoProvenanceRepairPanel.vue:59` also defines `RecoveryResponse`
+manually with `mappingStatus: string` and `electricalMatchingEligible: boolean`,
+although the shared contract has narrower literal values. Runtime checking of
+individual response fields is positive, but does not replace a shared type source.
 
-**Auswirkung:** Ungültige Zeitangaben belegen unnötig die Medienoperation; manuelle
-Vertragskopien können auseinanderlaufen. Der abschließende Pydantic-Validator
-verhindert ungültige Persistenz, daher ist dies kein belegter Integritäts-Bypass.
+**Impact:** Invalid timestamps unnecessarily occupy the media operation; manual
+contract copies can diverge. The final Pydantic validator prevents invalid
+persistence, so this is not a demonstrated integrity bypass.
 
-**Korrektur:** Eingabevalidierung am Request-Rand aus einem gemeinsamen Vertrag
-ableiten, DRF/OpenAPI daran anbinden und den Frontendtyp generieren. Keine weitere
-parallele DTO-Hierarchie einführen. Ungültige Zeitangaben müssen ohne Medien-I/O
-abgelehnt werden; ein Contract-Test muss Request, Schema und Consumer verbinden.
+**Correction:** Derive request-boundary validation from a shared contract,
+connect DRF/OpenAPI to it, and generate the frontend type. Do not introduce
+another parallel data transfer object (DTO) hierarchy. Invalid timestamps must
+be rejected without media input/output; a contract test must connect request,
+schema, and consumer.
 
-## Positiv geprüfte Richtung
+## Positively reviewed direction
 
-- Feature-YAML bleibt maßgeblich; der experimentelle Release-Nachweis bezeichnet
-  sich ausdrücklich nicht als gewählten Deployment-Weg.
-- Gemeinsame lx-dtypes-Receipts, Hash-Helper, Runtime-Pfade und vorhandene atomare
-  Dateifunktionen werden genutzt. Neue Ablaufsteuerung liegt in Services.
-- Entfernte pauschale Frame-Rollbacks respektieren den Artefaktbesitz: Ein
-  Rebuild-Job besitzt nicht automatisch bereits vorhandene Frame-Caches.
-- Report-Retry ruft nicht mehr den endgültigen Fehlerabschluss samt Löschung auf.
-- Receipt-Reconciliation verlangt authentifizierten aktuellen Ursprung sowie eine
-  fehlende, nicht referenzierte Ersetzung; sie löscht selbst keine Videodateien.
-- Authentifizierung, Zentrumsscope, Medien-Leases, Hashprüfung und klinische
-  Freigaben bleiben erhalten. Ungeklärte Provenance wird nicht als bewiesene
-  Frame-Zuordnung dargestellt; elektrische Zuordnung bleibt gesperrt.
-- Im geprüften Änderungsumfang wurden weder Master-Key-Übertragung noch ein
-  Shared-Secret-Ersatz für Payload-Verschlüsselung oder mTLS-Bypass gefunden.
-  Dies ist keine vollständige Prüfung aller Transportpfade.
+- Feature YAML remains authoritative; experimental release evidence explicitly
+  disclaims being the selected deployment route.
+- Shared lx-dtypes receipts, hash helpers, runtime paths, and existing atomic file
+  functions are used. New orchestration lives in services.
+- Removing blanket frame rollbacks respects artifact ownership: a rebuild job
+  does not automatically own existing frame caches.
+- Report retry no longer calls terminal failure finalization with deletion.
+- Receipt reconciliation requires an authenticated current origin and an absent,
+  unreferenced replacement; it does not itself delete video files.
+- Authentication, center scope, media leases, hash checks, and clinical approvals
+  remain intact. Unresolved provenance is not presented as proven frame mapping;
+  electrical matching remains blocked.
+- No master key transmission, shared-secret substitution for payload encryption,
+  or mutual Transport Layer Security (mTLS) bypass was found in the reviewed
+  changes. This is not a complete review of every transport path.
 
-## Verifikation
+## Verification
 
-Eigener vollständiger Aufruf `.devenv/state/venv/bin/pyright`: **0 Fehler,
-19 Warnungen**; überwiegend fehlende Typ-Stubs und ungenutzte Symbole.
-Die Aussage gilt für den gemeinsamen Checkout zum Prüfzeitpunkt.
+Independent full `.devenv/state/venv/bin/pyright` run: **0 errors, 19 warnings**,
+mostly missing type stubs and unused symbols. This applies to the shared checkout
+at review time.
 
-Vom Implementierungsowner gemeldet, hier nicht erneut ausgeführt: Recovery
-13 Tests bestanden; Report-Lane 84 bestanden/6 bedingte Skips; Frontend 47
-bestanden plus TypeScript/ESLint. Cleanup- und Rebuild-Ergänzungen waren noch in
-Bearbeitung. Es lief bereits ein fokussierter pytest-Prozess; kein zusätzlicher
-paralleler Datenbank-Testlauf wurde gestartet. Laufende Hostdienste sind kein
-Beweis, dass die neuesten Quellcodeänderungen ausgerollt sind.
+Reported by the implementation owner, not rerun here: recovery 13 tests passed;
+report lane 84 passed/6 conditional skips; frontend 47 passed plus TypeScript/ESLint.
+Cleanup and rebuild additions were still being edited. A focused pytest process
+was already running; no additional concurrent database test run was started.
+Running host services do not prove deployment of the latest source changes.
 
-Die Befunde wurden dem Implementierungsowner über den Feature-Tracker zugestellt.
-Er hat R1–R3 angenommen und Folgeänderungen für Wiederholungsbehandlung sowie
-gemeinsame Zeit-/Antworttypen angekündigt. Diese Folgeänderungen sind nicht Teil
-des hier geprüften Snapshots und noch nicht unabhängig nachgeprüft.
-Strukturprüfung: 65 Manifeste gültig. Tracker-Validierung: 37 Feature-Definitionen
-gültig. Diese Prüfungen bestätigen Schema und Referenzen, keine klinische Freigabe.
-Dieses Review ändert weder Anwendungscode noch Produktionsdaten oder Freigabestatus.
+Findings were delivered to the implementation owner through the feature tracker.
+The owner accepted R1–R3 and announced follow-up changes for repeat handling and
+shared timestamp/response types. Those changes are outside the reviewed snapshot
+and have not yet been independently checked. Structure validation: 65 manifests
+valid. Tracker validation: 37 feature definitions valid. These checks confirm
+schema and references, not clinical approval. This review changes no application
+code, production data, or approval status.

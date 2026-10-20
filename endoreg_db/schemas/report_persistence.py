@@ -6,6 +6,9 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     ReportJsonObject,
     SegmentFrameSelectorQueryPayload,
 )
+from lx_dtypes.models.knowledge_base.validators.ValidatorRuntimeDataDict import (
+    ReportTemplateRuntimeValidationResultDataDict,
+)
 from pydantic import ConfigDict, Field, TypeAdapter
 
 
@@ -30,6 +33,20 @@ _REPORT_LANGUAGE_ADAPTER: TypeAdapter[ReportLanguage] = TypeAdapter(
     Literal["de", "en"],
     config=ConfigDict(strict=True),
 )
+_RUNTIME_VALIDATION_ADAPTER = TypeAdapter(ReportTemplateRuntimeValidationResultDataDict)
+
+
+def validate_report_runtime_snapshot(value: object) -> ReportJsonObject:
+    """An empty object denotes an unevaluated historical or draft report."""
+    if value == {}:
+        return {}
+    validated = _RUNTIME_VALIDATION_ADAPTER.validate_python(
+        value, strict=True, extra="forbid"
+    )
+    return cast(
+        ReportJsonObject,
+        _RUNTIME_VALIDATION_ADAPTER.dump_python(validated, mode="json"),
+    )
 
 
 def validate_persisted_report_json_object(
@@ -94,4 +111,5 @@ __all__ = [
     "report_language_from_editor_payload",
     "validate_persisted_report_json_object",
     "validate_report_editor_payload",
+    "validate_report_runtime_snapshot",
 ]

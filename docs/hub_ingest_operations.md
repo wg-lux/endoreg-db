@@ -6,7 +6,7 @@ For sender implementers and reviewers, [`hub_transfer_typed_contract.md`](https:
 
 Production-critical import monitoring—including transient errors, quarantine, and HTTP Live Streaming (HLS) materialization—is evaluated exclusively in [`feature-tracking/ImportMonitoring.yml`](https://www.google.com/search?q=../feature-tracking/ImportMonitoring.yml). This runbook describes operations, but does not maintain a parallel completion status.
 
-## Kontinuierlicher Ordnerimport
+## Continuous folder import
 
 ### Native frame rates and interrupted ownership
 
@@ -40,53 +40,49 @@ lease migration together with the mover changes before restoring intake through
 the documented deployment workflow. A local test run does not reconcile the
 reported live jobs or attest the encryption of the staging filesystem.
 
-Die verbindlichen Kriterien stehen in
+The binding criteria are in
 [`ImportPipelineRobustness.yml`](../feature-tracking/ImportPipelineRobustness.yml),
-Kriterium `continuous_format_folder_ingestion`. Vier Eingangsordner genügen:
-Berichte, Videos, voranonymisierte Dateien und SAP-Exporte. Dateiendungen bestimmen
-das Format innerhalb eines Eingangs; separate Ordner pro Dateiendung entfallen.
-Die bestehenden Speicherpfade und der Dateiverschieber bleiben erhalten.
+criterion `continuous_format_folder_ingestion`. Four input folders suffice:
+reports, videos, preanonymized files, and SAP exports. Extensions determine the
+format within an input; separate folders for each extension are unnecessary.
+Existing storage paths and the file mover remain unchanged.
 
-Der Dateiverschieber veröffentlicht vollständige Berichtsstapel atomar unter
-einem eindeutigen Unterordner. Wiederholte Ordnernamen überschreiben dadurch
-keine früheren Stapel. Seit dem Kopieren veränderte Quelldateien bleiben für
-einen späteren Durchlauf erhalten. Berichte werden vor dem möglicherweise
-lang laufenden Videozweig übergeben.
+The file mover atomically publishes complete report batches under a unique
+subdirectory. Repeated folder names therefore do not overwrite earlier batches.
+Source files changed since copying are retained for a later run. Reports are
+handed off before the potentially long-running video branch.
 
-| Desktop-Verknüpfung | Ziel | Verarbeitung |
+| Desktop shortcut | Destination | Processing |
 | --- | --- | --- |
-| `Report_Input` | Konfigurierter Berichtseingang des Dateiverschiebers → `report_import` | PDF und TXT anonymisieren |
-| `Video_Input` | Konfigurierter Videoeingang des Dateiverschiebers → `video_import` | MP4, AVI, MOV, MKV, WEBM und M4V über den bestehenden Videoimport |
-| `preanonymized_import` | `preanonymized_import` | PDF, TXT und MP4 mit zugehöriger Metadatendatei |
-| `sap_import` | `sap_import` | SAP-ZIP in TXT-Berichte samt Metadatendateien umwandeln |
+| `Report_Input` | Configured report input of the file mover → `report_import` | Anonymize PDF and TXT |
+| `Video_Input` | Configured video input of the file mover → `video_import` | MP4, AVI, MOV, MKV, WEBM, and M4V through existing video import |
+| `preanonymized_import` | `preanonymized_import` | PDF, TXT, and MP4 with an associated metadata file |
+| `sap_import` | `sap_import` | Convert SAP ZIP to TXT reports with metadata files |
 
-`Report_Input` ersetzt den Desktop-Namen `PDF_Input`, ohne dessen Zielpfad zu
-verschieben. Bestehende Unterordner bleiben lesbar und werden nicht gelöscht.
-Voranonymisierte Dateien bleiben vom Rohimport getrennt, weil dieselben
-Dateiendungen hier einen anderen Metadaten- und Freigabevertrag haben. SAP-Exporte
-benötigen ihren eigenen Konverter. Unterordner werden rekursiv eingelesen. Voranonymisierte
-Nutzdateien und ihre JSON- oder YAML-Metadatendateien müssen zusammen im selben
-Ordner liegen. TXT-Tabellen eines SAP-Exports sind keine gewöhnlichen TXT-Berichte:
-zusammengehörige Tabellen als SAP-ZIP ablegen oder den vorhandenen Befehl
-`import_sap_ish_txt` ausdrücklich verwenden. Allgemeine CSV-, FHIR- und
-Einzelbild-Ordnerimporte sind hier nicht implementiert; entsprechende Export-
-oder Tabellenfunktionen sind keine solchen Importverträge.
+`Report_Input` replaces the desktop name `PDF_Input` without moving its target
+path. Existing subdirectories remain readable and are not deleted. Preanonymized
+files remain separate from raw import because the same extensions have a different
+metadata and approval contract here. SAP exports require their own converter.
+Subdirectories are read recursively. Preanonymized payload files and their JSON
+or YAML metadata files must be together in the same directory. TXT tables from
+a SAP export are not ordinary TXT reports: provide related tables as a SAP ZIP
+or explicitly use the existing `import_sap_ish_txt` command. General CSV, FHIR,
+and individual-image folder imports are not implemented here; corresponding
+export or table functions do not constitute such import contracts.
 
-Dateien zunächst unter einem temporären Namen schreiben und nach vollständigem
-Schreiben atomar auf ihren endgültigen Namen umbenennen. Temporäre Dateien,
-temporäre Verzeichnisse und symbolische Links werden nicht importiert.
-Systemd reagiert auf Änderungen in den Eingangsordnern. Der bestehende Watcher-Timer
-holt übersehene oder noch nicht stabile Dateien nach; für SAP gilt ein eigener
-Timer fünf Minuten nach Abschluss des letzten Durchlaufs, zuzüglich bis zu
-30 Sekunden Zufallsverzögerung. Änderungen tiefer innerhalb vorhandener
-Unterordner werden spätestens beim nächsten periodischen Durchlauf erkannt.
+Initially write files under temporary names, then atomically rename them to
+their final names after writing completes. Temporary files, temporary directories,
+and symbolic links are not imported. Systemd responds to input folder changes.
+The existing watcher timer picks up missed or not-yet-stable files; SAP has a
+separate timer five minutes after the previous run completes, plus up to
+30 seconds of randomized delay. Changes deeper inside existing subdirectories
+are detected by the next periodic run at the latest.
 
-Backend, LX-Annotate-Watcher und LuxNix-Konfiguration gemeinsam ausrollen.
-NixOS `tmpfiles` legt die Ordner mit Modus `0770` und Dienstgruppe an;
-Quellordner gehören `root`, interne Eingänge dem Dienstbenutzer.
-Die Übergabe an den verschlüsselten UploadJob-Speicher kann die
-Quelldatei entfernen, bevor die asynchrone Anonymisierung abgeschlossen ist;
-den Abschluss am UploadJob prüfen.
+Deploy the backend, LX-Annotate watcher, and LuxNix configuration together.
+NixOS `tmpfiles` creates directories with mode `0770` and the service group;
+source directories belong to `root`, internal inputs to the service user.
+Handoff to encrypted UploadJob storage can remove the source file before
+asynchronous anonymization completes; check completion on the UploadJob.
 
 ## Import Monitoring and State Axes
 
@@ -301,37 +297,35 @@ python manage.py reap_upload_job_sources --limit 25 --repeat-until-empty --apply
 
 Invalid or conflicting selectors, disabled apply mode, or non-positive limits cause non-zero exits. Safely blocked candidates are valid diagnostic results and remain preserved with their blocking code. Applying authorizes deletions under database lock, persisting a receipt containing DB timestamp, fencing token, opaque source identity, and size. Immediately before mutation, the system re-verifies status, retention, due date, retry, processing lease, fencing, target integrity, `ProcessingHistory`, video HLS generations, media operation leases, and storage boundary. Additional source ownership and content-identity evidence is required only for undocumented legacy files. File deletion occurs exclusively via audited file operation wrappers.
 
-### Zentrales Dateiinventar
+### Central file inventory
 
-`UploadJobFile` ordnet einem UploadJob über `files` seine Quellen, Sidecars,
-Arbeitsdateien, Quarantäne und beibehaltenen Medienartefakte zu. Die Migration
-`0091_upload_job_file` muss vor dem Einsatz der neuen Worker angewandt werden.
-Das Inventar liegt getrennt von `processing_provenance`; spätere Metadatenupdates
-und wiederholte Versuche überschreiben keine früheren Dateizuordnungen.
+`UploadJobFile` associates an UploadJob with its sources, sidecars, work files,
+quarantine, and retained media artifacts through `files`. Apply migration
+`0091_upload_job_file` before using the new workers. The inventory is separate
+from `processing_provenance`; later metadata updates and repeated attempts do
+not overwrite earlier file associations.
 
-`services/hub/upload_job_files.py` ist die gemeinsame Zugriffsstelle für
-`import_files/file_storage/cleanup.py` und `services/hub/cleanup.py`.
-Registrierte Zuordnungen sind autoritativ: Für deren Bereinigung werden weder
-zusätzliche Herkunftsnachweise gesucht noch Dateiinhalte erneut gehasht.
-Nur undokumentierte Legacy-Pfade durchlaufen diese Evidenzprüfung. Bekannte
-Sidecars und Arbeitsausgaben benötigen insbesondere nicht denselben Inhalts-Hash
-wie die ursprüngliche Eingangsdatei.
-Bereits registrierte Quellen werden ohne einzelne Existenzabfragen pro Inventareintrag
-übernommen. Die Staging-Bereinigung lädt nur Arbeitsverzeichnisse, die zu den
-übergebenen Pfaden gehören, und liest das Inventar je UploadJob einmal. Scans
-explizit registrierter externer Arbeitsverzeichnisse bleiben nötig, um noch nicht
-einzeln dokumentierte Ausgaben abgebrochener Werkzeuge zu finden.
+`services/hub/upload_job_files.py` is the shared access point for
+`import_files/file_storage/cleanup.py` and `services/hub/cleanup.py`. Registered
+associations are authoritative: their cleanup neither seeks additional provenance
+evidence nor hashes file contents again. Only undocumented legacy paths undergo
+this evidence check. Known sidecars and work outputs in particular need not have
+the same content hash as the original input file.
+Already registered sources are adopted without individual existence queries per
+inventory entry. Staging cleanup loads only work directories belonging to the
+supplied paths and reads the inventory once per UploadJob. Scans of explicitly
+registered external work directories remain necessary to find outputs from
+interrupted tools that have not yet been documented individually.
 
-Die Importausführung registriert atomare Dateischreiber, geplante temporäre
-Dateien und explizite Arbeitsverzeichnisse externer Anonymisierer. Letztere
-begrenzen die Zuordnung von Nebenprodukten auch nach einem unterbrochenen
-Versuch auf den eigenen Arbeitsbereich. Entfernte Dateien bleiben im Inventar
-nachvollziehbar. Die Registrierung allein setzt weder die Retention-Policy noch
-aktive Leases oder den Schutz beibehaltener kanonischer Medien außer Kraft.
-Gemeinsam zugeordnete Pfade, symbolische Links und Pfade außerhalb der erlaubten
-Bereinigungsgrenze werden nicht entfernt.
+Import execution registers atomic file writers, planned temporary files, and
+explicit work directories of external anonymizers. The latter constrain byproduct
+association to their own workspace even after an interrupted attempt. Removed
+files remain traceable in the inventory. Registration alone overrides neither
+retention policy, active leases, nor retained canonical media protection. Shared
+paths, symbolic links, and paths outside the permitted cleanup boundary are not
+removed.
 
-Anforderungen und Prüfnachweise:
+Requirements and verification evidence:
 [`UploadJobSourceReaperSafety.yml`](../feature-tracking/UploadJobSourceReaperSafety.yml).
 
 Recovery aligns with stable block codes:
