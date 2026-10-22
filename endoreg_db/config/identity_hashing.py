@@ -46,7 +46,12 @@ def load_identity_salt(*, required: bool = False, allow_inline: bool = True) -> 
     File contents take precedence. No salt is generated and no legacy salt is
     substituted. An absent optional setting remains empty and cannot be hashed.
     """
-    ring = current_identity_keyring()
+    try:
+        ring = current_identity_keyring()
+    except ValueError:
+        raise ImproperlyConfigured(
+            "Identity salt keyring does not match the expected deployment binding"
+        ) from None
     if ring is not None:
         return validate_identity_salt(ring.active)
     path = os.environ.get("DJANGO_SALT_FILE", "")

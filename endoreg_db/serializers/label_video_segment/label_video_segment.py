@@ -24,9 +24,9 @@ from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.serializers.label_video_segment.image_classification_annotation import (
     ImageClassificationAnnotationSerializer,
 )
-from endoreg_db.services.video_files import (
-    video_frame_number_to_seconds,
-    video_seconds_to_frame_number,
+from endoreg_db.services.video_files.timeline_index import (
+    VideoTimelineIndex,
+    VideoTimelineIndexCache,
 )
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
@@ -83,6 +83,26 @@ def _serializer_rows(serializer: object) -> list[JsonObject]:
         cast(JsonObject, dict(item))
         for item in cast(_SerializerDataLike, serializer).data
     ]
+
+
+TIMELINE_INDEX_CONTEXT_KEY = "timeline_indexes"
+
+
+def timeline_index_for(
+    serializer: serializers.BaseSerializer[LabelVideoSegment], video: VideoFile
+) -> VideoTimelineIndex:
+    """Share one generation-bound index per video across the root serializer."""
+    context = cast(dict[str, object], serializer.context)
+    cache = context.get(TIMELINE_INDEX_CONTEXT_KEY)
+    if cache is None:
+        cache = VideoTimelineIndexCache()
+        context[TIMELINE_INDEX_CONTEXT_KEY] = cache
+    if not isinstance(cache, VideoTimelineIndexCache):
+        raise TypeError(
+            f"Serializer context {TIMELINE_INDEX_CONTEXT_KEY!r} must hold a "
+            "VideoTimelineIndexCache."
+        )
+    return cache.for_video(video)
 
 
 def _segment_frame_number(segment: object, field_name: str) -> int:
@@ -207,7 +227,9 @@ class LabelVideoSegmentTimelineSerializer(
         video = cast(VideoLike | None, obj.video_file)
         if video is None:
             return None
-        return video_frame_number_to_seconds(cast(VideoFile, video), frame_number)
+        return timeline_index_for(self, cast(VideoFile, video)).frame_number_to_seconds(
+            frame_number
+        )
 
     def get_label_id(self, obj: LabelVideoSegmentLike) -> int | None:
         label = cast(LabelFileLike | None, obj.label)
@@ -319,7 +341,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
 
     def _convert_time_to_frame(self, video_file: VideoFile, time_val: float) -> int:
         try:
-            return video_seconds_to_frame_number(video_file, time_val)
+            return timeline_index_for(self, video_file).seconds_to_frame_number(
+                time_val
+            )
         except ValueError as exc:
             raise serializers.ValidationError(str(exc)) from exc
 
@@ -593,12 +617,9 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         if video is not None:
             start_frame_number = _segment_frame_number(instance, "start_frame_number")
             end_frame_number = _segment_frame_number(instance, "end_frame_number")
-            data["start_time"] = video_frame_number_to_seconds(
-                cast(VideoFile, video), start_frame_number
-            )
-            data["end_time"] = video_frame_number_to_seconds(
-                cast(VideoFile, video), end_frame_number
-            )
+            index = timeline_index_for(self, cast(VideoFile, video))
+            data["start_time"] = index.frame_number_to_seconds(start_frame_number)
+            data["end_time"] = index.frame_number_to_seconds(end_frame_number)
             data["video_id"] = cast(int, getattr(instance.video_file, "id"))
         label = cast(LabelFileLike | None, instance.label)
         if label is not None:
@@ -642,18 +663,21 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         )
         return [cast(FrameLike, frame) for frame in queryset]
 
+    def _boundary_seconds(
+        self, obj: LabelVideoSegmentLike
+    ) -> tuple[float | None, float | None]:
+        video = cast(VideoLike | None, obj.video_file)
+        if video is None:
+            return None, None
+        index = timeline_index_for(self, cast(VideoFile, video))
+        return (
+            index.frame_number_to_seconds(obj.start_frame_number),
+            index.frame_number_to_seconds(obj.end_frame_number),
+        )
+
     def get_time_segments(self, obj: LabelVideoSegmentLike) -> dict[str, object]:
+        start_time, end_time = self._boundary_seconds(obj)
         if not self._include_annotation_payload():
-            start_time = None
-            end_time = None
-            video = cast(VideoLike | None, obj.video_file)
-            if video is not None:
-                start_time = video_frame_number_to_seconds(
-                    cast(VideoFile, video), obj.start_frame_number
-                )
-                end_time = video_frame_number_to_seconds(
-                    cast(VideoFile, video), obj.end_frame_number
-                )
             return {
                 "segment_id": obj.pk,
                 "segment_start": obj.start_frame_number,
@@ -695,8 +719,8 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             segment_id=obj.pk,
             segment_start=obj.start_frame_number,
             segment_end=obj.end_frame_number,
-            start_time=obj.start_time,
-            end_time=obj.end_time,
+            start_time=start_time,
+            end_time=end_time,
             frames=frames_payload,
         )
         return time_segments.model_dump(mode="python")

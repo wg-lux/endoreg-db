@@ -315,3 +315,44 @@ def test_private_keyring_cannot_activate_weak_salt(tmp_path: Path, salt: str) ->
     )
     with pytest.raises(ValueError):
         load_keyring(manifest, kind="identity")
+
+
+@pytest.mark.parametrize("failure", ["wrong_center", "stale_generation", "missing"])
+def test_settings_salt_rejects_mismatched_keyring_binding(
+    failure: str, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    import yaml
+
+    salt = secrets.token_hex(32)
+    secret = atomic_write_file(
+        destination=tmp_path / "salt", content=[salt.encode()], file_mode=0o600
+    )
+    manifest = tmp_path / "ring.yml"
+    if failure != "missing":
+        atomic_write_file(
+            destination=manifest,
+            content=[
+                yaml.safe_dump(
+                    {
+                        "schema_version": 1,
+                        "active": str(secret),
+                        "center_id": (
+                            "other-center" if failure == "wrong_center" else "center"
+                        ),
+                        "generation": 1 if failure == "stale_generation" else 2,
+                    }
+                ).encode()
+            ],
+            file_mode=0o600,
+        )
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(manifest))
+    monkeypatch.setenv("DJANGO_IDENTITY_CENTER_ID", "center")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_GENERATION", "2")
+    monkeypatch.delenv("DJANGO_IDENTITY_SALT_DELIVERY", raising=False)
+    monkeypatch.delenv("DJANGO_IDENTITY_SALT_BUNDLE", raising=False)
+
+    with pytest.raises(ImproperlyConfigured) as raised:
+        load_identity_salt(required=True, allow_inline=False)
+
+    assert salt not in str(raised.value)
+    assert raised.value.__cause__ is None

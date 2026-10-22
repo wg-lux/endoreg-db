@@ -79,10 +79,8 @@ from endoreg_db.services.jobs.video_fps_normalization_jobs import (
     dispatch_video_fps_normalization,
     normalization_status,
 )
-from endoreg_db.services.video_files import (
-    get_or_create_video_state,
-    video_seconds_to_frame_number,
-)
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.timeline_index import VideoTimelineIndexCache
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from endoreg_db.serializers.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
@@ -1303,12 +1301,11 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
         with video_segment_mutation(video_id=int(video.pk)):
             if annotation_input is not None:
                 segment_video = _segment_video_file(segment)
-                new_start = video_seconds_to_frame_number(
-                    segment_video, annotation_input.start_time
+                timeline = VideoTimelineIndexCache().for_video(segment_video)
+                new_start = timeline.seconds_to_frame_number(
+                    annotation_input.start_time
                 )
-                new_end = video_seconds_to_frame_number(
-                    segment_video, annotation_input.end_time
-                )
+                new_end = timeline.seconds_to_frame_number(annotation_input.end_time)
                 _validate_segment_frame_range(
                     new_start,
                     new_end,
@@ -1455,6 +1452,7 @@ def _apply_bulk_segment_timing(
     segment: LabelVideoSegment,
     timing_data: Any,
     video_id: int,
+    timeline_indexes: VideoTimelineIndexCache,
 ) -> None:
     if timing_data is None:
         return
@@ -1462,14 +1460,9 @@ def _apply_bulk_segment_timing(
     if annotation_input is None:
         return
     segment_video = _segment_video_file(segment)
-    new_start = video_seconds_to_frame_number(
-        segment_video,
-        annotation_input.start_time,
-    )
-    new_end = video_seconds_to_frame_number(
-        segment_video,
-        annotation_input.end_time,
-    )
+    timeline = timeline_indexes.for_video(segment_video)
+    new_start = timeline.seconds_to_frame_number(annotation_input.start_time)
+    new_end = timeline.seconds_to_frame_number(annotation_input.end_time)
     _validate_segment_frame_range(
         new_start,
         new_end,
@@ -1529,12 +1522,14 @@ def _validate_one_bulk_segment(
     is_validated: bool,
     information_source_name: str,
     annotator: str | None,
+    timeline_indexes: VideoTimelineIndexCache,
 ) -> bool:
     try:
         _apply_bulk_segment_timing(
             segment=segment,
             timing_data=timing_data,
             video_id=video_id,
+            timeline_indexes=timeline_indexes,
         )
         status_before = _segment_validation_status_before(segment)
         segment.mark_validated(
@@ -1571,6 +1566,7 @@ def _update_bulk_segments_atomically(
 ) -> tuple[int, list[int]]:
     updated_count = 0
     failed_ids: list[int] = []
+    timeline_indexes = VideoTimelineIndexCache()
     with video_segment_mutation(video_id=int(video.pk)):
         for segment in segments:
             segment_id = _segment_pk(segment)
@@ -1582,6 +1578,7 @@ def _update_bulk_segments_atomically(
                 is_validated=is_validated,
                 information_source_name=information_source_name,
                 annotator=annotator,
+                timeline_indexes=timeline_indexes,
             )
             if succeeded:
                 updated_count += 1

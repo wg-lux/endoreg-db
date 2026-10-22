@@ -2,6 +2,7 @@
 
 from collections.abc import Iterator
 from dataclasses import replace
+from datetime import date
 from uuid import uuid4
 
 import pytest
@@ -12,7 +13,7 @@ from endoreg_db.config.secret_keyring import SecretKeyring
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.state.sensitive_meta import SensitiveMetaState
-from endoreg_db.services.patient_identity.matching_inputs import (
+from endoreg_db.services.patient_identity.matching.matching_inputs import (
     MatchingAuthorization,
     MatchingInputError,
     MatchingKeyEpochUnavailable,
@@ -25,7 +26,8 @@ from endoreg_db.utils.hashs import (
     encode_patient_identity,
     get_identity_salt_fingerprint,
 )
-from tests.services.test_identity_salt_rotation import make_identity
+from tests.helpers.data_loader import load_gender_data
+from endoreg_db.models.administration.center.center import Center
 
 pytestmark = pytest.mark.django_db
 KEY = bytes(range(32)).hex().encode()
@@ -36,7 +38,14 @@ NEXT_KEY = bytes(range(32, 64)).hex().encode()
 def identity() -> Iterator[SensitiveMeta]:
     token = identity_keyring_snapshot.set(SecretKeyring(KEY))
     try:
-        row = make_identity()
+        load_gender_data()
+        row = SensitiveMeta.objects.create(
+            center=Center.objects.create(name="matching-source-centre"),
+            patient_first_name="Ada",
+            patient_last_name="Lovelace",
+            patient_dob=date(1980, 1, 2),
+            examination_date=date(2026, 9, 21),
+        )
         SensitiveMetaState.objects.update_or_create(
             origin=row,
             defaults={"names_verified": True, "dob_verified": True},
@@ -53,45 +62,46 @@ def authorization(row: SensitiveMeta) -> MatchingAuthorization:
     )
 
 
-# This test can be reenabled when a patient matching function is found
-
-# def test_real_source_and_candidate_preserve_rows(identity: SensitiveMeta) -> None:
-#     auth = authorization(identity)
-#     epochs = frozenset({get_identity_salt_fingerprint(KEY)})
-#     before = (
-#         SensitiveMeta.objects.count(),
-#         Patient.objects.count(),
-#         identity.patient_hash,
-#     )
-#     source = prepare_source_input(
-#         sensitive_meta_id=identity.pk, authorization=auth, allowed_key_epochs=epochs
-#     )
-#     candidate = prepare_candidate_input(
-#         sensitive_meta_id=identity.pk,
-#         authorization=auth,
-#         source_center_key="external-source-a",
-#     )
-#     assert source.key == KEY and source.target.hex() == identity.patient_hash
-#     assert candidate.payload == encode_patient_identity(
-#         identity.patient_first_name,
-#         identity.patient_last_name,
-#         identity.patient_dob,
-#         "external-source-a",
-#     )
-#     assert source.reference.uuid == candidate.reference.uuid
-#     assert source.reference.row_version != candidate.reference.row_version
-#     assert source.reference.payload_ref != source.reference.row_version
-#     assert_source_unchanged(source, authorization=auth, allowed_key_epochs=epochs)
-#     assert_candidate_unchanged(candidate, authorization=auth)
-#     assert (
-#         SensitiveMeta.objects.count(),
-#         Patient.objects.count(),
-#         identity.patient_hash,
-#     ) == before
-#     assert "Ada" not in repr(candidate) and "Lovelace" not in repr(candidate)
-#     assert KEY.decode() not in repr(source) and identity.patient_hash not in repr(
-#         source
-#     )
+def test_real_source_and_candidate_preserve_rows(identity: SensitiveMeta) -> None:
+    auth = authorization(identity)
+    epochs = frozenset({get_identity_salt_fingerprint(KEY)})
+    before = (
+        SensitiveMeta.objects.count(),
+        Patient.objects.count(),
+        identity.patient_hash,
+    )
+    source = prepare_source_input(
+        sensitive_meta_id=identity.pk, authorization=auth, allowed_key_epochs=epochs
+    )
+    candidate = prepare_candidate_input(
+        sensitive_meta_id=identity.pk,
+        authorization=auth,
+        source_center_key="external-source-a",
+    )
+    assert source.key == KEY and source.target.hex() == identity.patient_hash
+    assert isinstance(identity.patient_first_name, str)
+    assert isinstance(identity.patient_last_name, str)
+    assert isinstance(identity.patient_dob, date)
+    assert candidate.payload == encode_patient_identity(
+        identity.patient_first_name,
+        identity.patient_last_name,
+        identity.patient_dob,
+        "external-source-a",
+    )
+    assert source.reference.uuid == candidate.reference.uuid
+    assert source.reference.row_version != candidate.reference.row_version
+    assert source.reference.payload_ref != source.reference.row_version
+    assert_source_unchanged(source, authorization=auth, allowed_key_epochs=epochs)
+    assert_candidate_unchanged(candidate, authorization=auth)
+    assert (
+        SensitiveMeta.objects.count(),
+        Patient.objects.count(),
+        identity.patient_hash,
+    ) == before
+    assert "Ada" not in repr(candidate) and "Lovelace" not in repr(candidate)
+    assert KEY.decode() not in repr(source) and identity.patient_hash not in repr(
+        source
+    )
 
 
 @pytest.mark.parametrize("deny_center", [True, False])

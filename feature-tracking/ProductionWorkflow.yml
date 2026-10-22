@@ -96,8 +96,41 @@ definition_of_done:
     instructions: Zustandsdiagramme gegen Services, Jobs, Modelle und Endpunkte abgleichen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/clinical_lifecycle/state_machine.py; endoreg_db/services/clinical_lifecycle/facts.py;
+        endoreg_db/services/clinical_lifecycle/audit.py; endoreg_db/management/commands/audit_clinical_lifecycle.py;
+        endoreg_db/services/media/export_ready.py
+    - kind: test
+      reference: tests/services/test_clinical_lifecycle_state_machine.py; tests/services/test_clinical_lifecycle_facts.py;
+        tests/views/media/test_video_ready_export.py::VideoReadyExportEndpointTests::test_rejects_when_patient_identity_is_not_verified
+    - kind: document
+      reference: docs/human_validation_workflow.md#end-to-end-lifecycle-state-machine
+    - kind: command
+      reference: '2026-10-22: pytest center_access_matrix, media_urlpatterns_contract, video_metadata_validation,
+        video_state_transitions, video_segment_validation, lifecycle_state_machine, clinical_lifecycle_state_machine,
+        clinical_lifecycle_facts, video_ready_export: 319 passed. Gesamt-Pyright: 1 fremder Fehler in
+        tests/views/test_central_hub_training_access.py, 24 Warnungen; fokussierter Pyright 0 Fehler.
+        lint_structure: 67 Manifeste gueltig.'
+    - kind: code
+      reference: endoreg_db/services/clinical_lifecycle/legacy_exemption.py; endoreg_db/management/commands/exempt_legacy_identity_verification.py;
+        endoreg_db/services/clinical_lifecycle/state_machine.py::evidence_rejection
+    - kind: test
+      reference: tests/services/test_clinical_lifecycle_legacy_exemption.py; tests/services/test_clinical_lifecycle_state_machine.py
+    - kind: command
+      reference: '2026-10-22: fokussierter Pyright 0 Fehler; pytest clinical_lifecycle (state_machine,
+        facts, legacy_exemption), clinical_workflow_persistence, clinical_workflow_endpoint, video_ready_export,
+        center_access_matrix, video_metadata_validation, video_state_transitions, lifecycle_state_machine:
+        343 passed; lint_structure 67 Manifeste gueltig.'
+    note: 'Benannte Altbestands-Ausnahme (Maintainer-Freigabe 2026-10-22): validierte Videos ohne Identitaetspruefung
+      vor einem Stichtag erhalten je einen unveraenderlichen Audit-Ledger-Eintrag ohne Patientendaten;
+      keine Rueckfuellung der Pruefflags. Die Ausnahme erlaubt keine neue Validierung und ersetzt nicht
+      die Loeschung von Rohmedien und direkten Identifikatoren vor dem Export. evidence_rejection ist
+      als reine Funktion fuer persistence.py veroeffentlicht. Weiterhin nur Exportfreigabe erzwungen;
+      keine Produktionsfreigabe.'
+    assessed_by: claude-clinical-lifecycle-20261022
+    assessed_at: '2026-10-22T15:42:07.483419Z'
 - id: hls_worker_deduplication
   category: data_integrity
   title: HLS-Worker besitzen einen eindeutigen, atomar geschützten Materialisierungsversuch

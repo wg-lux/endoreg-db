@@ -72,11 +72,21 @@ def _validated_hash(source: FieldFile) -> str:
     return digest
 
 
-def verified_video_source_hash(source: FieldFile) -> str:
+def _encrypted_storage(source: FieldFile) -> EncryptedStorage | None:
     storage = source.storage
     if isinstance(storage, LazyEncryptedStorage):
         storage = storage.wrapped
-    if not isinstance(storage, EncryptedStorage):
+    return storage if isinstance(storage, EncryptedStorage) else None
+
+
+def video_source_hash_is_reusable(source: FieldFile) -> bool:
+    """Whether a verified digest of ``source`` can be reused in this process."""
+    return _encrypted_storage(source) is not None
+
+
+def verified_video_source_hash(source: FieldFile) -> str:
+    storage = _encrypted_storage(source)
+    if storage is None:
         return _validated_hash(source)
 
     name = str(source.name)

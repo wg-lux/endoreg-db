@@ -64,6 +64,77 @@ cleanup gates. For reports, it remains to be clarified whether
 anonymized document. Until then, the existing contract that retains the
 anonymized document remains in place.
 
+## End-to-End Lifecycle State Machine
+
+[clinical_lifecycle](../endoreg_db/services/clinical_lifecycle/state_machine.py)
+projects every video and report onto one deterministic state made of three
+tracks. It derives the state from the persisted axes above and stores no
+additional global status. The declarative transition tables are the reference
+contract until the native Rust reducer replaces them.
+
+```mermaid
+stateDiagram-v2
+    direction LR
+    state "Privacy track" as privacy {
+        [*] --> import_pending
+        import_pending --> importing: import_started
+        importing --> quarantined: quarantined
+        quarantined --> importing: quarantine_released
+        importing --> awaiting_validation: artifact_published
+        awaiting_validation --> importing: correction_requested
+        awaiting_validation --> validated: anonymization_validated
+        validated --> raw_purged: raw_purged
+    }
+    state "Annotation track" as annotation {
+        [*] --> not_available
+        not_available --> in_progress: artifact_published
+        in_progress --> annotation_validated: annotation_completed
+        annotation_validated --> in_progress: annotation_reopened
+    }
+    state "Release" as release {
+        [*] --> not_released
+        not_released --> export_ready: export_approved
+        export_ready --> not_released: export_revoked
+        export_ready --> exported: exported
+        exported --> dataset_ingested: dataset_ingested
+        export_ready --> dataset_ingested: dataset_ingested
+    }
+```
+
+Maintainer decisions bound into the reducer (2026-10-22):
+
+| Rule | Enforcement |
+| --- | --- |
+| Validation requires verified first name, last name and date of birth | `anonymization_validated` is rejected without verified identity; stored validation without verified identity is an invariant violation |
+| Validation is final; no correction or repair afterwards | `correction_requested` is rejected from `validated` and `raw_purged` |
+| Raw media and direct identifiers are purged eagerly, before export, without exceptions | `raw_purged` requires an absent raw source and erased direct identifiers; `export_approved` requires `raw_purged` |
+| Export requires both tracks complete | `export_approved` requires `raw_purged` and validated annotations |
+| Consent withdrawal deletes everywhere possible | `consent_withdrawn` moves every state to terminal `withdrawn` |
+| `failed`, `lost` and `withdrawn` accept no progress | Annotation and release events are rejected; `lost` returns only through explicit reconciliation |
+
+Legacy identity exemption: videos validated before identity verification was
+required have no verified first name, last name and date of birth. The
+verification flags are not backfilled, because that would fabricate evidence of
+a human check. Instead `manage.py exempt_legacy_identity_verification
+--cutoff <timestamp>` lists validated, unverified videos imported before the
+cutoff; with `--apply --actor --reason` it appends one immutable audit-ledger
+entry per video without patient data. The exemption replaces the identity
+evidence of these stored records only. It never authorizes a new
+`anonymization_validated` transition, it is an invariant violation on an
+unvalidated video, and it does not waive the purge of raw media and direct
+identifiers before export.
+
+Current enforcement and gaps:
+
+* Export approval (`mark_video_ready_for_export`) runs through the reducer.
+* `manage.py audit_clinical_lifecycle` lists stage counts and invariant
+  violations for stored records without patient identifiers.
+* Validation, purge, segment validation, dataset ingestion and hub export do
+  not yet call the reducer. Reports have no persisted annotation, approval or
+  dataset axis, so their annotation track never completes and they cannot be
+  released. `quarantined` and `withdrawn` have no persisted evidence yet and
+  are therefore never produced by the projection.
+
 ## Failure Matrix
 
 | Failure | Impact | Required Guard and Reproducible Test |

@@ -17,6 +17,8 @@ files:
   role: Document lifecycle state.
 - file: report_import_attempt.py
   role: Fenced report import attempts.
+- file: clinical_workflow.py
+  role: Stored clinical workflow state per media record (compare-and-swap version) and its append-only transition log.
 - file: audit_ledger.py
   role: Audit ledger and head persistence.
 - file: frame_annotation.py

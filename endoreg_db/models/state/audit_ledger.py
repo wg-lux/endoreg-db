@@ -144,21 +144,6 @@ class AuditLedger(models.Model):
             object.__setattr__(head, "last_entry", self)
             head.save(update_fields=["current_hash", "last_entry", "updated_at"])
 
-    def _last_hash(self) -> str:
-        """
-        Return the current ledger head hash, or zero hash if no head exists.
-        """
-        try:
-            head = LedgerHead.objects.first()
-            return head.current_hash if head else "0" * 64
-        except (OperationalError, ProgrammingError) as exc:
-            if _ledger_table_unavailable(exc):
-                logger.warning(
-                    "AuditLedger table unavailable while reading last hash; using zero hash."
-                )
-                return "0" * 64
-            raise
-
     @classmethod
     def verify_chain(cls) -> bool:
         """
@@ -199,24 +184,6 @@ class AuditLedger(models.Model):
             prev=self.prev_hash,
         )
         return payload.sha256_hex()
-
-    def log_validation(
-        self,
-        user: models.Model | None,
-        instance: models.Model,
-        action: str,
-        extra: JsonObject | None = None,
-    ) -> None:
-        """
-        Create an audit record for a validation action.
-        """
-        AuditLedger.objects.create(
-            user=cast(Any, user),
-            object_type=instance.__class__.__name__,
-            object_pk=str(instance.pk),
-            action=action,
-            data=extra or {},
-        )
 
     @classmethod
     def append_identity_commit(

@@ -47,7 +47,7 @@ def test_concurrent_registration_uses_postgresql_unique_constraint(
                 processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
                 processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
                 cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-                payload_schema_version="5.0",
+                payload_schema_version="6.0",
                 resource_rows={},
                 processing_snapshot={},
                 provenance={},

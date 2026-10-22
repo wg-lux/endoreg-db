@@ -5,6 +5,7 @@ mod encryption_state;
 mod errors;
 mod file_copy;
 mod file_identity;
+mod frame_ancestry;
 mod frames;
 mod hls_state;
 mod import_state;
@@ -13,6 +14,7 @@ mod pdf;
 mod state_enums;
 mod storage_profile;
 mod stubs;
+mod timeline_index;
 
 use pyo3::prelude::*;
 
@@ -21,6 +23,11 @@ pub use stubs::stub_info;
 #[pymodule]
 fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_class::<file_identity::BatchProcessor>()?;
+    module.add_class::<timeline_index::TimelineIndex>()?;
+    module.add_function(wrap_pyfunction!(
+        frame_ancestry::compose_frame_ancestry,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(
         encrypted_format::parse_encrypted_header,
         module
@@ -78,6 +85,10 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         import_state::derive_report_anonymization_status,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        import_state::anonymization_status_phase,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(

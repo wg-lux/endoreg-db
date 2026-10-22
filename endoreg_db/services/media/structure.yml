@@ -17,7 +17,7 @@ entrypoints:
   purpose: Acquire a lease through the VideoFile row used by cleanup authorization.
 - name: mark_video_ready_for_export
   file: export_ready.py
-  purpose: Approve the current processed generation after center, state, hash and audit checks.
+  purpose: Approve the current processed generation after center, state, clinical lifecycle, hash and audit checks.
 files:
 - file: __init__.py
   role: Medienintegrität, Operationsleases und Exportfreigabe.
@@ -46,6 +46,7 @@ dependencies:
   - endoreg_db/schemas
   - endoreg_db/services/annotations
   - endoreg_db/services/centers
+  - endoreg_db/services/clinical_lifecycle
   - endoreg_db/services/hub
   - endoreg_db/services/runtime
   - endoreg_db/services/streaming

@@ -223,17 +223,6 @@ class RawPdfState(models.Model):
         if save:
             self.save(update_fields=["initial_prediction_completed", "date_modified"])
 
-    def mark_pdf_meta_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the report metadata extraction step as completed for this state.
-
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.pdf_meta_extracted = True
-        if save:
-            self.save(update_fields=["pdf_meta_extracted", "date_modified"])
-
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
         """
         Mark the text metadata extraction step as completed for this report processing state.

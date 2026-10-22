@@ -14,6 +14,7 @@ from endoreg_db.models import Center, Examiner, PortalUserInfo, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_files import source_hash
 from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
 from endoreg_db.views import access_control
 from endoreg_db.views.video import hls_stream
@@ -126,6 +127,118 @@ def test_hls_legacy_identity_is_rejected_without_hashing_source(
             video=hls_artifact.video,
             key_id=hls_artifact.key_id,
         )
+
+
+_HLS_VIEW_CASES = (
+    pytest.param(hls_stream.HLSPlaylistView, False, {}, id="playlist"),
+    pytest.param(hls_stream.HLSKeyView, True, {}, id="key"),
+    pytest.param(
+        hls_stream.HLSSegmentView, True, {"segment_name": "seg_000.ts"}, id="segment"
+    ),
+)
+
+
+def _call_hls_view(
+    view_class: type[Any],
+    key_addressed: bool,
+    extra: dict[str, str],
+    hls_artifact: VideoHlsArtifact,
+    request: Any,
+) -> Any:
+    kwargs: dict[str, object] = {"pk": hls_artifact.video_id, **extra}
+    if key_addressed:
+        kwargs["key_id"] = hls_artifact.key_id
+    return view_class.as_view()(request, **kwargs)
+
+
+def _record_source_reads(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    events: list[str] = []
+    read_source = source_hash.get_file_hash
+    lock_video = VideoFile.objects.select_for_update
+
+    def recording_read(file: Any) -> str:
+        events.append("read")
+        return read_source(file)
+
+    def recording_lock(*args: Any, **kwargs: Any) -> Any:
+        events.append("lock")
+        return lock_video(*args, **kwargs)
+
+    source_hash._reset_after_fork()  # pyright: ignore[reportPrivateUsage]
+    monkeypatch.setattr(source_hash, "get_file_hash", recording_read)
+    monkeypatch.setattr(VideoFile.objects, "select_for_update", recording_lock)
+    return events
+
+
+@pytest.mark.parametrize(("view_class", "key_addressed", "extra"), _HLS_VIEW_CASES)
+def test_hls_source_is_read_once_before_the_video_row_lock(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+    view_class: type[Any],
+    key_addressed: bool,
+    extra: dict[str, str],
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    events = _record_source_reads(monkeypatch)
+    user = User.objects.create_user(username="hls-prelock-source-reader")
+    request = _authenticated_request("/", user)
+
+    response = _call_hls_view(view_class, key_addressed, extra, hls_artifact, request)
+
+    assert response.status_code == 200
+    # One full read precedes every row lock (lookup and lease renewal); the
+    # locked identity check reuses the digest instead of reading again.
+    assert events[0] == "read"
+    assert events.count("read") == 1
+    assert "lock" in events
+
+
+@pytest.mark.parametrize(("view_class", "key_addressed", "extra"), _HLS_VIEW_CASES[1:])
+def test_hls_legacy_identity_is_not_read_before_the_video_row_lock(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+    view_class: type[Any],
+    key_addressed: bool,
+    extra: dict[str, str],
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    VideoHlsArtifact.objects.filter(pk=hls_artifact.pk).update(source_content_hash="")
+    events = _record_source_reads(monkeypatch)
+    user = User.objects.create_user(username="hls-legacy-prelock-reader")
+    request = _authenticated_request("/", user)
+
+    response = _call_hls_view(view_class, key_addressed, extra, hls_artifact, request)
+
+    assert response.status_code == 404
+    assert "read" not in events
+
+
+@pytest.mark.parametrize(("view_class", "key_addressed", "extra"), _HLS_VIEW_CASES)
+def test_hls_source_is_not_read_for_requests_outside_center_scope(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+    view_class: type[Any],
+    key_addressed: bool,
+    extra: dict[str, str],
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    events = _record_source_reads(monkeypatch)
+
+    def resolve_other_center(_user: object) -> int:
+        return int(hls_artifact.video.center_id) + 1
+
+    monkeypatch.setattr(
+        access_control, "resolve_allowed_center_id", resolve_other_center
+    )
+    user = User.objects.create_user(username="hls-out-of-scope-prelock-reader")
+    request = _authenticated_request("/", user)
+    user.is_staff = False
+
+    response = _call_hls_view(view_class, key_addressed, extra, hls_artifact, request)
+
+    assert response.status_code == 403
+    assert events == []
 
 
 class _GroupRelation(Protocol):

@@ -25,6 +25,10 @@ files:
   role: HTTP Live Streaming (HLS) derivative backfill.
 - file: commands/normalize_video_storage.py
   role: Canonical video storage normalization.
+- file: commands/audit_clinical_lifecycle.py
+  role: Read-only projection of all videos and reports onto the clinical lifecycle with invariant violations.
+- file: commands/exempt_legacy_identity_verification.py
+  role: Dry-run-first recording of the legacy identity exemption for validated videos before a cutoff.
 - file: reference_catalog_command.py
   role: Shared reference catalog command adapter.
 - file: command_errors.py

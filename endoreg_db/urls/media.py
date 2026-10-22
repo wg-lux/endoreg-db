@@ -5,6 +5,11 @@ from endoreg_db.views.media.export_downloads import VideoExportDownloadView
 
 from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
+from endoreg_db.views.media.clinical_workflow import (
+    ClinicalWorkflowStagesView,
+    ClinicalWorkflowView,
+)
+from endoreg_db.services.clinical_lifecycle.state_machine import ClinicalRecordKind
 from endoreg_db.views.media.hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
@@ -493,6 +498,25 @@ STUDY_TABLE_URLPATTERNS: list[URLPattern] = [
     ),
 ]
 
+# lx-annotate docs/guides/media-workflow-frontend-contract.md
+MEDIA_WORKFLOW_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/videos/<int:pk>/workflow/",
+        ClinicalWorkflowView.as_view(record_kind=ClinicalRecordKind.VIDEO),
+        name="video-clinical-workflow",
+    ),
+    path(
+        "media/pdfs/<int:pk>/workflow/",
+        ClinicalWorkflowView.as_view(record_kind=ClinicalRecordKind.REPORT),
+        name="pdf-clinical-workflow",
+    ),
+    path(
+        "media/workflow/stages/",
+        ClinicalWorkflowStagesView.as_view(),
+        name="media-workflow-stages",
+    ),
+]
+
 urlpatterns: list[URLPattern] = [
     *STUDY_TABLE_URLPATTERNS,
     *HUB_TRANSFER_URLPATTERNS,
@@ -503,4 +527,5 @@ urlpatterns: list[URLPattern] = [
     *VIDEO_SEGMENT_VALIDATION_URLPATTERNS,
     *SENSITIVE_METADATA_URLPATTERNS,
     *PDF_REPORT_MEDIA_URLPATTERNS,
+    *MEDIA_WORKFLOW_URLPATTERNS,
 ]

@@ -9,6 +9,8 @@ from django.core.files.base import ContentFile
 from django.db.models.fields.files import FieldFile
 from django.utils import timezone
 from django.test import override_settings
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIRequestFactory, force_authenticate
 from rest_framework import status
 from django.core.files.uploadedfile import SimpleUploadedFile  # <--- Import this
@@ -186,6 +188,7 @@ def test_status_honors_media_identity_with_colliding_ids(kind: str) -> None:
     response = anonymization_status(request, file_id=15)
     assert response.status_code == 200
     assert response.data["file_type"] == ("video" if kind == "video" else "pdf")
+    assert response.data["anonymization_phase"] == "not_started"
 
 
 @pytest.mark.django_db
@@ -377,7 +380,10 @@ def test_anonymization_overview_mixed_content():
 
     # --- Create Video (Status: VALIDATED) ---
     video_state = VideoState.objects.create(
-        anonymization_validated=True, anonymized=True, sensitive_meta_processed=True
+        anonymization_validated=True,
+        anonymized=True,
+        sensitive_meta_processed=True,
+        frames_extracted=True,
     )
 
     # Create a dummy video file in memory
@@ -531,6 +537,11 @@ def test_anonymization_overview_mixed_content():
 
     assert data[1]["anonymization_status"] == AnonymizationState.VALIDATED
     assert data[1]["annotation_status"] == SegmentAnnotationStatus.NOT_STARTED.value
+    assert data[0]["anonymization_phase"] == "awaiting_validation"
+    assert data[1]["anonymization_phase"] == "validated"
+    # AI predictions exist only for videos; frames exist, prediction has not run yet.
+    assert data[0]["ai_prediction_status"] is None
+    assert data[1]["ai_prediction_status"] == "prediction_pending"
 
 
 @pytest.mark.django_db
@@ -618,6 +629,12 @@ def test_unattached_upload_stays_visible_through_recovery() -> None:
             if job_status in (UploadJob.Status.ERROR, UploadJob.Status.LOST)
             else "processing_anonymization"
         )
+        assert row["anonymization_phase"] == (
+            "failed"
+            if job_status in (UploadJob.Status.ERROR, UploadJob.Status.LOST)
+            else "in_progress"
+        )
+        assert row["ai_prediction_status"] is None
         assert row["import_only"] is True
         if job_status in (UploadJob.Status.ERROR, UploadJob.Status.LOST):
             assert "safe_reimport" not in row["upload_job"]["allowed_actions"]
@@ -901,3 +918,54 @@ def test_polling_reports_actual_lock(
     finally:
         if locked:
             PollingCoordinator.release_processing_lock(media.pk, media_type)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("flags", "expected"),
+    [
+        ({}, "frames_unavailable"),
+        ({"frames_extracted": True}, "prediction_pending"),
+        (
+            {"frames_extracted": True, "initial_prediction_completed": True},
+            "prediction_ready",
+        ),
+        (
+            {
+                "frames_extracted": True,
+                "initial_prediction_completed": True,
+                "lvs_created": True,
+            },
+            "annotation_ready",
+        ),
+    ],
+)
+def test_overview_sends_native_ai_prediction_status_without_extra_queries(
+    flags: dict[str, bool], expected: str
+) -> None:
+    center = Center.objects.create(name=f"prediction-{expected}")
+    user = User.objects.create_superuser(username=f"prediction-{expected}")
+
+    def overview() -> list[dict[str, object]]:
+        request = APIRequestFactory().get("/api/anonymization/items/overview/")
+        force_authenticate(request, user=user)
+        response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+        return json.loads(response.content)
+
+    for index in range(3):
+        VideoFile.objects.create(
+            center=center,
+            raw_video_hash=f"prediction-{expected}-{index}",
+            meta={},
+            state=VideoState.objects.create(**flags),
+        )
+    with CaptureQueriesContext(connection) as queries:
+        rows = overview()
+    assert [row["ai_prediction_status"] for row in rows] == [expected] * 3
+    # Prediction flags come from the joined state row, never a per-row lookup.
+    state_table = VideoState._meta.db_table
+    assert not [
+        query["sql"]
+        for query in queries.captured_queries
+        if query["sql"].startswith(f'SELECT "{state_table}"')
+    ]

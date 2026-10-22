@@ -279,6 +279,13 @@ retired and should not be reintroduced.
 The import barrel at `endoreg_db/models/__init__.py` amplifies this risk by
 pulling broad subpackages into otherwise small imports.
 
+`endoreg_db/models/state/clinical_workflow.py` is persistence-only and must stay
+that way: it imports Django alone, stores workflow tokens as plain strings, and
+is written exclusively by `endoreg_db/services/clinical_lifecycle/persistence.py`
+(compare-and-swap on `version`, append-only transitions). Token validation stays
+in the service until the lx-data-models contract provides database choices
+(`feature-tracking/MediaWorkflowStateMachine.yml`).
+
 ## Primary Hot Spots
 
 | Area | Current role | First files to inspect |

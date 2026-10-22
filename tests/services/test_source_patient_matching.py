@@ -103,8 +103,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
         first = transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
             existing=None,
             payload={
-                "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03001",
-                "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03002",
+                "patient_uuid": "821d81f1-fb20-8e38-b777-01c67fe03001",
+                "examination_uuid": "821d81f1-fb20-8e38-b777-01c67fe03002",
             },
             center=center,
             source_node=nodes[0],
@@ -112,8 +112,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
         retry = transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
             existing=first,
             payload={
-                "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03001",
-                "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03002",
+                "patient_uuid": "821d81f1-fb20-8e38-b777-01c67fe03001",
+                "examination_uuid": "821d81f1-fb20-8e38-b777-01c67fe03002",
             },
             center=center,
             source_node=nodes[0],
@@ -121,8 +121,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
         second_exam = transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
             existing=None,
             payload={
-                "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03001",
-                "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03003",
+                "patient_uuid": "821d81f1-fb20-8e38-b777-01c67fe03001",
+                "examination_uuid": "821d81f1-fb20-8e38-b777-01c67fe03003",
             },
             center=center,
             source_node=nodes[0],
@@ -131,8 +131,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
             transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
                 existing=None,
                 payload={
-                    "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03001",
-                    "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03002",
+                    "patient_uuid": "821d81f1-fb20-8e38-b777-01c67fe03001",
+                    "examination_uuid": "821d81f1-fb20-8e38-b777-01c67fe03002",
                 },
                 center=center,
                 source_node=nodes[1],
@@ -140,8 +140,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
         other_node = transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
             existing=None,
             payload={
-                "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03005",
-                "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03006",
+                "patient_uuid": "821d81f1-fb20-8e38-b777-01c67fe03005",
+                "examination_uuid": "821d81f1-fb20-8e38-b777-01c67fe03006",
             },
             center=center,
             source_node=nodes[1],
@@ -150,8 +150,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
             transfers._upsert_sensitive_meta(  # pyright: ignore[reportPrivateUsage]
                 existing=None,
                 payload={
-                    "patient_uuid": "821d81f1-fb20-4e38-b777-01c67fe03004",
-                    "examination_uuid": "821d81f1-fb20-4e38-b777-01c67fe03002",
+                    "patient_uuid": "821d81f1-fb20-8e38-b777-01c67fe03004",
+                    "examination_uuid": "821d81f1-fb20-8e38-b777-01c67fe03002",
                 },
                 center=center,
                 source_node=nodes[0],
@@ -162,8 +162,8 @@ def test_uuids_link_retries_and_reject_source_ownership_collisions_without_salts
     assert second_exam.pseudo_examination_id != first.pseudo_examination_id
     assert first.pseudo_patient is not None
     assert first.pseudo_examination is not None
-    assert str(first.pseudo_patient.uuid) == "821d81f1-fb20-4e38-b777-01c67fe03001"
-    assert str(first.pseudo_examination.uuid) == "821d81f1-fb20-4e38-b777-01c67fe03002"
+    assert str(first.pseudo_patient.uuid) == "821d81f1-fb20-8e38-b777-01c67fe03001"
+    assert str(first.pseudo_examination.uuid) == "821d81f1-fb20-8e38-b777-01c67fe03002"
     assert other_node.pseudo_patient_id != first.pseudo_patient_id
     assert other_node.pseudo_examination_id != first.pseudo_examination_id
     # UUID retries link records; independently created source records stay separate.

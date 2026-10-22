@@ -1,0 +1,154 @@
+schema_version: '1.0'
+id: media_workflow_state_machine
+name: Medien-Workflow-Zustandsmaschine
+description: Ein expliziter, endlicher Workflow pro Medienobjekt (Video oder Bericht) vom Import bis zur
+  Datensatzaufnahme mit Datenschutz- und Annotationsspur. Der Vertrag liegt in lx-data-models, der reine
+  Reducer in Rust, Persistenz und API in endoreg-db, Darstellung in lx-annotate. Abgrenzung zu production_workflow/canonical_state_machine
+  (Python-Projektion clinical_lifecycle) wird mit dessen Owner über den Tracker abgestimmt.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/human_validation_workflow.md
+  disposition: reference
+  note: Bestehende Validierungsachsen; die Projektion clinical_lifecycle bleibt Referenz bis der Rust-Reducer
+    existiert.
+definition_of_done:
+- id: contract_in_lx_dtypes
+  category: requirements
+  title: Zustands-, Ereignis- und Übergangsvertrag liegt in lx-data-models
+  acceptance:
+  - Privacy- und Annotationsspur sowie Ereignisse sind als typisierte Enums ohne I/O und ohne Django deklariert.
+  - Die Übergangstabelle ist exhaustiv; ungültige Ereignisse und unmögliche Zustandspaare schlagen laut
+    fehl.
+  - Rohmedien müssen vor Export gelöscht sein; nach Validierung ist keine Korrektur möglich; Widerruf
+    ist aus jedem Zustand erlaubt und löscht lokale Artefakte; LOST verlässt keinen automatischen Weg.
+  - Vertragstests prüfen Vollständigkeit, Idempotenz (Selbstübergänge) und die GDPR-Löschpunkte.
+  required: true
+  verification:
+    kind: command
+    command:
+    - uv
+    - run
+    - --directory
+    - ../lx-data-models
+    - pytest
+    - tests/unit/lx_dtypes/models/contracts/test_media_workflow.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence: []
+    note: 'Committed in lx-data-models 3a81988 and f7f924a: tokens, tables, event origins, API shapes,
+      policy payloads. Awaiting owner review; guards stay in the reducer.'
+    assessed_by: claude-media-workflow-20261022
+    assessed_at: '2026-10-22T15:58:53.951031Z'
+- id: rust_reducer
+  category: functionality
+  title: Reiner Rust-Reducer setzt den Vertrag um
+  acceptance:
+  - reduce(state, event) ist I/O-frei, exhaustiv und gegen den Vertrag paritätsgetestet.
+  required: true
+  verification:
+    kind: manual
+    instructions: Rust-Tests je Übergang und Python-/TypeScript-Enum-Paritätstests prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: persistence_and_api
+  category: functionality
+  title: Persistierter Zustand mit bedingtem Schreiben, Idempotenzschlüsseln und Audit
+  acceptance:
+  - Jeder akzeptierte Übergang ist ein Compare-and-Swap mit Idempotenzschlüssel und schreibt eine Audit-Zeile.
+  - Nebenwirkungen laufen nach Commit und sind idempotent.
+  required: true
+  verification:
+    kind: manual
+    instructions: Nebenläufigkeitstests mit parallelen Workern ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/clinical_lifecycle/persistence.py
+    - kind: test
+      reference: tests/views/media/test_clinical_workflow_endpoint.py
+    note: 'First slice by claude-status-review: ClinicalWorkflowRecord (CAS version), transition rows,
+      apply_workflow_event, GET media/videos|pdfs/<pk>/workflow/. Open: write endpoint, wiring, concurrency
+      tests, DB token choices.'
+    assessed_by: claude-media-workflow-20261022
+    assessed_at: '2026-10-22T15:59:28.959001Z'
+- id: read_only_projection
+  category: operations
+  title: Read-only-Projektion bildet jedes bestehende Objekt auf genau einen Zustand ab
+  acceptance:
+  - Auf einer Kopie der Produktionsdaten ist jedes Objekt genau einem Zustand zugeordnet.
+  - Nicht abbildbare Objekte werden zur Prüfung aufgelistet und nicht geraten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Audit-Kommando auf Datenbankkopie ausführen und Liste nicht abbildbarer Objekte prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: gdpr_deletion_points
+  category: security
+  title: GDPR-Löschpunkte sind erzwungen und im Audit belegt
+  acceptance:
+  - Rohmedien und identifizierende Metadaten werden vor Export gelöscht; eine Korrektur nach Validierung
+    ist unmöglich.
+  - Widerruf löscht alle lokalen Artefakte und wird, soweit möglich, an Hub und Datensätze weitergegeben.
+  - Jede Löschung ist ein akzeptierter Übergang mit Audit-Zeile.
+  required: true
+  verification:
+    kind: manual
+    instructions: Löschpunkte gegen Audit-Ledger und Dateisystem prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: frontend_worklists
+  category: functionality
+  title: lx-annotate zeigt Stage-Worklisten und erlaubte nächste Schritte
+  acceptance:
+  - Die API liefert erlaubte Ereignisse je Zustand; die Oberfläche bietet nur diese an.
+  required: true
+  verification:
+    kind: manual
+    instructions: Usability-Durchgang mit klinischem Personal und vollständige Frontend-Suite.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: concurrency_and_parity_tests
+  category: testing
+  title: Nebenläufigkeits- und Paritätstests sichern Reducer, Vertrag und Persistenz
+  acceptance:
+  - Parallele Worker können einen Übergang nie doppelt anwenden.
+  - Python- und TypeScript-Enums sind identisch zum Vertrag.
+  required: true
+  verification:
+    kind: manual
+    instructions: Nebenläufigkeitstests und Paritätstests in allen drei Repositories ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: workflow_runbook
+  category: documentation
+  title: Betriebs- und Architekturdokumentation beschreibt Zustände, Löschpunkte und Reparatur
+  acceptance:
+  - Zustände, Ereignisse, Löschpunkte und LOST-Behandlung sind dokumentiert und verweisen auf diese Feature-YAML.
+  required: true
+  verification:
+    kind: manual
+    instructions: Dokument gegen Vertrag und Implementierung prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

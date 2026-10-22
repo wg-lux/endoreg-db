@@ -2,6 +2,7 @@ from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
 
+from datetime import date, datetime
 from typing import cast
 import hashlib
 from unittest.mock import patch
@@ -21,7 +22,18 @@ from endoreg_db.models import (
     VideoProcessingHistory,
     VideoState,
 )
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.schemas.sensitive_meta_verification import (
+    SensitiveMetaVerificationCommand,
+)
+from endoreg_db.services.patient_identity.verification import (
+    update_sensitive_meta_verification,
+)
+from endoreg_db.services.privacy.quality_evaluation import (
+    clear_sensitive_meta_direct_identifiers,
+)
 import endoreg_db.services.video_files.segment_blackening as blackening
 
 
@@ -35,14 +47,40 @@ class VideoReadyExportEndpointTests(TestCase):
             is_staff=True,
         )
 
-    def _video(self, *, state: VideoState | None = None) -> VideoFile:
+    def _sensitive_meta(self, *, verified: bool) -> SensitiveMeta:
+        meta = SensitiveMeta.objects.create(
+            center=self.center,
+            patient_first_name="Max",
+            patient_last_name="Mustermann",
+            patient_dob=timezone.make_aware(datetime(1994, 3, 21)),
+            examination_date=date(2025, 11, 27),
+            patient_gender=Gender.objects.create(
+                name=f"ready-gender-{uuid4().hex[:8]}"
+            ),
+        )
+        if verified:
+            update_sensitive_meta_verification(
+                sensitive_meta_id=meta.pk,
+                command=SensitiveMetaVerificationCommand(
+                    dob_verified=True, names_verified=True
+                ),
+            )
+            # Validation is followed by the eager purge of direct identifiers.
+            clear_sensitive_meta_direct_identifiers(meta)
+        return meta
+
+    def _video(
+        self, *, state: VideoState | None = None, identity_verified: bool = True
+    ) -> VideoFile:
         content = b"processed-video-for-export"
         default_state = state is None
         video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash=f"ready-video-{uuid4().hex[:8]}",
+            sensitive_meta=self._sensitive_meta(verified=identity_verified),
             state=state
             or VideoState.objects.create(
+                anonymized=True,
                 anonymization_validated=True,
                 outside_segments_removed=True,
                 segment_annotations_created=True,
@@ -63,12 +101,14 @@ class VideoReadyExportEndpointTests(TestCase):
         if default_state:
             video_state = cast(VideoState, video.state)
             assert video_state is not None
+            video_state.anonymized = True
             video_state.anonymization_validated = True
             video_state.outside_segments_removed = True
             video_state.segment_annotations_created = True
             video_state.segment_annotations_validated = True
             video_state.save(
                 update_fields=[
+                    "anonymized",
                     "anonymization_validated",
                     "outside_segments_removed",
                     "segment_annotations_created",
@@ -79,6 +119,7 @@ class VideoReadyExportEndpointTests(TestCase):
 
     def _mark_ready_state(self, video: VideoFile) -> None:
         state = video.get_or_create_state()
+        state.anonymized = True
         state.anonymization_validated = True
         state.outside_segments_removed = True
         state.segment_annotations_created = True
@@ -198,6 +239,21 @@ class VideoReadyExportEndpointTests(TestCase):
         assert state.ready_for_export_at is None
         assert state.ready_for_export_by == ""
         assert state.processed_file_sha256 == ""
+
+    def test_rejects_when_patient_identity_is_not_verified(self):
+        video = self._video(identity_verified=False)
+        self.client.force_login(self.user)
+
+        response = self.client.post(
+            f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+            data={"center_key": self.center.center_key},
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409, response.content
+        assert "validated_without_verified_identity" in response.json()["error"]
+        video.refresh_from_db()
+        assert video.get_or_create_state().ready_for_export is False
 
     def test_rejects_when_outside_segments_are_not_removed(self):
         state = VideoState.objects.create(

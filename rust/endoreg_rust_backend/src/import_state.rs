@@ -1,3 +1,4 @@
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -23,6 +24,55 @@ impl AnonymizationStatus {
             Self::Failed => "failed",
             Self::Started => "started",
             Self::Anonymized => "anonymized",
+        }
+    }
+
+    fn parse(value: &str) -> Option<Self> {
+        match value {
+            "not_started" => Some(Self::NotStarted),
+            "extracting_frames" => Some(Self::ExtractingFrames),
+            "processing_anonymization" => Some(Self::ProcessingAnonymization),
+            "done_processing_anonymization" => Some(Self::DoneProcessingAnonymization),
+            "validated" => Some(Self::Validated),
+            "failed" => Some(Self::Failed),
+            "started" => Some(Self::Started),
+            "anonymized" => Some(Self::Anonymized),
+            _ => None,
+        }
+    }
+
+    /// Exhaustive lifecycle phase; consumers must not keep their own status lists.
+    const fn phase(self) -> AnonymizationPhase {
+        match self {
+            Self::NotStarted => AnonymizationPhase::NotStarted,
+            Self::ExtractingFrames
+            | Self::ProcessingAnonymization
+            | Self::Started
+            | Self::Anonymized => AnonymizationPhase::InProgress,
+            Self::DoneProcessingAnonymization => AnonymizationPhase::AwaitingValidation,
+            Self::Validated => AnonymizationPhase::Validated,
+            Self::Failed => AnonymizationPhase::Failed,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum AnonymizationPhase {
+    NotStarted,
+    InProgress,
+    AwaitingValidation,
+    Validated,
+    Failed,
+}
+
+impl AnonymizationPhase {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::NotStarted => "not_started",
+            Self::InProgress => "in_progress",
+            Self::AwaitingValidation => "awaiting_validation",
+            Self::Validated => "validated",
+            Self::Failed => "failed",
         }
     }
 }
@@ -175,9 +225,54 @@ pub(crate) fn derive_report_anonymization_status(
     resolve_status(state, true).as_str()
 }
 
+#[pyfunction]
+pub(crate) fn anonymization_status_phase(status: &str) -> PyResult<&'static str> {
+    AnonymizationStatus::parse(status)
+        .map(|parsed| parsed.phase().as_str())
+        .ok_or_else(|| PyValueError::new_err(format!("unsupported anonymization status: {status}")))
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{resolve_status, AnonymizationStateFlags, AnonymizationStatus};
+    use super::{resolve_status, AnonymizationPhase, AnonymizationStateFlags, AnonymizationStatus};
+
+    const ALL_STATUSES: [AnonymizationStatus; 8] = [
+        AnonymizationStatus::NotStarted,
+        AnonymizationStatus::ExtractingFrames,
+        AnonymizationStatus::ProcessingAnonymization,
+        AnonymizationStatus::DoneProcessingAnonymization,
+        AnonymizationStatus::Validated,
+        AnonymizationStatus::Failed,
+        AnonymizationStatus::Started,
+        AnonymizationStatus::Anonymized,
+    ];
+
+    #[test]
+    fn every_status_round_trips_and_has_one_phase() {
+        for status in ALL_STATUSES {
+            assert_eq!(AnonymizationStatus::parse(status.as_str()), Some(status));
+        }
+        let in_progress = [
+            AnonymizationStatus::ExtractingFrames,
+            AnonymizationStatus::ProcessingAnonymization,
+            AnonymizationStatus::Started,
+            AnonymizationStatus::Anonymized,
+        ];
+        for status in in_progress {
+            assert_eq!(status.phase(), AnonymizationPhase::InProgress);
+        }
+        assert_eq!(
+            AnonymizationStatus::DoneProcessingAnonymization.phase(),
+            AnonymizationPhase::AwaitingValidation
+        );
+    }
+
+    #[test]
+    fn rejects_unknown_status_tokens() {
+        for token in ["", "predicting_segments", "Validated", "done"] {
+            assert_eq!(AnonymizationStatus::parse(token), None);
+        }
+    }
 
     const EMPTY_STATE: AnonymizationStateFlags = AnonymizationStateFlags {
         processing_error: false,

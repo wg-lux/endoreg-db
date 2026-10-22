@@ -20,7 +20,10 @@ from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    anonymization_phase,
+)
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 from endoreg_db.services.privacy.workflow import AnonymizationService
 from endoreg_db.services.runtime.polling_coordinator import (
@@ -204,6 +207,11 @@ class AnonymizationOverviewView(APIView):
                 allowed_center_ids=allowed_center_ids,
             )
         )
+        # One Rust-owned phase per row so clients never keep their own status lists.
+        for row in serializer_data:
+            row["anonymization_phase"] = anonymization_phase(
+                str(row["anonymization_status"])
+            ).value
         serializer_data.sort(
             key=lambda item: str(item.get("created_at") or ""),
             reverse=True,
@@ -288,6 +296,7 @@ class AnonymizationOverviewView(APIView):
                         else AnonymizationState.PROCESSING_ANONYMIZING
                     ),
                     "annotation_status": "",
+                    "ai_prediction_status": None,
                     "created_at": upload_job.created_at,
                     "sensitive_meta_id": None,
                     "file_size": 0,
@@ -583,6 +592,7 @@ def anonymization_status(request: Request, file_id: int) -> Response:
             "file_id": file_id,
             "file_type": file_type,
             "anonymization_status": status_val,
+            "anonymization_phase": anonymization_phase(status_val).value,
             "integrity_status": status_info.get("integrity_status", ""),
             "integrity_error": status_info.get("integrity_error", ""),
             "processing_locked": PollingCoordinator.is_processing_locked(

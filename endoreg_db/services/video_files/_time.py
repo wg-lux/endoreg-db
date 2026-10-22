@@ -160,6 +160,11 @@ def _mapping_from_video(video: "VideoFile") -> VideoTimelineMapping:
     return mapping
 
 
+def resolve_video_timeline_mapping(video: "VideoFile") -> VideoTimelineMapping:
+    """Validate ``VideoFile.meta`` once and return the active timeline mapping."""
+    return _mapping_from_video(video)
+
+
 def _mapping_contract_from_video(
     video: "VideoFile",
 ) -> tuple[VideoTimelineMapping, TimelineVersion, TimestampMapping]:

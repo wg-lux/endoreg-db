@@ -12,6 +12,10 @@ files:
   role: Native crate build and dependencies
 - file: endoreg_rust_backend/src/lib.rs
   role: Python extension registration
+- file: endoreg_rust_backend/src/timeline_index.rs
+  role: Read-only TimelineIndex applying the canonical frame/time boundary rules
+- file: endoreg_rust_backend/src/frame_ancestry.rs
+  role: Compose source_frame_indices from the recording to the final generation
 contracts:
 - name: Agent workflow
   doc: AGENTS.md

@@ -11,6 +11,8 @@ files:
   role: Authenticated paginated personal annotation comparisons with explicit response serializers.
 - file: video_media.py
   role: Video list and detail API.
+- file: clinical_workflow.py
+  role: Read-only workflow item (media/videos|pdfs/<pk>/workflow/) and stage-count (media/workflow/stages/) endpoints per lx-annotate docs/guides/media-workflow-frontend-contract.md.
 - file: pdf_media.py
   role: Report media API.
 - file: frame_media.py

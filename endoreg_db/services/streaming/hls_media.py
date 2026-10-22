@@ -51,7 +51,10 @@ from endoreg_db.schemas.video_storage import (
     MeasuredAverageFrameRate,
     VideoArtifactProbe,
 )
-from endoreg_db.services.video_files.source_hash import verified_video_source_hash
+from endoreg_db.services.video_files.source_hash import (
+    verified_video_source_hash,
+    video_source_hash_is_reusable,
+)
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
     get_active_raw_video_file,
@@ -2689,6 +2692,64 @@ def get_ready_hls_artifact(
     if not available:
         raise FileNotFoundError("HLS artifact files are missing")
     return artifact
+
+
+def ready_hls_artifact_kind_for_key(
+    *,
+    video: VideoFile,
+    key_id: UUID,
+) -> VideoArtifactKind | None:
+    """Return the kind of this video's READY derivative for a playback key.
+
+    Unlocked read used only to authorize and prepare a request before the
+    locked ``get_ready_hls_artifact`` lookup, which remains authoritative.
+    """
+    artifact_kind = (
+        video.hls_artifacts.filter(
+            key_id=key_id,
+            status=VideoHlsArtifact.Status.READY.value,
+        )
+        .values_list("artifact_kind", flat=True)
+        .first()
+    )
+    return None if artifact_kind is None else coerce_hls_artifact_kind(artifact_kind)
+
+
+def verify_ready_hls_source_before_lock(
+    *,
+    video: VideoFile,
+    artifact_kind: VideoArtifactKind,
+) -> None:
+    """Verify the READY derivative's source before the video row lock is taken.
+
+    ``get_ready_hls_artifact`` rechecks the complete source identity under the
+    video row lock. Verifying first lets that locked check reuse this process's
+    digest, so concurrent playlist, key and segment requests do not wait on the
+    row lock while one request decrypts and hashes the full source. Only
+    sources whose digest is reusable, and READY rows the locked check would
+    hash, are verified here. Failures are left to the locked check to report.
+    """
+    if (
+        not video.hls_artifacts.filter(
+            artifact_kind=artifact_kind.value,
+            status=VideoHlsArtifact.Status.READY.value,
+        )
+        .exclude(source_content_hash="")
+        .exists()
+    ):
+        return
+    try:
+        source = resolve_hls_source(video, artifact_kind)
+        if not video_source_hash_is_reusable(source.field_file):
+            return
+        _source_content_hash(source)
+    except (FileNotFoundError, ValueError, VideoStorageNormalizationError) as exc:
+        logger.info(
+            "Deferred HLS source verification to locked lookup: video=%s kind=%s reason=%s",
+            video.pk,
+            artifact_kind.value,
+            type(exc).__name__,
+        )
 
 
 def _has_supported_encoding_profile(artifact: VideoHlsArtifact) -> bool:

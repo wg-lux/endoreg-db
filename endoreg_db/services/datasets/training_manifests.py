@@ -471,7 +471,14 @@ def _approved_video_filter(prefix: str) -> Q:
                 f"{prefix}state__processing_error": False,
             }
         )
-        & ~Q(**{f"{prefix}meta__integrity_status__iexact": "lost"})
+        # A missing marker is not LOST; require the key so SQL NULL cannot
+        # turn the negated lookup into an exclusion.
+        & ~Q(
+            **{
+                f"{prefix}meta__has_key": "integrity_status",
+                f"{prefix}meta__integrity_status__iexact": "lost",
+            }
+        )
     )
 
 

@@ -19,6 +19,35 @@ source_documents:
   disposition: reference
   note: Lokale Identitätspolicy und aktuelle HMAC-Einordnung; datierte historische Befunde zu Legacy-Kollisionen.
 definition_of_done:
+- id: incremental_reidentification_experiment
+  category: security
+  title: Isolated synthetic measurement of incremental identity disclosure after key compromise
+  acceptance:
+  - Freeze independent candidates and bounded search before hidden generation; separate attacker input
+    from private scoring truth.
+  - Compare equal auxiliary knowledge with and without keys, preserving baseline disclosures, tuple ambiguity
+    and membership abstentions.
+  - Differentially validate the offline evaluator against production helpers and publish measured work,
+    isolation checks and limitations.
+  required: false
+  verification:
+    kind: manual
+    instructions: Run scripts/reidentification/README.md commands; inspect public results and private
+      reproduction separately.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: scripts/reidentification/REPORT.md
+    - kind: demonstration
+      reference: scripts/reidentification/evidence/verification.json
+    note: 'Bounded synthetic experiment executed: 48 case pairs, three independent subject seeds; complete
+      replay and independent rescoring agree. No production-readiness or clinical-population probability
+      claim. Missing external hashs.py attachment and encrypted-file integration coverage are documented
+      limitations.'
+    assessed_by: codex-reidentification-20261021-a
+    assessed_at: '2026-10-21T07:33:15.494669Z'
 - id: identity_hash_response_boundary
   category: security
   title: Identity hashes never leave through browser or export responses

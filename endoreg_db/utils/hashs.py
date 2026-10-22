@@ -6,6 +6,8 @@ import json
 import logging
 from datetime import date, datetime
 from pathlib import Path
+from typing import Literal
+from uuid import UUID
 
 from django.conf import settings
 from django.db.models.fields.files import FieldFile
@@ -17,6 +19,8 @@ from endoreg_db.config.identity_hashing import (
 from endoreg_db.utils.rust_backend import stable_file_identity
 
 logger = logging.getLogger(__name__)
+
+type HubRecordKind = Literal["patient", "examination"]
 
 
 def get_bytes_hash(payload: bytes) -> str:
@@ -186,6 +190,35 @@ def get_examiner_hash(
         separators=(",", ":"),
     ).encode("utf-8")
     return get_identity_hash(payload, salt=salt)
+
+
+def get_hub_record_pseudonym(
+    record_uuid: UUID,
+    *,
+    kind: HubRecordKind,
+    hub_node_key: str,
+    salt: bytes | str | None = None,
+) -> UUID:
+    """Hub-scoped UUIDv8 pseudonym; only the local identity salt relates it to the record.
+
+    The local UUID never leaves the site. Repeated transfers of one record to one
+    hub keep the same pseudonym, so follow-ups stay linkable at that hub, while
+    pseudonyms for other hubs or salts are unlinkable without the salt.
+    """
+    hub = hub_node_key.strip()
+    if not hub:
+        raise ValueError("Hub record pseudonyms require the target hub node key")
+    payload = json.dumps(
+        ["hub-record-pseudonym-v1", kind, str(record_uuid), hub],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hmac.new(_get_active_salt_bytes(salt), payload, hashlib.sha256).digest()
+    value = int.from_bytes(digest[:16], "big")
+    # RFC 9562 UUIDv8: version nibble 8, variant bits 10.
+    value = (value & ~(0xF << 76)) | (0x8 << 76)
+    value = (value & ~(0x3 << 62)) | (0x2 << 62)
+    return UUID(int=value)
 
 
 def get_file_hash(file: str | Path | FieldFile | None) -> str:

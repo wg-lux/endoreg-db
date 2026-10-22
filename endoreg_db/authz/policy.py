@@ -139,11 +139,15 @@ ROUTE_RESOURCE: RouteResourceMap = {
     "video-annotations-download": "video",
     "video-timestamps-download": "video",
     "video-mark-ready-for-export": "video",
+    "video-clinical-workflow": "video",
+    # Aggregate counts over videos and reports, like the anonymization overview.
+    "media-workflow-stages": "video",
     "video_upload": "patient",
     "get_lvs_list": "video",
     # report + sensitive metadata endpoints expose patient-linked data.
     "pdf-list": "patient",
     "pdf-detail": "patient",
+    "pdf-clinical-workflow": "patient",
     "pdf-stream": "patient",
     "report-reimport": "patient",
     "report-llm-job-status": "patient",

@@ -6,9 +6,14 @@ from typing import Unpack
 from uuid import UUID
 
 from django.db import models
+from pydantic import TypeAdapter
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
-from endoreg_db.schemas.patient_matching import MatchingRequest, MatchingResult
+from endoreg_db.schemas.patient_matching import (
+    MatchingRequest,
+    MatchingResult,
+    MatchingSignature,
+)
 
 
 class PatientMatchingBudget(models.Model):
@@ -26,6 +31,12 @@ class PatientMatchingSession(models.Model):
     authorized_by: models.CharField[str, str] = models.CharField(max_length=255)
     completed_by: models.CharField[str, str] = models.CharField(
         max_length=255, default=""
+    )
+    execution_started: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
+    )
+    worker_succeeded: models.BooleanField[bool, bool] = models.BooleanField(
+        default=False
     )
     consumed: models.BooleanField[bool, bool] = models.BooleanField(default=False)
 
@@ -47,6 +58,19 @@ class PatientMatchingSession(models.Model):
                 raise ValueError("Completion context mismatch")
             if any(row not in request.candidates for row in result.matches):
                 raise ValueError("Completion contains unauthorized candidate")
+        if self.signatures_json:
+            signatures = TypeAdapter(tuple[MatchingSignature, ...]).validate_json(
+                self.signatures_json
+            )
+            if (
+                not self.completion_json
+                or len(signatures) != 2
+                or {receipt.centre for receipt in signatures}
+                != {request.metadata.source_centre, request.metadata.receiver_centre}
+            ):
+                raise ValueError("Persisted signatures do not bind both participants")
+        if self.consumed and not self.signatures_json:
+            raise ValueError("Consumed matching session requires signatures")
 
     def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()

@@ -2017,3 +2017,54 @@ definition_of_done:
       Patient-Matching-Tests; keine repositoryweite oder neue Deployment-Freigabe.'
     assessed_by: codex-test-review-20261020
     assessed_at: '2026-10-20T11:24:14.432555Z'
+- id: native_segment_timeline_index
+  category: functionality
+  title: Segment boundaries resolve through one generation-bound native timeline index per video and request
+  acceptance:
+  - Segment list, detail, bulk validation and prediction-correction responses in views/video/segments_crud.py
+    and LabelVideoSegmentSerializer/LabelVideoSegmentTimelineSerializer resolve every boundary through
+    one native TimelineIndex per video and request. VideoFile.meta is validated once per index and persisted
+    frame coordinates are loaded with one query, instead of once per boundary.
+  - Index results equal the canonical rules in services/video_files/timeline.py for persisted presentation
+    timestamps, nearest-boundary ties (lower frame number), the exclusive terminal boundary, constant-frame-rate
+    half-up rounding and variable-frame-rate missing-timestamp rejection. Parametrized parity tests compare
+    both implementations over irregular variable-rate timelines with nonzero origins.
+  - Non-increasing persisted timestamps, frame numbers beyond the frame count, non-finite or negative values
+    and a changed processed generation raise VideoTimelineMappingError. Missing native support fails loudly;
+    there is no Python production fallback for the index.
+  - The index is read-only. It never rewrites frame or segment coordinates.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run cargo test for timeline_index, strict Pyright, then tests/rust_backend/test_timeline_index.py,
+      tests/services/test_video_temporal_mapping.py and the segment view/serializer suites.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: segment_original_timeline_transfer
+  category: data_integrity
+  title: Transferred and exported segments carry exact generation and original-recording presentation timestamps
+  acceptance:
+  - Every hub-transferred and exported segment carries the exact integer presentation timestamp ticks of
+    its first and last included frame on the current processed generation, with the rational time base
+    and processed content hash.
+  - With a verified frame provenance bundle, each segment also carries the original-recording frame index
+    and presentation timestamp tick for both boundaries. These are composed natively from source_frame_indices
+    and never inferred from nearest timestamps.
+  - An operator-acknowledged unresolved provenance receipt yields an explicit unresolved recording mapping
+    without original values. Missing, ambiguous or mismatched ancestry fails the transfer or export.
+  - The wire contract lives in lx-dtypes. The lx-annotate sender, endoreg-db hub receiver and PVideoSegment
+    export deploy together. The receiver rejects coordinates that disagree with its received processed
+    timeline or provenance bundle.
+  - Tests cover multi-step chains with frame drops and repetitions, disconnected or out-of-range chains,
+    unresolved receipts and segment bounds beyond the processed timeline.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run cargo test for frame_ancestry, strict Pyright, tests/services/test_segment_coordinates.py,
+      lx-data-models contract tests and the lx-annotate and endoreg-db hub transfer suites.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []

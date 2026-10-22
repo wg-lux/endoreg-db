@@ -14,6 +14,13 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
+from endoreg_db.services.clinical_lifecycle import (
+    ClinicalLifecycleEvent,
+    ClinicalLifecycleInvariantError,
+    ClinicalLifecycleTransitionError,
+    require_clinical_transition,
+)
+from endoreg_db.services.clinical_lifecycle.facts import video_record_facts
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.annotations.segment_validation_workflow import (
@@ -140,6 +147,16 @@ def _verify_state(video: VideoFile) -> None:
         )
 
 
+def _verify_clinical_lifecycle(video: VideoFile) -> None:
+    """Export approval is one event of the end-to-end clinical lifecycle."""
+    try:
+        require_clinical_transition(
+            video_record_facts(video), ClinicalLifecycleEvent.EXPORT_APPROVED
+        )
+    except (ClinicalLifecycleTransitionError, ClinicalLifecycleInvariantError) as exc:
+        raise ReadyForExportError(str(exc), status_code=409) from exc
+
+
 def _synchronize_processed_content_hash(
     *,
     video: VideoFile,
@@ -216,6 +233,7 @@ def mark_video_ready_for_export(
     center = _resolve_center(center_key)
     _verify_center_scope(user=user, video=video, center=center)
     _verify_state(video)
+    _verify_clinical_lifecycle(video)
 
     processed_file = _processed_file(video)
     _verify_processed_path(processed_file)

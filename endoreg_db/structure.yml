@@ -8,6 +8,10 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0104_patient_matching.py
+  role: Persist matching budgets, sessions and UUID relationship edges.
+- file: migrations/0107_matching_worker_state.py
+  role: Persist single-use matching execution claims and source completion state.
 - file: migrations/0106_study_transfer.py
   role: Add standalone study ledger transfers to authenticated hub receipts.
 - file: migrations/0105_study_collection_entry.py

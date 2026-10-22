@@ -29,7 +29,40 @@ class _NativeBatchProcessorFactory(Protocol):
     def __call__(self, worker_count: int) -> NativeBatchProcessor: ...
 
 
+class NativeTimelineIndex(Protocol):
+    @property
+    def content_hash(self) -> str | None: ...
+
+    @property
+    def persisted_count(self) -> int: ...
+
+    def frame_number_to_seconds(self, frame_number: int) -> float: ...
+
+    def seconds_to_frame_number(self, timestamp_seconds: float) -> int: ...
+
+    def frame_numbers_to_seconds(self, frame_numbers: list[int]) -> list[float]: ...
+
+    def seconds_to_frame_numbers(self, timestamps: list[float]) -> list[int]: ...
+
+
+class _NativeTimelineIndexFactory(Protocol):
+    def __call__(
+        self,
+        frame_numbers: list[int],
+        timestamps: list[float],
+        *,
+        fps: float | None,
+        frame_count: int | None,
+        duration_seconds: float | None,
+        requires_persisted_pts: bool,
+        first_timestamp_seconds: float,
+        content_hash: str | None,
+    ) -> NativeTimelineIndex: ...
+
+
 _batch_processor_factory: _NativeBatchProcessorFactory | None
+_timeline_index_factory: _NativeTimelineIndexFactory | None
+_compose_frame_ancestry: Callable[[list[int], list[list[int]]], list[int]] | None
 _parse_extracted_frame_numbers: Callable[[list[str]], list[int]] | None
 _build_expected_frame_records: Callable[[int, str], list[tuple[int, str]]] | None
 _build_frame_records: Callable[..., list[tuple[int, str]]] | None
@@ -49,6 +82,7 @@ _derive_anonymization_status: (
 _derive_report_anonymization_status: (
     Callable[[bool, bool, bool, bool, bool], str] | None
 )
+_anonymization_status_phase: Callable[[str], str] | None
 _derive_hls_reservation_action: Callable[[str, bool, bool, bool], str] | None
 _derive_hls_publication_action: Callable[[str, bool, bool, bool], str] | None
 _derive_hls_reconciliation_action: Callable[[str, bool], str] | None
@@ -67,6 +101,11 @@ try:
         _NativeBatchProcessorFactory | None,
         getattr(rust_backend, "BatchProcessor", None),
     )
+    _timeline_index_factory = cast(
+        _NativeTimelineIndexFactory | None,
+        getattr(rust_backend, "TimelineIndex", None),
+    )
+    _compose_frame_ancestry = getattr(rust_backend, "compose_frame_ancestry", None)
     _build_expected_frame_records = getattr(
         rust_backend, "build_expected_frame_records", None
     )
@@ -83,6 +122,9 @@ try:
     )
     _derive_report_anonymization_status = getattr(
         rust_backend, "derive_report_anonymization_status", None
+    )
+    _anonymization_status_phase = getattr(
+        rust_backend, "anonymization_status_phase", None
     )
     _derive_hls_reservation_action = getattr(
         rust_backend, "derive_hls_reservation_action", None
@@ -131,6 +173,8 @@ try:
 except Exception as exc:
     logger.debug("Rust backend unavailable, using Python fallbacks: %s", exc)
     _batch_processor_factory = None
+    _timeline_index_factory = None
+    _compose_frame_ancestry = None
     _build_expected_frame_records = None
     _build_frame_records = None
     _parse_extracted_frame_numbers = None
@@ -144,6 +188,7 @@ except Exception as exc:
     _anonymization_status_rules = None
     _derive_anonymization_status = None
     _derive_report_anonymization_status = None
+    _anonymization_status_phase = None
     _derive_hls_reservation_action = None
     _derive_hls_publication_action = None
     _derive_hls_reconciliation_action = None
@@ -436,6 +481,48 @@ def derive_report_anonymization_status(
         anonymized,
         processing_started,
     )
+
+
+def anonymization_status_phase(status: str) -> str:
+    """Classify a wire status token; unknown tokens raise ValueError in Rust."""
+    if _anonymization_status_phase is None:
+        raise RuntimeError("Rust anonymization_status_phase is unavailable.")
+    return _anonymization_status_phase(status)
+
+
+def build_timeline_index(
+    frame_numbers: list[int],
+    timestamps: list[float],
+    *,
+    fps: float | None,
+    frame_count: int | None,
+    duration_seconds: float | None,
+    requires_persisted_pts: bool,
+    first_timestamp_seconds: float,
+    content_hash: str | None,
+) -> NativeTimelineIndex:
+    """Build the native frame/time resolver; invalid coordinates raise ValueError."""
+    if _timeline_index_factory is None:
+        raise RuntimeError("Rust TimelineIndex is unavailable.")
+    return _timeline_index_factory(
+        frame_numbers,
+        timestamps,
+        fps=fps,
+        frame_count=frame_count,
+        duration_seconds=duration_seconds,
+        requires_persisted_pts=requires_persisted_pts,
+        first_timestamp_seconds=first_timestamp_seconds,
+        content_hash=content_hash,
+    )
+
+
+def compose_frame_ancestry(
+    source_frame_counts: list[int], source_frame_indices: list[list[int]]
+) -> list[int]:
+    """Map final output frames to recording frames; invalid chains raise ValueError."""
+    if _compose_frame_ancestry is None:
+        raise RuntimeError("Rust compose_frame_ancestry is unavailable.")
+    return _compose_frame_ancestry(source_frame_counts, source_frame_indices)
 
 
 HlsReservationAction = Literal[
@@ -753,23 +840,16 @@ def derive_frame_annotation_status(
     initial_prediction_completed: bool,
     lvs_created: bool,
     frame_annotations_generated: bool,
-) -> str | None:
+) -> str:
     if _derive_frame_annotation_status is None:
-        return None
-    try:
-        return _derive_frame_annotation_status(
-            has_state,
-            frames_extracted,
-            initial_prediction_completed,
-            lvs_created,
-            frame_annotations_generated,
-        )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust derive_frame_annotation_status failed, falling back to Python: %s",
-            exc,
-        )
-        return None
+        raise RuntimeError("Rust derive_frame_annotation_status is unavailable.")
+    return _derive_frame_annotation_status(
+        has_state,
+        frames_extracted,
+        initial_prediction_completed,
+        lvs_created,
+        frame_annotations_generated,
+    )
 
 
 def normalize_frame_task_mode_token(value: str) -> str | None:

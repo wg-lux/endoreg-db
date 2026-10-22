@@ -47,14 +47,42 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: code
-      reference: endoreg_db/services/patient_identity/matching_acceptance.py
-    note: Partial implementation exists in schemas, models, acceptance, input preparation and backend
-      adapter. Integration is unfinished and not deployed. Focused Pyright currently reports13 errors
-      in matching tests (Django User protocol mismatch and unused import); no clean implementation verification
-      claimed. Manuscript revision completed separately and does not use unfinished implementation as
-      study evidence.
+      reference: endoreg_db/services/patient_identity/matching/matching_acceptance.py
+    - kind: code
+      reference: endoreg_db/services/patient_identity/matching/matching.py
+    - kind: code
+      reference: scripts/reidentification/patient_matching_resolver.mpc
+    - kind: code
+      reference: endoreg_db/migrations/0107_matching_worker_state.py
+    - kind: test
+      reference: tests/services/test_patient_matching_workflow.py
+    - kind: test
+      reference: tests/services/test_patient_matching_backend.py
+    - kind: document
+      reference: docs/source_patient_matching.md
+    - kind: command
+      reference: LX_MPSPDZ_ROOT=/tmp/mp-spdz-0.4.4 .devenv/state/venv/bin/pytest tests/services/test_patient_matching_inputs.py
+        tests/services/test_patient_matching_acceptance.py tests/services/test_patient_matching_backend.py
+        tests/services/test_patient_matching_workflow.py tests/services/test_source_patient_matching.py
+        tests/services/test_transfer_identity_boundary.py tests/utils/test_sensitive_meta_hash_security.py
+        -q:96 passed,0 skipped,159 warnings,128.16s; final ORM locking recheck40 passed/159 warnings/49.87s;
+        persisted-signature tests3 passed/1 warning/0.11s.
+    - kind: command
+      reference: Repository Pyright0 errors/24 warnings; final changed-file Pyright0 errors; Ruff passed;
+        git diff --check passed;65 structure manifests and37 feature definitions valid.
+    note: 'Local-role matching service and MP-SPDZ v0.4.4/MASCOT circuit implemented and synthetically
+      verified. Existing hashs.py unchanged; ORM adapter preserves clinical calendar dates after UTC persistence.
+      Full request digests are compared inside the circuit. Separate TLS input roles, enrolled artifacts
+      and OpenSSL trust anchors, runtime-directory exclusion, atomic one-use session claims, metadata
+      locks during acceptance, signed receipts and separate UUID links are exercised. Native cases: single/no/ambiguous
+      matches, wrong key epoch, crossed-session context, missing peer and invalid trust/runtime sharing.96-test
+      selected suite passed with no skips; final40 ORM and3 signature checks passed. Migration0107 adds
+      worker state. No HTTP activation or production deployment. Readiness remains in_progress: independent
+      endpoint provisioning/review, protected retained computation state and verified human identity are
+      not established. A sees public candidate references and later authenticates B assertion after local
+      participation; this is not independent verification of B privately opened output.'
     assessed_by: codex-patient-uuid-20261019
-    assessed_at: '2026-10-20T11:37:54.259267Z'
+    assessed_at: '2026-10-21T06:53:46.675914Z'
 - id: existing_hmac_2pc_evaluation
   category: security
   title: Isolierte Bewertung privater Vergleiche bestehender Patienten-HMACs
@@ -167,10 +195,15 @@ definition_of_done:
     Metadaten und Wiederholungen.
   - Der Empfänger weist Identitätshashes vor Persistenz zurück; vorhandene lokale Identitäten und Datei-Prüfsummen
     bleiben erhalten.
-  - Vertrag 5.0 überträgt persistierte UUIDs für Patienten und Untersuchungen gemäß lx-data-models. Lokale
-    Ganzzahl-IDs werden abgewiesen; Wiederholungen behalten UUIDs und Inhalts-Hashes. UUID-Kollisionen
-    mit fremden Besitzern oder Patienten werden vor Verknüpfung abgewiesen.
-  - Sender und Empfänger verwenden den gemeinsamen lx_dtypes-Vertrag; Versionen 3.0 und 4.0 bleiben ungültig.
+  - Vertrag 6.0 überträgt für Patienten und Untersuchungen ausschließlich hubgebundene UUIDv8-Pseudonyme,
+    lokal per HMAC unter dem lokalen Identitätssalt aus lokaler UUID und Ziel-Hub abgeleitet. Persistierte
+    lokale UUIDs, lokale Ganzzahl-IDs und andere UUID-Versionen werden bei Sender und Empfänger abgewiesen;
+    Wiederholungen und Folgeuntersuchungen desselben lokalen Datensatzes behalten am selben Hub ihr Pseudonym.
+    Pseudonym-Kollisionen mit fremden Besitzern oder Patienten werden vor Verknüpfung abgewiesen.
+  - Studienbündel an den Hub verwenden dieselben Pseudonyme wie Medientransfers und enthalten keine lokalen
+    UUIDs.
+  - Sender und Empfänger verwenden den gemeinsamen lx_dtypes-Vertrag; Versionen 3.0, 4.0 und 5.0 bleiben
+    ungültig.
   required: true
   verification:
     kind: manual
@@ -213,8 +246,80 @@ definition_of_done:
         97 passed, 3 subtests passed in 44.46s (test_patient_uuid_migration, test_source_patient_matching,
         test_transfer_identity_boundary, test_transfer_job_contract, test_hub_transfer_unit_decisions).
         Existing pytest plugin and temporary-directory cleanup warnings remain.'
-    assessed_by: codex-patient-uuid-20261019
-    assessed_at: '2026-10-19T14:26:11.289743Z'
+    - kind: code
+      reference: endoreg_db/services/hub/hub_pseudonyms.py
+    - kind: test
+      reference: tests/services/test_hub_pseudonyms.py
+    - kind: command
+      reference: 'Contract 6.0 hub pseudonyms (PYTHONPATH overlays of sibling lx-data-models/endoreg-db):
+        lx-data-models contract 63 passed; endoreg-db receiver/identity/study 136 passed + 3 subtests,
+        HTTP endpoints/registration 64 passed + 35 subtests; lx-annotate tests/hub 259 passed. Focused
+        Pyright 0 errors in endoreg-db and lx-data-models; Ruff clean; 66 structure maps valid.'
+    note: Contract 6.0 replaces local UUIDs with site-salted hub pseudonyms; legacy 5.0 hub rows await
+      a separate reviewed reconciliation.
+    assessed_by: claude-hub-pseudonym-20261022
+    assessed_at: '2026-10-22T14:08:05.010915Z'
+- id: hub_pseudonym_lifecycle
+  category: security
+  title: Hubgebundene Pseudonyme bleiben über Bestand, Rotation und Deployment konsistent
+  acceptance:
+  - Unter Vertrag 5.0 empfangene Hub-Zeilen mit lokalen Quell-UUIDs werden inventarisiert und über einen
+    geprüften, fail-closed Ablauf am Quellknoten auf hubgebundene UUIDv8-Pseudonyme abgebildet oder als
+    LOST/quarantäniert markiert. Keine geratenen Zuordnungen; keine Löschung vor Hash-, Besitz- und
+    Bestandsabgleich.
+  - Eine Rotation des lokalen Identitätssalts teilt Hub-Patienten nicht still auf. Neue Transfers nach
+    Rotation werden blockiert, bis eine auditierte, nur am Quellknoten berechnete Abbildung alter auf neue
+    Pseudonyme am Hub atomar übernommen ist.
+  - lx-data-models, endoreg-db und lx-annotate werden für Vertrag 6.0 mit gepinnten Commits gemeinsam
+    ausgerollt; Tests belegen, dass gemischte Versionen in beiden Richtungen geschlossen scheitern.
+  required: true
+  verification:
+    kind: manual
+    instructions: Vor pytest Pyright ausführen; Migrations- und Rotationstests gegen PostgreSQL mit Unterbrechung,
+      Wiederholung und Konflikten; Versionsmischungstests über alle drei Repositories.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+    note: Nur TODO-Erfassung am 22.10.2026; Implementierung zurückgestellt. Vertrag 6.0 selbst ist unter
+      local_identity_hash_boundary belegt.
+- id: linkage_manuscript_evidence
+  category: security
+  title: Nachweise für die Aussagen des Linkage-Manuskripts
+  acceptance:
+  - 'TODO-02: Historische Läufe (47-Test-Log, Bildbeobachtungen, HMAC-Scans, Plots, Umgebungsmanifeste)
+    sind mit Commit, Dirty-State und Prüfsummen archiviert; andernfalls bleiben sie im Manuskript als
+    historisch und nicht wiederholt gekennzeichnet.'
+  - 'TODO-03: Der Bericht feature-tracking/reports/patient_hash_input_variations.yml ist als historisch
+    markiert und seine Whitespace-Aussage mit encode_patient_identity abgeglichen.'
+  - 'TODO-04: Eine Traceability-Tabelle verbindet E, M und psi des Lean-Modells mit encode_patient_identity,
+    get_hub_record_pseudonym, HMAC-SHA-256 und dem Resolver-Circuit; differentielle Tests decken Whitespace,
+    Unicode, Datum, lange und historische Schlüssel, Zentrumskontext und fehlerhafte Eingaben ab.'
+  - 'TODO-05: Die Bindung von Ziel-Fingerprint und Schlüsselgeneration an das ursprüngliche Quelltupel
+    ist über Import, Rotation und Identifikatorlöschung belegt, einschließlich des gelöschten Quellfalls.'
+  - 'TODO-06/-07: Native Zwei-Endpunkt-Tests laufen ohne Skips gegen ein freigegebenes Artefaktmanifest
+    und belegen, dass ein angenommenes single_match genau einem tatsächlichen Kandidaten entspricht
+    (siehe guarded_patient_matching_resolver).'
+  - 'TODO-08: Konkurrierende Annahme, Rollback, Unterbrechung und Replay nach Neustart sind auf PostgreSQL
+    getestet.'
+  - 'TODO-09/-10: Prüfberechtigung der Namens-/Geburtsdatum-Flags mit Provenienz sowie Schlüsselerzeugung,
+    Enrollment und administrative Trennung der Teilnehmer sind dokumentiert (siehe cross_site_private_patient_matching).'
+  - 'TODO-11: Eine kumulative Abfragepolitik über Standorte, Zwecke und Quellidentitäten ist definiert
+    und adaptiv evaluiert.'
+  - 'TODO-12: Der auskommentierte Vorbereitungstest in tests/services/test_patient_matching_inputs.py
+    ist wieder aktiv; das Verifikationsgate ist mit Kommandos und Ergebnissen erfasst.'
+  - Das Manuskript zitiert gepinnte Commits aller drei Repositories statt eines Working Trees.
+  required: false
+  verification:
+    kind: manual
+    instructions: Je Aufzählungspunkt Nachweis prüfen und im Manuskript-Supplement S7 referenzieren; offene
+      Punkte bleiben dort als offen ausgewiesen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+    evidence: []
+    note: Erfasst am 22.10.2026 aus den Implementierungsreview-Kommentaren des Manuskripts; Umsetzung zurückgestellt.
+      Erledigt sind TODO-01 und TODO-13 sowie TODO-08 für den Transferpfad.
 - id: source_local_patient_matching
   category: security
   title: Historischen zentralen Hashabgleich sperren

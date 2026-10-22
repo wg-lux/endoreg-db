@@ -21,7 +21,7 @@ from endoreg_db.schemas.patient_matching import (
     MatchingRequest,
     MatchingResult,
 )
-from endoreg_db.services.patient_identity.matching_acceptance import (
+from endoreg_db.services.patient_identity.matching.matching_acceptance import (
     MatchingPolicy,
     MatchingTrustedKey,
     accept_result,
@@ -271,3 +271,28 @@ def test_strict_request_and_minimal_results() -> None:
                 "expires_at": timezone.now().replace(tzinfo=None),
             }
         )
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    "case", ["malformed", "wrong_participant", "consumed_without_signatures"]
+)
+def test_persisted_signatures_validated(case: str) -> None:
+    request = request_fixture()
+    result = result_fixture(request, MatchingOutcome.NO_MATCH)
+    session = PatientMatchingSession(
+        session_id=request.metadata.session_id,
+        request_json=request.model_dump_json(),
+        completion_json=result.model_dump_json(),
+        authorized_by="synthetic-operator",
+    )
+    if case == "malformed":
+        session.signatures_json = "{"
+    elif case == "wrong_participant":
+        session.signatures_json = (
+            '[{"centre":"other","key_id":"key-1","signature":"' + "00" * 64 + '"}]'
+        )
+    else:
+        session.consumed = True
+    with pytest.raises(ValueError):
+        session.clean()

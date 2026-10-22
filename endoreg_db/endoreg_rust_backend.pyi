@@ -12,6 +12,38 @@ class BatchProcessor:
         self, paths, chunk_size=..., master_keys=...
     ) -> list[tuple[int, int, str]]: ...
 
+class TimelineIndex:
+    r"""
+    Generation-bound frame/time resolver loaded once per video and request.
+
+    It never mutates coordinates; it only answers boundary lookups using the
+    same rules as `endoreg_db.services.video_files.timeline`.
+    """
+
+    content_hash: typing.Optional[str]
+    persisted_count: int
+    def __new__(
+        cls,
+        frame_numbers,
+        timestamps,
+        *,
+        fps,
+        frame_count,
+        duration_seconds,
+        requires_persisted_pts,
+        first_timestamp_seconds,
+        content_hash,
+    ): ...
+    def frame_number_to_seconds(self, frame_number: int) -> float: ...
+    def seconds_to_frame_number(self, timestamp_seconds: float) -> int: ...
+    def frame_numbers_to_seconds(
+        self, frame_numbers: typing.Sequence[int]
+    ) -> list[float]: ...
+    def seconds_to_frame_numbers(
+        self, timestamps: typing.Sequence[float]
+    ) -> list[int]: ...
+
+def anonymization_status_phase(status: str) -> str: ...
 def anonymization_status_rules(
     report: bool,
 ) -> list[tuple[str, list[tuple[str, bool]]]]:
@@ -26,6 +58,14 @@ def build_expected_frame_records(
 def build_frame_records(
     paths: list[str], *, relative_to: str | None = ..., zero_based: bool = ...
 ) -> list[tuple[int, str]]: ...
+def compose_frame_ancestry(
+    source_frame_counts: list[int], source_frame_indices: list[list[int]]
+) -> list[int]:
+    r"""
+    Map each final output frame to its original-recording frame index.
+    """
+    ...
+
 def copy_file_descriptor_to_path(
     source_fd: int, target_path: pathlib.Path, chunk_size: int = ...
 ) -> int: ...

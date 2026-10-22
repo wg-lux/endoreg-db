@@ -218,7 +218,8 @@ def filter_video_read_queryset(*, queryset: QuerySet[Any], user: Any) -> QuerySe
         ~Q(processed_file="")
         & Q(state__anonymized=True)
         & Q(state__processing_error=False)
-        & ~Q(meta__integrity_status="lost")
+        # Match is_anonymized_processed_video: a missing marker is not LOST.
+        & ~Q(meta__has_key="integrity_status", meta__integrity_status="lost")
     )
     return queryset.filter(center_query | processed_query)
 

@@ -4,6 +4,7 @@ from enum import StrEnum
 from django.db import models
 
 from endoreg_db.utils.rust_backend import (
+    anonymization_status_phase as rust_anonymization_status_phase,
     anonymization_status_rules,
     derive_anonymization_status as rust_derive_anonymization_status,
     derive_report_anonymization_status as rust_derive_report_anonymization_status,
@@ -21,6 +22,20 @@ class AnonymizationState(StrEnum):
     FAILED = "failed"
     STARTED = "started"
     ANONYMIZED = "anonymized"
+
+
+class AnonymizationPhase(StrEnum):
+    """Lifecycle phase owned by the Rust engine; clients must not re-derive it."""
+
+    NOT_STARTED = "not_started"
+    IN_PROGRESS = "in_progress"
+    AWAITING_VALIDATION = "awaiting_validation"
+    VALIDATED = "validated"
+    FAILED = "failed"
+
+
+def anonymization_phase(status: AnonymizationState | str) -> AnonymizationPhase:
+    return AnonymizationPhase(rust_anonymization_status_phase(str(status)))
 
 
 def derive_video_anonymization_state(

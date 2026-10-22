@@ -518,8 +518,8 @@ def create_or_reuse_transfer_job(
     created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
     reject_transferred_identity_hashes((resource_rows, processing_snapshot, provenance))
-    if payload_schema_version != "5.0":
-        raise ValueError("Only hub payload schema 5.0 is accepted")
+    if payload_schema_version != "6.0":
+        raise ValueError("Only hub payload schema 6.0 is accepted")
     transfer_job_manager = cast(Any, TransferJob.objects)
     source_node_pk = cast(int, source_node.pk)
     target_node_pk = cast(int, target_node.pk)
@@ -2125,7 +2125,8 @@ def _upsert_sensitive_meta(
             "Hub identity requires the authenticated source node and its center"
         )
     # These receiver-local identities contain no source demographic hash or salt.
-    # UUIDs are preserved; the authenticated namespace binds their source ownership.
+    # Hub-scoped pseudonyms (contract 6.0) are preserved; the authenticated
+    # namespace binds their source ownership. Local source UUIDs never arrive here.
     namespace = f"hub-record-v5:{source_node.pk}:{center.pk}"
     payload_patient_hash = get_bytes_hash(
         f"{namespace}:patient:{identity.patient_uuid}".encode("utf-8")

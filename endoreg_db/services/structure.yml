@@ -41,6 +41,10 @@ submodules:
   path: cases
   manifest: cases/structure.yml
   summary: Case lifecycle, document attachment and examination revision relationships.
+- name: clinical_lifecycle
+  path: clinical_lifecycle
+  manifest: clinical_lifecycle/structure.yml
+  summary: End-to-end clinical record lifecycle projection, reducer and conformance audit.
 - name: centers
   path: centers
   manifest: centers/structure.yml
@@ -147,6 +151,8 @@ domains:
     purpose: Frame- und Segmentannotation, Auswahl und Validierungsabläufe
   privacy:
     purpose: Anonymisierung, Pseudonymisierung und Qualitätsmessung
+  clinical_lifecycle:
+    purpose: Durchgängige Zustandsmaschine von Import bis Datensatzaufnahme
   patient_identity:
     purpose: Patientenkennungen und verifizierte sensible Metadaten
   cases:

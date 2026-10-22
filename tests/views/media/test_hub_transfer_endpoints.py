@@ -8,6 +8,8 @@ import base64
 import os
 import tempfile
 from uuid import NAMESPACE_URL, uuid5
+
+from endoreg_db.utils.hashs import get_hub_record_pseudonym
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
@@ -322,9 +324,19 @@ class HubTransferEndpointTests(TestCase):
             "width": 1280,
             "height": 720,
         }
-        patient_uuid = str(uuid5(NAMESPACE_URL, "test:site-a-patient"))
+        patient_uuid = str(
+            get_hub_record_pseudonym(
+                uuid5(NAMESPACE_URL, "test:site-a-patient"),
+                kind="patient",
+                hub_node_key=self.target_node.node_key,
+            )
+        )
         examination_uuid = str(
-            uuid5(NAMESPACE_URL, f"test:site-a-examination:{examination_date}")
+            get_hub_record_pseudonym(
+                uuid5(NAMESPACE_URL, f"test:site-a-examination:{examination_date}"),
+                kind="examination",
+                hub_node_key=self.target_node.node_key,
+            )
         )
         payload: dict[str, Any] = {
             "transfer_key": transfer_key,
@@ -337,7 +349,7 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "5.0",
+            "payload_schema_version": "6.0",
             "resource_rows": {
                 "video_file": video_file_payload,
                 "sensitive_meta": {
@@ -385,16 +397,26 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "5.0",
+            "payload_schema_version": "6.0",
             "resource_rows": {
                 "raw_pdf_file": {
                     "pdf_hash": pdf_hash,
                     "anonymized_text": "Anonymized clinical report",
                 },
                 "sensitive_meta": {
-                    "patient_uuid": str(uuid5(NAMESPACE_URL, "test:site-a-patient")),
+                    "patient_uuid": str(
+                        get_hub_record_pseudonym(
+                            uuid5(NAMESPACE_URL, "test:site-a-patient"),
+                            kind="patient",
+                            hub_node_key=self.target_node.node_key,
+                        )
+                    ),
                     "examination_uuid": str(
-                        uuid5(NAMESPACE_URL, "test:site-a-examination:2026-03-20")
+                        get_hub_record_pseudonym(
+                            uuid5(NAMESPACE_URL, "test:site-a-examination:2026-03-20"),
+                            kind="examination",
+                            hub_node_key=self.target_node.node_key,
+                        )
                     ),
                 },
                 "raw_pdf_state": {

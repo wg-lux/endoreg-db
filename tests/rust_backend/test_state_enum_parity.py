@@ -116,8 +116,6 @@ def test_derive_frame_annotation_status_matches_python_tokens(
         frame_annotations_generated=frame_annotations_generated,
     )
 
-    if status is None:
-        pytest.skip("Rust backend is not available in this environment.")
     assert status == expected_status
 
 

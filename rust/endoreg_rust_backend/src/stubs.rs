@@ -231,6 +231,17 @@ inventory::submit! {
 
 inventory::submit! {
     PyFunctionInfo {
+        name: "anonymization_status_phase",
+        args: &[ArgInfo { name: "status", r#type: stub_type_str }],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("status: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
         name: "derive_hls_reservation_action",
         args: &[
             ArgInfo { name: "active_status", r#type: stub_type_str },
@@ -364,6 +375,24 @@ inventory::submit! {
         r#return: stub_type_storage_policy_rows,
         doc: "",
         signature: Some(""),
+        module: None,
+    }
+}
+
+fn stub_type_list_list_int() -> TypeInfo {
+    TypeInfo::builtin("list[list[int]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "compose_frame_ancestry",
+        args: &[
+            ArgInfo { name: "source_frame_counts", r#type: stub_type_list_int },
+            ArgInfo { name: "source_frame_indices", r#type: stub_type_list_list_int },
+        ],
+        r#return: stub_type_list_int,
+        doc: "Map each final output frame to its original-recording frame index.",
+        signature: Some("source_frame_counts: list[int], source_frame_indices: list[list[int]]"),
         module: None,
     }
 }

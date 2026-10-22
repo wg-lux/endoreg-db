@@ -33,7 +33,8 @@ files:
 - file: _segments.py
   role: Exports get_outside_frames, get_outside_segments, convert_sequences_to_db_segments.
 - file: _time.py
-  role: 'Internal helpers: _ensure_default_fps, _frame_number_to_s, _seconds_to_frame_number.'
+  role: 'Per-boundary helpers _frame_number_to_s, _seconds_to_frame_number; resolve_video_timeline_mapping validates
+    VideoFile.meta once.'
 - file: ai.py
   role: Exports predict_video, extract_text_from_video_frames.
 - file: anonymization.py
@@ -62,6 +63,9 @@ files:
   role: Exports video_hash_exists, get_video_by_pk, get_video_by_content_hash.
 - file: reimport_orchestrator.py
   role: Exports VideoReimportOrchestrator.
+- file: segment_coordinates.py
+  role: Pure exact segment ticks on the processed generation and composed original-recording frames from verified
+    provenance, or explicit unresolved status.
 - file: segment_blackening.py
   role: Typed configuration boundary for outside-frame video blackening.
 - file: segments.py
@@ -76,6 +80,9 @@ files:
   role: Exports extract_temporal_options, normalize_temporal_options, build_lx_temporal_options.
 - file: timeline.py
   role: Exports frame_number_to_seconds, seconds_to_frame_number, validate_frame_number.
+- file: timeline_index.py
+  role: Request-scoped native TimelineIndex per video generation; one meta validation and one frame query for
+    many boundaries.
 - file: types.py
   role: Exports parse_video_artifact_kind.
 - file: validation.py
@@ -132,7 +139,8 @@ contracts:
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_file_services_contract.py tests/services/test_canonical_playback_selection.py
-    tests/services/test_segment_frame_extraction.py
+    tests/services/test_segment_frame_extraction.py tests/services/test_segment_coordinates.py
+    tests/rust_backend/test_timeline_index.py
   files:
   - tests/services/test_video_file_services_contract.py
   - tests/services/test_canonical_playback_selection.py

@@ -291,17 +291,6 @@ class FrameAnnotationSourceName(Protocol):
     name: str
 
 
-FrameAnnotationSourceInput: TypeAlias = "str | FrameAnnotationSourceName | None"
-
-
-class PredictionSegmentLike(Protocol):
-    @property
-    def source(self) -> FrameAnnotationSource: ...
-
-    @property
-    def prediction_meta_id(self) -> int | None: ...
-
-
 class FrameAnnotationStatus(str, Enum):
     NOT_STARTED = "not_started"
     FRAMES_UNAVAILABLE = "frames_unavailable"
@@ -472,50 +461,22 @@ def mark_frame_annotations_generated(video: VideoFile) -> None:
     state.save(update_fields=["frame_annotations_generated", "date_modified"])
 
 
-def mark_frame_annotations_stale(video: VideoFile) -> None:
-    state = get_or_create_video_state(video)
-    state.frame_annotations_generated = False
-    state.save(update_fields=["frame_annotations_generated", "date_modified"])
-
-
-def resolve_frame_annotation_status(video: VideoFile) -> str:
+def resolve_frame_annotation_status(video: VideoFile) -> FrameAnnotationStatus:
+    """AI prediction and frame annotation lifecycle, owned by the Rust state engine."""
     state = getattr(video, "state", None)
-    if state is None:
-        rust_status = derive_frame_annotation_status(
-            has_state=False,
-            frames_extracted=False,
-            initial_prediction_completed=False,
-            lvs_created=False,
-            frame_annotations_generated=False,
+    return FrameAnnotationStatus(
+        derive_frame_annotation_status(
+            has_state=state is not None,
+            frames_extracted=bool(getattr(state, "frames_extracted", False)),
+            initial_prediction_completed=bool(
+                getattr(state, "initial_prediction_completed", False)
+            ),
+            lvs_created=bool(getattr(state, "lvs_created", False)),
+            frame_annotations_generated=bool(
+                getattr(state, "frame_annotations_generated", False)
+            ),
         )
-        return rust_status or FrameAnnotationStatus.NOT_STARTED.value
-
-    frames_extracted = bool(getattr(state, "frames_extracted", False))
-    initial_prediction_completed = bool(
-        getattr(state, "initial_prediction_completed", False)
     )
-    lvs_created = bool(getattr(state, "lvs_created", False))
-    frame_annotations_generated = bool(
-        getattr(state, "frame_annotations_generated", False)
-    )
-    rust_status = derive_frame_annotation_status(
-        has_state=True,
-        frames_extracted=frames_extracted,
-        initial_prediction_completed=initial_prediction_completed,
-        lvs_created=lvs_created,
-        frame_annotations_generated=frame_annotations_generated,
-    )
-    if rust_status is not None:
-        return rust_status
-    if not frames_extracted:
-        return FrameAnnotationStatus.FRAMES_UNAVAILABLE.value
-    if not initial_prediction_completed:
-        return FrameAnnotationStatus.PREDICTION_PENDING.value
-    if initial_prediction_completed and not lvs_created:
-        return FrameAnnotationStatus.PREDICTION_READY.value
-    if frame_annotations_generated:
-        return FrameAnnotationStatus.ANNOTATION_COMPLETE.value
-    return FrameAnnotationStatus.ANNOTATION_READY.value
 
 
 def validated_annotators_for_video(video: VideoFile) -> list[str]:

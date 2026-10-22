@@ -9,6 +9,8 @@ boundaries:
 - Preserve concurrent operation ownership and canonical media generation identity; raw media export is
   prohibited.
 files:
+- file: patient_matching.py
+  role: Matching budgets, one-use worker claims, validated receipts and explicit UUID relationships.
 - file: network_node.py
   role: Node role and request-authentication configuration.
 - file: upload_job.py

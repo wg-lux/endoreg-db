@@ -34,6 +34,10 @@ from endoreg_db.services.annotations.segment_validation_workflow import (
     SegmentAnnotationStatus,
     resolve_segment_annotation_status,
 )
+from endoreg_db.models.state.frame_annotation import (
+    FrameAnnotationStatus,
+    resolve_frame_annotation_status,
+)
 
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
 
@@ -169,6 +173,7 @@ class _FileOverviewPayload(TypedDict):
     media_type: str
     anonymization_status: AnonymizationState
     annotation_status: str
+    ai_prediction_status: FrameAnnotationStatus | None
     created_at: datetime
     sensitive_meta_id: int | None
     file_size: int
@@ -268,6 +273,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     media_type = serializers.CharField(read_only=True)
     anonymization_status = serializers.CharField(read_only=True)
     annotation_status = serializers.CharField(read_only=True)
+    ai_prediction_status = serializers.CharField(read_only=True, allow_null=True)
     created_at = serializers.DateTimeField(read_only=True)
     sensitive_meta_id = serializers.IntegerField(read_only=True, allow_null=True)
     file_size = serializers.IntegerField(read_only=True, required=False)
@@ -375,6 +381,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             annotation_status = SegmentAnnotationStatus(
                 resolve_segment_annotation_status(instance)
             ).value
+            ai_prediction_status = resolve_frame_annotation_status(instance).value
             try:
                 file_size = instance.raw_file.size if instance.raw_file else 0
             except Exception:
@@ -390,6 +397,8 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             )
             document_type = self._pdf_document_type(instance)
             annotation_status = SegmentAnnotationStatus.NOT_STARTED.value
+            # Segment and frame AI predictions exist only for videos.
+            ai_prediction_status = None
             try:
                 file_size = instance.file.size if instance.file else 0
             except Exception:
@@ -410,6 +419,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             "media_type": media_type,
             "anonymization_status": raw_status,
             "annotation_status": annotation_status,
+            "ai_prediction_status": ai_prediction_status,
             "created_at": created_at,
             "sensitive_meta_id": sensitive_meta.pk if sensitive_meta else None,
             "file_size": file_size,
@@ -448,6 +458,7 @@ class CrossCenterProcessedOverviewSerializer(serializers.Serializer[VideoFile]):
             "annotation_status": SegmentAnnotationStatus(
                 resolve_segment_annotation_status(instance)
             ).value,
+            "ai_prediction_status": resolve_frame_annotation_status(instance).value,
             "created_at": instance.uploaded_at,
             "sensitive_meta_id": None,
             "file_size": 0,

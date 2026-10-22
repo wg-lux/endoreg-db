@@ -29,6 +29,8 @@ Paths in this table are relative to `endoreg_db/`.
 | --- | --- |
 | `services/video_files/timeline.py` | Resolve frame/time boundaries, preferring persisted PTS; nearest persisted ties select the lower frame number, while constant-rate fallback uses half-up rounding. Terminal boundaries use timeline origin plus duration. |
 | `services/video_files/_time.py`, `services/video_files/metadata.py` | Load persisted neighboring coordinates and delegate to the shared resolver. |
+| `services/video_files/timeline_index.py` | Resolve many boundaries of one video generation per request through the native `TimelineIndex`, which applies the same rules after one metadata validation and one frame query. Segment views and serializers use it. |
+| `services/video_files/segment_coordinates.py` | Bind segment frames to exact integer ticks on the processed generation and, with a verified provenance bundle, to original-recording frames composed natively from `source_frame_indices`. Unresolved receipts report an explicit unresolved mapping. |
 | `models/label/label_video_segment/label_video_segment.py` | Expose model compatibility methods for timestamp-aware segment boundaries. |
 | `serializers/label_video_segment/label_video_segment.py` | Canonicalize segment creation, updates and responses through the central resolver. |
 | `services/annotations/segments_bulk_mutation.py`, `services/annotations/segment_sync.py` | Apply bulk mutations and synchronize segment boundaries using the central coordinate contract. |

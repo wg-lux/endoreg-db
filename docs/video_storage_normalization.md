@@ -704,6 +704,16 @@ and output checks remain independent mandatory gates. The encrypted reader's
 layout cache also includes device, inode, and change time so a replaced source
 cannot inherit stale decryption metadata.
 
+Authorized playlist, key, and segment requests perform this source verification
+once before taking the video row lock, and only for a READY derivative with a
+persisted source identity on a storage backend that supports digest reuse.
+The locked lookup still rechecks the complete source identity and reuses that
+digest under the same file-generation checks. Concurrent playback requests for
+one video therefore do not wait on the row lock while a single request
+decrypts and hashes the full source. If the source changes between the two
+checks, the locked check verifies again. Pre-lock failures are logged and left
+to the locked lookup to report; they never authorize playback.
+
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50
 frames per second. Import, reimport, storage normalization, and HLS

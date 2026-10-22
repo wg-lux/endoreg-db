@@ -10,6 +10,20 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: services/test_clinical_lifecycle_state_machine.py
+  role: Total clinical lifecycle matrix, final validation, purge-before-export and invariant rejection without database access.
+- file: services/test_clinical_lifecycle_legacy_exemption.py
+  role: Legacy identity exemption eligibility, idempotent ledger writes, payload privacy and purge still required.
+- file: services/test_clinical_lifecycle_facts.py
+  role: Video and report fact projection, generation-bound export approval, dataset membership and audit command.
+- file: services/test_patient_matching_inputs.py
+  role: Authorized real record binding, retained generations and stale/missing input rejection.
+- file: services/test_patient_matching_acceptance.py
+  role: Signed receipt validation, query budgets and single-use UUID relationship acceptance.
+- file: services/test_patient_matching_backend.py
+  role: Aggregate parser tests and opt-in real MP-SPDZ two-process TLS execution with separate private inputs.
+- file: services/test_patient_matching_workflow.py
+  role: ORM workflow integration, role isolation, source countersigning and incomplete/stale execution handling.
 - file: scripts/test_evaluate_patient_hmac.py
   role: Complete synthetic date-domain search, source-key/context isolation and invalid repetition counts.
 - file: services/test_patient_uuid_migration.py
@@ -18,6 +32,8 @@ files:
   role: Browser response denial, validated JSON downloads, request lifecycle, hash-bearing exports and non-consuming stream guards.
 - file: services/test_transfer_identity_boundary.py
   role: Reject identity fields before transfer persistence; preserve file-integrity checksums.
+- file: services/test_hub_pseudonyms.py
+  role: Salt-, hub-, kind- and record-separated UUIDv8 hub pseudonyms; local UUIDs rejected and absent from study bundles.
 - file: services/test_source_patient_matching.py
   role: Real source identity hashes rejected at the hub without salt resolution, including repeats and distinct examinations.
 - file: scripts/test_benchmark_sha256.py

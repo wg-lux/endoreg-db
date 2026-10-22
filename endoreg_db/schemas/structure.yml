@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
 files:
+- file: patient_matching.py
+  role: Strict immutable matching session, record-reference, aggregate-outcome and signature contracts.
 - file: report_llm.py
   role: Report job contracts, immutable attempt references and read-only completion projections.
 - file: annotation_comparisons.py

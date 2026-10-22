@@ -301,6 +301,49 @@ def test_hub_read_and_training_after_raw_deletion(
     assert "relative_path" not in sample["metadata"]
 
 
+@pytest.mark.parametrize("integrity_status", [None, "ok", "lost"])
+@override_settings(DEBUG=False, ENDOREG_DEPLOYMENT_ROLE="central_hub")
+def test_hub_read_and_training_scope_treat_missing_integrity_marker_as_intact(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+    integrity_status: str | None,
+) -> None:
+    from endoreg_db.services.datasets.training_manifests import (
+        _approved_video_filter,
+    )
+    from endoreg_db.views.access_control import (
+        filter_video_read_queryset,
+        is_anonymized_processed_video,
+    )
+
+    video, _, _, _ = retained_video
+    meta = {
+        key: value
+        for key, value in (video.meta or {}).items()
+        if key != "integrity_status"
+    }
+    if integrity_status is not None:
+        meta["integrity_status"] = integrity_status
+    video.meta = meta
+    video.save(update_fields=["meta"])
+    user = User.objects.create_user(username="hub-integrity-reader")
+    portal = PortalUserInfo.objects.create(user=user)
+    portal.centers.add(Center.objects.create(name="Other", center_key="other"))
+    expected = integrity_status != "lost"
+
+    # The SQL scopes must agree with the Python read check for absent markers.
+    assert is_anonymized_processed_video(video) is expected
+    assert (
+        filter_video_read_queryset(queryset=VideoFile.objects.all(), user=user)
+        .filter(pk=video.pk)
+        .exists()
+        is expected
+    )
+    assert (
+        VideoFile.objects.filter(_approved_video_filter(""), pk=video.pk).exists()
+        is expected
+    )
+
+
 @override_settings(DEBUG=False, ENDOREG_DEPLOYMENT_ROLE="central_hub")
 def test_training_decodes_retained_processed_video(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],

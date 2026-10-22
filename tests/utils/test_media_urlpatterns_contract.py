@@ -411,6 +411,21 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "pdf-processing-history",
         "endoreg_db.views.pdf.pdf_redaction.PdfProcessingHistoryView",
     ),
+    (
+        "media/videos/<int:pk>/workflow/",
+        "video-clinical-workflow",
+        "endoreg_db.views.media.clinical_workflow.ClinicalWorkflowView",
+    ),
+    (
+        "media/pdfs/<int:pk>/workflow/",
+        "pdf-clinical-workflow",
+        "endoreg_db.views.media.clinical_workflow.ClinicalWorkflowView",
+    ),
+    (
+        "media/workflow/stages/",
+        "media-workflow-stages",
+        "endoreg_db.views.media.clinical_workflow.ClinicalWorkflowStagesView",
+    ),
 ]
 
 
@@ -436,6 +451,7 @@ def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
         *media.VIDEO_SEGMENT_VALIDATION_URLPATTERNS,
         *media.SENSITIVE_METADATA_URLPATTERNS,
         *media.PDF_REPORT_MEDIA_URLPATTERNS,
+        *media.MEDIA_WORKFLOW_URLPATTERNS,
     ]
 
 

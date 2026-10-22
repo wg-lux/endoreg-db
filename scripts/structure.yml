@@ -8,6 +8,11 @@ responsibilities:
 - Export synthetic image-hash and patient-HMAC experiments with publication artifacts.
 boundaries:
 - Quality checks must not perform clinical import or mutate runtime storage.
+submodules:
+- name: reidentification
+  path: reidentification
+  manifest: reidentification/structure.yml
+  summary: Isolated synthetic incremental reidentification and baseline comparison.
 files:
 - file: evaluate_patient_hmac.py
   role: Synthetic complete candidate scans through production HMAC helpers with shared/local keys; exports measurements and scientific figures.

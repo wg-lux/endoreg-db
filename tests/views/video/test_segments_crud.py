@@ -200,8 +200,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
         Scenario: Loading the Timeline.
         The serializer method `get_time_segments` iterates over frames.
         We must ensure it doesn't fire a database query for every single frame
-        to get annotations. Two fixed queries additionally resolve the
-        authoritative start and end presentation timestamps.
+        to get annotations. One fixed query loads the generation-bound timeline
+        index that resolves the authoritative start and end presentation
+        timestamps.
         """
         frames: list[Frame] = []
         for i in range(50):
@@ -228,7 +229,7 @@ class LabelVideoSegmentSerializerTest(TestCase):
             # Fix: Avoid type checking unknown attributes on Frame
             _ = cast(Any, frames[0]).file_path
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(3):
             serializer = LabelVideoSegmentSerializer(self.segment)
             # Fix: Cast self.segment to Any to satisfy LabelVideoSegmentLike Protocol
             # and explicitly cast the return dictionary structure
@@ -238,6 +239,61 @@ class LabelVideoSegmentSerializerTest(TestCase):
 
             self.assertEqual(len(data["frames"]), 50)
             self.assertTrue(len(data["frames"][0]["all_classifications"]) > 0)
+
+    def test_segment_list_loads_timeline_coordinates_once(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from endoreg_db.services.video_files import video_frame_number_to_seconds
+
+        Frame.objects.bulk_create(
+            Frame(
+                video=self.video,
+                frame_number=number,
+                timestamp=0.5 + number * 0.031 + (0.007 if number % 3 else 0.0),
+            )
+            for number in range(200)
+        )
+        for start in range(30, 180, 30):
+            LabelVideoSegment.objects.create(
+                video_file=self.video,
+                label=self.label_polyp,
+                start_frame_number=start,
+                end_frame_number=start + 17,
+                source=self.source,
+            )
+        segments = list(
+            LabelVideoSegment.objects.filter(video_file=self.video)
+            .select_related("video_file", "label", "source")
+            .order_by("start_frame_number")
+        )
+
+        with CaptureQueriesContext(connection) as captured:
+            data = _serializer_data(
+                LabelVideoSegmentSerializer(
+                    segments,
+                    many=True,
+                    context={"include_annotation_payload": False},
+                )
+            )
+        frame_queries = [
+            query["sql"]
+            for query in captured.captured_queries
+            if 'FROM "endoreg_db_frame"' in query["sql"]
+        ]
+        self.assertEqual(len(frame_queries), 1, frame_queries)
+
+        rows = cast(list[Mapping[str, Any]], data)
+        self.assertEqual(len(rows), len(segments))
+        for row, segment in zip(rows, segments, strict=True):
+            self.assertEqual(
+                row["start_time"],
+                video_frame_number_to_seconds(self.video, segment.start_frame_number),
+            )
+            self.assertEqual(
+                row["end_time"],
+                video_frame_number_to_seconds(self.video, segment.end_frame_number),
+            )
 
     def test_video_list_serializer_exposes_validated_annotators_only_after_validation(
         self,

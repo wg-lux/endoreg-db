@@ -51,6 +51,8 @@ files:
   role: Exports create_network_node, update_network_node, delete_network_node.
 - file: payloads.py
   role: Recursive source-identity transfer prohibition and compatibility imports.
+- file: hub_pseudonyms.py
+  role: Contract 6.0 hub-scoped UUIDv8 record pseudonyms for media identity and study bundles; local UUIDs stay on the site.
 - file: preanonymized_metadata.py
   role: Preanonymized metadata normalization and external patient identity linking.
 - file: quarantine.py

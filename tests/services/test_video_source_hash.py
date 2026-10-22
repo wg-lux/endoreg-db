@@ -18,7 +18,7 @@ from django.db.models.fields.files import FieldFile
 from endoreg_db.models import VideoFile
 from endoreg_db.services.video_files import source_hash as hashes
 from endoreg_db.services.video_storage.contracts import VideoStorageNormalizationError
-from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage, LazyEncryptedStorage
 
 
 @pytest.fixture(autouse=True)
@@ -133,6 +133,21 @@ def test_other_storage_retains_full_verification(tmp_path: Path) -> None:
         hashes.verified_video_source_hash(source)
         hashes.verified_video_source_hash(source)
     assert read.call_count == 2
+    assert not hashes.video_source_hash_is_reusable(source)
+
+
+@pytest.mark.parametrize("lazy", [False, True])
+def test_encrypted_storage_reports_reusable_verification(
+    tmp_path: Path, lazy: bool
+) -> None:
+    storage = (
+        LazyEncryptedStorage(location=tmp_path)
+        if lazy
+        else EncryptedStorage(location=tmp_path)
+    )
+    name = storage.save("source.mp4", ContentFile(b"source"))
+    source = FieldFile(VideoFile(), models.FileField(storage=storage), name)
+    assert hashes.video_source_hash_is_reusable(source)
 
 
 def test_fork_reset_requires_fresh_verification(encrypted_source: FieldFile) -> None:

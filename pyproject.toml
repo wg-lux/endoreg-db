@@ -89,7 +89,7 @@ dependencies = [
   "lx-ai-core[torch]==0.0.4",
   "celery-types>=0.26.0",
   "lightning-fabric>=2.6.5",
-  "lx-dtypes>=0.5.5",
+  "lx-dtypes==0.5.6",
   "snakemake==9.23.1",
 ]
 

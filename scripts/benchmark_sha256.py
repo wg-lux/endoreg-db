@@ -102,10 +102,14 @@ def search(
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--algorithm", choices=ALGORITHMS, default="hmac-sha256")
-    parser.add_argument("--salt", required=True, help="Exact UTF-8 key/salt; empty for plain SHA-256")
+    parser.add_argument(
+        "--salt", required=True, help="Exact UTF-8 key/salt; empty for plain SHA-256"
+    )
     targets = parser.add_mutually_exclusive_group(required=True)
     targets.add_argument("--target", help="64-character hexadecimal digest")
-    targets.add_argument("--plaintext", help="Generate a target from prefix + plaintext + suffix")
+    targets.add_argument(
+        "--plaintext", help="Generate a target from prefix + plaintext + suffix"
+    )
     parser.add_argument("--charset", default=string.digits)
     parser.add_argument("--min-length", type=int, default=1)
     parser.add_argument("--max-length", type=int, default=6)
@@ -118,13 +122,19 @@ def main(argv: list[str] | None = None) -> int:
         digest = make_digest(args.algorithm, args.salt)
         target = (
             digest(args.prefix + args.plaintext + args.suffix).hex()
-            if args.plaintext is not None else args.target
+            if args.plaintext is not None
+            else args.target
         )
         result = search(
-            target, digest, charset=args.charset,
-            min_length=args.min_length, max_length=args.max_length,
-            prefix=args.prefix, suffix=args.suffix,
-            max_seconds=args.max_seconds, max_attempts=args.max_attempts,
+            target,
+            digest,
+            charset=args.charset,
+            min_length=args.min_length,
+            max_length=args.max_length,
+            prefix=args.prefix,
+            suffix=args.suffix,
+            max_seconds=args.max_seconds,
+            max_attempts=args.max_attempts,
         )
     except (ValueError, UnicodeError) as error:
         parser.error(str(error))

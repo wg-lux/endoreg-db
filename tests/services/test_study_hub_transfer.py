@@ -18,7 +18,10 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
 from endoreg_db.models.other.study import Study
+from endoreg_db.models.other.study_collection_entry import StudyCollectionEntry
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.services.hub.hub_pseudonyms import hub_scoped_study_exchange
 from endoreg_db.services.hub.study_transfer import accept_study_transfer
 from endoreg_db.services.hub.transfers import apply_transfer_metadata
 from endoreg_db.services.studies.exchange import export_study_exchange
@@ -73,7 +76,7 @@ def _payload(
         "processing_policy": "ingest_only_no_processing",
         "processing_intent": "sender_requests_archive_only",
         "cleanup_policy": "retain_all",
-        "payload_schema_version": "5.0",
+        "payload_schema_version": "6.0",
         "resource_rows": {"study_exchange": bundle.model_dump(mode="json")},
         "processing_snapshot": {"sender_processing_success": True},
     }
@@ -161,7 +164,25 @@ def test_explicit_acceptance_is_scoped_and_idempotent(
     examination.patient.center = center
     examination.patient.save()
     scope = PatientExamination.objects.filter(pk=examination.pk)
-    bundle = export_study_exchange(owner=owner, study=study, examination_scope=scope)
+    local_bundle = export_study_exchange(
+        owner=owner, study=study, examination_scope=scope
+    )
+    # The site-local bundle is rejected; only hub pseudonyms may leave the site.
+    assert not TransferJobCreateSerializer(
+        data=_payload(nodes, local_bundle)
+    ).is_valid()
+    bundle = hub_scoped_study_exchange(local_bundle, hub_node_key=target.node_key)
+    link = bundle.patients[0]
+    assert link.patient_uuid != examination.patient.uuid
+    assert link.patient_examination_uuid != examination.uuid
+    # Simulate the separate hub: it holds no site collection entries, and media
+    # transfers created its rows under the same pseudonyms.
+    StudyCollectionEntry.objects.filter(study=study).delete()
+    Patient.objects.filter(pk=examination.patient_id).update(uuid=link.patient_uuid)
+    PatientExamination.objects.filter(pk=examination.pk).update(
+        uuid=link.patient_examination_uuid
+    )
+    examination.refresh_from_db()
     payload = _payload(nodes, bundle)
     for key in ("source_node_key", "target_node_key", "source_center_key"):
         payload.pop(key)
