@@ -54,7 +54,7 @@ files:
 - file: hub_pseudonyms.py
   role: Contract 7.0 hub-scoped UUIDv8 record pseudonyms for media identity and study bundles; local UUIDs stay on the site.
 - file: preanonymized_metadata.py
-  role: Preanonymized metadata normalization and external patient identity linking.
+  role: Preanonymized metadata normalization and external patient identity linking with keyed local patient UUIDv8 on first creation.
 - file: quarantine.py
   role: Exports quarantine_dir, index_quarantine_file, sync_quarantine_inventory.
 - file: remote_processed_media.py

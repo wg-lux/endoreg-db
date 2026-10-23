@@ -11,6 +11,43 @@ metadata, retries, or encrypted transfer packages. The sender rejects such
 payloads before the network call; the receiver rejects them before
 registration. File content checksums remain permitted for media integrity.
 
+## Zentrumsweite lokale Patientenpseudonyme
+
+Neue Patienten aus der hashbasierten Importanlage erhalten durch
+`get_patient_uuid` eine deterministische UUIDv8: HMAC-SHA-256 mit dem validierten
+lokalen Identitätssalt über die kompakte UTF-8-JSON-Liste
+`["center-patient-uuid-v1", center_key.strip(), patient_hash]`.
+Die ersten 128 Digest-Bits werden mit UUID-Version 8 und der RFC-Variante
+formatiert; 122 Bits bleiben für den Pseudonymwert. Der Patientenhash bleibt
+unverändert, einschließlich unterstützter nichtleerer Legacy-Kennungen.
+Gleicher Hash, Zentrumsschlüssel und Schlüsselgeneration ergeben auf mehreren
+Quellmaschinen dieselbe UUID. Die Zentrenzuordnung erfolgt niemals über lokale
+Datenbank-IDs. Die vorgelagerte Erzeugung des Patientenhashs muss ebenfalls
+übereinstimmen; externe Legacy-Kennungen können dort noch lokale IDs enthalten.
+
+Die Importanlage sperrt die Zentrumszeile während Auflösung und Erstellung.
+Bestand und historische Hash-Aliase werden zuerst aufgelöst; UUIDs werden bei
+Rotation oder Korrektur nicht neu berechnet. Direkte ORM-Anlage ohne diesen
+Importpfad und Patienten ohne Identitätshash behalten den bisherigen Standard.
+Empfangene Hub-UUIDs bleiben explizit gesetzt. Eine Bestandsmigration erfolgt
+nicht; deshalb konvergieren bereits unabhängig angelegte Patienten nicht
+nachträglich. Nach Rotation müssen Bestandszuordnungen zwischen Quellmaschinen
+erhalten bleiben; reine Neuberechnung stellt diese Kontinuität nicht her.
+
+Die [EDPB-Leitlinien 01/2025](https://www.edpb.europa.eu/system/files/2025-01/edpb_guidelines_202501_pseudonymisation_en.pdf)
+liegen hier als Konsultationsfassung vom 16. Januar 2025 zugrunde.
+Absätze 88–89 und 107 behandeln geheime, kryptografische Einwegfunktionen;
+115–121 verlangen zweckgebundene, notwendige und rechtmäßige Verknüpfung.
+Dieser technische Entwurf begründet keine Rechtsgrundlage. Das Zentrum muss
+Zweck, Empfänger, Berechtigungen und Aufbewahrung festlegen und Originaldaten
+sowie Schlüssel von den geschützten Empfängern getrennt halten. Die UUID ist
+ein personenbezogenes Pseudonym, keine garantierte Anonymisierung. Kenntnis
+des Schlüssels oder zusätzlicher Daten ermöglicht Kandidatenabgleich; gleiche
+demografische Merkmale beweisen keine Personenidentität. Schlüsselverteilung
+oder eine Ausweitung auf andere Zentren wird hier nicht aktiviert.
+
+## Hub boundary
+
 The persisted local patient and examination UUIDs (Universally Unique
 Identifiers) are local pseudonyms as well and do not leave the source node.
 Transfer contract 7.0 transmits exclusively **hub-bound pseudonyms** in the
@@ -26,9 +63,10 @@ of the same local UUID and therefore receive the same pseudonym at the same hub.
 The hub can group them but can reconstruct neither the local UUID nor the
 patient hash; pseudonyms of different hubs or salts cannot be linked without
 the salt. A link to the local record only arises through the local salt. The
-shared contract rejects every other UUID version, so a sender with local
-version 4 UUIDs fails closed; the receiver cannot verify the HMAC derivation
-itself. Versions 3.0 to 5.0 are rejected. Hub rows received under 5.0 still
+shared contract rejects every other UUID version. Version checks alone cannot
+distinguish new local UUIDv8 values from hub pseudonyms: senders must still use
+the hub derivation, and the receiver cannot verify that derivation itself.
+Versions 3.0 to 5.0 are rejected. Hub rows received under 5.0 still
 contain local UUIDs and require their own reviewed cleanup procedure. A salt
 rotation changes the hub pseudonyms; continuation at the hub then requires an
 explicit migration. Existing local patients, hash aliases, identity keys and

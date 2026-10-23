@@ -13,7 +13,7 @@ files:
 - file: patient_matching_2pc_assessment.md
   role: Evidence-based evaluation of exact existing-HMAC two-party matching, prototype measurements and proof obligations.
 - file: source_patient_matching.md
-  role: Local identity boundaries, exact-HMAC evaluation entrypoint and separate verified-identifier matching architecture.
+  role: Local identity boundaries, center-scoped keyed patient UUIDv8 and EDPB linkage constraints, exact-HMAC evaluation and separate verified-identifier matching.
 - file: endoreg-db-threat-model.md
   role: German recipient-specific assessment of identity linkage, token protection and research export disclosure.
 - file: annotation_export_guide.md

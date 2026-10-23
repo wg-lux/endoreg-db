@@ -23,6 +23,8 @@ entrypoints:
   file: external_ids.py
   purpose: Resolve or create and persist the typed external-ID relation.
 files:
+- file: creation.py
+  role: Center-locked hash-based patient creation with deterministic keyed local UUIDv8 and preserved existing aliases and UUIDs.
 - file: matching/matching_inputs.py
   role: Read-only authorized record snapshots, exact production encoding and explicit key-generation selection.
 - file: matching/matching_backend.py
@@ -68,6 +70,7 @@ tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_sensitive_meta_update.py tests/services/test_sensitive_meta_verification.py
   files:
+  - tests/services/test_patient_uuid_generation.py
   - tests/services/test_patient_matching_inputs.py
   - tests/services/test_patient_matching_acceptance.py
   - tests/services/test_patient_matching_backend.py

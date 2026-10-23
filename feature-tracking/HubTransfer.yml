@@ -197,13 +197,20 @@ definition_of_done:
     bleiben erhalten.
   - Vertrag 6.0 überträgt für Patienten und Untersuchungen ausschließlich hubgebundene UUIDv8-Pseudonyme,
     lokal per HMAC unter dem lokalen Identitätssalt aus lokaler UUID und Ziel-Hub abgeleitet. Persistierte
-    lokale UUIDs, lokale Ganzzahl-IDs und andere UUID-Versionen werden bei Sender und Empfänger abgewiesen;
+    lokale UUIDs verlassen den Sender nicht. Ganzzahl-IDs und andere UUID-Versionen werden abgewiesen;
+    UUIDv8 allein beweist keine Hub-Ableitung, weshalb der Sender immer die separate Hub-Funktion verwendet.
     Wiederholungen und Folgeuntersuchungen desselben lokalen Datensatzes behalten am selben Hub ihr Pseudonym.
     Pseudonym-Kollisionen mit fremden Besitzern oder Patienten werden vor Verknüpfung abgewiesen.
   - Studienbündel an den Hub verwenden dieselben Pseudonyme wie Medientransfers und enthalten keine lokalen
     UUIDs.
   - Sender und Empfänger verwenden den gemeinsamen lx_dtypes-Vertrag; Versionen 3.0, 4.0 und 5.0 bleiben
     ungültig.
+  - Neue lokale Patienten aus der hashbasierten Importanlage erhalten deterministische UUIDv8 aus einem
+    zweckgetrennten HMAC über Zentrumsschlüssel und Patientenhash unter dem validierten lokalen Identitätssalt.
+    Gleiche Eingaben ergeben gleiche UUIDs; andere Zentren und Schlüssel bleiben getrennt. Bestehende
+    UUIDs und historische Aliasauflösung bleiben erhalten; konkurrierende Anlage wird pro Zentrum serialisiert.
+    Hub-Pseudonyme bleiben separat. Die Werte sind personenbezogene Pseudonyme, keine Anonymisierung;
+    notwendige und rechtmäßige Verknüpfung sowie getrennte Geheimnishaltung bleiben Betriebsanforderungen.
   required: true
   verification:
     kind: manual
@@ -255,21 +262,33 @@ definition_of_done:
         lx-data-models contract 63 passed; endoreg-db receiver/identity/study 136 passed + 3 subtests,
         HTTP endpoints/registration 64 passed + 35 subtests; lx-annotate tests/hub 259 passed. Focused
         Pyright 0 errors in endoreg-db and lx-data-models; Ruff clean; 66 structure maps valid.'
-    note: Contract 6.0 replaces local UUIDs with site-salted hub pseudonyms; legacy 5.0 hub rows await
-      a separate reviewed reconciliation.
-    assessed_by: claude-hub-pseudonym-20261022
-    assessed_at: '2026-10-22T14:08:05.010915Z'
+    - kind: test
+      reference: tests/services/test_patient_uuid_generation.py
+    - kind: command
+      reference: 'UUIDv8: 87 selected tests initially 86 passed/1 failed (wrong expected exception); corrected
+        new test file 11 passed in 52.60s, other 76 tests passed unchanged. Selected lanes: patient_uuid_generation,
+        administration/person/test_patient, pseudonym_resolution, patient_hash_aliases, historical_identity_resolution,
+        preanonymized_external_identity, hub_pseudonyms, source_patient_matching. Focused Pyright 0 errors;
+        full run exposed 1 unrelated remaining private-import error in tests/views/test_central_hub_training_access.py:311
+        after four introduced errors were fixed and rechecked. Ruff, diff check and 67 structure maps
+        passed.'
+    note: Neue hashbasierte Importpatienten erhalten zentrumsgebundene HMAC-UUIDv8; bestehende UUIDs und
+      historische Aliase bleiben erhalten. Zentrumsweite Anlagesperre und Hub-Ableitung sind getestet.
+      Keine Bestandsmigration oder Schluesselverteilung. EDPB-Konsultationsfassung 01/2025 dokumentiert;
+      notwendige rechtmaessige Verknuepfung und getrennte Geheimnishaltung bleiben Betriebsanforderungen,
+      keine Anonymisierungs- oder Produktionsfreigabe. Legacy-Hubzeilen bleiben separat zu bereinigen.
+    assessed_by: codex-patient-uuid-20261023
+    assessed_at: '2026-10-23T09:41:48.626964Z'
 - id: hub_pseudonym_lifecycle
   category: security
   title: Hubgebundene Pseudonyme bleiben über Bestand, Rotation und Deployment konsistent
   acceptance:
   - Unter Vertrag 5.0 empfangene Hub-Zeilen mit lokalen Quell-UUIDs werden inventarisiert und über einen
     geprüften, fail-closed Ablauf am Quellknoten auf hubgebundene UUIDv8-Pseudonyme abgebildet oder als
-    LOST/quarantäniert markiert. Keine geratenen Zuordnungen; keine Löschung vor Hash-, Besitz- und
-    Bestandsabgleich.
+    LOST/quarantäniert markiert. Keine geratenen Zuordnungen; keine Löschung vor Hash-, Besitz- und Bestandsabgleich.
   - Eine Rotation des lokalen Identitätssalts teilt Hub-Patienten nicht still auf. Neue Transfers nach
-    Rotation werden blockiert, bis eine auditierte, nur am Quellknoten berechnete Abbildung alter auf neue
-    Pseudonyme am Hub atomar übernommen ist.
+    Rotation werden blockiert, bis eine auditierte, nur am Quellknoten berechnete Abbildung alter auf
+    neue Pseudonyme am Hub atomar übernommen ist.
   - lx-data-models, endoreg-db und lx-annotate werden für Vertrag 6.0 mit gepinnten Commits gemeinsam
     ausgerollt; Tests belegen, dass gemischte Versionen in beiden Richtungen geschlossen scheitern.
   required: true
@@ -298,8 +317,8 @@ definition_of_done:
   - 'TODO-05: Die Bindung von Ziel-Fingerprint und Schlüsselgeneration an das ursprüngliche Quelltupel
     ist über Import, Rotation und Identifikatorlöschung belegt, einschließlich des gelöschten Quellfalls.'
   - 'TODO-06/-07: Native Zwei-Endpunkt-Tests laufen ohne Skips gegen ein freigegebenes Artefaktmanifest
-    und belegen, dass ein angenommenes single_match genau einem tatsächlichen Kandidaten entspricht
-    (siehe guarded_patient_matching_resolver).'
+    und belegen, dass ein angenommenes single_match genau einem tatsächlichen Kandidaten entspricht (siehe
+    guarded_patient_matching_resolver).'
   - 'TODO-08: Konkurrierende Annahme, Rollback, Unterbrechung und Replay nach Neustart sind auf PostgreSQL
     getestet.'
   - 'TODO-09/-10: Prüfberechtigung der Namens-/Geburtsdatum-Flags mit Provenienz sowie Schlüsselerzeugung,
@@ -318,8 +337,8 @@ definition_of_done:
   assessment:
     status: not_assessed
     evidence: []
-    note: Erfasst am 22.10.2026 aus den Implementierungsreview-Kommentaren des Manuskripts; Umsetzung zurückgestellt.
-      Erledigt sind TODO-01 und TODO-13 sowie TODO-08 für den Transferpfad.
+    note: Erfasst am 22.10.2026 aus den Implementierungsreview-Kommentaren des Manuskripts; Umsetzung
+      zurückgestellt. Erledigt sind TODO-01 und TODO-13 sowie TODO-08 für den Transferpfad.
 - id: source_local_patient_matching
   category: security
   title: Historischen zentralen Hashabgleich sperren

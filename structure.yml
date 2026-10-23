@@ -17,6 +17,8 @@ entrypoints:
   file: devenv.nix
   purpose: Development environment and named verification lanes.
 files:
+- file: Site_scoped_linkage_with_formal_supplement_revised 1.docx
+  role: Linkage manuscript with center-scoped patient UUIDv8, separate hub pseudonyms, historical experiments and an unchanged formal supplement; readiness remains in HubTransfer.yml.
 - file: AGENTS.md
   role: Binding agent instructions and map maintenance protocol
 - file: pyproject.toml

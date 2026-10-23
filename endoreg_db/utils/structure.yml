@@ -26,6 +26,9 @@ files:
 - file: storage/__init__.py
   role: Encrypted storage integration.
 entrypoints:
+- name: get_patient_uuid
+  file: hashs.py
+  purpose: Center-scoped keyed UUIDv8 derivation for new hash-based local patient identities; hub derivation uses separate domain inputs.
 - name: get_runtime_paths
   file: paths.py
   purpose: Canonical typed runtime path topology.

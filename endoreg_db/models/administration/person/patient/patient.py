@@ -93,7 +93,7 @@ def _resolve_pseudo_patient_gender(gender: "Gender | str") -> "Gender":
     return gender_obj
 
 
-def _validate_pseudo_patient_creation_input(
+def validate_pseudo_patient_creation_input(
     *,
     center: "Center | None",
     gender: PatientGenderInput,
@@ -116,7 +116,7 @@ def _validate_pseudo_patient_creation_input(
     )
 
 
-def _build_pseudo_patient_profile(
+def build_pseudo_patient_profile(
     creation_input: _PseudoPatientCreationInput,
     *,
     patient_hash: str,
@@ -272,36 +272,17 @@ class Patient(Person):
         birth_month: int | None = None,
         birth_year: int | None = None,
     ) -> tuple["Patient", bool]:
-        existing_patient = cls.get_pseudo_patient_by_hash(patient_hash, center)
-        if existing_patient:
-            logger.info(
-                "Reusing pseudonymous patient",
-                extra={"patient_id": existing_patient.pk},
-            )
-            return existing_patient, False
+        from endoreg_db.services.patient_identity.creation import (
+            get_or_create_pseudo_patient,
+        )
 
-        creation_input = _validate_pseudo_patient_creation_input(
+        return get_or_create_pseudo_patient(
+            patient_hash=patient_hash,
             center=center,
             gender=gender,
             birth_month=birth_month,
             birth_year=birth_year,
         )
-        profile = _build_pseudo_patient_profile(
-            creation_input,
-            patient_hash=patient_hash,
-        )
-
-        patient = cls.objects.create(
-            first_name=profile.first_name,
-            last_name=profile.last_name,
-            dob=profile.dob,
-            gender=profile.gender,
-            center=creation_input.center,
-            patient_hash=patient_hash,
-            is_real_person=False,
-        )
-
-        return patient, True
 
     def get_dob(self) -> date | None:
         return self.dob

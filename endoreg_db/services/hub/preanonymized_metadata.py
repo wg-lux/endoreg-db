@@ -21,7 +21,7 @@ from endoreg_db.models.administration.person.patient.patient_external_id import 
 )
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
-from endoreg_db.utils.hashs import get_bytes_hash, get_identity_hash
+from endoreg_db.utils.hashs import get_bytes_hash, get_identity_hash, get_patient_uuid
 
 # Keep the historical logger namespace for existing log filters.
 logger = logging.getLogger("endoreg_db.services.hub.ingest")
@@ -64,6 +64,7 @@ def attach_external_id_to_sensitive_meta(
             pseudo_patient = Patient.get_pseudo_patient_by_hash(patient_hash, center)
             if pseudo_patient is None:
                 pseudo_patient = Patient.objects.create(
+                    uuid=get_patient_uuid(patient_hash, center_key=center.center_key),
                     patient_hash=patient_hash,
                     center=center,
                     gender=sensitive_meta.patient_gender,

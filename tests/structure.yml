@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: services/test_patient_uuid_generation.py
+  role: Fixed UUIDv8 vectors, center/key separation, historical identity stability, and concurrent hash-based patient creation.
 - file: services/test_clinical_lifecycle_state_machine.py
   role: Total clinical lifecycle matrix, final validation, purge-before-export and invariant rejection without database access.
 - file: services/test_clinical_lifecycle_legacy_exemption.py

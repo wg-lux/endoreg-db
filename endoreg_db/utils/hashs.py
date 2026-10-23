@@ -192,6 +192,36 @@ def get_examiner_hash(
     return get_identity_hash(payload, salt=salt)
 
 
+def _uuid8_from_digest(digest: bytes) -> UUID:
+    value = int.from_bytes(digest[:16], "big")
+    # RFC 9562 UUIDv8: version nibble 8, variant bits 10.
+    value = (value & ~(0xF << 76)) | (0x8 << 76)
+    value = (value & ~(0x3 << 62)) | (0x2 << 62)
+    return UUID(int=value)
+
+
+def get_patient_uuid(
+    patient_hash: str, *, center_key: str, salt: bytes | str | None = None
+) -> UUID:
+    """Center-scoped, keyed UUIDv8 for new local patient identities.
+
+    Exact nonblank legacy hash strings remain supported by the import facade.
+    Persist the result once: rotation and historical aliases must not rekey rows.
+    This is a pseudonym, not anonymous data or proof of a unique natural person.
+    """
+    if not patient_hash or not patient_hash.strip():
+        raise ValueError("Patient hash is required for UUID generation")
+    center = center_key.strip()
+    if not center:
+        raise ValueError("Patient UUID generation requires a center key")
+    payload = json.dumps(
+        ["center-patient-uuid-v1", center, patient_hash],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return _uuid8_from_digest(bytes.fromhex(get_identity_hash(payload, salt=salt)))
+
+
 def get_hub_record_pseudonym(
     record_uuid: UUID,
     *,
@@ -214,11 +244,7 @@ def get_hub_record_pseudonym(
         separators=(",", ":"),
     ).encode("utf-8")
     digest = hmac.new(_get_active_salt_bytes(salt), payload, hashlib.sha256).digest()
-    value = int.from_bytes(digest[:16], "big")
-    # RFC 9562 UUIDv8: version nibble 8, variant bits 10.
-    value = (value & ~(0xF << 76)) | (0x8 << 76)
-    value = (value & ~(0x3 << 62)) | (0x2 << 62)
-    return UUID(int=value)
+    return _uuid8_from_digest(digest)
 
 
 def get_file_hash(file: str | Path | FieldFile | None) -> str:
