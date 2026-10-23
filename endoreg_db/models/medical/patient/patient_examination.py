@@ -12,7 +12,7 @@ from endoreg_db.schemas import (
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center import Center
-    from endoreg_db.models.administration.person.patient.patient import Patient  # pyright: ignore
+    from endoreg_db.models.administration.person.patient.patient import Patient
     from endoreg_db.models.medical.examination.examination import Examination
     from endoreg_db.models.medical.examination.examination_indication import (
         ExaminationIndication,

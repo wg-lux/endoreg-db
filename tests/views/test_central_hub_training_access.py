@@ -307,9 +307,7 @@ def test_hub_read_and_training_scope_treat_missing_integrity_marker_as_intact(
     retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
     integrity_status: str | None,
 ) -> None:
-    from endoreg_db.services.datasets.training_manifests import (
-        _approved_video_filter,  # nqa
-    )
+    from endoreg_db.services.datasets.training_manifests import approved_video_filter
     from endoreg_db.views.access_control import (
         filter_video_read_queryset,
         is_anonymized_processed_video,
@@ -339,7 +337,7 @@ def test_hub_read_and_training_scope_treat_missing_integrity_marker_as_intact(
         is expected
     )
     assert (
-        VideoFile.objects.filter(_approved_video_filter(""), pk=video.pk).exists()
+        VideoFile.objects.filter(approved_video_filter(""), pk=video.pk).exists()
         is expected
     )
 

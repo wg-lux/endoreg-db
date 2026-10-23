@@ -30,7 +30,7 @@ from endoreg_db.utils.paths import (
     to_protected_media_relative,
     to_storage_relative,
 )
-from tests.import_files.test_video_finalize_success import _normalization_evidence
+from tests.import_files.test_video_finalize_success import build_normalization_evidence
 from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 pytestmark = pytest.mark.django_db
@@ -63,7 +63,7 @@ def replacement(monkeypatch: pytest.MonkeyPatch) -> Replacement:
     video.processed_file.name = new_name
     video.processed_video_hash = sha256(b"new processed").hexdigest()
     video.meta = {
-        "storage_normalization": _normalization_evidence().model_dump(mode="json")
+        "storage_normalization": build_normalization_evidence().model_dump(mode="json")
     }
     cleanup.record_processed_replacement(
         video,

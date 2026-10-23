@@ -269,7 +269,7 @@ def test_database_outage_retries_import_and_hls_delivery(hls: bool) -> None:
     service = (
         "endoreg_db.services.streaming.hls_media.materialize_video_hls"
         if hls
-        else "endoreg_db.services.hub.ingest._run_video_upload_import_job"
+        else "endoreg_db.services.hub.ingest.run_video_upload_import_job"
     )
     with (
         patch(service, side_effect=OperationalError("private database details")),

@@ -206,7 +206,7 @@ class LabelVideoSegmentTimelineSerializer(
     end_time = serializers.SerializerMethodField()
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
-        model = LabelVideoSegment  # pyright: ignore[reportAssignmentType]
+        model = LabelVideoSegment
         fields = [
             "id",
             "label_id",
@@ -279,7 +279,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
     time_segments = serializers.SerializerMethodField(read_only=True)
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
-        model = LabelVideoSegment  # pyright: ignore[reportAssignmentType]
+        model = LabelVideoSegment
         fields = [
             "id",
             "video_file",

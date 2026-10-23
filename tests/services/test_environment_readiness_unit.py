@@ -27,7 +27,7 @@ def test_native_report_snapshot_is_required_when_enabled(
 
     monkeypatch.setattr(readiness, "has_native_capability", capability_missing)
 
-    issues = readiness._check_report_native_snapshot_contract()  # pyright: ignore[reportPrivateUsage]
+    issues = readiness._check_report_native_snapshot_contract()
 
     assert [issue.code for issue in issues] == ["report_native_snapshot_unavailable"]
 
@@ -48,7 +48,7 @@ def test_native_report_snapshot_requirement_accepts_matching_capability(
 
     monkeypatch.setattr(readiness, "has_native_capability", capability_available)
 
-    assert readiness._check_report_native_snapshot_contract() == []  # pyright: ignore[reportPrivateUsage]
+    assert readiness._check_report_native_snapshot_contract() == []
 
 
 def test_path_within_rejects_external_candidate() -> None:

@@ -60,10 +60,10 @@ class VideoMeta(models.Model):
     processor: models.ForeignKey["EndoscopyProcessor | None"] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True
     )
-    endoscope: models.ForeignKey["Endoscope | None"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    endoscope: models.ForeignKey["Endoscope | None"] = models.ForeignKey(
         "Endoscope", on_delete=models.CASCADE, blank=True, null=True
     )
-    center: models.ForeignKey["Center"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    center: models.ForeignKey["Center"] = models.ForeignKey(
         "Center", on_delete=models.CASCADE
     )
     import_meta: models.OneToOneField["VideoImportMeta | None"] = models.OneToOneField(
@@ -292,28 +292,28 @@ class FFMpegMeta(models.Model):
     Stores technical video stream information extracted using FFmpeg (ffprobe).
     """
 
-    width: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    width: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )
-    height: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    height: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )
-    duration: models.FloatField[Any, Any] = models.FloatField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    duration: models.FloatField[Any, Any] = models.FloatField(
         null=True, blank=True
     )
-    frame_rate_num: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    frame_rate_num: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )
-    frame_rate_den: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    frame_rate_den: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )
-    codec_name: models.CharField[Any, Any] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    codec_name: models.CharField[Any, Any] = models.CharField(
         max_length=50, null=True, blank=True
     )
-    pixel_format: models.CharField[Any, Any] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    pixel_format: models.CharField[Any, Any] = models.CharField(
         max_length=50, null=True, blank=True
     )
-    bit_rate: models.BigIntegerField[Any, Any] = models.BigIntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    bit_rate: models.BigIntegerField[Any, Any] = models.BigIntegerField(
         null=True, blank=True
     )
     raw_probe_data: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)

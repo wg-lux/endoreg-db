@@ -250,3 +250,48 @@ unexponierte andere Schlüssel/Generationen und nicht getestete Zeitrepräsentat
 bleiben unerkannt. Schon gelieferte Mappings zählen nicht erneut. Ohne zusätzliche
 Personenquelle sind gefundene kodierte Attribute ein eigenes Ergebnis, keine vom
 Scorer erfundene eindeutige Personenidentifikation.
+# Ergänzung: aktuelle UUIDv8-Abbildung, 23. Oktober 2026
+
+Der aktuelle Versuch prüft die vollständige Kette Patientenidentität → HMAC-Hash →
+lokale UUIDv8 → Hub-UUIDv8. Zielwerte wurden mit Produktionshelfern erzeugt;
+ein unabhängiger, isolierter Angreifer erhielt nur UUID-Zeilen, deklarierte Kontexte,
+den unveränderten unabhängigen synthetischen Kandidatenkorpus und je nach Bedingung
+den kompromittierten Schlüssel. Die Hub-Kennung ist im Hauptversuch bekannt.
+Die Readiness-Autorität bleibt `feature-tracking/Anonymization.yml`, Kriterium
+`incremental_reidentification_experiment`.
+
+Summen über drei neue synthetische Durchläufe, jeweils 432 Zielzeilen je Bedingung:
+
+| Bedingung | Token-Treffer | Zusätzliche korrekte Zuordnungen | Falsche Zuordnungen |
+| --- | ---: | ---: | ---: |
+| Lokale UUID, gemeinsamer Schlüssel offengelegt | 192 | 144 | 12 |
+| Hub-UUID, gemeinsamer Schlüssel offengelegt | 192 | 144 | 12 |
+| Lokale oder Hub-UUID, unabhängiger Schlüssel eines Zentrums offengelegt | 96 | 72 | 6 |
+| Lokale oder Hub-UUID, kein Schlüssel, keine Vorabzuordnungen | 0 | 0 | 0 |
+| Lokale oder Hub-UUID, falscher Schlüssel | 0 | 0 | 0 |
+| Hub-UUID, richtiger Schlüssel, falsche Hub-Kennung | 0 | 0 | 0 |
+| Lokale oder Hub-UUID, gemeinsamer Schlüssel, bereits beschriftete Zeilen | 192 | 0 | 0 |
+
+Die erneut ausgeführten Hash-Kontrollen ergaben dieselben Trefferzahlen. Jede
+UUID-Abbildung wurde separat gemessen; die Zeilen mit „oder“ summieren diese nicht.
+Pro aktivem gemeinsamen Schlüssel wurden über drei Durchläufe 276 Kandidaten-Kontext-
+Auswertungen benötigt: 552 primitive HMACs für lokale und 828 für Hub-UUIDs.
+Ein unabhängiger Zentrumsschlüssel halbiert diese Arbeit. Die fehlende Zuordnung
+ohne Schlüssel ist nur ein Ergebnis dieses begrenzten Angreifermodells, kein Beweis
+für Anonymität gegenüber beliebigem Zusatzwissen.
+
+Der offengelegte Identitätsschlüssel ermöglicht alle drei deterministischen Schritte.
+UUIDv8 verhindert daher keine Wörterbuchprüfung unter diesem Schlüsselkompromiss.
+Die zwölf falschen Zuordnungen entstehen aus unvollständigem Zusatzwissen über
+demografisch gleiche Personen; Token-Gleichheit beweist keine eindeutige Person.
+Mehrdeutige Kandidaten werden weiterhin getrennt ausgewiesen. Vorab bekannte
+Zuordnungen zählen nicht als zusätzlicher Gewinn.
+
+Modelliert werden neu erzeugte Identitäten unter der jeweiligen Schlüsselgeneration,
+keine Rotation bereits persistierter UUIDs. Historische zufällige UUIDs, gemischte
+Erzeugungs-/Transfersalze, reale Patienten, klinische Zusatzdaten, Online-Orakel und
+ein vollständiger Produktionsimport sind nicht Gegenstand dieses Versuchs. Die
+empfängerrelative rechtliche Einordnung folgt nicht allein aus diesen Messwerten.
+Öffentliche Einzelmessungen, Eingaben ohne Schlüssel und Verifikationsnachweise:
+`evidence/uuid_mapping/`. Private Schlüssel, Seeds und Scoring-Wahrheit verbleiben
+außerhalb des Repositorys.

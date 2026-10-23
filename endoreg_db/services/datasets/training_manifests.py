@@ -337,8 +337,8 @@ def build_frame_multilabel_training_manifest(
     annotations_qs, segments_qs = training_annotation_querysets(
         dataset, source_scope=source_scope
     )
-    annotations_qs = annotations_qs.filter(_approved_video_filter("frame__video__"))
-    segments_qs = segments_qs.filter(_approved_video_filter("video_file__"))
+    annotations_qs = annotations_qs.filter(approved_video_filter("frame__video__"))
+    segments_qs = segments_qs.filter(approved_video_filter("video_file__"))
     if normalized_source_names:
         annotations_qs = annotations_qs.filter(
             information_source__name__in=normalized_source_names
@@ -457,7 +457,7 @@ def _normalize_source_names(
     ]
 
 
-def _approved_video_filter(prefix: str) -> Q:
+def approved_video_filter(prefix: str) -> Q:
     """Apply existing clinical media gates to either annotation relationship."""
     return (
         ~Q(**{f"{prefix}processed_file": ""})

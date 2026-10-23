@@ -124,3 +124,18 @@ Nenner gelten: alle Zeilen = `eligible_rows`; im kompatiblen Kandidatenraum =
 Abwesenheit außerhalb dieses Bereichs.
 
 Weitere Einordnung und gemessene Ergebnisse stehen in [REPORT.md](REPORT.md).
+# Aktuelle UUID-Abbildung
+
+Mit `--uuid-mapping` führt der bestehende Runner ausschließlich die Hash-Kontrollen
+und die aktuelle lokale beziehungsweise Hub-UUIDv8-Abbildung aus. Derselbe Schalter
+ist beim Replay erforderlich. Beispiel:
+
+```sh
+env -i PATH="$PATH" .devenv/state/venv/bin/python -m scripts.reidentification.run --uuid-mapping --runtime /tmp/uuid-audit-new
+env -i PATH="$PATH" .devenv/state/venv/bin/python -m scripts.reidentification.run --uuid-mapping --runtime /tmp/uuid-audit-replay --replay /tmp/uuid-audit-new/export/reidentification/private/reproduction.json
+env -i PATH="$PATH" .devenv/state/venv/bin/python -m scripts.reidentification.rescore --runtime /tmp/uuid-audit-new
+```
+
+Die Zielwerte stammen aus Produktionshelfern, die Angreiferberechnung ist unabhängig.
+Der Kandidatenkorpus und die Budgets bleiben unverändert. Ergebnisse dieses Versuchs
+stehen separat unter `evidence/uuid_mapping/`; die historischen Messungen bleiben erhalten.

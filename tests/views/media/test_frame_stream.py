@@ -3,12 +3,10 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false
 
 import importlib
-import importlib.util
 import json
 import shutil
 import uuid
-from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 
 import pytest
 from django.contrib.auth.models import User
@@ -18,23 +16,6 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.utils.paths import protected_media_root
-
-
-def _load_frame_media_module(module_name: str) -> ModuleType:
-    module_path = (
-        Path(__file__).resolve().parents[3]
-        / "endoreg_db"
-        / "views"
-        / "media"
-        / "frame_media.py"
-    )
-    spec = importlib.util.spec_from_file_location(module_name, module_path)
-    assert spec is not None
-    assert spec.loader is not None
-
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
 
 
 class FrameStreamViewTests(TestCase):

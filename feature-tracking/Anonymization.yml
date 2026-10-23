@@ -29,6 +29,8 @@ definition_of_done:
     and membership abstentions.
   - Differentially validate the offline evaluator against production helpers and publish measured work,
     isolation checks and limitations.
+  - Measure current deterministic local and hub UUIDv8 mappings with exposed, absent and wrong keys,
+    independent centre keys and already-labelled controls; retain historical evidence separately.
   required: false
   verification:
     kind: manual
@@ -42,6 +44,11 @@ definition_of_done:
       reference: scripts/reidentification/REPORT.md
     - kind: demonstration
       reference: scripts/reidentification/evidence/verification.json
+    - kind: demonstration
+      reference: scripts/reidentification/evidence/uuid_mapping/verification.json
+      note: '23 October 2026: 45 current UUID/hash-control cases replayed and independently rescored;
+        18 harness tests passed. Shared-key exposure yields 192 matches, 144 new correct and 12 false
+        assignments for both local and hub UUIDs; no-key and wrong-key controls yield zero.'
     note: 'Bounded synthetic experiment executed: 48 case pairs, three independent subject seeds; complete
       replay and independent rescoring agree. No production-readiness or clinical-population probability
       claim. Missing external hashs.py attachment and encrypted-file integration coverage are documented

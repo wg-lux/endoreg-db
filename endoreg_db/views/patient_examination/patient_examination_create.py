@@ -33,7 +33,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):
     """
     Create new PatientExamination instances.
     POST /api/examinations/create/

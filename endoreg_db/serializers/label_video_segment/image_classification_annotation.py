@@ -31,7 +31,7 @@ class ImageClassificationAnnotationSerializer(
     frame_number = serializers.IntegerField(source="frame.frame_number", read_only=True)
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
-        model = ImageClassificationAnnotation  # pyright: ignore[reportAssignmentType]
+        model = ImageClassificationAnnotation
         fields = [
             "id",
             "label",

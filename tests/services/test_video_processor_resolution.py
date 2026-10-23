@@ -48,7 +48,7 @@ def test_reimport_processor_name_prefers_video_processor_over_legacy_meta() -> N
         video_meta=SimpleNamespace(processor=SimpleNamespace(name="legacy_processor")),
     )
 
-    assert _processor_name(cast(VideoFile, video)) == "video_processor"  # pyright: ignore[reportPrivateUsage]
+    assert _processor_name(cast(VideoFile, video)) == "video_processor"
 
 
 def test_reimport_processor_name_uses_default_for_missing_processor_relations() -> None:
@@ -58,4 +58,4 @@ def test_reimport_processor_name_uses_default_for_missing_processor_relations() 
     settings.save()
     video = SimpleNamespace(processor=None, video_meta=SimpleNamespace(processor=None))
 
-    assert _processor_name(cast(VideoFile, video)) == processor.name  # pyright: ignore[reportPrivateUsage]
+    assert _processor_name(cast(VideoFile, video)) == processor.name

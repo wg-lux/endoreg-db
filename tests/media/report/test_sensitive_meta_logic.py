@@ -22,7 +22,7 @@ def generate_random_dob() -> datetime:
     """Generates a random timezone-aware datetime between 1920-01-01 and 2000-12-31."""
     import random
 
-    import pytz  # type: ignore
+    import pytz
 
     start_date = date(1920, 1, 1)
     end_date = date(2000, 12, 31)

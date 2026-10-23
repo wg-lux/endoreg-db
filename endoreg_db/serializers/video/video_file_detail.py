@@ -13,7 +13,7 @@ from endoreg_db.services.annotations.segment_validation_workflow import (
     segment_annotations_are_final,
 )
 from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
-from ...utils.calc_duration_seconds import _calc_duration_vf
+from ...utils.calc_duration_seconds import calc_duration_vf
 
 
 class _VideoStateLike(Protocol):
@@ -102,7 +102,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
         Returns:
             float or None: Duration of the video in seconds, or None if unavailable.
         """
-        return obj.duration or _calc_duration_vf(obj)
+        return obj.duration or calc_duration_vf(obj)
 
     def get_segment_annotations_validated(self, obj: VideoFile) -> bool:
         return bool(segment_annotations_are_final(obj))

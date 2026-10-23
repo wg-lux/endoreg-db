@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from datetime import date, timedelta
 from time import perf_counter
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -67,7 +68,15 @@ class Bundle(Model):
     start: str = "1900-01-01"
     end: str = "2026-10-21"
     known: list[Known] = []
-    scheme: Literal["patient", "examiner", "examination", "artifact"] = "patient"
+    scheme: Literal[
+        "patient",
+        "examiner",
+        "examination",
+        "artifact",
+        "patient_local_uuid",
+        "patient_hub_uuid",
+    ] = "patient"
+    hub_node_key: str = ""
     exam_times: list[str] = []
     patient_tokens: dict[str, str] = {}
     artifacts: list[str] = []
@@ -114,6 +123,29 @@ def patient(key: str, encoded: tuple[str, str, str], centre: str) -> str:
     return digest(key, ["patient-identity-v1", *encoded, centre.strip()])
 
 
+def uuid8(value: str) -> str:
+    raw = bytearray.fromhex(value[:32])
+    raw[6] = (raw[6] & 15) | 128
+    raw[8] = (raw[8] & 63) | 128
+    return str(UUID(bytes=bytes(raw)))
+
+
+def patient_uuid(
+    key: str, encoded: tuple[str, str, str], centre: str, hub: str = ""
+) -> str:
+    local = uuid8(
+        digest(
+            key,
+            ["center-patient-uuid-v1", centre.strip(), patient(key, encoded, centre)],
+        )
+    )
+    return (
+        uuid8(digest(key, ["hub-record-pseudonym-v1", "patient", local, hub.strip()]))
+        if hub
+        else local
+    )
+
+
 def isolate() -> dict[str, bool]:
     """Landlock denies all new filesystem reads; no inherited files except pipes.
 
@@ -149,6 +181,8 @@ def isolate() -> dict[str, bool]:
 
 
 def attack(bundle: Bundle) -> Result:
+    if bundle.scheme == "patient_hub_uuid" and not bundle.hub_node_key.strip():
+        raise ValueError("Hub UUID attack requires a declared hub context")
     start = perf_counter()
     by_token: dict[str, list[Row]] = defaultdict(list)
     for row in bundle.rows:
@@ -234,6 +268,14 @@ def attack(bundle: Bundle) -> Result:
                     elif bundle.scheme == "patient":
                         token = patient(context.key, encoded, context.centre)
                         primitives += 1
+                    elif bundle.scheme in ("patient_local_uuid", "patient_hub_uuid"):
+                        hub = (
+                            bundle.hub_node_key
+                            if bundle.scheme == "patient_hub_uuid"
+                            else ""
+                        )
+                        token = patient_uuid(context.key, encoded, context.centre, hub)
+                        primitives += 3 if hub else 2
                     elif bundle.scheme == "examiner":
                         token = digest(
                             context.key,

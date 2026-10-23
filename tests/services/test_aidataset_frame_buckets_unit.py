@@ -142,7 +142,7 @@ class AIDataSetFrameBucketPureUnitTests(SimpleTestCase):
 
         # Act
         result = bucket_service._build_segment_frame_buckets(
-            dataset,  # type: ignore[arg-type]
+            dataset,
             label_set=None,
             prediction_segments_only=True,
         )

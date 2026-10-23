@@ -432,7 +432,7 @@ class VideoAnonymizationCorrectionView(APIView):
         )
         try:
             from lx_anonymizer.config import (
-                settings as anonymizer_settings,  # pyright: ignore[reportMissingTypeStubs]
+                settings as anonymizer_settings,
             )
 
             model = {

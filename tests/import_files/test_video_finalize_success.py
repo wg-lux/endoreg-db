@@ -50,7 +50,7 @@ def _runtime_storage_root() -> Path:
     return paths_module.EndoregPathsModel.from_environment().storage
 
 
-def _normalization_evidence() -> VideoStorageNormalizationEvidence:
+def build_normalization_evidence() -> VideoStorageNormalizationEvidence:
     timeline = VideoTimelineContract(
         fps_num=25,
         fps_den=1,

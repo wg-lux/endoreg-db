@@ -78,7 +78,7 @@ def _request_query(request: Request) -> Mapping[str, Any]:
     return {}
 
 
-class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
     """
     ViewSet for Video Examination CRUD operations.
 

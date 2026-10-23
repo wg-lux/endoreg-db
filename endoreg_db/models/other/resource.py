@@ -4,7 +4,7 @@ from typing import ClassVar, Any
 from django.db import models
 
 
-class ResourceManager(models.Manager["Resource"]):  # pyright: ignore[reportMissingTypeArgument]
+class ResourceManager(models.Manager["Resource"]):
     def get_by_natural_key(self, name: str) -> "Resource":
         return self.get(name=name)
 

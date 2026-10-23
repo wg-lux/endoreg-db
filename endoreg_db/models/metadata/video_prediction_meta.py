@@ -82,16 +82,16 @@ class VideoPredictionMeta(models.Model):
     Must be associated with exactly one `VideoFile`.
     """
 
-    model_meta: models.ForeignKey[Any] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    model_meta: models.ForeignKey[Any] = models.ForeignKey(
         "ModelMeta", on_delete=models.CASCADE
     )
-    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now=True
     )
-    prediction_array: models.BinaryField[Any, Any] = models.BinaryField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    prediction_array: models.BinaryField[Any, Any] = models.BinaryField(
         blank=True, null=True
     )
 

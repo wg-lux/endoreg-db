@@ -23,11 +23,11 @@ if TYPE_CHECKING:
 def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from django.db import DatabaseError
     from endoreg_db.services.jobs.error_handling import retry_database_operation
-    from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+    from endoreg_db.services.hub.ingest import run_video_upload_import_job
     from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLeaseBusy
 
     try:
-        return _run_video_upload_import_job(
+        return run_video_upload_import_job(
             str(job_id),
             lease_owner=str(_task.request.id),
             retry_on_busy=True,

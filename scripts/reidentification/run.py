@@ -31,6 +31,7 @@ from scripts.reidentification.worker import (
     Row,
     digest,
     patient,
+    patient_uuid,
 )
 
 
@@ -161,6 +162,18 @@ def conformance(key: str) -> list[dict[str, str]]:
             first, last, dob, centre, salt=key
         )
         assert actual == patient(key, encoded, centre)
+        local = hashs.get_patient_uuid(actual, center_key=centre, salt=key)
+        assert str(local) == patient_uuid(key, encoded, centre)
+        hub = hashs.get_hub_record_pseudonym(
+            local, kind="patient", hub_node_key="synthetic-hub", salt=key
+        )
+        assert str(hub) == patient_uuid(key, encoded, centre, "synthetic-hub")
+        vectors.extend(
+            [
+                {"kind": "patient_local_uuid", "digest": str(local)},
+                {"kind": "patient_hub_uuid", "digest": str(hub)},
+            ]
+        )
         assert actual != patient(bytes.fromhex(key).decode("latin1"), encoded, centre)
         vectors.append(
             {
@@ -631,10 +644,79 @@ def controls(public: Path, private: Path, key: str) -> None:
     # integration remains a distinct test lane, not evidence from this control.
 
 
+def uuid_cases(
+    cases: list[tuple[Bundle, Truth]], keys: dict[str, str]
+) -> list[tuple[Bundle, Truth]]:
+    """New identities created under each declared key epoch, not rotation of existing UUIDs."""
+    from endoreg_db.utils.hashs import get_patient_uuid, get_hub_record_pseudonym
+
+    selected = [
+        (b, t)
+        for b, t in cases
+        if b.scenario in ("B_shared", "B_independent", "B_wrong_key", "D_labelled")
+    ]
+    output = list(selected)
+    for scheme in ("patient_local_uuid", "patient_hub_uuid"):
+        for bundle, truth in selected:
+            rows: list[Row] = []
+            for row in bundle.rows:
+                key = keys[truth.row_key_ids[row.row]]
+                local = get_patient_uuid(row.digest, center_key=row.centre, salt=key)
+                token = (
+                    get_hub_record_pseudonym(
+                        local, kind="patient", hub_node_key="synthetic-hub", salt=key
+                    )
+                    if scheme == "patient_hub_uuid"
+                    else local
+                )
+                rows.append(
+                    row.model_copy(update={"digest": str(token), "scheme": scheme})
+                )
+            mapped = bundle.model_copy(
+                update={
+                    "scenario": scheme + "_" + bundle.scenario,
+                    "scheme": scheme,
+                    "hub_node_key": "synthetic-hub",
+                    "rows": rows,
+                }
+            )
+            output.append((mapped, truth))
+            if bundle.scenario == "B_shared":
+                output.append(
+                    (
+                        mapped.model_copy(
+                            update={
+                                "scenario": scheme + "_no_key",
+                                "mode": "baseline",
+                                "contexts": [
+                                    c.model_copy(update={"key": ""})
+                                    for c in mapped.contexts
+                                ],
+                            }
+                        ),
+                        truth,
+                    )
+                )
+                if scheme == "patient_hub_uuid":
+                    output.append(
+                        (
+                            mapped.model_copy(
+                                update={
+                                    "scenario": scheme + "_wrong_hub",
+                                    "hub_node_key": "other-hub",
+                                }
+                            ),
+                            truth,
+                        )
+                    )
+    return output
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--runtime", required=True)
     parser.add_argument("--replay", type=Path)
+    parser.add_argument("--uuid-mapping", action="store_true")
     args = parser.parse_args()
     runtime: str = args.runtime
     initialize(runtime)
@@ -960,6 +1042,8 @@ def main() -> None:
                 staff_truth,
             )
         )
+        if args.uuid_mapping:
+            cases = uuid_cases(cases, keys)
         for bundle, truth in cases:
             name = f"{trial}-{bundle.scenario}"
             write(private / (name + "-truth.json"), truth.model_dump_json(indent=2))

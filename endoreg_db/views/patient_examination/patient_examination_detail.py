@@ -34,7 +34,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):
     """
     Retrieve and update PatientExamination instances.
     GET /api/examinations/{id}/

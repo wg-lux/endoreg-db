@@ -172,16 +172,6 @@ class _PytestNode(Protocol):
     def iter_markers(self) -> Iterator[_PytestMark]: ...
 
 
-class _SqlCursor(Protocol):
-    def execute(self, sql: str) -> object: ...
-
-
-class _SqlCursorContext(Protocol):
-    def __enter__(self) -> _SqlCursor: ...
-
-    def __exit__(self, exc_type: object, exc: object, traceback: object) -> bool: ...
-
-
 class _GetStreamInfoCallable(Protocol):
     def __call__(
         self,

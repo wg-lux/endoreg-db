@@ -136,7 +136,7 @@ class Command(BaseCommand):
 
 def _create_workbook() -> DbSummaryWorkbook:
     try:
-        from openpyxl import Workbook  # type: ignore[import-untyped]
+        from openpyxl import Workbook
     except ImportError as exc:
         raise CommandError(
             "openpyxl is required to export the database summary workbook."

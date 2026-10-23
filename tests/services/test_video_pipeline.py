@@ -17,7 +17,7 @@ from endoreg_db.models import VideoFile
 from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.services.video_files.temporal_inference import (
     run_video_temporal_inference,
-)  # pyright: ignore[reportPrivateUsage]
+)
 from tests.helpers.default_objects import get_latest_segmentation_model
 from tests.media.video.mock_video_anonym_annotation import mock_video_manual_validation
 

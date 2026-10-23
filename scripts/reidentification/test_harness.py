@@ -155,7 +155,7 @@ def test_production_conformance_without_real_settings_or_keyring() -> None:
         "initialize('/tmp/reidentification-conformance-unused'); "
         "from django.conf import settings; "
         "assert settings.DATABASES == {}; "
-        f"assert len(conformance('{KEY}')) == 12"
+        f"assert len(conformance('{KEY}')) == 16"
     )
     completed = subprocess.run(
         [sys.executable, "-c", code],
@@ -218,3 +218,33 @@ def test_equal_oracle_and_key_budgets() -> None:
     keyed = execute(bundle)
     assert oracle.evaluations == keyed.evaluations == 1
     assert oracle.matches == keyed.matches
+
+
+@pytest.mark.parametrize("hub", ["", "synthetic-hub"])
+def test_uuid_attack_key_exposure_and_controls(hub: str) -> None:
+    from uuid import UUID
+    from scripts.reidentification.worker import patient_uuid
+
+    bundle = fixture_bundle()
+    bundle.scheme = "patient_hub_uuid" if hub else "patient_local_uuid"
+    bundle.hub_node_key = hub
+    token = patient_uuid(KEY, bundle.people[0].encoded(), "a", hub)
+    assert UUID(token).version == 8
+    bundle.rows = [
+        r.model_copy(update={"scheme": bundle.scheme, "digest": token})
+        for r in bundle.rows
+    ]
+    result = execute(bundle)
+    assert len(result.matches) == 2
+    assert result.primitive_hmacs == (3 if hub else 2)
+    assert all(result.isolation.values())
+    assert not attack(bundle.model_copy(update={"mode": "baseline"})).matches
+    for change in ({"key": "wrong"}, {"centre": "other"}):
+        wrong = bundle.model_copy(
+            update={"contexts": [bundle.contexts[0].model_copy(update=change)]}
+        )
+        assert not attack(wrong).matches
+    if hub:
+        assert not attack(bundle.model_copy(update={"hub_node_key": "other"})).matches
+        with pytest.raises(ValueError, match="hub context"):
+            attack(bundle.model_copy(update={"hub_node_key": ""}))

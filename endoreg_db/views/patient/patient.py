@@ -166,7 +166,7 @@ def start_examination(request: HttpRequest) -> HttpResponse:
     return render(request, "admin/start_examination.html")  # Loads the simple HTML page
 
 
-class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportInvalidTypeArguments]
+class PatientViewSet(viewsets.ModelViewSet[Patient]):
     """API endpoint for managing patients."""
 
     queryset = Patient.objects.all()

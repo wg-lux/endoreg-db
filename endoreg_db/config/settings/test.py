@@ -1,7 +1,3 @@
-import os
-import sys
-from pathlib import Path
-
 from endoreg_db.config.env import env_bool, env_str
 from endoreg_db.utils.file_operations import ensure_directory
 from endoreg_db.utils.paths import get_runtime_paths
@@ -18,12 +14,6 @@ TEST_DIR = get_runtime_paths().test
 TEST_DB_DIR = ensure_directory(get_runtime_paths().test / "data" / "tests" / "db")
 
 TERMINOLOGY_ROOT = ensure_directory(get_runtime_paths().test / "terminology")
-
-
-def _running_under_pytest() -> bool:
-    return "PYTEST_CURRENT_TEST" in os.environ or any(
-        "pytest" in Path(arg).name for arg in sys.argv[:2]
-    )
 
 
 def gen_salt() -> str:

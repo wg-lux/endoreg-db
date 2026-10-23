@@ -18,7 +18,7 @@ class OperationLog(models.Model):
     # actor_id – internal Django user ID (primary key)
     # Who did it
     actor_user: models.ForeignKey[models.Model, models.Model | None] = (
-        models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+        models.ForeignKey(
             settings.AUTH_USER_MODEL,
             on_delete=models.SET_NULL,
             null=True,
@@ -67,11 +67,11 @@ class OperationLog(models.Model):
     )
 
     # Extra info
-    meta: models.JSONField[Any, Any] = models.JSONField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    meta: models.JSONField[Any, Any] = models.JSONField(
         null=True, blank=True
     )
 
-    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
 

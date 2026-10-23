@@ -38,7 +38,7 @@ from endoreg_db.services.privacy.evaluation_manifest import (
 
 
 @pytest.fixture(autouse=True)
-def _reference_data(base_db_data: bool) -> bool:  # pyright: ignore[reportUnusedFunction]
+def _reference_data(base_db_data: bool) -> bool:
     return base_db_data
 
 

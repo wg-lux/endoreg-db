@@ -167,7 +167,7 @@ class DelayTaskDispatcher(Protocol):
 def _video_upload_import_task_dispatcher() -> CeleryTaskDispatcher:
     # Local import avoids the task/service cycle:
     # ingest -> endoreg_db.tasks.run_video_upload_import_task ->
-    # endoreg_db.services.hub.ingest._run_video_upload_import_job.
+    # endoreg_db.services.hub.ingest.run_video_upload_import_job.
     from endoreg_db.tasks import run_video_upload_import_task
 
     return cast(CeleryTaskDispatcher, run_video_upload_import_task)
@@ -2146,7 +2146,7 @@ def _handle_video_upload_import_failure(
     return False
 
 
-def _run_video_upload_import_job(
+def run_video_upload_import_job(
     job_id: str,
     *,
     lease_owner: str | None = None,
@@ -2195,6 +2195,10 @@ def _run_video_upload_import_job(
         return _execute_video_upload_import_attempt(attempt)
     except Exception as exc:
         return _handle_video_upload_import_failure(attempt, exc)
+
+
+# Compatibility alias for lx-annotate tests importing the former private name.
+_run_video_upload_import_job = run_video_upload_import_job
 
 
 def _run_watcher_upload_job_inline(

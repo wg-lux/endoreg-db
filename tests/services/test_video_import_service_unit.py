@@ -196,7 +196,7 @@ class TestLocalRawSourceResolution:
         raw_path = tmp_path / "raw.mp4"
 
         class VideoLike:
-            def ensure_local_raw_file(self):  # type: ignore[no-untyped-def]
+            def ensure_local_raw_file(self):
                 return nullcontext(raw_path)
 
         # Act

@@ -61,7 +61,9 @@ def test_invalid_scope_is_rejected(patient_hash: str, center: str) -> None:
 
 
 def test_invalid_secret_is_rejected() -> None:
-    with pytest.raises(ImproperlyConfigured, match="Invalid identity salt configuration"):
+    with pytest.raises(
+        ImproperlyConfigured, match="Invalid identity salt configuration"
+    ):
         get_patient_uuid("a" * 64, center_key="center-a", salt="")
 
 

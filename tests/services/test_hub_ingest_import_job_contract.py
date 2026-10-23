@@ -198,7 +198,7 @@ class TestVideoImportJobHandoff:
         ingest_center: Center,
     ) -> None:
         from django.db import OperationalError
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center,
@@ -214,7 +214,7 @@ class TestVideoImportJobHandoff:
             ),
             pytest.raises(OperationalError),
         ):
-            _run_video_upload_import_job(
+            run_video_upload_import_job(
                 str(job.pk), lease_owner="delivery", retry_on_busy=True
             )
         job.refresh_from_db()
@@ -229,7 +229,7 @@ class TestVideoImportJobHandoff:
         self,
         ingest_center: Center,
     ) -> None:
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center,
@@ -240,10 +240,10 @@ class TestVideoImportJobHandoff:
             upload_job_id=str(job.pk), owner="active-worker"
         )
         with pytest.raises(UploadJobImportLeaseBusy):
-            _run_video_upload_import_job(
+            run_video_upload_import_job(
                 str(job.pk), lease_owner="task", retry_on_busy=True
             )
-        assert _run_video_upload_import_job(str(job.pk), lease_owner="task") is False
+        assert run_video_upload_import_job(str(job.pk), lease_owner="task") is False
         job.refresh_from_db()
         assert job.retry_count == 0
         assert job.processing_lease_owner == "active-worker"
@@ -253,7 +253,7 @@ class TestVideoImportJobHandoff:
         self,
         ingest_center: Center,
     ) -> None:
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center,
@@ -281,7 +281,7 @@ class TestVideoImportJobHandoff:
             ) as execute,
         ):
             assert (
-                _run_video_upload_import_job(str(job.pk), lease_owner="redelivery")
+                run_video_upload_import_job(str(job.pk), lease_owner="redelivery")
                 is True
             )
         acquire.assert_not_called()
@@ -291,7 +291,7 @@ class TestVideoImportJobHandoff:
     def test_completed_redelivery_without_media_is_lost_and_preserves_source(
         self, ingest_center: Center
     ) -> None:
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center, content_type="video/mp4", filename="missing-media.mp4"
@@ -304,7 +304,7 @@ class TestVideoImportJobHandoff:
         with patch(
             "endoreg_db.services.hub.ingest._execute_video_upload_import_attempt"
         ) as execute:
-            assert _run_video_upload_import_job(str(job.pk)) is False
+            assert run_video_upload_import_job(str(job.pk)) is False
         job.refresh_from_db()
         assert job.status == UploadJob.Status.LOST
         assert job.error_code == UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED
@@ -614,7 +614,7 @@ class TestCeleryImportTaskAdapters:
         try:
             # Act
             with patch(
-                "endoreg_db.services.hub.ingest._run_video_upload_import_job",
+                "endoreg_db.services.hub.ingest.run_video_upload_import_job",
                 return_value=True,
             ) as run_import:
                 result = task.run(123)
@@ -638,7 +638,7 @@ class TestCeleryImportTaskAdapters:
         assert cast(Any, tasks.video_hls_materialization).max_retries is None
         with (
             patch(
-                "endoreg_db.services.hub.ingest._run_video_upload_import_job",
+                "endoreg_db.services.hub.ingest.run_video_upload_import_job",
                 side_effect=error,
             ),
             patch.object(task, "retry", side_effect=Retry()) as retry,

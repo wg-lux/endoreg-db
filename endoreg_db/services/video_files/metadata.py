@@ -124,9 +124,9 @@ def ensure_default_video_fps(video: "VideoFile") -> float:
 
 
 def get_video_duration(video: "VideoFile") -> float:
-    from endoreg_db.utils.calc_duration_seconds import _calc_duration_vf
+    from endoreg_db.utils.calc_duration_seconds import calc_duration_vf
 
-    return _calc_duration_vf(video)
+    return calc_duration_vf(video)
 
 
 def video_frame_number_to_seconds(video: "VideoFile", frame_number: int) -> float:

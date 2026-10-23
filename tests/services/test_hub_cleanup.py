@@ -517,7 +517,7 @@ def test_failed_video_repeat_requires_ready_target(
 
 
 @pytest.fixture(autouse=True)
-def _verified_target(  # pyright: ignore[reportUnusedFunction] -- discovered by pytest
+def _verified_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def verified_target(upload_job: UploadJob) -> MediaIntegrityResult:

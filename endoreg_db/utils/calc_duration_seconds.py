@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def _calc_duration_vf(obj: VideoFile) -> float:
+def calc_duration_vf(obj: VideoFile) -> float:
     timeline = VideoFileMetaPayload.model_validate(obj.meta or {}).source_timeline
     if timeline is not None:
         if (

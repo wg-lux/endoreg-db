@@ -48,7 +48,7 @@ def _facts(**overrides: object) -> ClinicalRecordFacts:
         export_approval=ExportApproval.NONE,
         dataset_member=False,
     )
-    return replace(base, **overrides)  # pyright: ignore[reportArgumentType]
+    return replace(base, **overrides)
 
 
 _PURGED = {

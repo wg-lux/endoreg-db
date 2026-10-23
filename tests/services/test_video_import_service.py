@@ -169,11 +169,6 @@ def _get_dummy_video_state(video: _VideoImportVideoLike) -> _VideoImportStateLik
     return video.state
 
 
-class _NoopAnonymizer:
-    def anonymize_video(self, ctx: ImportContext) -> ImportContext:
-        return ctx
-
-
 def _allow_staging_cleanup_roots(
     monkeypatch: pytest.MonkeyPatch,
     *roots: Path,

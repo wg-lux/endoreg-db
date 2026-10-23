@@ -8,7 +8,7 @@ scan:
     - __pycache__
 broad_exception:
   count: 354
-  fingerprint: c22e71666a68e54e007001eb98f535014c53d04f2a60d77ee066b5e47a7d7a2a
+  fingerprint: ef59831268f87630bb32379900537a052d0577bb00a042d569a7792a7f65c938
   owner: endoreg_db maintainers
   reason: >-
     Reviewed inventory after the exception-reduction cohort, the extraction of
@@ -64,6 +64,9 @@ broad_exception:
     frame_anonymization_utils helpers, setup_config, load_master_key and
     secure_unlink_file. The total decreases; no handler is approved for inner
     domain logic.
+    The reviewed Celery job-boundary handler in hub ingest is unchanged; its
+    function was renamed from _run_video_upload_import_job to the public
+    run_video_upload_import_job because endoreg_db.tasks imports it.
   review_after: 2026-11-20
 type_suppression:
   count: 107

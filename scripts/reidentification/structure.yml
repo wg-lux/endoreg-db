@@ -9,6 +9,14 @@ boundaries:
 - No production settings, credentials, databases or identity-policy mutations.
 - Private seeds, keys and truth stay outside the public evidence bundle.
 files:
+- file: evidence/uuid_mapping/scores.json
+  role: Current local and hub UUID attacker measurements, separate from historical evidence.
+- file: evidence/uuid_mapping/summary.yml
+  role: Aggregated UUID and hash-control outcomes across three trials.
+- file: evidence/uuid_mapping/verification.json
+  role: UUID replay, isolation, redaction and verification results.
+- file: evidence/uuid_mapping/public_bundle.tar.gz
+  role: Complete UUID public inputs without keys, attacker outputs and provenance.
 - file: patient_matching_resolver.mpc
   role: MP-SPDZ exact HMAC-SHA256 and generation check with receiver-only aggregate output; pinned by the production matching backend.
 - file: plot.py

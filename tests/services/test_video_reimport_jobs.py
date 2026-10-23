@@ -319,7 +319,7 @@ def test_async_reimport_uses_in_place_reanonymization(
 
     monkeypatch.setattr(module, "VideoImportService", fake_video_import_service_factory)
 
-    assert module._run_video_reimport_job(1) is True  # pyright: ignore[reportPrivateUsage]
+    assert module._run_video_reimport_job(1) is True
 
     assert ("reset", video) in events
     assert service_calls == [{"target_video": video, "source_path": raw_path}]
@@ -430,7 +430,7 @@ def test_async_reimport_fails_if_hls_regeneration_fails(
     monkeypatch.setattr(module, "VideoImportService", lambda: _FakeService())
 
     with pytest.raises(RuntimeError, match="hls regeneration failed"):
-        module._run_video_reimport_job(1)  # pyright: ignore[reportPrivateUsage]
+        module._run_video_reimport_job(1)
 
     assert ("mark_error", video, "hls regeneration failed") in events
 
