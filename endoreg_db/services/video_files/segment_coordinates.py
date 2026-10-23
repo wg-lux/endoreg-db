@@ -18,6 +18,11 @@ from lx_dtypes.models.contracts.video_provenance import (
     VideoProvenanceBundle,
     VideoProvenanceRecovery,
 )
+from lx_dtypes.models.contracts.video_segment_timeline import (
+    VideoSegmentGenerationCoordinates,
+    VideoSegmentRecordingCoordinates,
+    VideoSegmentTimelineCoordinates,
+)
 
 from endoreg_db.utils.rust_backend import compose_frame_ancestry
 
@@ -194,6 +199,39 @@ def segment_timeline_coordinates(
     return coordinates
 
 
+def wire_timeline_coordinates(
+    coordinates: SegmentTimelineCoordinates,
+) -> VideoSegmentTimelineCoordinates:
+    """Convert service coordinates into the shared transfer and export contract."""
+    generation = coordinates.generation
+    recording = coordinates.recording
+    return VideoSegmentTimelineCoordinates(
+        generation=VideoSegmentGenerationCoordinates(
+            content_hash=generation.content_hash,
+            time_base_num=generation.time_base_num,
+            time_base_den=generation.time_base_den,
+            first_frame_number=generation.first_frame_number,
+            last_frame_number=generation.last_frame_number,
+            first_presentation_timestamp=generation.first_presentation_timestamp,
+            last_presentation_timestamp=generation.last_presentation_timestamp,
+        ),
+        recording_mapping_status=coordinates.recording_mapping_status.value,
+        recording=(
+            None
+            if recording is None
+            else VideoSegmentRecordingCoordinates(
+                recording_content_hash=recording.recording_content_hash,
+                time_base_num=recording.time_base_num,
+                time_base_den=recording.time_base_den,
+                first_frame_index=recording.first_frame_index,
+                last_frame_index=recording.last_frame_index,
+                first_presentation_timestamp=recording.first_presentation_timestamp,
+                last_presentation_timestamp=recording.last_presentation_timestamp,
+            )
+        ),
+    )
+
+
 __all__ = [
     "RecordingMappingStatus",
     "SegmentCoordinateError",
@@ -202,4 +240,5 @@ __all__ = [
     "SegmentRecordingCoordinates",
     "SegmentTimelineCoordinates",
     "segment_timeline_coordinates",
+    "wire_timeline_coordinates",
 ]

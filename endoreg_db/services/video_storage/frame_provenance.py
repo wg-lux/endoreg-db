@@ -5,11 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from fractions import Fraction
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from lx_dtypes.models.contracts.video_provenance import (
     VideoFrameProvenancePayload,
     VideoFrameTimeline,
     VideoProvenanceBundle,
+    VideoProvenanceRecovery,
 )
 
 from endoreg_db.services.video_storage.canonical_timelines import (
@@ -21,6 +23,9 @@ from endoreg_db.utils.file_operations import (
     protected_temporary_directory,
 )
 from endoreg_db.utils.hashs import get_file_hash
+
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
 
 
 def encoder_provenance_args(path: Path) -> list[str]:
@@ -167,3 +172,49 @@ def provenance_chain(*, source_hash: str, output_hash: str) -> VideoProvenanceBu
     if len(chains) != 1 or not chains[0]:
         raise ValueError("Actual frame provenance is unavailable for this recording")
     return VideoProvenanceBundle(transformations=chains[0])
+
+
+def resolve_video_provenance(
+    video: VideoFile,
+) -> VideoProvenanceBundle | VideoProvenanceRecovery:
+    """Ancestry of the current processed generation, or its unresolved receipt.
+
+    Read-only; callers own media validation and leases. Missing or stale
+    ancestry raises instead of degrading to timestamp matching.
+    """
+    from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+
+    meta = VideoFileMetaPayload.model_validate(video.meta or {})
+    recovery = meta.video_provenance_recovery
+    if recovery is not None:
+        if recovery.recording_hash != video.raw_video_hash or (
+            recovery.processed_timeline.content_hash != video.processed_video_hash
+        ):
+            raise ValueError("Unresolved provenance acknowledgment is stale")
+        return recovery
+    history = meta.canonical_timeline_history or []
+    source_hash = history[0].before.content_hash if history else video.raw_video_hash
+    existing = meta.video_frame_provenance
+    if (
+        existing is not None
+        and existing.transformations[0].source.content_hash != source_hash
+    ):
+        raise ValueError("Frame provenance belongs to another recording")
+    if existing is not None:
+        previous_hash = existing.transformations[-1].output.content_hash
+        if previous_hash == video.processed_video_hash:
+            return existing
+        continuation = provenance_chain(
+            source_hash=previous_hash, output_hash=video.processed_video_hash
+        )
+        return VideoProvenanceBundle(
+            transformations=[*existing.transformations, *continuation.transformations],
+            synchronization=existing.synchronization,
+        )
+    bundle = provenance_chain(
+        source_hash=source_hash, output_hash=video.processed_video_hash
+    )
+    return VideoProvenanceBundle(
+        transformations=bundle.transformations,
+        synchronization=meta.recording_synchronization,
+    )

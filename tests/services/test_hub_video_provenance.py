@@ -21,6 +21,7 @@ from endoreg_db.services.hub.video_provenance import (
 from endoreg_db.services.video_storage.frame_provenance import (
     persist_frame_provenance,
     provenance_chain,
+    resolve_video_provenance,
 )
 from tests.services.test_frame_provenance import proof, synchronized_bundle, timeline
 
@@ -141,3 +142,27 @@ def test_disconnected_provenance_chain_is_rejected() -> None:
     second = first.model_copy(update={"output": timeline("c", [0, 40, 80])})
     with pytest.raises(ValidationError, match="disconnected"):
         VideoProvenanceBundle(transformations=[first, second])
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("stored_prefix", [0, 1, 2])
+def test_resolver_composes_current_generation_without_mutating_metadata(
+    stored_prefix: int,
+) -> None:
+    first = proof()
+    second = VideoFrameProvenancePayload(
+        source=first.output, output=timeline("c", [0, 50]), source_frame_indices=[1, 2]
+    )
+    persist_frame_provenance(first)
+    persist_frame_provenance(second)
+    expected = VideoProvenanceBundle(transformations=[first, second])
+    video = VideoFile(raw_video_hash="a" * 64, processed_video_hash="c" * 64)
+    if stored_prefix:
+        video.meta = {
+            "video_frame_provenance": VideoProvenanceBundle(
+                transformations=[first, second][:stored_prefix]
+            ).model_dump(mode="json")
+        }
+    before = dict(video.meta or {})
+    assert resolve_video_provenance(video) == expected
+    assert (video.meta or {}) == before

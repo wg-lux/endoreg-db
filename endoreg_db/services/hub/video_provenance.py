@@ -15,7 +15,7 @@ from lx_dtypes.models.contracts.video_provenance import (
 )
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
-from endoreg_db.services.video_storage.frame_provenance import provenance_chain
+from endoreg_db.services.video_storage.frame_provenance import resolve_video_provenance
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -48,39 +48,10 @@ def _export_current_video_provenance(
     from endoreg_db.services.media.export_downloads import validate_video_download
 
     validate_video_download(video)
-    meta = VideoFileMetaPayload.model_validate(video.meta or {})
-    recovery = meta.video_provenance_recovery
-    if recovery is not None:
-        if recovery.recording_hash != video.raw_video_hash or (
-            recovery.processed_timeline.content_hash != video.processed_video_hash
-        ):
-            raise ValueError("Unresolved provenance acknowledgment is stale")
-        return recovery
-    existing = meta.video_frame_provenance
-    if existing is not None:
-        previous_hash = existing.transformations[-1].output.content_hash
-        if previous_hash != video.processed_video_hash:
-            continuation = provenance_chain(
-                source_hash=previous_hash, output_hash=video.processed_video_hash
-            )
-            existing = VideoProvenanceBundle(
-                transformations=[
-                    *existing.transformations,
-                    *continuation.transformations,
-                ],
-                synchronization=existing.synchronization,
-            )
-        validate_received_video_timeline(video, existing)
-        return existing
-    history = meta.canonical_timeline_history or []
-    source_hash = history[0].before.content_hash if history else video.raw_video_hash
-    bundle = provenance_chain(
-        source_hash=source_hash, output_hash=video.processed_video_hash
-    )
-    return VideoProvenanceBundle(
-        transformations=bundle.transformations,
-        synchronization=meta.recording_synchronization,
-    )
+    provenance = resolve_video_provenance(video)
+    if isinstance(provenance, VideoProvenanceBundle):
+        validate_received_video_timeline(video, provenance)
+    return provenance
 
 
 def accept_video_provenance(video: VideoFile, payload: object) -> None:

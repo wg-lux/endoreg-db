@@ -52,7 +52,7 @@ files:
 - file: payloads.py
   role: Recursive source-identity transfer prohibition and compatibility imports.
 - file: hub_pseudonyms.py
-  role: Contract 6.0 hub-scoped UUIDv8 record pseudonyms for media identity and study bundles; local UUIDs stay on the site.
+  role: Contract 7.0 hub-scoped UUIDv8 record pseudonyms for media identity and study bundles; local UUIDs stay on the site.
 - file: preanonymized_metadata.py
   role: Preanonymized metadata normalization and external patient identity linking.
 - file: quarantine.py
@@ -82,7 +82,7 @@ files:
 - file: transfer_logging.py
   role: Exports enabled, sanitize, section.
 - file: transfers.py
-  role: Version 5 persistent UUID linkage, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
+  role: Version 7 pseudonymous identity linkage, segment timeline coordinates recomputed from received provenance, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
 - file: upload_job_cancellation.py
   role: Persist import cancellation intent; only the owning worker acknowledges it.
 - file: upload_job_files.py
@@ -92,7 +92,7 @@ files:
 - file: upload_job_state_machine.py
   role: Exports validate_upload_job_status_transition, mark_upload_job_processing, mark_upload_job_completed.
 - file: video_provenance.py
-  role: Privacy-limited video ancestry exchange and explicit independent-clock joins.
+  role: Validate and lease privacy-limited ancestry exports through the shared resolver; explicit independent-clock joins.
 - file: watcher_handoff.py
   role: Exports watcher_path_reference_text, is_in_progress_handoff_path, reject_in_progress_handoff_path.
 dependencies:

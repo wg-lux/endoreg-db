@@ -142,7 +142,7 @@ def build_patient_videos_export(
     videos: QuerySet[VideoFile] | None = None,
 ) -> dict[str, PatientVideoFile]:
     from endoreg_db.services.video_files.clinical_contracts import (
-        build_lx_p_video_segment,
+        build_lx_p_video_segments,
         build_lx_patient_video_file,
     )
 
@@ -178,10 +178,9 @@ def build_patient_videos_export(
     for video in videos.select_related("sensitive_meta", "state"):
         patient_video = build_lx_patient_video_file(video, include_segments=False)
         attached_segments = segment_lists_by_video_id.get(_model_int(video, "pk"), [])
-        if attached_segments:
-            for segment in attached_segments:
-                lx_segment = build_lx_p_video_segment(segment)
-                patient_video.patient_video_segments[str(lx_segment.uuid)] = lx_segment
+        patient_video.patient_video_segments = build_lx_p_video_segments(
+            video, attached_segments
+        )
         patient_videos[str(_model_value(video, "uuid"))] = patient_video
 
     return patient_videos

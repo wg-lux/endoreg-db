@@ -2029,9 +2029,9 @@ definition_of_done:
     timestamps, nearest-boundary ties (lower frame number), the exclusive terminal boundary, constant-frame-rate
     half-up rounding and variable-frame-rate missing-timestamp rejection. Parametrized parity tests compare
     both implementations over irregular variable-rate timelines with nonzero origins.
-  - Non-increasing persisted timestamps, frame numbers beyond the frame count, non-finite or negative values
-    and a changed processed generation raise VideoTimelineMappingError. Missing native support fails loudly;
-    there is no Python production fallback for the index.
+  - Non-increasing persisted timestamps, frame numbers beyond the frame count, non-finite or negative
+    values and a changed processed generation raise VideoTimelineMappingError. Missing native support
+    fails loudly; there is no Python production fallback for the index.
   - The index is read-only. It never rewrites frame or segment coordinates.
   required: true
   verification:
@@ -2040,14 +2040,27 @@ definition_of_done:
       tests/services/test_video_temporal_mapping.py and the segment view/serializer suites.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/timeline_index.rs
+    - kind: test
+      reference: '2026-10-22: cargo test --lib 31 passed; pytest timeline_index, segment_coordinates,
+        segments_crud, segment validation, label segment, video_timeline, frame_coordinates: 136 passed'
+    - kind: command
+      reference: 'Full Pyright: 1 error in unrelated staged tests/views/test_central_hub_training_access.py,
+        0 in changed files; ruff, cargo fmt, lint_structure passed'
+    note: Native TimelineIndex serves segments_crud and segment serializers; parity with timeline.py tested.
+      Not deployed.
+    assessed_by: claude-timeline-index-20261022
+    assessed_at: '2026-10-23T07:07:25.185490Z'
 - id: segment_original_timeline_transfer
   category: data_integrity
-  title: Transferred and exported segments carry exact generation and original-recording presentation timestamps
+  title: Transferred and exported segments carry exact generation and original-recording presentation
+    timestamps
   acceptance:
-  - Every hub-transferred and exported segment carries the exact integer presentation timestamp ticks of
-    its first and last included frame on the current processed generation, with the rational time base
+  - Every hub-transferred and exported segment carries the exact integer presentation timestamp ticks
+    of its first and last included frame on the current processed generation, with the rational time base
     and processed content hash.
   - With a verified frame provenance bundle, each segment also carries the original-recording frame index
     and presentation timestamp tick for both boundaries. These are composed natively from source_frame_indices
@@ -2066,5 +2079,56 @@ definition_of_done:
       lx-data-models contract tests and the lx-annotate and endoreg-db hub transfer suites.
     timeout_seconds: 900
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/video_files/segment_coordinates.py
+    - kind: test
+      reference: '2026-10-22: tests/services/test_segment_coordinates.py and lx-data-models test_video_segment_timeline.py
+        (13) passed'
+    - kind: code
+      reference: 'lx-data-models: hub_transfer.py payload_schema_version 7.0, required HubTransferVideoSegmentPayload.timeline_coordinates
+        with included-frame, mapping-status, processed-tick and recording-hash checks; video_segment_timeline.py
+        TypedDicts'
+    - kind: code
+      reference: endoreg_db/services/hub/transfers.py::_verify_video_segment_timeline_coordinates recomputes
+        coordinates from received provenance and rejects mismatch or missing provenance; segment_coordinates.wire_timeline_coordinates;
+        receiver and serializer accept only 7.0
+    - kind: code
+      reference: 'lx-annotate: hub_export_payloads._attach_segment_timeline_coordinates binds every outbound
+        segment to the exported provenance; sender emits and validates 7.0'
+    - kind: test
+      reference: '2026-10-23: lx-data-models test_hub_transfer, test_video_segment_timeline, test_study_exchange:
+        90 passed. endoreg-db with PYTHONPATH=../lx-data-models: hub transfer endpoints (verified drop/repeat
+        ancestry, mismatched recording tick, missing provenance), persisted JSON, segment coordinates,
+        transfer identity/contract/registration, study transfer: 154 passed, 38 subtests'
+    - kind: test
+      reference: '2026-10-23: lx-annotate tests/hub with local endoreg-db and lx-data-models: 262 passed,
+        4 failed in test_hub_export_video_state_path (ReadyForExportError validated_without_verified_identity
+        from endoreg clinical lifecycle, before payload construction; unrelated to segment coordinates)'
+    - kind: command
+      reference: '2026-10-23: endoreg full Pyright 0 errors in changed files (1 unrelated error tests/views/test_central_hub_training_access.py);
+        lx-annotate Pyright on lx_annotate with local extraPaths 0 errors; Ruff passed; lint_structure
+        passed in all three repos'
+    - kind: code
+      reference: endoreg_db/services/video_files/clinical_contracts.py::build_lx_p_video_segments binds
+        ledger and dataset segments to exact coordinates, composes ancestry once per video, and rejects
+        missing, stale or invalid provenance; hub and ledger share frame_provenance.resolve_video_provenance.
+    - kind: test
+      reference: '2026-10-23: devenv shell -- env PYTHONPATH=.:../lx-data-models .devenv/state/venv/bin/pytest
+        tests/services/test_lx_video_contracts.py tests/services/test_segment_coordinates.py tests/services/test_hub_video_provenance.py
+        tests/services/test_video_provenance_recovery.py tests/models/test_dataset_export_scope.py -q
+        --tb=short: 74 passed, 133 existing terminology/plugin warnings, 266.98s. Ledger and dataset serialization
+        preserve verified dropped/repeated-frame coordinates and unresolved receipts; missing/stale provenance
+        and invalid bounds reject; stored-chain continuation remains read-only.'
+    - kind: command
+      reference: '2026-10-23: focused strict Pyright on changed services and tests: 0 errors, 0 warnings.
+        Full Pyright: 1 pre-existing reportPrivateUsage error in tests/views/test_central_hub_training_access.py:311
+        and 24 warnings; no errors in changed files. Ruff and 67 structure manifests pass; git diff --check
+        passes. Tests use the local lx-data-models checkout because the new contract is not released.'
+    - kind: test
+      reference: '2026-10-23: test_segment_batch_rejects_another_video_and_allows_empty_selection: 1 passed,
+        1 existing plugin warning, 1.88s; focused strict Pyright clean. Total focused verification: 75
+        passed.'
+    assessed_by: codex-finish-hub-20261023-a7
+    assessed_at: '2026-10-23T08:42:06.885241Z'

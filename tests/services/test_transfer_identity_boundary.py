@@ -60,5 +60,5 @@ def test_direct_registration_rejects_identity_before_database_access() -> None:
 
 @pytest.mark.parametrize("version", ["1.0", "2.0", "3.0", "4.0", "5.0"])
 def test_transfer_rejects_pre_uuid_protocol_versions(version: str) -> None:
-    with pytest.raises(ValidationError, match="6.0"):
+    with pytest.raises(ValidationError, match="7.0"):
         TransferJobCreateSerializer().validate_payload_schema_version(version)

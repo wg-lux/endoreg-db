@@ -1,150 +1,147 @@
-# Patientenidentität und privater zentrenübergreifender Abgleich
+# Patient identity and private cross-center matching
 
-Verbindlicher Umfang: [HubTransfer.yml](../feature-tracking/HubTransfer.yml),
-Kriterium `local_identity_hash_boundary`, sowie
+Binding scope: [HubTransfer.yml](../feature-tracking/HubTransfer.yml),
+criterion `local_identity_hash_boundary`, and
 [Anonymization.yml](../feature-tracking/Anonymization.yml),
-Kriterium `identity_hash_response_boundary`.
+criterion `identity_hash_response_boundary`.
 
-Patienten- und Untersuchungshashes sowie Identitätsfingerprints bleiben auf dem
-Quellknoten. Sie dürfen auch in verschachtelten Metadaten, Wiederholungen oder
-verschlüsselten Transferpaketen nicht an den Hub übertragen werden. Der Sender
-weist solche Nutzdaten vor dem Netzwerkaufruf zurück; der Empfänger vor der
-Registrierung. Datei-Inhaltsprüfsummen bleiben für die Medienintegrität zulässig.
+Patient and examination hashes as well as identity fingerprints remain on the
+source node. They must not be transmitted to the hub, including inside nested
+metadata, retries, or encrypted transfer packages. The sender rejects such
+payloads before the network call; the receiver rejects them before
+registration. File content checksums remain permitted for media integrity.
 
-Auch die persistierten lokalen Patienten- und Untersuchungs-UUIDs (Universally
-Unique Identifiers) sind lokale Pseudonyme und verlassen den Quellknoten nicht.
-Transfervertrag 6.0 überträgt in den Feldern `patient_uuid` und
-`examination_uuid` ausschließlich **hubgebundene Pseudonyme**:
-`get_hub_record_pseudonym` in `endoreg_db/utils/hashs.py` berechnet lokal
-HMAC-SHA-256 unter dem lokalen Identitätssalt über Datensatzart, lokale UUID und
-Knotenschlüssel des Ziel-Hubs und formatiert das Ergebnis als UUIDv8 (RFC 9562).
-Medien- und Studientransfers verwenden dieselbe Ableitung
+The persisted local patient and examination UUIDs (Universally Unique
+Identifiers) are local pseudonyms as well and do not leave the source node.
+Transfer contract 7.0 transmits exclusively **hub-bound pseudonyms** in the
+fields `patient_uuid` and `examination_uuid`:
+`get_hub_record_pseudonym` in `endoreg_db/utils/hashs.py` computes HMAC-SHA-256
+locally under the local identity salt over record kind, local UUID and the
+target hub's node key, and formats the result as UUIDv8 (RFC 9562). Media and
+study transfers use the same derivation
 (`endoreg_db/services/hub/hub_pseudonyms.py`).
 
-Folgeuntersuchungen werden am Quellknoten über den Patientenhash derselben
-lokalen UUID zugeordnet und erhalten daher am selben Hub dasselbe Pseudonym. Der
-Hub kann sie gruppieren, aber weder die lokale UUID noch den Patientenhash
-rekonstruieren; Pseudonyme verschiedener Hubs oder Salts sind ohne den Salt
-nicht verknüpfbar. Eine Verknüpfung mit dem lokalen Datensatz entsteht nur über
-den lokalen Salt. Der gemeinsame Vertrag weist jede andere UUID-Version zurück,
-sodass ein Sender mit lokalen Version-4-UUIDs geschlossen scheitert; die
-HMAC-Ableitung selbst kann der Empfänger nicht prüfen. Versionen 3.0 bis 5.0
-werden abgewiesen. Unter 5.0 empfangene Hub-Zeilen enthalten weiterhin lokale
-UUIDs und benötigen einen eigenen geprüften Bereinigungsablauf. Eine
-Salt-Rotation ändert die Hub-Pseudonyme; die Fortführung am Hub erfordert dann
-eine explizite Migration. Bestehende lokale Patienten, Hash-Aliase,
-Identitätsschlüssel und Importabläufe bleiben erhalten.
+Follow-up examinations are assigned on the source node through the patient hash
+of the same local UUID and therefore receive the same pseudonym at the same hub.
+The hub can group them but can reconstruct neither the local UUID nor the
+patient hash; pseudonyms of different hubs or salts cannot be linked without
+the salt. A link to the local record only arises through the local salt. The
+shared contract rejects every other UUID version, so a sender with local
+version 4 UUIDs fails closed; the receiver cannot verify the HMAC derivation
+itself. Versions 3.0 to 5.0 are rejected. Hub rows received under 5.0 still
+contain local UUIDs and require their own reviewed cleanup procedure. A salt
+rotation changes the hub pseudonyms; continuation at the hub then requires an
+explicit migration. Existing local patients, hash aliases, identity keys and
+import workflows are preserved.
 
-Der [Benchmark](../scripts/benchmark_sha256.md) zeigt eine Kandidatensuche bei
-bekanntem Schlüssel und begrenztem Eingaberaum, keine allgemeine mathematische
-Umkehrung von SHA-256. Die Übertragungssperre schützt dennoch vor der Offenlegung
-erratbarer Patientenidentität. Transportverschlüsselung ersetzt diese Grenze nicht.
+The [benchmark](../scripts/benchmark_sha256.md) shows a candidate search with a
+known key and a bounded input space, not a general mathematical inversion of
+SHA-256. The transfer block nevertheless protects against disclosure of
+guessable patient identity. Transport encryption does not replace this
+boundary.
 
-Zentrale Salt-Bereitstellung ist deaktiviert; siehe
-[Identitäts-Keyring](identity_ring_enrollment.md). Bereits verteilte Salts oder
-bereits gespeicherte Hub-Daten werden durch eine Quellcodeänderung nicht entfernt.
-Eine Bestandsbereinigung oder Schlüsselrotation benötigt einen eigenen geprüften
-Migrationsablauf und darf lokale Wiedererkennung nicht beschädigen.
+Central salt provisioning is disabled; see
+[identity keyring](identity_ring_enrollment.md). Salts that were already
+distributed or hub data that was already stored are not removed by a source
+code change. Cleaning up existing data or rotating keys requires its own
+reviewed migration procedure and must not break local re-identification.
 
-## Ansatz A: bestehende HMACs privat vergleichen
+## Approach A: privately compare existing HMACs
 
-Die [gesonderte Evaluation](patient_matching_2pc_assessment.md) untersucht exakt
-den bestehenden HMAC über Name, Geburtsdatum und das **Quellzentrum A**, unter
-dem bestehenden Schlüssel **von A**. Zentrum B benötigt dafür seine autorisierten
-Originalmerkmale; sein eigener HMAC genügt nicht. Eine solche Zwei-Parteien-
-Berechnung benötigt keinen neuen gemeinsamen zentralen Identitätsschlüssel.
-Sie kann Tupelgleichheit feststellen, beweist aber keine eindeutige reale Person.
-Der isolierte Versuch gehört zu `existing_hmac_2pc_evaluation` im Tracker und
-ändert weder UUIDs noch lokale Hashes oder die Produktionsfreigabe.
+The [separate evaluation](patient_matching_2pc_assessment.md) examines exactly
+the existing HMAC over name, date of birth and **source center A**, under the
+existing key **of A**. Center B needs its authorized original attributes for
+this; its own HMAC is not sufficient. Such a two-party computation does not
+require a new shared central identity key. It can establish tuple equality but
+does not prove a unique real person. The isolated experiment belongs to
+`existing_hmac_2pc_evaluation` in the tracker and changes neither UUIDs nor
+local hashes nor the production approval.
 
-Hub/Vault-Kolokation auf gs-02 schließt einen direkten A/B-Abgleich nicht aus.
-Entscheidend ist, ob ein Administrator beide vollständigen privaten Eingaben
-lesen kann; die aktuelle LuxNix-Konfiguration sieht gemeinsame administrative
-SSH-Zugänge vor, deren effektive Privilegien noch geprüft werden müssen.
-Die folgende VOPRF-Skizze ist ein **anderes Verfahren mit anderer Funktion und
-Migration**, kein kompatibler Ersatz für den bestehenden HMAC.
+Hub/Vault colocation on gs-02 does not rule out a direct A/B comparison. What
+matters is whether an administrator can read both complete private inputs; the
+current LuxNix configuration provides shared administrative SSH access whose
+effective privileges still need to be reviewed. The following VOPRF sketch is a
+**different procedure with a different function and migration**, not a
+compatible replacement for the existing HMAC.
 
-## Privater Abgleich verifizierter gemeinsamer Patientenkennungen
+## Private matching of verified shared patient identifiers
 
-Der angeforderte zusätzliche Anwendungsfall ist die Entdeckung gemeinsamer
-Patienten über eine **verifizierte gemeinsame Kennung mit ausstellender Instanz**.
-Für diesen Produktionsvertrag sind Name und Geburtsdatum keine verifizierten
-Kennungen. Die separate Ansatz-A-Evaluation darf sie als Tupel vergleichen.
-Umfang und Nachweise des verifizierten Kennungsabgleichs gehören
-zum Kriterium `cross_site_private_patient_matching` in
+The requested additional use case is discovering shared patients through a
+**verified shared identifier with an issuing authority**. For this production
+contract, name and date of birth are not verified identifiers. The separate
+Approach A evaluation may compare them as a tuple. Scope and evidence for
+verified identifier matching belong to the criterion
+`cross_site_private_patient_matching` in
 [HubTransfer.yml](../feature-tracking/HubTransfer.yml).
 
-Eine Kennung braucht einen verbindlichen Aussteller-Namensraum, dessen
-Normalisierungsregeln und nachvollziehbare Verifikation. Führende Nullen dürfen
-nicht pauschal entfernt werden. `PatientExternalID.origin` und `external_id`
-speichern derzeit lediglich Herkunft und Wert; sie belegen keine Verifikation.
-Ein Quellsystem darf solche Datensätze nicht automatisch als verifiziert ausgeben.
+An identifier needs a binding issuer namespace, its normalization rules and
+traceable verification. Leading zeros must not be stripped wholesale.
+`PatientExternalID.origin` and `external_id` currently only store origin and
+value; they do not prove verification. A source system must not automatically
+report such records as verified.
 
-### Grenzen der vorhandenen Infrastruktur
+### Limits of the existing infrastructure
 
-Die Prüfung der eingecheckten LuxNix-Konfiguration am 19. Oktober 2026 zeigt:
-`ansible/inventory/host_vars/gs-02.yml:84` aktiviert den zentralen Hub;
-derselbe Host aktiviert Vault ab Zeile 146. Die Rollen in
-`modules/nixos/luxnix/vault/default.nix:403` erlauben knotenspezifische Zertifikate
-und Geheimniszugriffe, stellen aber keinen privaten Abgleich bereit. Laut
-`docs/vault-hub-machine-enrollment.md:47` wird keine menschliche Anmeldung oder
-Enrollment-Administratorrolle provisioniert. Das belegt keine unabhängig
-administrierte Schlüsselinstanz. Diese Feststellung beschreibt Quellkonfiguration,
-keinen verifizierten Laufzeitzustand.
+The review of the checked-in LuxNix configuration on 19 October 2026 shows:
+`ansible/inventory/host_vars/gs-02.yml:84` enables the central hub; the same
+host enables Vault from line 146. The roles in
+`modules/nixos/luxnix/vault/default.nix:403` allow node-specific certificates
+and secret access but do not provide private matching. According to
+`docs/vault-hub-machine-enrollment.md:47`, no human login or enrollment
+administrator role is provisioned. This does not prove an independently
+administered key authority. This finding describes source configuration, not a
+verified runtime state.
 
-Ein zusätzlicher Prozess, Container oder Vault-Pfad auf demselben Host schützt
-nicht vor dessen Administratoren oder vollständiger Host-Kompromittierung. Eine
-unabhängige Abgleichsinstanz benötigt getrennte Administratorzugänge,
-Bereitstellungsrechte, Schlüsselhaltung, Sicherungen und Wiederherstellungsrechte.
-Der Hub darf keine Berechtigung erhalten, Identitätskandidaten auszuwerten.
+An additional process, container or Vault path on the same host does not
+protect against that host's administrators or a full host compromise. An
+independent matching authority requires separate administrator access,
+deployment rights, key custody, backups and recovery rights. The hub must not
+be granted permission to evaluate identity candidates.
 
-### Protokollanforderungen
+### Protocol requirements
 
-Als Baustein kommt eine verifizierbare obliviose Pseudozufallsfunktion
-(Verifiable Oblivious Pseudorandom Function, VOPRF) gemäß
-[RFC 9497](https://www.rfc-editor.org/rfc/rfc9497.html) infrage. Sie verbirgt die
-Eingabe vor dem Schlüsseldienst und erlaubt dem Client, die Auswertung gegen
-einen zuvor vertrauenswürdig provisionierten öffentlichen Schlüssel zu prüfen.
-Sie ist allein kein vollständiges sicheres Patientenabgleichsprotokoll.
+A verifiable oblivious pseudorandom function (VOPRF) according to
+[RFC 9497](https://www.rfc-editor.org/rfc/rfc9497.html) is a candidate building
+block. It hides the input from the key service and allows the client to verify
+the evaluation against a previously provisioned trusted public key. On its own
+it is not a complete secure patient matching protocol.
 
-1. Die Quelle verifiziert die Kennung nach der festgelegten Ausstellerpolicy.
-   Ein versionsgebundener, eindeutig kodierter Abgleichsinput enthält Zweck,
-   Abgleichsraum, Aussteller und normalisierte Kennung. Lokale UUIDs und
-   Quellknoten gehören nicht in diesen Input, da sonst kein siteübergreifender
-   Gleichheitsvergleich möglich ist.
-2. Die Quelle blendet den Input und lässt ihn durch den unabhängig verwalteten
-   Dienst auswerten. Sie prüft den kryptografischen Nachweis und die zugelassene
-   Schlüsselgeneration. Fehler und unbekannte Schlüssel brechen den Vorgang ab.
-3. Eine separat signierte Meldung bindet das Ergebnis an Quellknoten,
-   Patienten-UUID, Abgleichsraum, Schlüsselgeneration, Verifikationsbeleg,
-   Empfänger, Ablaufzeit und Wiederholungsschutz. Signatur- und
-   Schlüsselaustauschschlüssel bleiben getrennt.
-4. Der Hub hält bestätigte Beziehungen zwischen hubgebundenen Pseudonymen fest.
-   Er überschreibt keine Patientenidentität, führt Datensätze nicht still
-   zusammen und verwechselt Dokument-Inhaltsgleichheit nicht mit Patientengleichheit.
-   Widersprüche, Widerrufe und Schlüsselmigration benötigen explizite Regeln.
+1. The source verifies the identifier according to the defined issuer policy.
+   A version-bound, unambiguously encoded matching input contains purpose,
+   matching scope, issuer and normalized identifier. Local UUIDs and source
+   nodes do not belong in this input, since otherwise no cross-site equality
+   comparison is possible.
+2. The source blinds the input and has it evaluated by the independently
+   administered service. It verifies the cryptographic proof and the approved
+   key generation. Errors and unknown keys abort the operation.
+3. A separately signed message binds the result to source node, patient UUID,
+   matching scope, key generation, verification receipt, recipient, expiry and
+   replay protection. Signing keys and key-exchange keys remain separate.
+4. The hub records confirmed relationships between hub-bound pseudonyms. It
+   does not overwrite patient identity, does not silently merge records and
+   does not confuse document content equality with patient equality.
+   Conflicts, revocations and key migration require explicit rules.
 
-VOPRF-Nachweise bestätigen eine korrekte Schlüsselberechnung, **nicht** die
-Echtheit der Patientenkennung. Eine Knotensignatur identifiziert den Absender,
-beweist aber nicht die Wahrheit seiner Aussage. Gegen bösartige Quellen braucht
-es eine vertrauenswürdige Verifikationsgrenze mit Bindung an die Auswertung oder
-ein gesondert geprüftes Credential-Protokoll. Eigene Kurvenarithmetik oder
-selbst entworfene Zero-Knowledge-Nachweise sind keine zulässige Abkürzung.
+VOPRF proofs confirm a correct key computation, **not** the authenticity of the
+patient identifier. A node signature identifies the sender but does not prove
+the truth of its statement. Against malicious sources, a trusted verification
+boundary bound to the evaluation or a separately reviewed credential protocol
+is required. Custom curve arithmetic or self-designed zero-knowledge proofs are
+not an acceptable shortcut.
 
-Gleichheitstoken offenbaren dem Hub Gleichheit und Wiederkehr. Sie sind sensible
-Pseudonyme und keine anonymen Daten. Auswertungsrechte, Mengenbegrenzungen,
-Auditierung ohne Kennungswerte und ein Verbot frei abfragbarer Existenz-Orakel
-begrenzen Missbrauch, beseitigen jedoch nicht das Risiko autorisierter
-Rateversuche. Wer Schlüssel und Tokenbestand zusammen erhält, kann mögliche
-Kennungen offline testen. Diese Grenze muss im Betriebsmodell ausdrücklich
-berücksichtigt werden.
+Equality tokens reveal equality and recurrence to the hub. They are sensitive
+pseudonyms and not anonymous data. Evaluation rights, volume limits, auditing
+without identifier values and a ban on freely queryable existence oracles limit
+abuse but do not remove the risk of authorized guessing attempts. Anyone who
+obtains the key and the token inventory together can test candidate
+identifiers offline. The operating model must explicitly account for this
+boundary.
 
-Die vorhandene X25519-Transportverschlüsselung bleibt getrennt vom Abgleich.
-Passworthashes, Django `SECRET_KEY`, `NetworkNode.shared_secret` und lokale
-Master-Schlüssel sind weder Abgleichsschlüssel noch Saatwerte für asymmetrische
-Schlüssel. Private Schlüssel werden nicht aus Patientenmerkmalen abgeleitet.
-Die zusätzliche Abgleichsschnittstelle darf die bestehenden Medien- und
-Browser-Übertragungssperren nicht pauschal lockern.
+The existing X25519 transport encryption stays separate from matching. Password
+hashes, Django `SECRET_KEY`, `NetworkNode.shared_secret` and local master keys
+are neither matching keys nor seed values for asymmetric keys. Private keys are
+not derived from patient attributes. The additional matching interface must not
+broadly relax the existing media and browser transfer blocks.
 
 ## Browser APIs and exports
 
@@ -170,96 +167,96 @@ Deploy the shared contracts, backend and frontend together. The response guard
 cannot roll back a completed local mutation; do not automatically retry writes
 when an incompatible old client receives a blocked response.
 
-## Lokale Ausführung des exakten HMAC-Abgleichs
+## Local execution of exact HMAC matching
 
-Der Service `endoreg_db.services.patient_identity.matching` verbindet die
-lokalen Eingabesnapshots, die registrierte Sitzung und den MP-SPDZ-Worker.
-Maßgeblich für Umfang und Freigabe bleibt `guarded_patient_matching_resolver`
-in [HubTransfer.yml](../feature-tracking/HubTransfer.yml). Der Service ist keine
-HTTP-Freigabe und ersetzt nicht den Vertrag für verifizierte issuerqualifizierte
-Kennungen. Die exakte Tupelgleichheit begründet keine automatische Personenfusion.
+The service `endoreg_db.services.patient_identity.matching` connects the local
+input snapshots, the registered session and the MP-SPDZ worker. Scope and
+approval remain governed by `guarded_patient_matching_resolver` in
+[HubTransfer.yml](../feature-tracking/HubTransfer.yml). The service is not an
+HTTP release and does not replace the contract for verified issuer-qualified
+identifiers. Exact tuple equality does not justify an automatic merge of
+persons.
 
-A verwendet `prepare_source_input`, B verwendet `prepare_candidate_input` mit
-As kanonischer Zentrumskennung. Die aus lokalen Berechtigungsentscheidungen
-abgeleiteten `MatchingAuthorization`-Mengen dürfen nicht aus ungeprüften
-Peer-Anfragen übernommen werden. `SourceMatchingRecords` beziehungsweise
-`CandidateMatchingRecords` prüfen die unveränderten lokalen Referenzen bei
-Registrierung, Ausführung und Ergebnisannahme. B benötigt erhaltene und lokal
-geprüfte Originalmerkmale; die lokale B-HMAC ist kein Ersatz dafür.
+A uses `prepare_source_input`, B uses `prepare_candidate_input` with A's
+canonical center identifier. The `MatchingAuthorization` sets derived from local
+authorization decisions must not be taken from unverified peer requests.
+`SourceMatchingRecords` and `CandidateMatchingRecords` respectively verify the
+unchanged local references at registration, execution and result acceptance. B
+needs received and locally verified original attributes; B's local HMAC is no
+substitute for them.
 
-Beide Endpunkte registrieren dieselbe öffentliche `MatchingRequest` mit
-`register_request` in ihrer **jeweils eigenen Datenbank**. Die Anfrage enthält
-bereits die Kandidaten-UUID-Referenzen und deren Anzahl: diese Implementierung
-verheimlicht diese Metadaten nicht vor A. Die privaten Eingaben bleiben getrennt.
-`run_matching_worker` beansprucht die Sitzung atomar genau einmal und hält während
-der Netzberechnung keine Datenbanktransaktion offen. Eine abgestürzte Ausführung
-bleibt beansprucht; Wiederaufnahme verlangt eine neue autorisierte Sitzung und
-verbraucht das bestehende Quell-UUID-Anfragebudget. Dieses lokale Budget ist kein
-zentrenübergreifend koordinierter Schutz gegen alle adaptiven Abfragen.
+Both endpoints register the same public `MatchingRequest` with
+`register_request` in their **own respective database**. The request already
+contains the candidate UUID references and their count: this implementation
+does not hide this metadata from A. The private inputs remain separate.
+`run_matching_worker` claims the session atomically exactly once and holds no
+database transaction open during the network computation. A crashed execution
+stays claimed; resumption requires a new authorized session and consumes the
+existing source UUID request budget. This local budget is not a cross-center
+coordinated protection against all adaptive queries.
 
-Der Circuit `scripts/reidentification/patient_matching_resolver.mpc` wird für öffentliche
-Schlüssel-/Nachrichtenlängen und den authentisierten Generationsfingerprint
-kompiliert:
+The circuit `scripts/reidentification/patient_matching_resolver.mpc` is
+compiled for public key/message lengths and the authenticated generation
+fingerprint:
 
 ```text
 compile.py -M -X patient_matching_resolver KEY_SIZE LENGTHS_CSV EPOCH_HEX
 ```
 
-Das Backend verwendet MP-SPDZ v0.4.4/MASCOT und TLS. Schlüsselbytes werden
-unverändert verarbeitet; SHA-256 und HMAC folgen der bestehenden Funktion in
-`endoreg_db/utils/hashs.py`. Der Circuit prüft zusätzlich den öffentlichen
-Generationsfingerprint und öffnet nur einen aggregierten Ergebniswert an B.
-Beide Rollen geben zusätzlich den domain-separierten SHA-256-Digest derselben
-vollständigen öffentlichen Anfrage ein; der Circuit vergleicht diese Digests
-und verwirft gekreuzte Sitzungen als unvollständig.
-A erhält zunächst ausschließlich den Abschlussmarker. Länge und Anzahl sind
-öffentlich; JSON-Form und Datensatzherkunft werden vom vertrauenswürdigen lokalen
-Adapter geprüft, nicht kryptografisch im Circuit bewiesen.
+The backend uses MP-SPDZ v0.4.4/MASCOT and TLS. Key bytes are processed
+unchanged; SHA-256 and HMAC follow the existing function in
+`endoreg_db/utils/hashs.py`. The circuit additionally checks the public
+generation fingerprint and opens only one aggregated result value to B. Both
+roles additionally input the domain-separated SHA-256 digest of the same
+complete public request; the circuit compares these digests and discards
+crossed sessions as incomplete. A initially receives only the completion
+marker. Length and count are public; JSON form and record origin are checked by
+the trusted local adapter, not cryptographically proven in the circuit.
 
-Jeder Endpunkt benötigt ein eigenes geschütztes Laufzeitverzeichnis: genau seinen
-privaten TLS-Schlüssel, die beiden öffentlichen Zertifikate samt gepinnten
-OpenSSL-Truststore-Einträgen, gepinnte Binärdatei, Circuitquelle, SHA-256-Circuit,
-Schedule und sämtliche Bytecode-Tapes. `MatchingPolicy.circuit` und
-`MatchingMetadata.circuit` enthalten den SHA-256-Dateihash der eingeschriebenen
-Circuitquelle. `BackendJob.artifacts` stammt aus vertrauenswürdiger lokaler
-Provisionierung, nicht vom Peer. Die Laufzeitverzeichnisse sind ausschließlich
-für diese Worker bestimmt. Eine nichtblockierende Verzeichnissperre verhindert
-parallele Nutzung desselben MP-SPDZ-Zustands durch kooperierende Worker.
-Administratoren, Backups, Core-Dumps und vom Backend
-zurückgelassener Zustand gehören zur geschützten Betriebsgrenze. Auf einem
-Testhost getrennte Verzeichnisse beweisen keine administrative Unabhängigkeit.
+Each endpoint requires its own protected runtime directory: exactly its private
+TLS key, both public certificates including pinned OpenSSL truststore entries,
+the pinned binary, circuit source, SHA-256 circuit, schedule and all bytecode
+tapes. `MatchingPolicy.circuit` and `MatchingMetadata.circuit` contain the
+SHA-256 file hash of the enrolled circuit source. `BackendJob.artifacts` comes
+from trusted local provisioning, not from the peer. The runtime directories are
+reserved exclusively for these workers. A non-blocking directory lock prevents
+cooperating workers from using the same MP-SPDZ state in parallel.
+Administrators, backups, core dumps and state left behind by the backend belong
+to the protected operating boundary. Separate directories on a test host do not
+prove administrative independence.
 
-B erhält `MatchingResult`; Timeouts oder Backendfehler werden nur bei weiterhin
-intakten lokalen Bindungen als `aborted_or_incomplete` gespeichert. Veraltete oder
-widerrufene Bindungen werfen einen Fehler und erzeugen keine Beziehung. Ein
-ungültiger Generationsvergleich wird `key_epoch_unavailable`, niemals `no_match`.
-Fehlende lokale Schlüssel vor Ausführung werfen `MatchingKeyEpochUnavailable`.
+B receives `MatchingResult`; timeouts or backend errors are stored as
+`aborted_or_incomplete` only while the local bindings are still intact. Stale or
+revoked bindings raise an error and create no relationship. An invalid
+generation comparison becomes `key_epoch_unavailable`, never `no_match`.
+Missing local keys before execution raise `MatchingKeyEpochUnavailable`.
 
-Nach Bs Signatur darf A über `countersign_source_result` gegenzeichnen, wenn As
-lokaler Worker erfolgreich abgeschlossen hat und die Empfängersignatur gültig
-ist. Ab dieser ausdrücklich freigegebenen Mitteilung sieht A auch das Ergebnis.
-**A kann Bs privat geöffneten Ergebniswert nicht unabhängig nachprüfen.** Die
-Gegensignatur authentisiert daher Bs Aussage und As lokale Teilnahme; sie ist
-kein allgemein verifizierbarer Auswertungsbeweis gegenüber einem lügenden B.
-`accept_result` prüft beide Signaturen und den lokal gespeicherten Abschluss und
-legt nur bei `single_match` eine separate UUID-Beziehung an. Patienten-UUIDs,
-Identitätshashes und Artefakt-Hashes werden nicht verändert.
+After B's signature, A may countersign through `countersign_source_result` if
+A's local worker completed successfully and the recipient signature is valid.
+From this explicitly released message onward, A also sees the result.
+**A cannot independently verify B's privately opened result value.** The
+countersignature therefore authenticates B's statement and A's local
+participation; it is not a generally verifiable evaluation proof against a
+lying B. `accept_result` verifies both signatures and the locally stored
+completion and creates a separate UUID relationship only for `single_match`.
+Patient UUIDs, identity hashes and artifact hashes are not modified.
 
-Die optionalen nativen Tests werden mit einer unabhängig installierten
-MP-SPDZ-v0.4.4-Quelle ausgeführt; ohne die explizite Variable werden sie als
-übersprungen ausgewiesen, nicht als bestandene Kryptografieprüfung:
+The optional native tests run against an independently installed MP-SPDZ v0.4.4
+source tree; without the explicit variable they are reported as skipped, not as
+a passed cryptographic check:
 
 ```sh
 LX_MPSPDZ_ROOT=/path/to/mp-spdz-0.4.4 .devenv/state/venv/bin/pytest \
   tests/services/test_patient_matching_backend.py -q
 ```
 
-Die ORM-Orchestrierung wird separat in `test_patient_matching_workflow.py`
-geprüft; ihre kontrollierten Worker-Antworten sind kein 2PC-Nachweis. Für das
-verwendete Protokoll gelten die dokumentierten Implementierungs- und
-Sicherheitsannahmen der [MP-SPDZ-Version](https://github.com/data61/MP-SPDZ/tree/113c4e47dd94bca9ecab029d2f0abe649bea5c52).
+The ORM orchestration is tested separately in `test_patient_matching_workflow.py`;
+its controlled worker responses are not 2PC evidence. The documented
+implementation and security assumptions of the
+[MP-SPDZ version](https://github.com/data61/MP-SPDZ/tree/113c4e47dd94bca9ecab029d2f0abe649bea5c52)
+apply to the protocol used.
 
-Bei erhaltenen DateTimeField-Geburtsdaten rekonstruiert der ORM-Adapter vor der
-Kodierung das klinische Kalenderdatum in der konfigurierten Django-Zeitzone,
-entsprechend dem bestehenden SensitiveMeta-Hashpfad. Die Kodierungsfunktion
-in `hashs.py` wird dabei nicht verändert.
+For received DateTimeField dates of birth, the ORM adapter reconstructs the
+clinical calendar date in the configured Django time zone before encoding,
+matching the existing SensitiveMeta hash path. The encoding function in
+`hashs.py` is not modified in the process.

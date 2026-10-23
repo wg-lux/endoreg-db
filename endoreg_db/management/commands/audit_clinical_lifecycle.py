@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
@@ -32,7 +33,10 @@ class Command(BaseCommand):
         if raw_kinds is None:
             kinds = list(ClinicalRecordKind)
         elif isinstance(raw_kinds, list):
-            kinds = [ClinicalRecordKind(str(value)) for value in raw_kinds]  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+            kinds = [
+                ClinicalRecordKind(str(value))
+                for value in cast(list[object], raw_kinds)
+            ]
         else:
             raise CommandError(f"invalid --kind option: {raw_kinds!r}")
 

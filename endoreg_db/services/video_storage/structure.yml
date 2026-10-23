@@ -30,7 +30,7 @@ files:
 - file: format_reconciliation.py
   role: Exports default_managed_video_roots, legacy_compatibility_video_roots, reconcile_video_formats.
 - file: frame_provenance.py
-  role: Capture actual decoder ancestry at the encoder boundary and retain it in SQL.
+  role: Capture decoder ancestry and resolve current verified chains or explicit unresolved receipts for hub and ledger exports.
 - file: generation_cleanup.py
   role: Retire committed superseded generations and reconcile proven rolled-back receipts without deleting media.
 - file: hls_encoding.py

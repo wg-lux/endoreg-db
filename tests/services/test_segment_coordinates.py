@@ -16,6 +16,7 @@ from endoreg_db.services.video_files.segment_coordinates import (
     SegmentRecordingCoordinates,
     SegmentTimelineCoordinates,
     segment_timeline_coordinates,
+    wire_timeline_coordinates,
 )
 
 RECORDING_HASH = "a" * 64
@@ -168,3 +169,49 @@ def test_recording_coordinates_follow_mapping_status(
             recording_mapping_status=status,
             recording=recording if with_recording else None,
         )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("verified", [True, False], ids=["verified", "unresolved"])
+def test_wire_coordinates_round_trip_through_shared_contract(verified: bool) -> None:
+    from lx_dtypes.models.contracts.video_segment_timeline import (
+        VideoSegmentTimelineCoordinates,
+    )
+
+    bundle = _two_step_bundle()
+    provenance: VideoProvenanceBundle | VideoProvenanceRecovery = (
+        bundle
+        if verified
+        else VideoProvenanceRecovery(
+            recording_hash=RECORDING_HASH,
+            processed_timeline=bundle.transformations[-1].output,
+        )
+    )
+    [coordinates] = segment_timeline_coordinates(
+        provenance,
+        processed_content_hash=PROCESSED_HASH,
+        segments=[SegmentFrameRange(1, 1, 4)],
+    )
+
+    wire = wire_timeline_coordinates(coordinates)
+
+    assert wire.recording_mapping_status == coordinates.recording_mapping_status.value
+    assert wire.generation.model_dump() == {
+        "content_hash": PROCESSED_HASH,
+        "time_base_num": 1,
+        "time_base_den": 1000,
+        "first_frame_number": 1,
+        "last_frame_number": 3,
+        "first_presentation_timestamp": 20,
+        "last_presentation_timestamp": 60,
+    }
+    assert (wire.recording is not None) is verified
+    if wire.recording is not None:
+        assert (wire.recording.first_frame_index, wire.recording.last_frame_index) == (
+            2,
+            3,
+        )
+    assert (
+        VideoSegmentTimelineCoordinates.model_validate_json(wire.model_dump_json())
+        == wire
+    )

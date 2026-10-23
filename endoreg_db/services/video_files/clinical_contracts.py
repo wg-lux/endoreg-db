@@ -1,6 +1,6 @@
 from pathlib import Path
 from datetime import date, datetime, time
-from typing import Iterable, Protocol, TypedDict, cast
+from typing import Iterable, Protocol, Sequence, TypedDict, cast
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from django.core.exceptions import ObjectDoesNotExist
@@ -11,7 +11,18 @@ from lx_dtypes.models.ledger.p_video.state import (
     AnonymizationState as LxAnonymizationState,
 )
 from lx_dtypes.models.ledger.p_video_segment.Pydantic import PVideoSegment
+from lx_dtypes.models.contracts.video_segment_timeline import (
+    VideoSegmentTimelineCoordinates,
+)
+
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
+
+from endoreg_db.services.video_files.segment_coordinates import (
+    SegmentFrameRange,
+    segment_timeline_coordinates,
+    wire_timeline_coordinates,
+)
+from endoreg_db.services.video_storage.frame_provenance import resolve_video_provenance
 
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
@@ -226,9 +237,10 @@ def build_lx_sensitive_meta(
     )
 
 
-def build_lx_p_video_segment(
+def _build_lx_p_video_segment(
     segment: LabelVideoSegment,
     *,
+    timeline_coordinates: VideoSegmentTimelineCoordinates,
     default_labelset_name: str | None = None,
 ) -> PVideoSegment:
     contract_uuid = _persistent_contract_uuid(
@@ -263,6 +275,7 @@ def build_lx_p_video_segment(
             "label": label.name,
             "labelset": labelset_name,
             "export_segment": segment.export_segment,
+            "timeline_coordinates": timeline_coordinates,
             "patient_video_segment_state": {
                 "prediction": prediction,
                 "annotation": annotation,
@@ -276,6 +289,54 @@ def build_lx_p_video_segment(
                 else {}
             ),
         }
+    )
+
+
+def build_lx_p_video_segments(
+    video: VideoFile,
+    segments: Sequence[LabelVideoSegment],
+    *,
+    default_labelset_name: str | None = None,
+) -> dict[str, PVideoSegment]:
+    """Export one video's segments with a single ancestry composition."""
+    if not segments:
+        return {}
+    if any(segment.video_file.pk != video.pk for segment in segments):
+        raise ValueError("Exported segments must belong to the supplied video")
+    coordinates = segment_timeline_coordinates(
+        resolve_video_provenance(video),
+        processed_content_hash=video.processed_video_hash,
+        segments=[
+            SegmentFrameRange(
+                segment.pk, segment.start_frame_number, segment.end_frame_number
+            )
+            for segment in segments
+        ],
+    )
+    result: dict[str, PVideoSegment] = {}
+    for segment, coordinate in zip(segments, coordinates, strict=True):
+        exported = _build_lx_p_video_segment(
+            segment,
+            timeline_coordinates=wire_timeline_coordinates(coordinate),
+            default_labelset_name=default_labelset_name,
+        )
+        result[str(exported.uuid)] = exported
+    return result
+
+
+def build_lx_p_video_segment(
+    segment: LabelVideoSegment,
+    *,
+    default_labelset_name: str | None = None,
+) -> PVideoSegment:
+    return next(
+        iter(
+            build_lx_p_video_segments(
+                segment.video_file,
+                [segment],
+                default_labelset_name=default_labelset_name,
+            ).values()
+        )
     )
 
 
@@ -297,17 +358,17 @@ def build_lx_patient_video_file(
 
     patient_video_segments: dict[str, PVideoSegment] = {}
     if include_segments:
-        for segment in video.label_video_segments.select_related(
-            "label",
-            "state",
-            "prediction_meta__model_meta__labelset",
-            "video_file__ai_model_meta__labelset",
-        ):
-            lx_segment = build_lx_p_video_segment(
-                segment,
-                default_labelset_name=default_labelset_name,
+        segments = list(
+            video.label_video_segments.select_related(
+                "label",
+                "state",
+                "prediction_meta__model_meta__labelset",
+                "video_file__ai_model_meta__labelset",
             )
-            patient_video_segments[str(lx_segment.uuid)] = lx_segment
+        )
+        patient_video_segments = build_lx_p_video_segments(
+            video, segments, default_labelset_name=default_labelset_name
+        )
 
     external_ids = {"raw_video_hash": video.raw_video_hash}
     if video.processed_video_hash:

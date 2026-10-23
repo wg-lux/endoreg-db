@@ -8,6 +8,12 @@ from uuid import NAMESPACE_URL, uuid5
 import pytest
 from django.core.files.base import ContentFile
 from django.utils import timezone
+from lx_dtypes.models.contracts.video_provenance import (
+    VideoFrameTimeline,
+    VideoFrameProvenancePayload,
+    VideoProvenanceBundle,
+    VideoProvenanceRecovery,
+)
 
 from endoreg_db.models import (
     AIDataSet,
@@ -27,6 +33,7 @@ from endoreg_db.models import (
 from endoreg_db.services.datasets.exports import export_to_standardized_structure
 from endoreg_db.services.video_files.clinical_contracts import (
     build_lx_p_video_segment,
+    build_lx_p_video_segments,
     build_lx_patient_video_file,
     build_lx_sensitive_meta,
     resolve_lx_anonymization_state,
@@ -57,6 +64,29 @@ def _create_video(
         ContentFile(b"processed-video-bytes"),
         save=True,
     )
+    video.raw_video_hash = "a" * 64
+    video.processed_video_hash = "b" * 64
+    provenance = VideoProvenanceBundle(
+        transformations=[
+            VideoFrameProvenancePayload(
+                source=VideoFrameTimeline(
+                    content_hash=video.raw_video_hash,
+                    time_base_num=1,
+                    time_base_den=90000,
+                    presentation_timestamps=[90000 + i * 3003 for i in range(30)],
+                ),
+                output=VideoFrameTimeline(
+                    content_hash=video.processed_video_hash,
+                    time_base_num=1,
+                    time_base_den=1000,
+                    presentation_timestamps=[i * 40 for i in range(30)],
+                ),
+                source_frame_indices=[0, 2, 2, *range(3, 30)],
+            )
+        ]
+    )
+    video.meta = {"video_frame_provenance": provenance.model_dump(mode="json")}
+    video.save(update_fields=["raw_video_hash", "processed_video_hash", "meta"])
     return video
 
 
@@ -391,3 +421,132 @@ def test_segment_resolve_labelset_name_falls_back_to_video_model_meta(
 
     assert segment.resolve_labelset() == labelset
     assert segment.resolve_labelset_name() == "video_level_set"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("unresolved", [False, True])
+def test_segment_coordinates_survive_ledger_and_dataset_exports(
+    base_db_data: object,
+    unresolved: bool,
+) -> None:
+    from tests.helpers.default_objects import get_default_center
+    from tests.services import test_segment_coordinates
+
+    video = _create_video(center=get_default_center(), raw_video_hash="coordinates")
+    bundle = test_segment_coordinates._two_step_bundle()  # pyright: ignore[reportPrivateUsage]
+    video.processed_video_hash = bundle.transformations[-1].output.content_hash
+    if unresolved:
+        receipt = VideoProvenanceRecovery(
+            recording_hash=video.raw_video_hash,
+            processed_timeline=bundle.transformations[-1].output,
+        )
+        video.meta = {"video_provenance_recovery": receipt.model_dump(mode="json")}
+    else:
+        video.meta = {"video_frame_provenance": bundle.model_dump(mode="json")}
+    video.save(update_fields=["meta", "processed_video_hash"])
+    label = Label.objects.create(name="coordinate-label")
+    labelset = LabelSet.objects.create(name="coordinate-set", version=1)
+    labelset.labels.add(label)
+    selected = video.label_video_segments.create(
+        label=label, start_frame_number=1, end_frame_number=3
+    )
+    video.label_video_segments.create(
+        label=label, start_frame_number=3, end_frame_number=5
+    )
+    exported = build_lx_p_video_segment(selected)
+    coordinates = exported.timeline_coordinates
+    assert coordinates is not None
+    assert coordinates.generation.first_presentation_timestamp == 20
+    assert coordinates.generation.last_presentation_timestamp == 40
+    assert coordinates.generation.content_hash == video.processed_video_hash
+    if unresolved:
+        assert coordinates.recording_mapping_status == "unresolved"
+        assert coordinates.recording is None
+    else:
+        assert coordinates.recording_mapping_status == "verified"
+        assert coordinates.recording is not None
+        assert (
+            coordinates.recording.first_frame_index
+            == coordinates.recording.last_frame_index
+            == 2
+        )
+        assert coordinates.recording.first_presentation_timestamp == 96006
+        assert coordinates.recording.last_presentation_timestamp == 96006
+        assert coordinates.recording.time_base_den == 90000
+    assert (
+        exported.serialized_model.model_dump()["timeline_coordinates"]
+        == coordinates.model_dump()
+    )
+    assert len(build_lx_patient_video_file(video).patient_video_segments) == 2
+    dataset = AIDataSet.objects.create(
+        name="coordinates",
+        dataset_type=AIDataSet.DATASET_TYPE_VIDEO,
+        ai_model_type=AIDataSet.AI_MODEL_TYPE_VIDEO_SEGMENT_CLASSIFICATION,
+    )
+    dataset.video_annotations.add(selected)
+    payload = export_to_standardized_structure(dataset)
+    videos = cast(dict[str, dict[str, object]], payload["patient_videos"])
+    segments = cast(
+        dict[str, dict[str, object]], videos[str(video.uuid)]["patient_video_segments"]
+    )
+    assert list(segments) == [str(exported.uuid)]
+    assert segments[str(exported.uuid)][
+        "timeline_coordinates"
+    ] == coordinates.model_dump(mode="json")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "invalid", ["missing", "recording", "processed", "bounds", "stale_recovery"]
+)
+def test_segment_export_rejects_invalid_provenance(
+    base_db_data: object, invalid: str
+) -> None:
+    from tests.helpers.default_objects import get_default_center
+
+    video = _create_video(
+        center=get_default_center(), raw_video_hash="invalid-provenance"
+    )
+    label = Label.objects.create(name="invalid-coordinate-label")
+    labelset = LabelSet.objects.create(name="invalid-coordinate-set", version=1)
+    labelset.labels.add(label)
+    segment = video.label_video_segments.create(
+        label=label,
+        start_frame_number=1,
+        end_frame_number=31 if invalid == "bounds" else 3,
+    )
+    if invalid == "missing":
+        video.meta = {}
+    elif invalid == "recording":
+        video.raw_video_hash = "f" * 64
+    elif invalid == "processed":
+        video.processed_video_hash = "f" * 64
+    elif invalid == "stale_recovery":
+        receipt = VideoProvenanceRecovery(
+            recording_hash="f" * 64,
+            processed_timeline=VideoFrameTimeline(
+                content_hash=video.processed_video_hash,
+                time_base_num=1,
+                time_base_den=1000,
+                presentation_timestamps=[0, 40, 80],
+            ),
+        )
+        video.meta = {"video_provenance_recovery": receipt.model_dump(mode="json")}
+    with pytest.raises(ValueError):
+        build_lx_p_video_segment(segment)
+
+
+@pytest.mark.no_db
+def test_segment_batch_rejects_another_video_and_allows_empty_selection() -> None:
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
+    )
+
+    video = VideoFile(pk=1)
+    other = VideoFile(pk=2)
+    segment = LabelVideoSegment(
+        video_file=other, start_frame_number=0, end_frame_number=1
+    )
+    assert build_lx_p_video_segments(video, []) == {}
+    with pytest.raises(ValueError, match="must belong"):
+        build_lx_p_video_segments(video, [segment])

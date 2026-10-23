@@ -9,7 +9,7 @@ and it can never be released. That is intentional and fails closed.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
@@ -37,7 +37,8 @@ def _integrity_lost(meta: object) -> bool:
         raise TypeError(
             f"media integrity metadata must be a mapping, got {type(meta)!r}"
         )
-    return str(meta.get("integrity_status", "")).lower() == _INTEGRITY_LOST  # pyright: ignore[reportUnknownMemberType, reportUnknownArgumentType]
+    status = cast(Mapping[object, object], meta).get("integrity_status", "")
+    return str(status).lower() == _INTEGRITY_LOST
 
 
 def _sensitive_meta(value: object) -> SensitiveMeta | None:

@@ -165,6 +165,19 @@ timeline against the received processed media before accepting processing succes
 Existing transfers without a bundle remain readable but cannot provide electrical
 alignment. Native transport authentication and encryption requirements still apply.
 
+Ledger `PVideoSegment` exports and dataset segment exports use the same exact
+coordinate contract as hub transfers. Each exported segment carries the processed
+content hash, rational time base, and integer presentation timestamps for its
+first and last included frames; the stored end frame remains exclusive. Verified
+ancestry also supplies the original recording's frame indices and timestamps.
+An acknowledged unresolved receipt exports an explicit unresolved status with no
+original-frame coordinates. Missing, stale, ambiguous, or out-of-range provenance
+fails the export rather than omitting segments. Dataset exports retain only their
+selected segments and continue to exclude sensitive metadata. Ancestry is resolved
+and composed once per video's segment batch; metadata export does not read or
+export raw media. Deploy the matching `lx-dtypes` ledger contract before using
+these exporters, as part of the coordinated wire-contract rollout.
+
 An independent electrical device needs synchronization evidence **during
 recording**. Video presentation timestamps alone do not identify its clock offset.
 The recording integration must retain:

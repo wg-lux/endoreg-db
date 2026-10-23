@@ -74,7 +74,19 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.services.hub.payloads import reject_transferred_identity_hashes
 from endoreg_db.utils.hashs import get_bytes_hash, get_file_hash
-from lx_dtypes.models.contracts.hub_transfer import HubTransferSensitiveMetaPayload
+from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferSensitiveMetaPayload,
+    HubTransferVideoSegmentPayload,
+)
+from lx_dtypes.models.contracts.video_provenance import (
+    VideoProvenanceBundle,
+    VideoProvenanceRecovery,
+)
+from endoreg_db.services.video_files.segment_coordinates import (
+    SegmentFrameRange,
+    segment_timeline_coordinates,
+    wire_timeline_coordinates,
+)
 from endoreg_db.utils.storage import file_exists
 from endoreg_db.utils.structured_logging import hash_identifier
 from .transfer_envelope import (
@@ -518,8 +530,8 @@ def create_or_reuse_transfer_job(
     created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
     reject_transferred_identity_hashes((resource_rows, processing_snapshot, provenance))
-    if payload_schema_version != "6.0":
-        raise ValueError("Only hub payload schema 6.0 is accepted")
+    if payload_schema_version != "7.0":
+        raise ValueError("Only hub payload schema 7.0 is accepted")
     transfer_job_manager = cast(Any, TransferJob.objects)
     source_node_pk = cast(int, source_node.pk)
     target_node_pk = cast(int, target_node.pk)
@@ -1149,6 +1161,15 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                     "Transfer must select verified or unresolved provenance"
                 )
             accept_video_provenance_recovery(video, recovery)
+        _verify_video_segment_timeline_coordinates(
+            video=video,
+            frame_provenance=frame_provenance,
+            recovery=recovery,
+            rows=_json_object_list(
+                resource_rows.get("video_segments"),
+                field_name="resource_rows.video_segments",
+            ),
+        )
 
         video.save()
         video_state = get_or_create_video_state(video)
@@ -1701,6 +1722,46 @@ def _apply_frame_annotation_rows(
     if not video_state.frame_annotations_generated:
         video_state.frame_annotations_generated = True
         video_state.save(update_fields=["frame_annotations_generated", "date_modified"])
+
+
+def _verify_video_segment_timeline_coordinates(
+    *,
+    video: VideoFile,
+    frame_provenance: object,
+    recovery: object,
+    rows: list[JsonObject],
+) -> None:
+    """Recompute sender coordinates from the received provenance; never trust them."""
+    if not rows:
+        return
+    provenance: VideoProvenanceBundle | VideoProvenanceRecovery
+    if frame_provenance is not None:
+        provenance = VideoProvenanceBundle.model_validate(frame_provenance)
+    elif recovery is not None:
+        provenance = VideoProvenanceRecovery.model_validate(recovery)
+    else:
+        raise ValueError(
+            "Video segments require frame provenance or an unresolved receipt"
+        )
+    segments = [HubTransferVideoSegmentPayload.model_validate(row) for row in rows]
+    expected = segment_timeline_coordinates(
+        provenance,
+        processed_content_hash=video.processed_video_hash,
+        segments=[
+            SegmentFrameRange(
+                segment_id=position,
+                start_frame_number=segment.start_frame_number,
+                end_frame_number_exclusive=segment.end_frame_number_exclusive,
+            )
+            for position, segment in enumerate(segments)
+        ],
+    )
+    for segment, coordinates in zip(segments, expected, strict=True):
+        if wire_timeline_coordinates(coordinates) != segment.timeline_coordinates:
+            raise ValueError(
+                f"video segment {segment.source_segment_id} timeline_coordinates "
+                "disagree with the received provenance"
+            )
 
 
 def _apply_video_segment_rows(

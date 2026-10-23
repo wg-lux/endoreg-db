@@ -76,7 +76,7 @@ def _payload(
         "processing_policy": "ingest_only_no_processing",
         "processing_intent": "sender_requests_archive_only",
         "cleanup_policy": "retain_all",
-        "payload_schema_version": "6.0",
+        "payload_schema_version": "7.0",
         "resource_rows": {"study_exchange": bundle.model_dump(mode="json")},
         "processing_snapshot": {"sender_processing_success": True},
     }

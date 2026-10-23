@@ -24,7 +24,7 @@ files:
 - file: active_learning_shortlist.py
   role: Prepare an operator-requested shortlist; predictions remain review suggestions.
 - file: exports.py
-  role: Exports build_frame_annotation_export, build_patient_videos_export, validate_export_scope.
+  role: Build scoped dataset exports using the shared batched ledger segment builder and exact timeline coordinates.
 - file: frame_buckets.py
   role: Exports build_frame_bucket_distribution.
 - file: training_manifests.py

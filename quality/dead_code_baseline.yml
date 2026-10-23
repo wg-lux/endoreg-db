@@ -19,28 +19,16 @@ accepted_findings:
     classification: protocol_signature
     reason: Required keyword name in a structural typing contract; the implementation consumes it dynamically.
     owner: endoreg_db maintainers
-    review_after: 2026-10-17
+    review_after: 2026-12-23
   - <<: *protocol_signature
     path: endoreg_db/services/video_files/_ai.py
     message: "unused variable 'high_quality'"
   - <<: *protocol_signature
-    path: endoreg_db/authz/permissions.py
-    message: "unused variable 'flat'"
-  - <<: *protocol_signature
-    path: endoreg_db/authz/views_auth.py
-    message: "unused variable 'flat'"
-  - <<: *protocol_signature
     path: endoreg_db/helpers/typing.py
     message: "unused variable 'objs'"
   - <<: *protocol_signature
-    path: endoreg_db/services/datasets/training_manifests.py
-    message: "unused variable 'flat'"
-  - <<: *protocol_signature
     path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
     message: "unused variable 'objs'"
-  - <<: *protocol_signature
-    path: endoreg_db/serializers/misc/sensitive_patient_data.py
-    message: "unused variable 'flat'"
   - <<: *protocol_signature
     path: endoreg_db/utils/pydantic_models/db_config.py
     message: "unused variable 'ask_override'"
@@ -71,6 +59,11 @@ accepted_findings:
   - <<: *metric_signature
     message: "unused variable 'zero_division'"
   - <<: *protocol_signature
+    path: endoreg_db/utils/rust_backend.py
+    message: "unused variable 'master_keys'"
+    reason: NativeBatchProcessor.stable_file_identities mirrors the native endoreg_rust_backend signature; stable_file_identities passes the configured reader keys positionally to the compiled processor.
+    review_after: 2027-01-22
+  - <<: *protocol_signature
     path: endoreg_db/views/misc/upload_views.py
     message: "unused variable 'mime'"
     reason: _MagicModule.from_buffer declares the python-magic keyword contract; the upload content-type check invokes the concrete module with mime=True.
@@ -99,22 +92,28 @@ accepted_findings:
     classification: framework_contract
     reason: Required by the registered Django or Python framework callback signature.
     owner: endoreg_db maintainers
-    review_after: 2026-10-17
+    review_after: 2026-12-23
+    occurrences: 2
   - <<: *framework_contract
     path: endoreg_db/checks.py
     message: "unused variable 'databases'"
+    occurrences: 2
   - <<: *framework_contract
     path: endoreg_db/services/runtime/polling_coordinator.py
     message: "unused variable 'exc_val'"
+    occurrences: 1
   - <<: *framework_contract
     path: endoreg_db/services/runtime/polling_coordinator.py
     message: "unused variable 'exc_tb'"
+    occurrences: 1
   - <<: *framework_contract
     path: endoreg_db/services/runtime/reconciliation.py
     message: "unused variable 'tb'"
+    occurrences: 1
   - <<: *framework_contract
     path: endoreg_db/urls/patient.py
     message: "unused variable 'actions'"
+    occurrences: 1
 
   - &compatibility_contract
     path: endoreg_db/helpers/download_segmentation_model.py
@@ -123,7 +122,7 @@ accepted_findings:
     classification: compatibility_contract
     reason: Public compatibility parameter retained for existing callers; removal requires a consumer migration.
     owner: endoreg_db maintainers
-    review_after: 2026-10-17
+    review_after: 2026-12-23
   - <<: *compatibility_contract
     path: endoreg_db/helpers/download_segmentation_model.py
     message: "unused variable 'resume_download'"
@@ -137,7 +136,7 @@ accepted_findings:
     classification: typing_only
     reason: Imported under TYPE_CHECKING and referenced by a forward type alias; it has no runtime import.
     owner: endoreg_db maintainers
-    review_after: 2026-10-17
+    review_after: 2026-12-23
   - <<: *typing_only
     path: endoreg_db/models/media/pdf/pdf_processing_history.py
     message: "unused import 'AbstractBaseUser'"

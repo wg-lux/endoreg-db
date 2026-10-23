@@ -40,7 +40,7 @@ files:
 - file: anonymization.py
   role: Exports anonymize_video_file, cleanup_video_raw_assets, merge_outside_frame_intervals.
 - file: clinical_contracts.py
-  role: Exports resolve_lx_anonymization_state, resolve_segment_labelset_name, build_lx_sensitive_meta.
+  role: Build clinical ledger exports with batched exact segment coordinates bound to current provenance.
 - file: deletion.py
   role: Explicit video deletion using persisted ownership, never filename searches.
 - file: direct_import.py
@@ -65,7 +65,7 @@ files:
   role: Exports VideoReimportOrchestrator.
 - file: segment_coordinates.py
   role: Pure exact segment ticks on the processed generation and composed original-recording frames from verified
-    provenance, or explicit unresolved status.
+    provenance, or explicit unresolved status; single conversion into the lx-dtypes wire contract.
 - file: segment_blackening.py
   role: Typed configuration boundary for outside-frame video blackening.
 - file: segments.py
@@ -142,6 +142,7 @@ tests:
     tests/services/test_segment_frame_extraction.py tests/services/test_segment_coordinates.py
     tests/rust_backend/test_timeline_index.py
   files:
+  - tests/services/test_lx_video_contracts.py
   - tests/services/test_video_file_services_contract.py
   - tests/services/test_canonical_playback_selection.py
   - tests/services/test_segment_frame_extraction.py

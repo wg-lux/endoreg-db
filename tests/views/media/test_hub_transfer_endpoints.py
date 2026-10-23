@@ -50,6 +50,11 @@ from endoreg_db.models.state.processing_history.processing_history import (
 from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
 from tests.helpers.data_loader import load_gender_data
 
+_ANNOTATIONS_HASH = hashlib.sha256(b"hash-annotations").hexdigest()
+_OUT_OF_BOUNDS_HASH = hashlib.sha256(b"hash-segment-out-of-bounds").hexdigest()
+_ROLLBACK_HASH = hashlib.sha256(b"hash-segment-rollback").hexdigest()
+_TICKS_PER_FRAME = 40
+
 
 class _ResponseLike(Protocol):
     status_code: int
@@ -207,6 +212,85 @@ class HubTransferEndpointTests(TestCase):
         return hashlib.sha256(content).hexdigest()
 
     @staticmethod
+    def _processed_timeline(payload: dict[str, Any]) -> dict[str, object]:
+        video_file = payload["resource_rows"]["video_file"]
+        return {
+            "content_hash": video_file["processed_video_hash"],
+            "time_base_num": 1,
+            "time_base_den": 1000,
+            "presentation_timestamps": [
+                frame * _TICKS_PER_FRAME for frame in range(video_file["frame_count"])
+            ],
+        }
+
+    def _attach_unresolved_provenance(self, payload: dict[str, Any]) -> None:
+        payload["provenance"] = {
+            "video_provenance_recovery": {
+                "recording_hash": payload["resource_hash"],
+                "processed_timeline": self._processed_timeline(payload),
+            }
+        }
+
+    def _attach_verified_provenance(self, payload: dict[str, Any]) -> None:
+        """Recording frame 2 is dropped and recording frame 5 repeats once."""
+        frame_count = payload["resource_rows"]["video_file"]["frame_count"]
+        source_frame_indices = [0, 1, 3, 4, 5, 5, *range(6, frame_count)]
+        payload["provenance"] = {
+            "video_frame_provenance": {
+                "transformations": [
+                    {
+                        "source": {
+                            "content_hash": payload["resource_hash"],
+                            "time_base_num": 1,
+                            "time_base_den": 90000,
+                            "presentation_timestamps": [
+                                frame * 3003 for frame in range(frame_count)
+                            ],
+                        },
+                        "output": self._processed_timeline(payload),
+                        "source_frame_indices": source_frame_indices,
+                    }
+                ]
+            }
+        }
+
+    @staticmethod
+    def _timeline_coordinates(
+        payload: dict[str, Any], *, start: int, end_exclusive: int
+    ) -> dict[str, object]:
+        last = end_exclusive - 1
+        coordinates: dict[str, object] = {
+            "generation": {
+                "content_hash": payload["resource_rows"]["video_file"][
+                    "processed_video_hash"
+                ],
+                "time_base_num": 1,
+                "time_base_den": 1000,
+                "first_frame_number": start,
+                "last_frame_number": last,
+                "first_presentation_timestamp": start * _TICKS_PER_FRAME,
+                "last_presentation_timestamp": last * _TICKS_PER_FRAME,
+            },
+            "recording_mapping_status": "unresolved",
+        }
+        frame_provenance = payload.get("provenance", {}).get("video_frame_provenance")
+        if frame_provenance is not None:
+            step = frame_provenance["transformations"][0]
+            first_index = step["source_frame_indices"][start]
+            last_index = step["source_frame_indices"][last]
+            coordinates["recording_mapping_status"] = "verified"
+            coordinates["recording"] = {
+                "recording_content_hash": payload["resource_hash"],
+                "time_base_num": 1,
+                "time_base_den": 90000,
+                "first_frame_index": first_index,
+                "last_frame_index": last_index,
+                "first_presentation_timestamp": first_index * 3003,
+                "last_presentation_timestamp": last_index * 3003,
+            }
+        return coordinates
+
+    @staticmethod
     def _b64(value: bytes) -> str:
         return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
 
@@ -349,7 +433,7 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "6.0",
+            "payload_schema_version": "7.0",
             "resource_rows": {
                 "video_file": video_file_payload,
                 "sensitive_meta": {
@@ -397,7 +481,7 @@ class HubTransferEndpointTests(TestCase):
             "processing_policy": processing_policy,
             "processing_intent": "sender_requests_state_preservation",
             "cleanup_policy": "retain_all",
-            "payload_schema_version": "6.0",
+            "payload_schema_version": "7.0",
             "resource_rows": {
                 "raw_pdf_file": {
                     "pdf_hash": pdf_hash,
@@ -785,12 +869,12 @@ class HubTransferEndpointTests(TestCase):
     def test_video_transfer_imports_frame_annotations_and_related_reports(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__annotations",
-            raw_video_hash="hash-annotations",
+            raw_video_hash=_ANNOTATIONS_HASH,
         )
         payload["resource_rows"]["frame_annotations"] = [
             {
                 "annotation_id": 42,
-                "raw_video_hash": "hash-annotations",
+                "raw_video_hash": _ANNOTATIONS_HASH,
                 "frame_number": 5,
                 "frame_relative_path": "frames/frame_000005.jpg",
                 "frame_timestamp": 0.2,
@@ -800,11 +884,12 @@ class HubTransferEndpointTests(TestCase):
                 "information_source_name": "manual_annotation",
             }
         ]
+        self._attach_verified_provenance(payload)
         payload["resource_rows"]["video_segments"] = [
             {
                 "source_node_key": self.source_node.node_key,
                 "source_segment_id": 17,
-                "raw_video_hash": "hash-annotations",
+                "raw_video_hash": _ANNOTATIONS_HASH,
                 "start_frame_number": 4,
                 "end_frame_number_exclusive": 8,
                 "label_name": "lesion_visible",
@@ -814,6 +899,9 @@ class HubTransferEndpointTests(TestCase):
                 "anonymous_provenance": {
                     "information_source_name": "manual_annotation"
                 },
+                "timeline_coordinates": self._timeline_coordinates(
+                    payload, start=4, end_exclusive=8
+                ),
             }
         ]
         payload["resource_rows"]["video_state"]["segment_annotations_validated"] = True
@@ -837,7 +925,7 @@ class HubTransferEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
 
-        video = VideoFile.objects.get(raw_video_hash="hash-annotations")
+        video = VideoFile.objects.get(raw_video_hash=_ANNOTATIONS_HASH)
         frame = Frame.objects.get(video=video, frame_number=5)
         assert frame.relative_path == "frames/frame_000005.jpg"
         assert frame.timestamp == 0.2
@@ -878,14 +966,18 @@ class HubTransferEndpointTests(TestCase):
 
         replay_payload = self._video_transfer_payload(
             transfer_key="site-a__video__annotations-replay",
-            raw_video_hash="hash-annotations",
+            raw_video_hash=_ANNOTATIONS_HASH,
         )
+        self._attach_verified_provenance(replay_payload)
         replay_payload["resource_rows"]["video_segments"] = [
             {
                 **payload["resource_rows"]["video_segments"][0],
                 "start_frame_number": 5,
                 "end_frame_number_exclusive": 9,
                 "validation_state": "unvalidated",
+                "timeline_coordinates": self._timeline_coordinates(
+                    replay_payload, start=5, end_exclusive=9
+                ),
             }
         ]
         replay_payload["resource_rows"]["video_state"][
@@ -929,13 +1021,14 @@ class HubTransferEndpointTests(TestCase):
     def test_video_transfer_rejects_segment_beyond_transferred_frame_count(self):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__segment-out-of-bounds",
-            raw_video_hash="hash-segment-out-of-bounds",
+            raw_video_hash=_OUT_OF_BOUNDS_HASH,
         )
+        self._attach_unresolved_provenance(payload)
         payload["resource_rows"]["video_segments"] = [
             {
                 "source_node_key": self.source_node.node_key,
                 "source_segment_id": "outside",
-                "raw_video_hash": "hash-segment-out-of-bounds",
+                "raw_video_hash": _OUT_OF_BOUNDS_HASH,
                 "start_frame_number": 299,
                 "end_frame_number_exclusive": 301,
                 "label_name": "lesion_visible",
@@ -945,6 +1038,9 @@ class HubTransferEndpointTests(TestCase):
                 "anonymous_provenance": {
                     "information_source_name": "manual_annotation"
                 },
+                "timeline_coordinates": self._timeline_coordinates(
+                    payload, start=299, end_exclusive=301
+                ),
             }
         ]
 
@@ -957,13 +1053,88 @@ class HubTransferEndpointTests(TestCase):
 
         assert response.status_code == 400, response.content
         assert "exceeds video frame_count" in str(response.json())
-        assert not VideoFile.objects.filter(
-            raw_video_hash="hash-segment-out-of-bounds"
-        ).exists()
+        assert not VideoFile.objects.filter(raw_video_hash=_OUT_OF_BOUNDS_HASH).exists()
         assert not LabelVideoSegment.objects.filter(
             source_node_key=self.source_node.node_key,
             source_segment_id="outside",
         ).exists()
+
+    def _single_segment_payload(
+        self, *, transfer_key: str, raw_video_hash: str
+    ) -> dict[str, Any]:
+        payload = self._video_transfer_payload(
+            transfer_key=transfer_key, raw_video_hash=raw_video_hash
+        )
+        self._attach_verified_provenance(payload)
+        payload["resource_rows"]["video_segments"] = [
+            {
+                "source_node_key": self.source_node.node_key,
+                "source_segment_id": "timeline",
+                "raw_video_hash": raw_video_hash,
+                "start_frame_number": 1,
+                "end_frame_number_exclusive": 6,
+                "label_name": "lesion_visible",
+                "source_kind": "manual_annotation",
+                "validation_state": "validated",
+                "export_segment": True,
+                "anonymous_provenance": {
+                    "information_source_name": "manual_annotation"
+                },
+                "timeline_coordinates": self._timeline_coordinates(
+                    payload, start=1, end_exclusive=6
+                ),
+            }
+        ]
+        return payload
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_video_transfer_rejects_segment_ticks_disagreeing_with_provenance(self):
+        raw_video_hash = self._sha256(b"hash-segment-timeline-mismatch")
+        payload = self._single_segment_payload(
+            transfer_key="site-a__video__segment-timeline-mismatch",
+            raw_video_hash=raw_video_hash,
+        )
+        recording = payload["resource_rows"]["video_segments"][0][
+            "timeline_coordinates"
+        ]["recording"]
+        # Recording frame 2 was dropped; it never produced processed frame 1.
+        recording["first_frame_index"] = 2
+        recording["first_presentation_timestamp"] = 2 * 3003
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 400, response.content
+        assert "disagree with the received provenance" in str(response.json())
+        assert not VideoFile.objects.filter(raw_video_hash=raw_video_hash).exists()
+        assert not LabelVideoSegment.objects.filter(
+            source_node_key=self.source_node.node_key,
+            source_segment_id="timeline",
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_video_transfer_rejects_segments_without_provenance(self):
+        raw_video_hash = self._sha256(b"hash-segment-without-provenance")
+        payload = self._single_segment_payload(
+            transfer_key="site-a__video__segment-without-provenance",
+            raw_video_hash=raw_video_hash,
+        )
+        del payload["provenance"]
+
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+
+        assert response.status_code == 400, response.content
+        assert "frame provenance or an unresolved receipt" in str(response.json())
+        assert not VideoFile.objects.filter(raw_video_hash=raw_video_hash).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_video_transfer_rolls_back_segments_before_validation_reconciliation(
@@ -971,7 +1142,7 @@ class HubTransferEndpointTests(TestCase):
     ):
         video_state = VideoState.objects.create()
         video = VideoFile.objects.create(
-            raw_video_hash="hash-segment-rollback",
+            raw_video_hash=_ROLLBACK_HASH,
             center=self.center,
             state=video_state,
         )
@@ -981,6 +1152,7 @@ class HubTransferEndpointTests(TestCase):
             transfer_key="site-a__video__segment-rollback",
             raw_video_hash=video.raw_video_hash,
         )
+        self._attach_unresolved_provenance(payload)
         payload["resource_rows"]["video_segments"] = [
             {
                 "source_node_key": self.source_node.node_key,
@@ -995,6 +1167,9 @@ class HubTransferEndpointTests(TestCase):
                 "anonymous_provenance": {
                     "information_source_name": "manual_annotation"
                 },
+                "timeline_coordinates": self._timeline_coordinates(
+                    payload, start=4, end_exclusive=8
+                ),
             }
         ]
         payload["resource_rows"]["video_state"]["segment_annotations_validated"] = True

@@ -320,8 +320,7 @@ def test_receiver_checks_actual_timeline_and_rejects_stale_receipt(
     exchange.accept_video_provenance_recovery(video, receipt.model_dump(mode="json"))
     video.save(update_fields=["meta"])
     monkeypatch.setattr(
-        exchange,
-        "provenance_chain",
+        "endoreg_db.services.video_storage.frame_provenance.provenance_chain",
         Mock(side_effect=AssertionError("must not infer mapping")),
     )
     monkeypatch.setattr(

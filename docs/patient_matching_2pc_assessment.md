@@ -282,9 +282,15 @@ intended network.
 
 ## Validation performed
 
-The isolated [reference](../scripts/patient_matching_2pc_reference.py) sees both
+The reference script, its tests and the 2PC circuit named in this section were
+removed from the working tree in commit `a965c674`. They remain retrievable at
+commit `d2c1adab` (for example `git show d2c1adab:scripts/patient_matching_2pc.mpc`).
+The results below are historical evidence for that revision and cannot be rerun
+from the current tree.
+
+The isolated reference `scripts/patient_matching_2pc_reference.py` sees both
 inputs and claims **no** privacy. The
-[tests](../tests/scripts/test_patient_matching_2pc_reference.py) use only synthetic
+tests `tests/scripts/test_patient_matching_2pc_reference.py` use only synthetic
 names, UUIDs, and keys under isolated test settings. 39 tests pass: production
 equivalence, A/B key/center separation, whitespace, case, Unicode/NFC-NFD, JSON
 escaping, date/datetime, long and UTF-8 keys, missing/incorrectly bound historical
@@ -308,7 +314,7 @@ The backend measurements below must be read separately from these reference test
 
 ### Reproducible synthetic two-process experiment
 
-The persisted [circuit](../scripts/patient_matching_2pc.mpc) is isolated from
+The persisted circuit `scripts/patient_matching_2pc.mpc` was isolated from
 production code. The external laboratory controller under `/tmp` holds both
 synthetic inputs; the two MP-SPDZ processes receive separate player inputs.
 This demonstrates actual 2PC but not separate administrators: both processes

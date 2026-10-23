@@ -74,9 +74,9 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
 
     def validate_payload_schema_version(self, value: str) -> str:
         normalized = value.strip()
-        if normalized != "6.0":
+        if normalized != "7.0":
             raise serializers.ValidationError(
-                "Only privacy-preserving hub payload_schema_version '6.0' is accepted."
+                "Only privacy-preserving hub payload_schema_version '7.0' is accepted."
             )
         return normalized
 
