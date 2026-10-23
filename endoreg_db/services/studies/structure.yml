@@ -1,0 +1,68 @@
+version: 1
+tier: service
+path: endoreg_db/services/studies
+parent: ../structure.yml
+summary: Study presets, cohort queries, examination exports and mapped table imports.
+responsibilities:
+- Project selected study presets and query center-scoped cohorts.
+- Parse mapped clinical tables and export explicitly selected examination revisions.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: import_study_preset
+  file: presets.py
+  purpose: Keep row identities and fail atomically on missing clinical dependencies.
+- name: import_table
+  file: table_import.py
+  purpose: Parse, validate and atomically persist a complete table (dry-run by default).
+- name: query_study_cohort_examinations
+  file: cohort.py
+  purpose: Reuse canonical cohort eligibility and filters without a preview limit for dataset analysis.
+files:
+- file: exchange.py
+  role: Explicit idempotent ledger capture, authorized study evidence export and transactional owner-bound import shared by Excel and hub.
+- file: collections.py
+  role: Authorized study collection capture using canonical KB and ledger evaluation.
+- file: __init__.py
+  role: Studienvorgaben und Kohortenabfragen.
+- file: cohort.py
+  role: Exports parse_study_cohort_filters, build_study_cohort_payload.
+- file: presets.py
+  role: Atomic host projection of explicitly selected terminology presets.
+- file: revision_export.py
+  role: Research export contract 2.0 and workbook validation using local patient IDs; reject identity hashes before publication.
+- file: table_import.py
+  role: Atomic table import using canonical identity, clinical and media services.
+- file: table_mappings.py
+  role: User-owned immutable mapping documents in canonical protected runtime storage.
+- file: table_parser.py
+  role: Bounded table extraction into LX records, without database mutations.
+dependencies:
+  internal:
+  - endoreg_db/helpers
+  - endoreg_db/models
+  - endoreg_db/services/cases
+  - endoreg_db/services/centers
+  - endoreg_db/services/reference_data
+  - endoreg_db/services/reports
+  - endoreg_db/services/privacy
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_anonymizer
+  - lx_dtypes
+  - pydantic
+  - yaml
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_study_table_import.py tests/services/test_examination_revisions.py
+    tests/services/test_study_cohort_identity.py
+  files:
+  - tests/services/test_study_exchange.py
+  - tests/services/test_study_table_import.py
+  - tests/services/test_examination_revisions.py
+  - tests/services/test_study_cohort_identity.py

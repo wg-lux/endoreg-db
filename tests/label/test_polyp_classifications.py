@@ -1,10 +1,7 @@
 from django.test import TestCase
 from logging import getLogger
 
-from endoreg_db.models import (
-    Label,
-)
-from endoreg_db.models.label import LabelType, LabelSet
+from endoreg_db.models.label import LabelSet
 
 logger = getLogger(__name__)
 logger.debug("Starting test for Patient model")
@@ -12,7 +9,6 @@ logger.debug("Starting test for Patient model")
 from ..helpers.data_loader import (
     load_ai_model_label_data,
 )
-
 
 
 class PolypClassificationLabelsTest(TestCase):
@@ -36,9 +32,10 @@ class PolypClassificationLabelsTest(TestCase):
         ]
 
         for name in expected_names:
-            self.assertIn(name, db_paris_label_names, f"Label {name} not found in database.")
+            self.assertIn(
+                name, db_paris_label_names, f"Label {name} not found in database."
+            )
             logger.debug(f"Label {name} found in database.")
-
 
     def test_get_nice_label_types(self):
         """
@@ -55,5 +52,7 @@ class PolypClassificationLabelsTest(TestCase):
         ]
 
         for name in expected_names:
-            self.assertIn(name, db_nice_label_names, f"Label {name} not found in database.")
+            self.assertIn(
+                name, db_nice_label_names, f"Label {name} not found in database."
+            )
             logger.debug(f"Label {name} found in database.")

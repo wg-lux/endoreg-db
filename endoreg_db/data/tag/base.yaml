@@ -1,0 +1,11 @@
+- model: endoreg_db.tags
+  fields:
+    name: "to be reviewed"
+    name_de: "Überprüfung beantragt"
+    name_en: "to be reviewed"
+
+- model: endoreg_db.tags
+  fields:
+    name: "reviewed"
+    name_de: "Überprüfung abgeschlossen"
+    name_en: "reviewed"

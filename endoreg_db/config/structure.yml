@@ -1,0 +1,31 @@
+version: 1
+tier: module
+path: endoreg_db/config
+summary: Environment, private keyring and identity-salt configuration boundaries.
+responsibilities:
+- Validate runtime configuration and read protected local keyring material.
+boundaries:
+- Never commit or log secrets or transmit the long-lived master key.
+files:
+- file: settings/test.py
+  role: Isolated test settings; configured identity salts take precedence over generated test material.
+- file: exception_reporter.py
+  role: Shared Django error-report filtering for identity salts and injected bundles.
+- file: env.py
+  role: Typed environment access.
+- file: secret_keyring.py
+  role: Private local keyring validation, rejection of central identity injection, and active-only signing credentials.
+- file: identity_hashing.py
+  role: Identity salt validation and keyring access.
+dependencies:
+  internal:
+  - endoreg_db/utils
+  - endoreg_db/services/privacy
+  external:
+  - pydantic
+  - yaml
+tests:
+  directory: tests/environment
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/environment
+parent: ../structure.yml
+submodules: []

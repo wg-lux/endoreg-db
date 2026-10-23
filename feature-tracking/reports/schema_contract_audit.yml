@@ -1,0 +1,298 @@
+schema_version: '1.0'
+owner: endoreg_db maintainers
+assessor: codex-schema-audit-20261012
+date: '2026-10-12'
+features:
+- code_quality
+- data_loading
+- dtypes_study_definitions
+revisions:
+  endoreg_db: fd95ba86ccc56782fc2f5a41cbf64c5c08741616
+  lx_dtypes_contracts: 72f6307979bd0a23ba87cabf9f4be39edfae28fa
+  runtime: lx-dtypes 0.4.4 (installierte Distribution)
+scope:
+  schema_modules: 34
+  method: AST-Inventur aller Schema-Klassen, Namensabgleich mit lx_dtypes und Feldvergleich mit shared
+    contracts; anschließend Aufrufer, Validatoren, Defaults und öffentliche Imports geprüft.
+  workflows:
+  - services/reference_data/catalog.py
+  - services/reference_data/clinical_projection.py
+  - services/runtime/deployment_setup.py
+  - services/studies/presets.py
+  - management/reference_catalog_command.py
+  limits:
+  - Keine globale Totcodefreiheit bewiesen; dynamische Erreichbarkeit nur für die untersuchten Aufrufer
+    und Tests.
+  - Keine produktiven Daten, Migrationen oder Deployments verändert.
+  - Kein konfigurierter Dead-Code-Guard oder Baseline in lx-data-models; quality:dead-code existiert dort
+    nicht.
+  - Kein nicht-Python-Scan; keine vollständige Host-Testsuite wegen parallel laufender fremder lx-data-models-Suite.
+  - Lokale Schema-Typen ohne semantisch passenden gemeinsamen Vertrag werden nicht allein wegen ähnlicher
+    Felder ersetzt.
+consolidated:
+- path: endoreg_db/schemas/dicom_export.py
+  classification: compatibility_contract
+  confidence: manual
+  finding: Sechs aktive lokale DICOM-Klassen kopierten gemeinsame Vertragsregeln; keine toten öffentlichen
+    Klassen.
+  action: DicomValidationResult re-exportiert; übrige Modelle erben shared contracts. Nur strengere Host-Skalare
+    und verschachtelte Eingangsadapter bleiben lokal.
+  retained: Versionierungsfehler, Wrapper-API, kanonischer Digest, strikte bool/int-Prüfung und alle öffentlichen
+    Modellnamen.
+  consumers:
+  - models/interoperability/dicom.py
+  - services/interoperability/dicom_import.py
+  - services/interoperability/dicom_manifest_backfill.py
+  risk: Ein nackter Re-Export aller Modelle würde die strengere Host-Validierung abschwächen; deshalb
+    explizite Adapter.
+validation_fix:
+  path: endoreg_db/services/studies/presets.py:import_study_preset
+  finding: Veränderliche KnowledgeBase-/Preset-Instanzen konnten die Konstruktorvalidierung nachträglich
+    umgehen.
+  action: Verschachtelte lx_dtypes-Verträge vor dem ersten ORM-Zugriff aus model_dump(exclude_unset=True)
+    neu validieren; keine zweite lokale Vertragsimplementierung.
+  tests: Leere Labelnamen, doppelte Geschlechter und boolesche Labelset-Versionen werden vor reference_catalog_transaction
+    abgewiesen; bestehende gültige, atomare und idempotente Importe bleiben getestet.
+retained_contracts:
+- path: schemas/report_draft.py, schemas/case_resolution.py, schemas/video_metadata.py
+  classification: compatibility_contract
+  finding: Gemeinsame Typen bereits importiert; Kompatibilitätspfade sind keine unabhängigen Implementierungen.
+- path: services/reference_data/catalog.py, services/runtime/deployment_setup.py
+  classification: compatibility_contract
+  finding: ReferenceCatalogSnapshot/Receipt, DeploymentSetup/Lock und YAML-Parser bereits gemeinsam. Schreibgrenzen
+    revalidieren Snapshots beziehungsweise Manifest/Lock. Lokale Pläne enthalten ORM-Abgleich und sind
+    Host-Verträge.
+- path: services/studies/presets.py:_require_unique
+  classification: compatibility_contract
+  finding: Shared StudyPreset prüft einzelne Presets; Host prüft zusätzlich kollidierende Identitäten
+    über mehrere Presets. Keine redundante Prüfung desselben Geltungsbereichs.
+- path: schemas/clinical_reference.py:ClinicalReferenceReceipt
+  classification: compatibility_contract
+  finding: Gleiche Feldnamen wie ReferenceCatalogReceipt, aber KnowledgeBaseGraphSnapshot/ReferenceBinding
+    statt ReferenceCatalogSnapshot/CatalogBinding; unterschiedliche Projektionen.
+- path: schemas/fhir_r4.py
+  classification: compatibility_contract
+  finding: FhirCoding und FhirReference erben jetzt gemeinsame Verträge; Host-Konfiguration bleibt extra=forbid
+    mit Whitespace-Normalisierung. Ressourcenprofile und text-only CodeableConcept bleiben absichtlich
+    getrennt.
+  consumers:
+  - services/interoperability/fhir_r4.py
+- path: schemas/hub_payloads.py:UploadProvenancePayload
+  classification: compatibility_contract
+  finding: Host extra=forbid und zusätzliche Felder (u.a. fencing epoch), optionale sidecar_payload/missing_artifacts;
+    shared extra=allow und andere Defaults. Keine austauschbaren Verträge.
+  consumers:
+  - services/hub/upload_job_files.py
+  - models/hub/upload_job.py
+- path: schemas/persisted_json.py:TransferVideoFileRow, TransferVideoResourceRows, TransferReportResourceRows
+  classification: compatibility_contract
+  finding: Persistierte Host-Zwischenstände erlauben fehlenden processed_video_hash und optionale Teilzustände;
+    gemeinsame Wire-Verträge verlangen vollständige Teilzustände und sind strict/frozen. Host prüft zusätzlich
+    Segmentverknüpfungen.
+  action: Persistenz- und Transportverträge getrennt halten; keinen vollständigen Wire-Vertrag auf unvollständige
+    lokale Zustände erzwingen.
+- path: schemas/aidataset_export.py:AIDataSetExportRequestPayload
+  classification: compatibility_contract
+  finding: Versionierter gespeicherter Request mit optionalen Selektoren und String-Normalisierung; AIDataSetExportCreateContract
+    hat erforderliche Selektoren und zusätzliche Scope-Regeln.
+- path: schemas/video_jobs.py:VideoCorrectionRoi
+  classification: compatibility_contract
+  finding: Host-ROI verwendet Pixelkoordinaten als int; PdfRedactionBox verwendet normalisierte float-Koordinaten
+    in [0,1] und positive Ausdehnung. Kein austauschbarer Vertrag.
+- path: helpers/data_load_orchestrator.py
+  classification: compatibility_contract
+  finding: Re-exportiert Befehlssequenzierung aus helpers/data_loader.py; keine zweite YAML-Engine. Generische
+    utils.dataloader/yaml_model_loader fehlen bereits und sind ausdrücklich stillgelegt.
+uncertain_candidates: []
+confirmed_dead_removals: []
+metrics:
+  tool: radon.raw.analyze / radon.complexity.cc_visit (installiert, ohne Shell-Unterprozess)
+  dicom_lines_before: 213
+  dicom_lines_after: 117
+  dicom_sloc_before: 170
+  dicom_sloc_after: 88
+  dicom_study_class_complexity_before: 5
+  dicom_study_class_complexity_after: 2
+  preset_import_complexity_before: 19
+  preset_import_complexity_after: 19
+  reproduce: .devenv/state/venv/bin/python -c "from pathlib import Path; from radon.raw import analyze;
+    from radon.complexity import cc_visit; s=Path('endoreg_db/schemas/dicom_export.py').read_text(); print(analyze(s));
+    print([(b.name,b.complexity) for b in cc_visit(s)])"
+verification:
+  focused: 49 passed, 1 warning; geänderte Dateien Pyright 0 errors/0 warnings.
+  trace: 26 schema tests passed; python -m trace --count -C /tmp/codex-schema-audit-trace-after --module
+    pytest tests/schemas/test_dicom_export_payloads.py -q --tb=short. 57 Host- und 109 shared DICOM-Quellzeilen
+    ausgeführt; kein globaler Coverage-Nachweis.
+  baseline_trace: 'Erster pytest-Trace scheiterte vor Testausführung: lx_test existiert nicht. Separater
+    isolierter Trace des unveränderten HEAD-Moduls mit gültiger Fixture und ungültigem Artefaktpfad bestand
+    (/tmp/codex-schema-audit-probe-before).'
+  contract_guard: 'check_lx_dtypes_contract_boundaries.py bestanden: 12 packaged terminology versions,
+    143/148 aliases, 0 realiases.'
+  clinical_inventory: 'check_clinical_reference_inventory.py bestanden: 17 collections, 185 fields, 27
+    bootstrap commands.'
+  dead_code: 'quality:dead-code / scripts/check_dead_code.py: NEW endoreg_db/utils/rust_backend.py:24
+    unused variable master_keys (100% confidence); bereits vor Änderungen vorhanden.'
+  quality_boundaries: 'Guard meldet Drift: broad_exception 367 statt 389; type_suppression 107 statt 109.
+    scan_source-Vergleich aller vier geänderten Python-Dateien mit HEAD identisch: je 0 Befunde. Baselines
+    unverändert.'
+  integration: 81 passed, 1 warning in 241.67s; zusammen mit Fokuslauf 130 unterschiedliche Tests bestanden.
+    pytest tests/dataloader tests/services/test_reference_catalog.py tests/services/test_deployment_setup.py
+    tests/services/test_dicom_manifest_backfill.py tests/services/test_dicom_interoperability.py tests/models/test_dicom_export_job_validation.py
+    -q --tb=short. pytest meldete zusätzlich bestehende temporäre Cleanup-Warnungen.
+  full_pyright: 'Vollständiger Host-Lauf: 0 errors, 17 warnings (vorher ebenfalls 0 errors/17 warnings).
+    Zwischenlauf hatte einen inzwischen korrigierten unused import; fokussierter und abschließender Gesamtlauf
+    bestanden.'
+  tracker: 'validate: 37 Feature-Definitionen gültig. show/check ausgeführt: code_quality 13/19 und dtypes_study_definitions
+    3/17, beide NICHT PRODUKTIONSREIF. Keine Assessment-Status geändert.'
+  source_runtime_parity: 'cmp: models/contracts/dicom_export.py und models/knowledge_base/study_preset.py
+    sind zwischen lokalem contracts-Checkout und installierter lx-dtypes-0.4.4-Distribution bytegleich.
+    Kein Geschwister-PYTHONPATH für pytest benötigt.'
+  format: Ruff check und format --check der vier geänderten Python-Dateien sowie git diff --check bestanden.
+  commands:
+  - .devenv/state/venv/bin/pyright
+  - .devenv/state/venv/bin/pytest tests/schemas/test_dicom_export_payloads.py tests/services/test_study_presets.py
+    -q --tb=short
+  - .devenv/state/venv/bin/python scripts/check_lx_dtypes_contract_boundaries.py
+  - .devenv/state/venv/bin/python scripts/check_clinical_reference_inventory.py
+  - .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+  - devenv tasks run quality:dead-code
+  - PYTHONPATH=. .devenv/state/venv/bin/python feature-tracking/tracker.py validate
+  working_directory: /home/admin/endoreg-db
+schema_inventory:
+- 'endoreg_db/schemas/__init__.py: 0 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/ai_dataset_splits.py: 4 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/ai_training_manifest.py: 4 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/aidataset_export.py: 1 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/anonymization.py: 3 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/case_creation.py: 2 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/case_documents.py: 2 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/case_resolution.py: 0 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/classification_choice.py: 1 lokale Klassen; 2 shared Importmodule'
+- 'endoreg_db/schemas/clinical_reference.py: 8 lokale Klassen; 2 shared Importmodule'
+- 'endoreg_db/schemas/dicom_export.py: 6 lokale Klassen; 2 shared Importmodule'
+- 'endoreg_db/schemas/fhir_r4.py: 18 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/frame_annotation_ingress.py: 0 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/hub_payloads.py: 7 lokale Klassen; 2 shared Importmodule'
+- 'endoreg_db/schemas/import_file.py: 1 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/k_pseudonymity.py: 11 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/medical_ledger.py: 1 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/network_nodes.py: 5 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/patient_clinical.py: 0 lokale Klassen; 2 shared Importmodule'
+- 'endoreg_db/schemas/persisted_json.py: 19 lokale Klassen; 7 shared Importmodule'
+- 'endoreg_db/schemas/processed_video_cleanup.py: 4 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/reference_catalog_migration.py: 3 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/report_draft.py: 0 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/report_llm.py: 4 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/report_persistence.py: 1 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/runtime_wheel_staging.py: 2 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/sensitive_meta_update.py: 1 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/sensitive_meta_verification.py: 1 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/temporal_inference.py: 1 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/upload_job_source_reaper.py: 1 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/video_jobs.py: 4 lokale Klassen; 0 shared Importmodule'
+- 'endoreg_db/schemas/video_metadata.py: 0 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/video_processing_history.py: 0 lokale Klassen; 1 shared Importmodule'
+- 'endoreg_db/schemas/video_storage.py: 16 lokale Klassen; 1 shared Importmodule'
+alignment_review:
+  assessor: codex-schema-audit-20261012
+  source_revision: 2ee454a1789f9d7c1e1502e98691ff96e964d83c
+  root_causes:
+  - boundary: FrameBoxAnnotationBulkEnvelopePayload
+    cause: Historischer 0.2.9-Backport blieb nach der zentralen Migration bestehen. Host behandelte None/leere
+      Itemwerte als ausgelassen; shared füllte nur fehlende Schlüssel. Shared Wrapper-Validator konvertierte
+      explizites None in den String None.
+    alignment: Shared-Vertrag vereinheitlicht Null-/Leerwert-Vererbung und erhält optionale Nullwerte.
+      Host-Adapter normalisiert nur Legacy-Listen und Auslassungen; gemeinsame Validatoren übernehmen
+      Vererbung, Defaults, Geometrie und Frame-Konsistenz. Falsche Typen werden nicht mehr als leere Werte
+      verdeckt.
+  - boundary: SetupConfig
+    cause: parents[2] verwies auf repository-root data statt endoreg_db/data. Breite Exception-Handler
+      ersetzten fehlende oder ungültige Konfiguration mit einer zweiten Python-Defaultimplementierung.
+    alignment: Gebündelte YAML als einzige Defaultquelle; shared parse_setup_yaml und SetupConfigDataPayload
+      prüfen Syntax, Duplicate Keys und Inhalt. Fehlende/ungültige Dateien schlagen fehl. Gewichtssuche
+      verwendet get_runtime_paths().weights vor zusätzlichen YAML-Pfaden; unbekannte Variablen schlagen
+      fehl.
+  - boundary: SetupConfig.get_model_specific_config
+    cause: Selektor-only-Vertrag wurde auf das gesamte ORM-Fixture angewandt. model, setup_config und
+      zusätzliche Metadaten wurden extra_forbidden; danach wurde auch fields in den falschen Hint-Vertrag
+      gegeben. Fehler wurden zu None verschluckt.
+    alignment: JSON-Struktur validieren und Selektoren beziehungsweise setup_config explizit in ihre vorhandenen
+      shared Verträge projizieren. Keine neue lokale Payload-Klasse; echte gebündelte Modellhinweise sind
+      getestet. Kein Treffer bleibt None; ungültige Daten werfen Fehler.
+  - boundary: FHIR
+    cause: Host-Exportprofil und shared verlustarmer Clinical-Import haben absichtlich unterschiedliche
+      Extra-/Ressourcenregeln; gemeinsame Coding-/Reference-Blätter wurden dennoch kopiert.
+    alignment: Gemeinsame primitive Modelle wiederverwenden, strikte Host-Profilkonfiguration behalten;
+      Wire-Roundtrips und Ablehnung unbekannter/leerwertiger Felder getestet.
+  - boundary: CatalogRecordBase.kind
+    cause: Die Dataloader-Migration liest record_type direkt, obwohl nur konkrete discriminated subclasses
+      das Feld deklarieren; vollständiges shared Pyright meldete reportAttributeAccessIssue.
+    alignment: Wie bei anderen subclass-Feldern dynamisch als object lesen und explizit auf str/ReferenceKind
+      prüfen. Kein Any, Ignore oder stiller Default; gültiger konkreter und ungültiger/missing Discriminator
+      sind getestet.
+  retained_boundaries: Upload-Provenienz, optionale persistierte Transfer-Zwischenstände, vollständige
+    Wire-Envelopes, klinische Graph- versus Referenzkatalog-Projektion und Pixel- versus normierte Koordinaten
+    bleiben getrennt. Keine Zusammenlegung durch Abschwächung ihrer Validatoren.
+  release_blocker:
+    finding: Der aktuelle Host importiert FindingExtractionEvidence aus lx_dtypes.models.contracts.finding_extraction;
+      die publizierte, weiterhin gepinnte Version 0.4.4 enthält dieses Modul nicht.
+    evidence: 'Isolierte Installation von lx-dtypes==0.4.4 nach /tmp/codex-schema-align-runtime044: pytest
+      scheitert beim Import von endoreg_db/schemas/persisted_json.py vor Collection mit ModuleNotFoundError.'
+    masked_by: Die aktive Host-venv verwendet mittlerweile eine editable Distribution aus /home/admin/lx-data-models
+      mit derselben Versionsnummer 0.4.4.
+    resolution: Koordiniertes neues lx-dtypes-Release und passender Host-Pin/Lock erforderlich. Fremde
+      Finding-Extraction-Änderungen und gestagten Pin unverändert gelassen; keinen Fallback oder nachträglichen
+      Austausch des publizierten 0.4.4-Artefakts eingeführt.
+    artifact_check: Aktueller Source-Wheel erfolgreich gebaut und isoliert installiert (/tmp/codex-schema-align-built);
+      enthält FindingExtractionEvidence. Nur lokales Verifikationsartefakt, kein publiziertes Release.
+  verification:
+    host_pyright: 0 errors, 18 warnings; Ausgangslauf ebenfalls 0 errors/18 warnings. Neue Tests/Setup-Dateien
+      zusätzlich fokussiert 0 errors/0 warnings.
+    shared_pyright: Vollständiger Lauf nach CatalogRecordBase-Fix 0 errors/0 warnings; vorher 1 Fehler
+      im unveränderten Katalogvertrag.
+    shared_tests: '29 passed: test_video_frame_annotations.py und test_reference_catalog.py. Erster Lauf
+      hatte einen unvollständigen neuen Gender-Testdatensatz (abbreviation/description fehlten); Fixture
+      vervollständigt.'
+    host_trace: 22 passed (vor zusätzlichem Gewichtssuchtest); Trace unter /tmp/codex-schema-align-trace-after.
+      Vorher-Trace reproduziert falschen Konfigurationspfad, verschluckte Modellhinweise und Null-zu-Text-Konvertierung
+      mit unveränderten Host-Dateikopien plus publizierter 0.4.4-Distribution.
+    published_adapter_probe: Standalone Frame-/FHIR-Adapter gegen publiziertes 0.4.4 bestanden; dies umgeht
+      nur im Test den inkompatiblen Host-Schema-Barrel und ist KEIN erfolgreicher Gesamthost-Import.
+    wheel_integration: 'Isoliertes Source-Wheel: 75 passed, 42 skipped, 134 warnings in 80.19s; anschließend
+      die 42 durch RUN_VIDEO_TESTS=false übersprungenen Frame-API-Tests mit RUN_VIDEO_TESTS=true/SKIP_EXPENSIVE_TESTS=false
+      erneut ausgeführt: 42 passed, 2 warnings, 4 subtests passed in 40.10s. Zusammen 117 unterschiedliche
+      Host-Tests plus 29 shared Tests = 146. Verbleibende Pytest-Cleanup-Warnungen für alte temporäre
+      Verzeichnisse.'
+    guards: 'Contract-Guard: 16 terminology versions, 143/148 aliases, 0 realiases. Clinical inventory:
+      17 collections/185 fields/27 commands. Tracker validate: 37 gültige Definitionen. Bestehendes master_keys-Dead-Code-Finding
+      bleibt; shared quality:dead-code weiterhin nicht konfiguriert. Quality-Baseline-Drift bleibt (365
+      broad exceptions, 108 suppressions); zwei breite Setup-Fallback-Handler gezielt entfernt, keine
+      Baselineüberschreibung.'
+    commands:
+    - uv pip install --no-deps --target /tmp/codex-schema-align-runtime044 lx-dtypes==0.4.4
+    - uv build --wheel --out-dir /tmp/codex-schema-align-wheel
+    - uv pip install --no-deps --target /tmp/codex-schema-align-built /tmp/codex-schema-align-wheel/lx_dtypes-0.4.4-py3-none-any.whl
+    - PYTHONPATH=/tmp/codex-schema-align-built:/home/admin/endoreg-db .devenv/state/venv/bin/pytest tests/schemas/test_schema_interoperability.py
+      tests/utils/test_setup_config.py tests/views/video/test_frame_box_annotation.py tests/views/video/test_frame_annotation_bulk_upsert.py
+      tests/views/video/test_frame_annotation_task_endpoints.py tests/services/test_fhir_r4_export.py
+      tests/management/commands/test_setup_endoreg_db.py tests/dataloader -q --tb=short
+    - RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false PYTHONPATH=/tmp/codex-schema-align-built:/home/admin/endoreg-db
+      .devenv/state/venv/bin/pytest tests/views/video/test_frame_box_annotation.py tests/views/video/test_frame_annotation_bulk_upsert.py
+      tests/views/video/test_frame_annotation_task_endpoints.py -q --tb=short
+    - cd /home/admin/lx-data-models; /home/admin/endoreg-db/.devenv/state/venv/bin/pytest tests/unit/lx_dtypes/models/contracts/test_video_frame_annotations.py
+      tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py -q --tb=short
+    reviewed_quality_delta: 'scan_source-Vergleich mit Kopien vor dieser Runde: nur zwei breite Setup-Exception-Handler
+      entfernt; Frame/FHIR vorher und nachher je 0 Findings. Keine Typunterdrückungen ergänzt. Ruff check/format
+      für alle neun geänderten Python-Dateien und git diff --check bestanden.'
+    readiness: 37 gültige Tracker-Definitionen; code_quality show/check ausgeführt. Feature bleibt nicht
+      produktionsreif; kein Assessment-Status geändert. Produktionsfreigabe und Paketpublikation nicht
+      behauptet.
+  metrics:
+    setup_lines_before: 201
+    setup_lines_after: 168
+    setup_loader_complexity_before: 4
+    setup_loader_complexity_after: 1
+    frame_ingress_lines_before: 91
+    frame_ingress_lines_after: 81
+    frame_normalizer_complexity_before: 12
+    frame_normalizer_complexity_after: 9

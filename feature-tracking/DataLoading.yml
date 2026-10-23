@@ -1,0 +1,271 @@
+schema_version: '1.0'
+id: data_loading
+name: YAML Data Loading
+description: Deterministic, typed, and idempotent loading of domain base data from YAML.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/wiki/dataloader_layers_and_naming.md
+  disposition: migrated
+  note: The previous migration plan is now part of the binding definition of done.
+- path: docs/wiki/dataloader_yaml_authoring.md
+  disposition: reference
+  note: Authoring contract for YAML base data.
+- path: docs/supported_formats_csv.md
+  disposition: reference
+  note: Contract for supported CSV import formats.
+definition_of_done:
+- id: optional_center_employees
+  category: functionality
+  title: Host-Presets und optionale Mitarbeiterlisten werden aus lx-dtypes-Paketen geladen
+  acceptance:
+  - load_center_data benötigt keine Vornamen- oder Nachnamen-Fixtures und verändert bestehende Mitarbeiterzuordnungen
+    nicht.
+  - Ein explizites lx-dtypes-Paket mit bestehenden Examiner/DataDict-Einträgen wird vollständig validiert
+    und atomar anhand des unveränderlichen center_key importiert; Wiederholung erzeugt keine Duplikate.
+  - Ohne lokale Mitarbeiterliste verwendet der aktive Report-Import die Konfiguration von lx-anonymizer;
+    importierte Namen werden als optionale Overrides übergeben.
+  - Studien-Presets werden anhand von Modul und Version aus dem gemeinsamen Terminologie-Verzeichnis geladen;
+    Zentren, Geschlechter, Labels und Untersuchungsreferenzen werden atomar und ohne lokale Host-Fixtures
+    projiziert.
+  - Mitarbeiterlisten sind optionale Paketbestandteile; fehlende klinische Referenzen oder mehrdeutige
+    Bestandsidentitäten brechen den gesamten Import ab.
+  - Ungültige oder unbekannte Zentren und leere Namenseinträge scheitern ohne Teilimporte; Mitarbeiterdaten
+    erscheinen nicht in Fehlermeldungen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Typprüfung sowie Center-, Mitarbeiterimport- und Report-Anonymisierungs-Vertragstests
+      ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/study_presets.py
+    - kind: code
+      reference: endoreg_db/services/center_employees.py
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/knowledge_base/study_preset.py
+    - kind: test
+      reference: tests/services/test_study_presets.py
+    - kind: command
+      reference: 'endoreg-db focused pytest: 80 passed; additional test_study_presets.py including concurrent
+        imports: 7 passed'
+    - kind: command
+      reference: 'lx-data-models focused package/resolver/schema/import tests: 60 passed'
+    - kind: command
+      reference: 'Full Pyright in endoreg-db: 0 errors, 6 warnings; full Pyright in lx-data-models: 0
+        errors'
+    - kind: command
+      reference: 'lx-data-models: /home/admin/endoreg-db/.devenv/state/venv/bin/pytest -q: 1081 passed,
+        1 skipped, 23 warnings, exit 0'
+    - kind: command
+      reference: 'endoreg-db: .devenv/state/venv/bin/pytest tests/services/test_center_employees.py tests/services/test_study_presets.py
+        tests/administration/center/test_center.py tests/administration/person/test_examiner.py tests/import_files/test_report_anonymization_contract.py
+        tests/dataloader -q: 80 passed, 1 warning; subsequent test_study_presets.py including concurrency:
+        7 passed, 1 warning'
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/test_center_employee_packages.py
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    note: 'Verifiziert für den implementierten Paket-Projektionspfad: bestehende Examiner/DataDict- und
+      Center-Verträge, Standard-KB-Pakete aus gemeinsamem Terminologie-Service, optionale Mitarbeiterlisten,
+      additive Namensimporte, stabile Host-Primärschlüssel, label_set-Identität aus Name und Version,
+      atomarer Abbruch bei fehlenden Referenzen/mehrdeutigen Bestandsnamen sowie parallele Importe. CLI-Grenzen
+      geben keine Mitarbeiterwerte aus. Klinische Gesamtprojektion und Ablösung übriger Legacy-Bootstrap-Fixtures
+      bleiben DtypesStudyDefinitions; keine Gesamt-Produktionsfreigabe. Zwei Ledger-Barrels laden Django-Adapter
+      jetzt lazy; standalone KnowledgeBase-Import ist getestet.'
+    assessed_by: codex-examiner-20260928
+    assessed_at: '2026-09-28T14:02:04.563004Z'
+- id: documented_scope
+  category: requirements
+  title: Engine, orchestration, and naming conventions are defined separately
+  acceptance:
+  - The YAML-to-ORM engine and command orchestration have unambiguous responsibilities.
+  - Canonical import paths and legacy compatibility are defined.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review module boundaries against the documentation and all import calls.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/dataloader_layers_and_naming.md
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    - kind: code
+      reference: endoreg_db/utils/yaml_model_loader.py; endoreg_db/helpers/data_load_orchestrator.py;
+        endoreg_db/management/commands/load_base_db_data.py
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/dataloader/test_yaml_model_loader.py tests/dataloader/test_load_base_db_data_command.py
+        -q (3 passed, exit 0)
+    - kind: review
+      reference: Repository call-site audit confirmed management commands use the public utils loader
+        boundary and workflow entry points use the canonical orchestration helper; legacy modules remain
+        compatibility implementations.
+    note: 'The corrected guides match the implemented boundaries: yaml_model_loader is the canonical typed
+      YAML-to-ORM wrapper over the legacy dataloader engine, while data_load_orchestrator owns command
+      sequencing over the legacy data_loader implementation. Canonical imports, compatibility paths, migration
+      rules, and load_base_db_data ordering are explicit and verified.'
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:33:57.543459Z'
+- id: deterministic_loading
+  category: functionality
+  title: Base data is loaded idempotently in a stable order
+  acceptance:
+  - Repeated load_base_db_data runs produce the same domain state without duplicates.
+  - Dependencies are resolved explicitly, and invalid YAML data is rejected loudly.
+  required: true
+  verification:
+    kind: manual
+    instructions: Load an empty database twice and compare states and natural keys.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: schema_validation
+  category: data_integrity
+  title: YAML is converted to a typed internal form before ORM mutation
+  acceptance:
+  - Required fields, enums, references, and duplicates are validated before persistence.
+  - Partial failures leave no silently accepted mixed state.
+  required: true
+  verification:
+    kind: manual
+    instructions: Test valid and intentionally invalid YAML examples at the loader boundary.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: automated_tests
+  category: testing
+  title: Loader, dependencies, and idempotency are tested automatically
+  acceptance:
+  - Representative valid variants and all important boundary failures have tests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/dataloader
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_foreign_keys.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/dataloader -q (36 passed, exit 0)
+    - kind: test
+      reference: tests/dataloader/test_dataloader_missing_tables.py; tests/dataloader/test_dataloader_foreign_keys.py;
+        tests/dataloader/test_load_base_db_data_command.py; tests/dataloader/test_yaml_model_loader.py
+    note: The dataloader suite covers representative base-data commands, canonical wrapper delegation,
+      ordered orchestration, idempotent named updates, relationship resolution, source selection, missing
+      schema and directory handling, lock retries, fail-loud validation and non-lock database failures,
+      and safe rejection of Python-tagged YAML before loader delegation.
+    assessed_by: codex-feature-advance-20260902
+    assessed_at: '2026-09-02T11:48:18.686270Z'
+- id: safe_inputs
+  category: security
+  title: YAML loading executes no code and does not escape its data source
+  acceptance:
+  - Only safe YAML parsers and approved data roots are used.
+  - Inputs cannot trigger arbitrary imports or file access.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a security review of the parser, path resolution, and dynamic import boundaries.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/utils/dataloader.py::_approved_yaml_directory,_approved_yaml_file,load_model_data_from_yaml
+    - kind: test
+      reference: tests/dataloader/test_dataloader_safe_inputs.py; tests/dataloader/test_dataloader_missing_tables.py::test_load_model_data_from_yaml_rejects_unsafe_yaml_before_loading
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/utils/dataloader.py endoreg_db/utils/dataloader.pyi
+        tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_safe_inputs.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/dataloader -q (38 passed, 1 warning in
+        38.52s)
+    - kind: review
+      reference: All load_model_data_from_yaml callers use packaged directories from endoreg_db.data;
+        the enforced root check applies independently of the caller. No importlib, __import__, eval, exec,
+        or unsafe yaml.load call exists at the loader boundary.
+    note: The shared YAML loader now enforces the packaged endoreg_db/data root before every file access,
+      rejects directory and file symlinks fail-closed, and reads only regular .yaml files. PyYAML safe_load
+      remains the only parser boundary; Python object tags are rejected before any ORM delegation. A repository
+      review of loader and load_*_data boundaries found no dynamic imports, eval/exec calls, or unsafe
+      PyYAML loaders.
+    assessed_by: codex-root-20260902
+    assessed_at: '2026-09-02T12:38:06.598243Z'
+- id: operational_readiness
+  category: operations
+  title: Loading failures and retries are manageable for operators
+  acceptance:
+  - Command output identifies the file, entity, and cause; retry is safe.
+  - Backup, migration, and rollback requirements are documented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Trigger an error in a dependent YAML file and verify restart behavior.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: author_documentation
+  category: documentation
+  title: YAML authors and developers have a current contract
+  acceptance:
+  - Layers, names, schema, references, examples, and validation errors are documented.
+  required: true
+  verification:
+    kind: manual
+    instructions: Create and load a new base configuration using only the documentation.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/wiki/dataloader_layers_and_naming.md
+    - kind: document
+      reference: docs/wiki/dataloader_yaml_authoring.md
+    - kind: command
+      reference: './feature-tracking/tracker.py validate (OK: 34 feature definitions are valid)'
+    - kind: document
+      reference: ../lx-data-models/docs/guides/dtypes-package-structure.md
+    - kind: document
+      reference: ../lx-data-models/docs/examples/dtypes_packages/training_preset/config.yaml
+    - kind: command
+      reference: 'load_knowledge_base(training_preset, version=1.0.0, input_dirs=[docs/examples/dtypes_packages]):
+        valid, 0 employee lists; optional employees selected via KnowledgeBase.create_from_config: valid,
+        1 employee list'
+    - kind: command
+      reference: 'python scripts/lint_kb_yaml.py docs/examples/dtypes_packages/training_preset/data/examinations.yml:
+        0 errors, 0 warnings'
+    - kind: command
+      reference: 'Sphinx html (isolated docs dependencies): build succeeded, 2 pre-existing terminology.md
+        warnings; Sphinx linkcheck: build succeeded'
+    - kind: command
+      reference: 'check_documentation_governance.py --repository endoreg-db --repository lx-data-models
+        --repo-root lx-data-models=/home/admin/lx-data-models: 0 errors, 0 warnings'
+    note: 'Kanonische Struktur-Dokumentation für Menschen und Agenten ergänzt: Manifest, Verzeichnisbaum,
+      flache Record-Syntax, Center/Examiner-Wiederverwendung, optionale Mitarbeiter, Identitäten/Referenzen,
+      Registry gegenüber Aktivierung/Host-Projektion und ausführbare .yml-Beispiele. Standardpaket und
+      Variante mit Mitarbeitern über den echten Resolver validiert. Klinische Beispieldatei lintet fehlerfrei;
+      bekannte Linter-Allowlist-Lücke für study_preset/center_employee_list ist ausdrücklich dokumentiert.
+      HTML-Build erfolgreich mit zwei bestehenden Warnungen in docs/guides/terminology.md; Linkcheck und
+      Dokumentations-Governance erfolgreich. Keine Laufzeit- oder Schemaänderungen in diesem Dokumentationsschritt.'
+    assessed_by: codex-examiner-20260928
+    assessed_at: '2026-09-28T14:13:31.944942Z'

@@ -1,0 +1,59 @@
+version: 1
+tier: service
+path: endoreg_db/services/frames
+parent: ../structure.yml
+summary: Processed training-frame materialization, retention and segment reconciliation.
+responsibilities:
+- Materialize authorized processed training frames and provide streamed training images.
+- Reconcile segment annotations and retain dataset-backed frames.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: materialize_frames_for_annotation_ids
+  file: materialize_training_frames.py
+  purpose: Materialize frame images needed for model training.
+- name: streamed_training_dataset
+  file: training_images.py
+  purpose: Bind the core loader to an authorized local training selection.
+files:
+- file: __init__.py
+  role: Frame-oriented service helpers.
+- file: frame_retention.py
+  role: Exports prune_unused_validated_outside_frames.
+- file: frame_segment_reconciliation.py
+  role: Exports reconcile_frame_segment_annotations.
+- file: materialize_training_frames.py
+  role: Exports materialize_frames_for_annotation_ids.
+- file: training_images.py
+  role: Read validated processed training frames without requiring a raw-video cache.
+dependencies:
+  internal:
+  - endoreg_db/export/frames
+  - endoreg_db/models
+  - endoreg_db/services/annotations
+  - endoreg_db/utils
+  external:
+  - django
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Presentation timestamp call sites
+  doc: docs/video_pts_fps_callsite_inventory.md
+- name: Frame extraction ownership
+  doc: docs/video_frame_extraction_contract.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_frame_segment_reconciliation.py tests/views/test_central_hub_training_access.py
+    tests/ai/test_aidataset_training_manifest.py
+  files:
+  - tests/services/test_frame_segment_reconciliation.py
+  - tests/views/test_central_hub_training_access.py
+  - tests/ai/test_aidataset_training_manifest.py

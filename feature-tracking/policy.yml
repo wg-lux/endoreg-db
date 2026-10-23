@@ -1,0 +1,21 @@
+schema_version: "1.0"
+required_categories:
+  - requirements
+  - functionality
+  - testing
+  - security
+  - operations
+  - documentation
+minimum_required_criteria: 6
+require_owner: true
+verified_evidence_minimum: 1
+migrated_markdown_trackers:
+  - docs/api_route_test_matrix.md
+  - docs/colonoscopy-requirements-plan.md
+  - docs/production_workflow_hardening_plan.md
+  - docs/pydantic_django_hardening_plan.md
+  - docs/repo_alignment_todo.md
+  - docs/video_typing_integration_plan.md
+  - docs/wiki/dataloader_layers_and_naming.md
+  - docs/wiki/hub_ingest_gap_closure.md
+  - endoreg_db/import_files/multi_centre_storage_hub_roadmap.md

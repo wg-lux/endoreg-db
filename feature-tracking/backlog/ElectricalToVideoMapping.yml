@@ -1,0 +1,334 @@
+schema_version: "1.0"
+id: electrical_to_video_mapping
+name: Elektrische Messdaten zu Video-Zeitachsen
+description: >-
+  Produktionskritische, reproduzierbare Zuordnung elektrischer Messreihen zu
+  Videoframes über autoritative Präsentationszeitstempel (PTS), einschließlich
+  Synchronisation, Ableitung framebezogener Parameter, Provenienz und
+  fehlersicherem Verhalten bei unvollständigen oder widersprüchlichen Zeitachsen.
+owners:
+  - endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+  - path: docs/video_storage_normalization.md
+    disposition: reference
+    note: >-
+      Kanonischer Vertrag für Video-Generationen, Präsentationszeitstempel und
+      unveränderliche klinische Koordinaten.
+  - path: docs/video_pts_fps_callsite_inventory.md
+    disposition: reference
+    note: >-
+      Repository-weites Inventar der Zeitachsenregeln und der zulässigen
+      Umrechnung zwischen Zeitstempeln und Frames.
+definition_of_done:
+  - id: documented_scope
+    category: requirements
+    title: Unterstützte Messdaten und Synchronisationsgrenzen sind verbindlich definiert
+    acceptance:
+      - >-
+        Unterstützte Geräte, Eingabeformate, Kanäle, Einheiten, Abtastraten,
+        Zeitquellen und Parameter sind in einer versionierten Supportmatrix
+        benannt; nicht unterstützte Varianten werden ausdrücklich aufgeführt.
+      - >-
+        Für jede unterstützte Quelle sind Zeitursprung, Zeiteinheit,
+        Synchronisationsanker, zulässige Clock-Drift und numerische
+        Fehlertoleranz messbar festgelegt.
+      - >-
+        Das Verhalten bei Vorlauf, Nachlauf, Lücken, Überlappungen,
+        nicht-monotonen Zeitwerten, doppelten Samples und fehlenden Kanälen ist
+        eindeutig und fehlersicher definiert.
+      - >-
+        Klinisch relevante Parameter besitzen eine freigegebene Definition für
+        Einheit, Wertebereich, Berechnungsfenster, Aggregation und den Umgang
+        mit fehlenden Werten.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Supportmatrix und Synchronisationsprofil mit Geräteverantwortlichen,
+        klinischem Review und den Video-Zeitachsenregeln abgleichen.
+      timeout_seconds: 600
+    assessment: &not_assessed
+      status: not_assessed
+
+  - id: typed_electrical_data_contract
+    category: functionality
+    title: Elektrische Rohmessungen werden typisiert und verlustfrei normalisiert
+    acceptance:
+      - >-
+        Externe Messdaten werden an einer einzelnen Eingabegrenze strikt
+        validiert und danach als typisierte interne Messreihe mit Kanal,
+        Einheit, Sample-Zeitwert und Quellidentität verarbeitet.
+      - >-
+        Dezimale Zeitwerte, Abtastraten und Einheiten werden ohne implizite
+        Rundung oder stillen Einheitenwechsel normalisiert; ungültige oder
+        nicht endliche Werte werden laut abgelehnt.
+      - >-
+        Die unveränderte Quelle beziehungsweise ihr kryptographischer Hash,
+        Parser- und Schemaversion sowie alle Normalisierungsschritte bleiben
+        als Provenienz nachvollziehbar.
+      - >-
+        Wiederholter Import derselben Quelle ist idempotent und erzeugt weder
+        doppelte Samples noch voneinander abweichende Messreihen.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Eingabeschema, Importservice, Persistenzgrenze und Wiederholungsimport
+        anhand jeder freigegebenen Quellklasse prüfen.
+      timeout_seconds: 600
+    assessment: *not_assessed
+
+  - id: authoritative_timeline_mapping
+    category: data_integrity
+    title: Mess-Samples werden deterministisch auf die autoritative Video-Zeitachse abgebildet
+    acceptance:
+      - >-
+        Jede Zuordnung ist an die konkrete Video-Generation, deren
+        Timeline-Version und die Identität der elektrischen Quelle gebunden.
+      - >-
+        Persistierte Präsentationszeitstempel sind für die Frameidentität
+        autoritativ; bei variabler Bildrate ist eine Ableitung allein aus
+        nominellen Frames pro Sekunde unzulässig.
+      - >-
+        Eine versionierte, typisierte Abbildungsfunktion beschreibt Offset,
+        Clock-Drift, Synchronisationsanker, Rundungsregeln und zulässige
+        Residuen reproduzierbar.
+      - >-
+        Fehlende, nicht endliche, nicht streng monotone oder widersprüchliche
+        Zeitwerte sowie eine Überschreitung der freigegebenen Toleranz brechen
+        die Zuordnung laut ab und erzeugen keine scheinbar gültigen Punkte.
+      - >-
+        Eine neue Video-Generation, Resampling oder geänderte Timeline kann
+        bestehende Zuordnungen nicht still weiterverwenden oder klinische
+        Koordinaten nachträglich umschreiben.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Abbildungsfunktion und Persistenzvertrag mit Fällen für konstante und
+        variable Bildrate, Clock-Drift, Grenzzeitpunkte und Generationswechsel
+        gegen die PTS-Invarianten prüfen.
+      timeout_seconds: 900
+    assessment: *not_assessed
+
+  - id: frame_parameter_generation
+    category: functionality
+    title: Framebezogene elektrische Parameterpunkte werden reproduzierbar erzeugt
+    acceptance:
+      - >-
+        Für jeden angeforderten Videoframe wird das zugehörige Zeitintervall
+        aus der autoritativen Timeline bestimmt und nicht lokal aus einer
+        nominellen Bildrate rekonstruiert.
+      - >-
+        Die Auswahl, Interpolation oder Aggregation von Samples folgt dem
+        versionierten Parameterprofil und liefert bei identischen Quellen
+        deterministisch dasselbe Ergebnis.
+      - >-
+        Jeder abgeleitete Punkt referenziert Video, Video-Generation,
+        Präsentationszeitstempel, Quellkanal, Quell-Samplebereich,
+        Parameterprofil und Algorithmusversion.
+      - >-
+        Lücken und unzureichende Zeitabdeckung werden als expliziter
+        Qualitätsstatus ausgegeben; sie werden weder mit Nullwerten noch durch
+        stilles Fortschreiben des letzten Messwerts kaschiert.
+      - >-
+        Eine teilweise fehlgeschlagene Berechnung veröffentlicht keinen
+        unvollständigen Parametersatz als vollständig.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Referenzmessreihen mit bekannten Framegrenzen für jedes freigegebene
+        Parameterprofil berechnen und Werte, Provenienz sowie Fehlerstatus
+        unabhängig vergleichen.
+      timeout_seconds: 900
+    assessment: *not_assessed
+
+  - id: media_api_contract
+    category: interoperability
+    title: API-Consumer erhalten einen stabilen und generationssicheren Zuordnungsvertrag
+    acceptance:
+      - >-
+        Endpunkte für elektrische Videozuordnungen liegen unter dem kanonischen
+        media/endpoint-Mount und verwenden im Backend- und Wire-Vertrag
+        ausschließlich snake_case-Feldnamen.
+      - >-
+        Requests adressieren Video und erwartete Generation ausdrücklich;
+        Responses enthalten Timeline-Version, Präsentationszeitstempel,
+        Einheiten, Qualitätsstatus und vollständige Provenienzreferenzen.
+      - >-
+        Pagination beziehungsweise begrenzte Zeitfenster verhindern
+        unbeschränkte Payloads; Reihenfolge und Randinklusion sind eindeutig
+        definiert.
+      - >-
+        Veraltete Video-Generationen, unbekannte Kanäle, ungültige Zeitbereiche
+        und noch nicht freigegebene Zuordnungen liefern dokumentierte
+        Fehlerantworten statt partieller Erfolgsantworten.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        REST-Vertrag und Consumer-Integration für Erstellung, Abfrage,
+        Pagination, Generationskonflikt und Validierungsfehler prüfen.
+      timeout_seconds: 600
+    assessment: *not_assessed
+
+  - id: automated_regression_tests
+    category: testing
+    title: Zeitachsen-, Parameter- und API-Invarianten sind automatisiert regressionsgetestet
+    acceptance:
+      - >-
+        Parametrisierte Tests decken konstante und variable Bildrate,
+        unterschiedliche Abtastraten, mehrere Kanäle, Offset, Clock-Drift,
+        Grenzzeitpunkte und unvollständige Überdeckung ab.
+      - >-
+        Negativtests erzwingen laute Fehler bei nicht-monotonen oder nicht
+        endlichen Zeitwerten, ungültigen Einheiten, fehlenden
+        Synchronisationsankern, Toleranzüberschreitung und gemischten
+        Video-Generationen.
+      - >-
+        Referenzvektoren prüfen die numerische Zuordnung und jeden
+        freigegebenen Parameteralgorithmus innerhalb seiner dokumentierten
+        Toleranz.
+      - >-
+        Integrations- und API-Tests beweisen idempotenten Import, atomare
+        Veröffentlichung, Berechtigungsgrenzen und stabile Roundtrips.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Die fokussierten Unit-, Integrations- und API-Tests ausführen und ihre
+        Abdeckung gegen Supportmatrix, Fehlerkatalog und Referenzvektoren
+        reviewen.
+      timeout_seconds: 1200
+    assessment: *not_assessed
+
+  - id: security_and_privacy
+    category: security
+    title: Elektrische Messdaten bleiben vertraulich, autorisiert und manipulationsgeschützt
+    acceptance:
+      - >-
+        Import, Zuordnung und Abfrage erzwingen Authentifizierung sowie
+        Patienten-, Untersuchungs- und Center-Scope; Objektidentifikatoren
+        allein gewähren keinen Zugriff.
+      - >-
+        Messdaten, temporäre Artefakte und abgeleitete Punkte verbleiben in der
+        freigegebenen verschlüsselten Storage-Grenze und werden nicht über
+        öffentliche Medienpfade ausgeliefert.
+      - >-
+        Exporte enthalten nur die ausdrücklich freigegebenen anonymisierten
+        oder pseudonymisierten Daten und übertragen weder Rohvideo noch
+        langfristige Schlüssel.
+      - >-
+        Persistierte Quelle, Mappingprofil und Ergebnisse besitzen
+        Integritätsnachweise; Manipulation oder Hashabweichung blockiert die
+        Nutzung laut und bleibt auditierbar.
+      - >-
+        Protokolle enthalten korrelierbare technische Identifikatoren, aber
+        keine unnötigen Patientenmerkmale oder vollständigen Rohmessreihen.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Datenschutz-, Autorisierungs- und Storage-Review einschließlich
+        negativer Center-Scope-Tests, Exportprüfung und Loginspektion
+        durchführen.
+      timeout_seconds: 900
+    assessment: *not_assessed
+
+  - id: service_layer_ownership
+    category: maintainability
+    title: Mapping- und Parameterlogik bleibt in typisierten Services gekapselt
+    acceptance:
+      - >-
+        Persistenzmodelle enthalten nur Constraints, validierten Zustand und
+        dünne Kompatibilitätsgrenzen; Import, Synchronisation und
+        Parameterberechnung liegen in dedizierten Services.
+      - >-
+        Externe Payloads und persistierte strukturierte Daten werden an ihrer
+        Grenze durch strikt typisierte Schemata validiert; unstrukturierte
+        Wörterbücher und offene String-Dispatches steuern keine Workflows.
+      - >-
+        Video-Timestamp-Auflösung verwendet den kanonischen Timeline-Service,
+        sodass keine zweite Frames-pro-Sekunde-basierte Mappinglogik entsteht.
+      - >-
+        Datenbank-, Dateisystem- und Publikationsoperationen liegen an
+        expliziten Workflowgrenzen und bleiben getrennt von den reinen
+        Transformationsfunktionen.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Abhängigkeitsrichtung, Typgrenzen und Aufrufstellen gegen
+        Model-Layer-Map, Timeline-Service und Pyright-Ergebnis reviewen.
+      timeout_seconds: 600
+    assessment: *not_assessed
+
+  - id: operational_observability
+    category: operations
+    title: Import und Zuordnung sind idempotent, beobachtbar und sicher wiederanlauffähig
+    acceptance:
+      - >-
+        Strukturierte Logs im Format JavaScript Object Notation (JSON)
+        korrelieren Import, elektrische Quelle, Video-Generation,
+        Mappingprofil und Lauf, ohne Rohmesswerte offenzulegen.
+      - >-
+        Metriken und Status unterscheiden mindestens ausstehend, in Arbeit,
+        bereit, fehlgeschlagen, veraltet und quarantänisiert und machen
+        Fehlergrund sowie letzten sicheren Zustand sichtbar.
+      - >-
+        Wiederholung nach Prozessabbruch oder transientem Fehler ist
+        idempotent; ein bestehender gültiger Parametersatz bleibt erhalten,
+        bis ein neuer Satz vollständig validiert und atomar veröffentlicht ist.
+      - >-
+        Begrenzungen für Dateigröße, Sampleanzahl, Kanäle, Zeitbereich,
+        Laufzeit und Speicherbedarf verhindern unbeschränkte Jobs; Verstöße
+        werden laut abgelehnt oder explizit quarantänisiert.
+      - >-
+        Ein Runbook beschreibt Diagnose, Wiederaufnahme, Quarantäne,
+        Generationswechsel und sichere Bereinigung ohne manuelle Umgehung der
+        Integritätsprüfungen.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Abbruch-, Wiederholungs-, Ressourcenlimit-, Quarantäne- und
+        Generationswechselübungen im produktionsnahen verschlüsselten Profil
+        durchführen und Logs sowie Datenbankzustand abgleichen.
+      timeout_seconds: 1200
+    assessment: *not_assessed
+
+  - id: integration_documentation
+    category: documentation
+    title: Daten-, Zeitachsen- und Betriebsvertrag sind vollständig dokumentiert
+    acceptance:
+      - >-
+        Architektur, unterstützte Quellen, Datenmodell, Einheiten,
+        Synchronisationsverfahren, Qualitätsstatus und Fehlerverhalten sind
+        für Implementierer und Reviewer nachvollziehbar beschrieben.
+      - >-
+        API-Dokumentation enthält snake_case-Beispielpayloads für erfolgreiche,
+        unvollständige, veraltete und abgelehnte Zuordnungen.
+      - >-
+        Das Betriebshandbuch dokumentiert Monitoring, Ressourcenlimits,
+        Quarantäne, Wiederaufnahme, Backup, Restore und Generationswechsel.
+      - >-
+        Präsentationszeitstempel, Sample, Abtastrate, Clock-Drift,
+        Synchronisationsanker und Mapping-Residuum werden bei erster
+        Verwendung ausgeschrieben und im dauerhaften Video-Glossar erklärt.
+      - >-
+        Die Dokumentation verweist für Scope und Produktionsreife auf diese
+        Feature-YAML und führt keinen parallelen Fertigstellungsstatus.
+    required: true
+    verification:
+      kind: manual
+      instructions: >-
+        Dokumentation mit einem neuen API-Consumer, einem Operator und einem
+        klinischen Reviewer anhand eines vollständigen Import- und
+        Zuordnungsablaufs nachvollziehen.
+      timeout_seconds: 900
+    assessment: *not_assessed

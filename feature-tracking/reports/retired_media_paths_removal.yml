@@ -1,0 +1,60 @@
+feature_definition: ../CodeQuality.yml
+criterion: retired_media_shadow_implementations
+date: '2026-10-19'
+assessor: codex-dead-code-20261019-a
+revision: 08c1ac0d
+context: Analyse und Entfernung auf dem vorhandenen, bereits umfangreich geänderten Arbeitsbaum.
+authorization: Nutzer hat die vier gemeldeten Altpfade einschließlich ihrer Tests ausdrücklich zur Entfernung freigegeben.
+removed:
+  - path: endoreg_db/services/hub/transfers.py
+    scope: Beide alten Attachment-Funktionen und zehn insgesamt ausschließlich zugehörige private Funktionen.
+    evidence: Keine produktiven Aufrufer; aktiver Envelope-Einstieg publiziert selbst. Rohupload-Verarbeitung war nur noch durch Altpfad-Tests erreichbar.
+    lines_before: 2884
+    lines_after: 2356
+  - path: endoreg_db/services/streaming/streamable_media.py
+    scope: Materializer sowie seine drei Quellgrößen-, Byte- und Hash-Helfer.
+    evidence: Nur direkte Tests und Monkeypatches; aktive Synchronisation entfernt Legacy-Artefakte und delegiert an HTTP Live Streaming.
+    lines_before: 486
+    lines_after: 403
+  - path: endoreg_db/utils/media/frame_anonymization_utils.py
+    scope: Gesamtes unregistriertes Modul mit eigenen Anonymisierungs-, Token- und Fortschrittsregeln.
+    evidence: Keine gefundenen Modul- oder Funktionsverbraucher; erwartete AnonymousFrame- und FrameAnonymizationRequest-Modelle fehlen.
+    lines_removed: 548
+  - path: endoreg_db/queries
+    scope: Legacy-Annotationsexport einschließlich beider Re-Export-Dateien.
+    evidence: Ausschließlich interne gegenseitige Referenzen; keine gefundenen Verbraucher in Repository oder geprüften Nachbarprojekten.
+    lines_removed: 128
+consumer_review:
+  repositories: [endoreg-db, lx-production, lx-anonymizer, lx-data-models, luxnix]
+  surfaces: [Python-Aufrufer, Stringreferenzen, Paketexporte, Tests, YAML, Dokumentation, Nix]
+  limitation: Unbekannte externe Nutzer der entfernten öffentlichen Query- und Utility-Importpfade sind nicht vollständig ausschließbar; diese Imports brechen absichtlich.
+preserved:
+  - Öffentlicher Klartext-Transfer lehnt vor Staging ab; Ablehnungstests prüfen die zentrale Staging-Funktion.
+  - Aktive verschlüsselte Transferpublikation, Importdienste, Datensatzexport und Streaming-Abgleich.
+  - Gemeinsame Hash-Integritäts- und Speicherregressionen; nur Altpfad-Parametrisierung entfällt.
+verification:
+  pyright: Vollständiger Vorherlauf und beide Nachherläufe jeweils 0 Fehler, 24 bestehende Warnungen.
+  regression_command: >-
+    .devenv/state/venv/bin/pytest tests/utils/test_encryption_streaming.py tests/utils/test_file_hash_integrity.py
+    tests/contracts/test_media_centralization.py tests/services/test_hub_transfer_unit_decisions.py
+    tests/services/test_hub_transfer_envelope.py tests/services/test_transfer_job_contract.py
+    tests/services/test_import_execution.py tests/models/test_dataset_export_scope.py
+    tests/services/test_canonical_playback_selection.py tests/services/test_service_structure.py
+    tests/services/test_video_import_service_unit.py tests/services/test_report_import_service_unit.py -q --tb=short
+  regression_result: 486 bestanden, 8 Untertests bestanden, 1 Plugin-Warnung in 56.14 s; danach zwei weitere ungenutzte Transferhelfer und drei exklusive Tests entfernt.
+  radon: cc_visit vor/nach über die vier Implementierungsdateien; Komplexität aller erhaltenen Funktionen unverändert.
+  boundary_delta: Neun breite Exception-Handler und eine Pyright-Unterdrückung entfernt; keine neuen Befunde.
+  dead_code_guard: Weiterhin rot mit 3 bestehenden neuen Meldungen, 4 veralteten und 23 abgelaufenen Ausnahmen; gelöschte Modul-Ausnahme und drei Query-Kandidaten entfernt.
+  boundary_guard: Weiterhin bestehende globale Drift und abgelaufene Reviews; aktuell 354 breite Handler und 107 Unterdrückungen. Baseline nicht pauschal neu freigegeben.
+  inventory_guard: Bestehende umfangreiche Modellinventar-Drift; ausschließlich drei Referenzen auf hier gelöschte Module entfernt.
+  trace_before: Ungefilterter Lauf während Abhängigkeitsladung nach 110.44 s abgebrochen; kein erfolgreicher Vorher-Trace und keine Behauptung gleicher Coverage.
+  final_trace_command: >-
+    .devenv/state/venv/bin/python -m trace --count --ignore-dir '/home/admin/endoreg-db/.devenv/state/venv:/nix/store'
+    --coverdir /tmp/dead-code-trace-final --module pytest tests/services/test_hub_transfer_unit_decisions.py
+    tests/utils/test_encryption_streaming.py -q --tb=short
+  final_trace_result: 47 bestanden, 1 Plugin-Warnung in 152.26 s; Exit 0. Aufrufe der Klartext-Ablehnung und aktiven Streaming-Synchronisation erfasst.
+  trace_limit: Einzelne Laufzeitszenarien beweisen keine globale Nichtverwendung; externe Verbraucherprüfung bleibt auf die genannten Checkouts begrenzt.
+  retained_implementation: AST-Vergleich beider Service-Dateien gegen den vorbestehenden Git-Index bestätigt unveränderte erhaltene Funktionen und Klassen.
+  static_checks: Ruff und git diff --check bestanden; 65 Strukturmanifeste und 37 Feature-Definitionen gültig.
+  warnings: Bestehende pytest-Plugin-Warnung sowie Cleanup-Warnungen für fremde alte temporäre Testverzeichnisse; keine Testfehler.
+  operational_limits: Keine Produktionsmedien oder Migrationen verändert; keine breite Suite neben der bereits laufenden fremden pytest-Suite gestartet.

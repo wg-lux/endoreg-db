@@ -1,0 +1,90 @@
+version: 1
+tier: service
+path: endoreg_db/services/reports
+parent: ../structure.yml
+summary: Report persistence, fenced import lifecycle, clinical context and PDF rendering.
+responsibilities:
+- Expose canonical report import and fenced lifecycle helpers.
+- Persist structured report submissions and render selected processed frames into PDFs.
+- Extract reviewable finding evidence and maintain clinical report context.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Canonical report import remains in endoreg_db/import_files/report_import_service.py.
+entrypoints:
+- name: ReportImportService
+  file: import_service.py
+  purpose: Compatibility export of the canonical report import service.
+- name: save_report_submission
+  file: persistence.py
+  purpose: Persist an edited report and its clinical snapshot in one transaction.
+files:
+- file: completion.py
+  role: Read-only canonical attempt and extraction receipt projections for job/API completion.
+- file: __init__.py
+  role: Berichtimport, klinischer Kontext, Persistenz und PDF-Ausgabe.
+- file: finding_extraction.py
+  role: YAML-configured finding mentions; no automatic clinical confirmation.
+- file: finding_review.py
+  role: Resolve reviewable evidence without creating clinical findings.
+- file: finding_sync.py
+  role: Exports parse_report_date, sync_report_findings.
+- file: frame_export.py
+  role: Materialize only a selected processed frame for the duration of PDF rendering.
+- file: frame_selection.py
+  role: Canonical report frame queries and locked selection persistence.
+- file: history.py
+  role: Exports get_patient_finding_summaries, get_patient_examination_history_context.
+- file: import_fencing.py
+  role: Exports acquire_report_import_fence, renew_report_import_fence, report_import_finalization_guard.
+- file: import_lifecycle.py
+  role: Read-only admission checks and job mutations owned by the report content fence.
+- file: import_service.py
+  role: Compatibility import for the canonical report import service.
+- file: import_state_machine.py
+  role: Exports validate_report_import_claim, validate_report_import_success, validate_report_import_failure.
+- file: materialization.py
+  role: Exports document_type_description, ensure_document_types, resolve_report_text.
+- file: patient_context.py
+  role: Exports update_report_patient_context.
+- file: pdf_renderer.py
+  role: Exports get_renderer_binary, build_report_template_pdf_payload, render_pdf_with_rust_renderer.
+- file: persistence.py
+  role: Exports persist_report_pdf_artifact, save_report_submission, delete_report_draft.
+- file: runtime_validation.py
+  role: Exports validate_final_report_submission.
+- file: structured_records.py
+  role: Exports persist_patient_examination_dtypes_record, persist_patient_examination_dtypes_record_from_ledger.
+dependencies:
+  internal:
+  - endoreg_db/config
+  - endoreg_db/helpers
+  - endoreg_db/import_files
+  - endoreg_db/integrations
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/imports
+  - endoreg_db/services/runtime
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_anonymizer
+  - lx_dtypes
+  - pydantic
+  - rest_framework
+  - spacy
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Concurrent report import
+  doc: docs/report_import_concurrency_implementation.md
+- name: Finding evidence and review
+  doc: docs/report_finding_extraction.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_report_llm_jobs.py tests/services/test_report_persistence_service.py
+    tests/services/test_finding_extraction.py
+  files:
+  - tests/services/test_report_llm_jobs.py
+  - tests/services/test_report_persistence_service.py
+  - tests/services/test_finding_extraction.py

@@ -1,0 +1,4 @@
+- model: endoreg_db.event_classification
+  fields:
+    name: "stroke_origin_classification"
+    event: "stroke"

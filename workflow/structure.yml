@@ -1,0 +1,32 @@
+version: 1
+tier: domain
+path: workflow
+parent: ../structure.yml
+summary: Snakemake workflows invoking application import and media services.
+responsibilities:
+- Coordinate declared report and video workflow rules through service entrypoints.
+boundaries:
+- Preserve canonical video timelines and encrypted storage contracts.
+- Workflow execution must not bypass service leases or publication validation.
+files:
+- file: Snakefile
+  role: Workflow rule and configuration entrypoint
+- file: rules/common.smk
+  role: Shared workflow rules
+- file: scripts/import_common.py
+  role: Shared import workflow boundary
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+- name: Video storage normalization
+  doc: docs/video_storage_normalization.md
+dependencies:
+  internal:
+  - endoreg_db/services
+  - endoreg_db/import_files
+  external:
+  - snakemake
+tests:
+  directory: tests/workflow
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/workflow/test_workflow_package.py
+    -q

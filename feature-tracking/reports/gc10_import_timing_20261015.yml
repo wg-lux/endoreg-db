@@ -1,0 +1,75 @@
+schema_version: 1
+feature: video_storage_normalization
+criterion: bounded_timestamp_probe_decoding
+purpose: Bereinigte Laufzeitmessungen und Optimierungsnachweis; keine eigenständige Freigabebewertung.
+assessor: codex-import-8020-20261015
+observed_on: '2026-10-15'
+timezone: Europe/Berlin
+host: gc-10
+profile: site-client
+collection:
+  journal_since: '2026-10-08'
+  command: >-
+    journalctl --namespace=+lx-annotate -u lx-annotate-celery-ffmpeg-worker.service
+    -u lx-annotate-celery-pipeline-worker.service -u lx-annotate.service
+    --since 2026-10-08 --no-pager -o json --grep='workload.timing|ocr.progress'
+  handling: Nur erlaubte Timingfelder aggregiert; keine Medien, Dateinamen, Patienteninformationen oder Geheimnisse übernommen.
+  state_command: systemctl show lx-annotate-celery-pipeline-worker.service lx-annotate-celery-ffmpeg-worker.service move-my-files.service -p Id -p ActiveState -p SubState -p LogNamespace -p CPUUsageNSec -p MemoryCurrent
+  observed_state: Pipeline- und FFmpeg-Worker aktiv; move-my-files fehlgeschlagen. Keine Zustandsänderung durchgeführt.
+phase_totals:
+  scope: 19 HTTP-Live-Streaming-Builds mit gemessener Quellprüfung, Kodierung und Ausgabeprüfung.
+  source_validation_seconds: 7307.054
+  encode_seconds: 8242.287
+  output_validation_seconds: 7352.829
+  output_validation_completed: 10
+  output_validation_failed: 9
+  interpretation: Rund 64 Prozent dieser drei Phasen entfallen auf vollständige Zeitstempel- und Profilprüfungen.
+  other_costs: Publikation insgesamt 1.760 Sekunden; Quellmaterialisierung insgesamt 101.863 Sekunden über 20 Versuche.
+  caution: Phasen sind in Task-Gesamtzeiten enthalten und dürfen nicht zusätzlich zu diesen summiert werden.
+task_totals:
+  successful_reimport_seconds: 1430.390
+  failed_reimports:
+    count: 7
+    total_seconds: 6928.035
+  successful_post_validation_rebuilds:
+    count: 9
+    total_seconds: 57065.749
+  caution: Celery-Erfolg allein beweist keine erfolgreiche Medienvalidierung; neun HLS-Tasks enthalten validation_failed.
+prior_retry_incident:
+  evidence: feature-tracking/reports/gc10_import_incident_20261015.yml
+  finding: 21 wiederholte Fehler mit ungefähr 51 Minuten Verarbeitung pro Versuch; lokale Fehlerursachenbehebung bereits separat dokumentiert.
+  decision: Keine zweite Retry-Implementierung in dieser Optimierung.
+probe_comparison:
+  method: Derselbe vorhandene lokale Eingang, dasselbe FFprobe aus dem laufenden Worker-PATH; Ausgabe nur im Speicher verglichen.
+  command_shape: ffprobe [-threads N] -v error -select_streams v:0 -read_intervals '%+#1800' -show_frames -show_entries frame=pts,pts_time,best_effort_timestamp,best_effort_timestamp_time -of json LOCAL_INPUT
+  sample:
+    codec: h264
+    width: 1920
+    height: 1080
+    has_b_frames: 2
+    decoded_frames: 1800
+  exploratory_seconds:
+    one_thread_first: 10.817325
+    two_threads: 5.943551
+    four_threads: 3.721797
+    one_thread_repeat: 9.784018
+  alternating_default_comparison:
+  - threads: default
+    seconds: 9.794929
+  - threads: 4
+    seconds: 3.516714
+  - threads: default
+    seconds: 10.082248
+  - threads: 4
+    seconds: 3.962718
+  result: Rund 62 Prozent kürzere Probezeit im alternierenden Vergleich; alle 1800 Frame-Datensätze exakt identisch, alle Prozesse Exit 0, Quellstatistik unverändert.
+  limits:
+  - Begrenzte Einzeldatei-Stichprobe; kein vollständiger Importbenchmark und keine zugesicherte Gesamtlaufzeitverbesserung.
+  - Zusätzliche Decoderthreads erhöhen parallelen CPU- und Speicherbedarf; vier pro Probe begrenzt, keine automatische Nutzung aller Kerne.
+  - Keine Änderungen an laufenden Diensten, Deployment, Datenbank oder Medien; keine produktive Importausführung zur Messung gestartet.
+implementation:
+  path: endoreg_db/services/video_storage/probes.py
+  change: Gemeinsame begrenzte Decoderargumente für vollständige JSON- und zeilenweise CSV-Zeitstempelprobes.
+  preserved: Alle Frames, originale und best-effort Präsentationszeitstempel, Zeitbasen, Validierungsfehler, Inhaltsprüfungen, Provenienz und Publikationsschutz.
+verification:
+  authority: feature-tracking/VideoStorageNormalization.yml#bounded_timestamp_probe_decoding

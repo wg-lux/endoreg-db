@@ -1,0 +1,42 @@
+schema_version: 1
+feature: video_storage_normalization
+criterion: media_worker_process_isolation
+purpose: Local verification artifact evidence, not the selected deployment recipe; readiness remains in the feature definition.
+platform: Linux x86_64, CPython 3.12, glibc 2.34 or newer
+dependency_lock:
+  path: ../dev/lx-annotate/uv.lock
+  sha256: ed19b1eea7d500d2a49ad284b3c89c1d40c7d29f0af085a47eee834ba2236d43
+  verification: Frozen non-development dependency installation followed by exact application wheel installation.
+  installed_packages: 332
+  dependency_version_changes_after_app_install: 0
+verification:
+  installed_wheel_prefork_tests: 3 passed; task recycling, soft/hard deadlines, detached descendant reaping and subsequent task execution.
+  model_lifecycle_tests: 28 passed
+  backend_worker_and_path_tests: 33 passed
+  package_consistency: uv pip check passed only in experimental environments .
+  ordinary_resolution: Installs; pip 26.2.1 check and uv pip check both fail unsupported platform metadata on Python 3.12. Four-frame decode passes.
+  nixos_candidate:
+    host: gc-10
+    operation: Build only; no activation.
+    output: /nix/store/5hmfa5xyy61ficwkz230ywcp30b4v78m-nixos-system-gc-10-26.05.20261006.b253099
+    artifact_selection: All four wheels imported as immutable Nix-store paths.
+artifacts:
+- package: lx-anonymizer
+  version: 1.0.8
+  path: ../lx-anonymizer/dist/lx_anonymizer-1.0.8-cp312-abi3-manylinux_2_34_x86_64.whl
+  sha256: f8b3708e63ab89f0f8dac96dce1e0d0efc90a5c07775953a9c1403518c972ca1
+- package: endoreg-db
+  version: 1.5.5
+  path: dist/candidate/endoreg_db-1.5.5-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl
+  sha256: 49c34e474e9b0fc85c0b57e751123cc7f97cb6b52c961c5304a847ace45837b2
+- package: lx-annotate
+  version: 1.5.4
+  path: ../dev/lx-annotate/dist/candidate/lx_annotate-1.5.4-py3-none-any.whl
+  sha256: 601a1da6c9af41b27255a8d11d9e69f66e9402f9bff867a6d9e837afb4b46d3d
+contracts:
+- Paths are relative to the endoreg-db checkout; artifacts are ignored build output, not committed binaries.
+- The artifacts include the existing working-tree application changes; hashes identify the reviewed build bytes.
+- The selected deployment uses normal published Python dependencies and Nix-provided native tools; no local wheel injection.
+- The frozen-lock evidence above describes the earlier experiment, not a current ordinary-resolution deployment lock.
+- Preserve worker prefork deadlines, per-job recycling, descendant containment and lease fencing.
+- Verify protected decrypted-media staging independently before clinical activation; ciphertext source storage is insufficient.

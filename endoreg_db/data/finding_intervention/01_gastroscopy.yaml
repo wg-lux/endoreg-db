@@ -1,0 +1,19 @@
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_percutaneous_gastroenterostomy
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_percutaneous_jejunostomy
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_poem
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_stepwise_biopsy
+
+- model: endoreg_db.finding_intervention
+  fields:
+    name: egd_esophagus_injection_botox

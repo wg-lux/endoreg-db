@@ -1,0 +1,79 @@
+version: 1
+tier: service
+path: endoreg_db/services/patient_identity
+parent: ../structure.yml
+summary: External patient identifiers and verified sensitive-metadata updates.
+responsibilities:
+- Resolve typed external identifiers and commit validated media identity.
+- Update and verify sensitive metadata through canonical identity rules.
+- Orchestrate separately provisioned matching roles with local record binding and explicit UUID relationships.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: run_matching_worker
+  file: matching/matching.py
+  purpose: Claim one authorized session and run only the local private input through the enrolled backend.
+- name: countersign_source_result
+  file: matching/matching.py
+  purpose: Countersign the receiver assertion only after local source completion and peer-signature validation.
+- name: commit_validated_media_identity
+  file: validated_media_identity.py
+  purpose: Resolve and append-only commit the validated non-PII identity for a media item.
+- name: assign_patient_external_id
+  file: external_ids.py
+  purpose: Resolve or create and persist the typed external-ID relation.
+files:
+- file: creation.py
+  role: Center-locked hash-based patient creation with deterministic keyed local UUIDv8 and preserved existing aliases and UUIDs.
+- file: matching/matching_inputs.py
+  role: Read-only authorized record snapshots, exact production encoding and explicit key-generation selection.
+- file: matching/matching_backend.py
+  role: Pinned MP-SPDZ worker artifacts, TLS trust directory, bounded execution and aggregate output parsing.
+- file: matching/matching_acceptance.py
+  role: Permission and query-budget checks, signed session completion and atomic UUID relationship acceptance.
+- file: examination_hashes.py
+  role: Transactional center-scoped examination lookup through canonical patient aliases, rejecting conflicting ownership.
+- file: hash_aliases.py
+  role: Transactional historical patient aliases and center-scoped current hash resolution; opaque current identifiers require explicit opt-in.
+- file: matching/__init__.py
+  role: Matching role package marker.
+- file: __init__.py
+  role: Patientenkennungen und verifizierte sensible Metadaten.
+- file: external_ids.py
+  role: Exports split_patient_external_id, assign_patient_external_id.
+- file: update.py
+  role: Exports update_sensitive_meta.
+- file: validated_media_identity.py
+  role: Exports commit_validated_media_identity.
+- file: verification.py
+  role: Central locked verification-state creation, atomic writes and save guard revoking checks when persisted identity fields change.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/cases
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Matching workflow and trust boundaries
+  doc: docs/source_patient_matching.md
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Identity keyring enrollment
+  doc: docs/identity_ring_enrollment.md
+- name: Identity salt migration
+  doc: docs/key_rotation.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_sensitive_meta_update.py tests/services/test_sensitive_meta_verification.py
+  files:
+  - tests/services/test_patient_uuid_generation.py
+  - tests/services/test_patient_matching_inputs.py
+  - tests/services/test_patient_matching_acceptance.py
+  - tests/services/test_patient_matching_backend.py
+  - tests/services/test_patient_matching_workflow.py
+  - tests/services/test_sensitive_meta_update.py
+  - tests/services/test_sensitive_meta_verification.py

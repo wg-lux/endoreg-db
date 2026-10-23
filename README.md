@@ -1,305 +1,78 @@
-# EndoregDB - Professional Data Infrastructure for Clinical Research
+[![Built with devenv](https://devenv.sh/assets/devenv-badge.svg)](https://devenv.sh)
 
-EndoregDB is a comprehensive database framework designed to manage medical and research-related data for clinical trials. This repository focuses on efficient data processing, automated deployment, security, and reproducibility, offering a flexible setup for local development environments as well as distributed systems. It supports the integration of AI/ML tools and advanced image and report processing.
+# EndoReg-DB
 
-This infrastructure was originally designed for clinical research studies and is optimized for handling large data volumes, including:
+EndoReg-DB helps clinical teams manage endoscopy data and prepare it for research.
+It is a reusable Django application with shared data models, terminology, report
+and video processing, and authenticated APIs.
 
-- Medical reports,
-- Patient imaging and video data,
-- Clinical product and treatment data,
-  and more.
+Start with the [project overview](docs/project_overview.md). Then follow the
+[contributor roadmap](docs/README.md#contributor-roadmap) to explore the system,
+set it up locally, and choose a contribution.
 
-## 🚀 Key Features
+## Quick start
 
-### System Architecture
-
-- **Modular Design**: Built on scalable and reusable components to simplify integration into various environments.
-- **Multi-System Support**: Manages configurations for local workstations and production servers.
-- **Role-Specific Configuration**: Predefined roles for common use cases:
-  - Medical data processing systems
-  - AI/ML model deployment
-  - Research workstation configuration
-
-### Security & Data Management
-
-- **Data Encryption**: All sensitive data is encrypted, and privacy policies are enforced.
-- **Impermanence**: Stateless system configuration with persistence for critical data.
-- **Access Control**: Role-based access and identity management integration.
-
-### Data and Processing Environment
-
-- **Data Processing**: Optimized for processing medical datasets with preprocessing tools.
-- **AI/ML Support**:
-  - Integration of machine learning tools for predictive analysis.
-  - TensorFlow, PyTorch, and other frameworks supported for model training.
-- **Image/Video Processing**: Support for analyzing patient images and clinical videos.
-
-### Development Tools & Infrastructure
-
-- **Data Science Toolchains**: Pre-configured environments for data processing, analysis, and visualization.
-- **Monitoring & Logging**: Setup for continuous monitoring and logging to ensure system stability and performance.
-
----
-
-## 🛠 Getting Started
-
-### Prerequisites
-
-- A Linux-based system (Ubuntu/Debian recommended) or NixOS
-- Hardware with sufficient storage for data processing (at least 1 TB recommended)
-
-### Quick Start
-
-1. Clone the repository:
-
-   ```bash
-   git clone https://github.com/wg-lux/endoreg-db.git
-   cd endoreg-db
-   ```
-
-2. Set up your Python environment
-   We need to have a `devenv.nix` file.  
-   This Nix `devenv.nix` configuration sets up a Python development environment for a Django-based project using `uv` for dependency management. It defines project directories, environment variables, runtime packages, and several development tasks and scripts.
-
-   **Some available Test Shortcuts**
-
-   - `runtests`: Runs all tests — `uv run python runtests.py`
-   - `runtests-dataloader`: Runs dataloader tests — `uv run python runtests.py 'dataloader'`
-   - `runtests-other`: Runs other miscellaneous tests — `uv run python runtests.py 'other'`
-   - `runtests-helpers`: Runs helper module tests — `uv run python runtests.py 'helpers'`
-   - `runtests-administration`: Runs admin module tests — `uv run python runtests.py 'administration'`
-   - `runtests-medical`: Runs medical module tests — `uv run python runtests.py 'medical'`
-
-3. Then run 
-
-   ```bash
-   direnv allow
-   ```
-
-4. Run tests:
-   Call Devenv Script to run tests
-
-   ```bash
-   runtests
-   ```
-   Tests Overview
-   - These tests ensure the functionality of different models and scenarios.
-   - After running them, you can view the results as demonstrated in the image below:
-   
-   ![Test Results](Images/testscreenshort.png)
-
-5. Run 
-   ```python
-   python manage.py migrate
-   
-   ``` 
-   - It applies database migrations and make tables.
-   - It updates your database schema to match the current state of your Django models.
-
-6. To load the database data run 
-   ```
-   python manage.py load_base_db_data
-
-   ```
-   ![Data](Images/loadbasedata0.png)
-   ![Data](Images/loadbasedata1.png)
-   ![Data](Images/loadbasedata2.png)
-   ![Data](Images/loadbasedata3.png)
-   ![Data](Images/loadbasedata4.png)
-   ![Data](Images/loadbasedata4b.png)
-   ![Data](Images/loadbasedata5.png)
-
-7. Accessing the Django Shell
-   - To fetch or interact with data in the terminal, run the following command to run the Django shell:
-
-   ```bash
-      python manage.py shell
-   ```
-   - Using the Django shell, you can:
-      - Import database models
-      - Fetch data from the database
-      - Access related data through model relationships (e.g., foreign keys, one-to-many, many-to-many)
-      - Example is shown below
-
-   #### EXAMPLE # 1
-   ![Shell](Images/shell2.png)
-   - Explanation:
-      This script fetches a patient by ID and prints their related examination(s) using Django ORM. It retrieves the examination name linked to the patient from the PatientExamination table.
-      
-   #### EXAMPLE # 2
-   ![Shell](Images/shell0.png)
-   - Explanation:
-      In the Django shell, a specific ExaminationIndication named "colonoscopy_screening" was fetched, and its related FindingIntervention records were accessed using the reverse relation expected_interventions. The first intervention (colon_lesion_polypectomy_cold_snare) was then queried to confirm it is also linked to multiple indications, demonstrating a many-to-many relationship between indications and interventions.
-   
-   #### EXAMPLE # 3
-   ![Shell](Images/shell1.png)
-   - Explanation:
-      All required labels (polyp, instrument, digital_chromo_endoscopy, etc.) are confirmed to exist. The first available video (VideoFile) was loaded, with a valid frame_dir. Using the label "polyp", 8 labeled polyp segments were found in that video, with specific start and end frame numbers.
-
-   #### EXAMPLE # 4
-   ##### Image a
-
-   ![Shell](Images/shell3.png)
-
-   ##### Image b - All classifications with their choices together
-
-   ![Shell](Images/shell3b.png)
-
-   - Explanation: Using the Django shell to fetch all morphology classifications (e.g., NICE, Paris) and their related choices  from the database.
-
-
-
-
----
-## 📦 Database Backup and Restore
-
-This project includes two shell scripts to **export** and **import** database data in JSON format using Django's management commands.
-
-###  Setup
-
-First, make the scripts executable:
+This checkout uses Python 3.12, `uv`, and the environment in `devenv.nix`.
+From the repository root:
 
 ```bash
-chmod +x import_db.sh
-chmod +x export_db.sh
+direnv allow
+devenv tasks run agent:sync
+uv run python manage.py migrate
+uv run python manage.py setup_endoreg_db
 ```
-###  Export (Backup) the Database
 
-To export the current database into a JSON file:
+`setup_endoreg_db` loads base data and runs setup checks. To load base data
+separately, use `load_base_db_data` as described in the
+[configuration guide](setup/CONFIGURATION_GUIDE.md). That guide also covers
+environment variables, deployment roles, and protected storage.
+
+## Explore and contribute
+
+| Your goal | Start here |
+| --- | --- |
+| Understand the project | [Capabilities and deployment roles](docs/project_overview.md) |
+| Make a first contribution | [Contributor roadmap](docs/README.md#contributor-roadmap) |
+| Explore development areas | [Project development](docs/README.md#project-development) |
+| Integrate an application | [API, access, and security](docs/README.md#api-access-and-security) |
+| Run a deployment | [Deployment and operations](docs/README.md#deployment-and-operations) |
+| Try the data models | [Django shell examples](docs/developer_examples.md) |
+| Check feature progress | [Feature tracker](feature-tracking/README.md) |
+
+## Development
+
+Run the fast test lane:
 
 ```bash
-./export_db.sh
-```
-This will create a backup file such as `endoreg_db_backup.json`.
-
-#### List of the comands in 'export_db.sh'
-1. `python manage.py dumpdata --indent 4 --output=endoreg_db_backup.json` (if migrate comand generates and stores data in database table then wee nee dto exclude those tables from dumping)
-
-2. `python manage.py shell < fix_endoreg_db_backup_json.py`
-
-###  Import (Restore) the Database
-
-To load the data back into the database
-```bash
-./import_db.sh
-```
-####  List of the comands in 'import_db.sh'
-1. `rm dev_db.sqlite3`
-2. `python manage.py migrate`
-3. `python manage.py shell < fix_endoreg_db_backup_json.py`
-4. `python manage.py loaddata endoreg_db_backup_fixed.json`
-
----
-
-
-
-## 📁 Repository Structure
-
-```
-endoreg-db/
-├── endoreg_db/                # Main Django app for medical data
-│   ├── data/                  # Medical knowledge base
-│   ├── management/            # Data wrangling operations
-│   ├── models/                # Data models
-│   ├── migrations/            # Database migrations
-│   └── serializers/           # Serializers for data
-├── .gitignore                 # Git ignore file for unnecessary files
-└── README.md                  # Project description and setup instructions
+devenv tasks run test:fast
 ```
 
----
+Read [AGENTS.md](AGENTS.md) for contribution rules and required checks. The
+[documentation index](docs/README.md) links to guides, contracts, and runbooks.
 
-## 🔒 Security Features
+## Data handling
 
-- **Data Encryption**: All sensitive patient data is encrypted.
-- **Role-Based Access Control**: Configurable roles for managing access to various parts of the system.
-- **Logging & Auditing**: Comprehensive logging system that tracks user activities and data changes.
+Local watchers and authenticated APIs use shared import services. Applications
+access media through center-scoped APIs. Deployments provide encrypted storage
+as required by their storage profile.
 
----
+Read the [privacy guide](setup/HOW_WE_KEEP_DATA_PRIVATE.md) and
+[video storage contract](docs/video_storage_normalization.md) before changing
+these workflows. See [backup and recovery](docs/backup_recovery.md) for recovery
+procedures.
 
-## 🖥️ Supported Systems
+## Repository map
 
-- **Workstations**: Local development or research workstations with low data processing demands.
-- **Servers**: Scalable server infrastructure for processing large data volumes, integrated with cloud services for scalability.
+| Path | Contents |
+| --- | --- |
+| `endoreg_db/` | Application, services, models, commands, and seed data |
+| `docs/` | Architecture, APIs, guides, and runbooks |
+| `setup/` | Configuration, privacy, and AI setup |
+| `feature-tracking/` | Feature scope, acceptance criteria, and verification evidence |
+| `tests/` | Automated tests grouped by application area |
+| `scripts/` | Repository tools and checks; GPU diagnostics are in `diagnostics/` |
+| `workflow/` | Reusable workflow profiles |
 
----
-
-## 🛟 Support
-
-For issues and questions:
-
-- Create an issue in the repository
-- Review the Deployment Guide for common issues
-
----
-
-## 📜 License
-
-MIT - see LICENSE
-
----
-
-
-## 📖 Further Documentation
-
-All extended documentation lives in the project **Wiki** → **[Browse the Wiki »](https://github.com/wg-lux/endoreg-db/wiki)**
-
-### Optimization Documentation
-- [Complete Optimization Project Report](https://github.com/wg-lux/endoreg-db/wiki/Complete-Optimiztion-Project-Report)
-- [Test Performance Optimization Guide](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-Guide)
-- [Test Performance Optimization - Success Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization-‐-Succes-Summary)
-- [Test Performance Optimization: Complete Implementation Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Performance-Optimization:-Complete-Implementation-Summary)
-- [Test Suite Optimization - Final Status Report](https://github.com/wg-lux/endoreg-db/wiki/Test-Suite-Optimization-‐-Final-Status-Report)
-- [Test Suite Analysis & Optimization Plan](https://github.com/wg-lux/endoreg-db/wiki/Test-Suite-Analysis-&-Optimization-Plan)
-
----
-
-### Models and Migration Documentation
-- [Models Documentation](https://github.com/wg-lux/endoreg-db/wiki/Models-Documentation)
-- [Test Migration & Optimization Report](https://github.com/wg-lux/endoreg-db/wiki/Test-Migration-&-Optimization-Report)
-- [Test Migration Success Summary](https://github.com/wg-lux/endoreg-db/wiki/Test-Migration-Success-Summary)
-- [Test Optimization Migration Guide](https://github.com/wg-lux/endoreg-db/wiki/Test-Optimization-Migration-Guide)
-
----
-
-### API Documentation
-- [Upload API Documentation](https://github.com/wg-lux/endoreg-db/wiki/Upload-API-Documentation)
-
----
-
-### Frame-Anonymisierung
-- [Frame-Anonymisierung](https://github.com/wg-lux/endoreg-db/wiki/Frame-Anonymisierung)
-
----
-
-### Tutorials Documentation
-- [Run Production Server](https://github.com/wg-lux/endoreg-db/wiki/Run-Production-Server)
-- [Date and Time Standardization for Models](https://github.com/wg-lux/endoreg-db/wiki/Date-and-Time-Standardization-for-Models)
-
----
-
-### Keycloak
-- [How to Create a New Account for Keycloak + Nextcloud](https://github.com/wg-lux/endoreg-db/wiki/How-to-Create-a-New-Account-for-Keycloak-+-Nextcloud)
-- [Integration with the frontend](https://github.com/wg-lux/endoreg-db/wiki/Integration-with-the-frontend)
-- [Merging Multi-User Accounts in Nextcloud // current options](https://github.com/wg-lux/endoreg-db/wiki/Merging-Multi-User-Accounts-in-Nextcloud-//-current-options)
-- [New user login steps for keycloak and nextcloud](https://github.com/wg-lux/endoreg-db/wiki/New-user-login-steps-for-keycloak-and-nextcloud)
-- [keycloak integration with backend endpoint](https://github.com/wg-lux/endoreg-db/wiki/keycloak-integration-with-backend-endpoint)
-
----
-
-### Coding Principles & Practices
-- [Timestamp Naming Standard](https://github.com/wg-lux/endoreg-db/wiki/Timestamp-Naming-Standard)
-
----
-
-### Figures
-- [Coloreg](https://github.com/wg-lux/endoreg-db/wiki/Coloreg)
-- [EndoReg Framework](https://github.com/wg-lux/endoreg-db/wiki/EndoReg-Framework)
-- [EndoReg Data Collection Workflow](https://github.com/wg-lux/endoreg-db/wiki/EndoReg-Data-Collection-Workflow)
-- [Eine gemeinsame Datenplattform für Klinik & Forschung](https://github.com/wg-lux/endoreg-db/wiki/Eine-gemeinsame-Datenplattform-für-Klinik-&-Forschung)
-
----
-
-### Miscellaneous
-- [Requirement System Guide](https://github.com/wg-lux/endoreg-db/wiki/Requirement-System-Guide)
-- [Official Site Link](https://github.com/wg-lux/endoreg-db/wiki/Official-Site-Link)
+Further reading: [AI model setup](setup/AI_MODEL_SETUP.md),
+[companion tools](docs/companion_tools.md),
+[historical Wiki references](docs/legacy_wiki_index.md), and [license](LICENSE).

@@ -1,0 +1,18 @@
+{
+  "cases": 48,
+  "replay_equal_excluding_time_and_rss": true,
+  "private_keys_absent_from_public_files": true,
+  "archive_sha256": "87e7c007ee5496b8d542f9e64106b0bda684012464f9874805a34d9fe5790f2c",
+  "cpu": "12th Gen Intel Core i5-12450H",
+  "logical_cpus": 12,
+  "isolation": "Linux Landlock; deny new read_file/read_dir/execute; no allow rules",
+  "checks": {
+    "focused_pytest": "16 passed in 1.07s",
+    "full_pyright": "0 errors, 24 existing warnings",
+    "focused_pyright": "0 errors, 0 warnings",
+    "ruff": "All checks passed",
+    "structure": "66 manifests valid",
+    "feature_tracker": "37 definitions valid",
+    "independent_rescore": "48 cases identical"
+  }
+}

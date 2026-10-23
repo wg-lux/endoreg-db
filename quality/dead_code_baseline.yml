@@ -1,0 +1,168 @@
+schema_version: "1.0"
+tool:
+  paths:
+    - endoreg_db
+    - scripts
+  exclude:
+    - "*/migrations/*"
+    - "*/tests/*"
+    - "*/settings/*"
+    - "*/management/commands/*"
+    - "*/apps.py"
+    - "*/admin.py"
+  min_confidence: 90
+accepted_findings:
+  - &protocol_signature
+    path: endoreg_db/authz/backends.py
+    message: "unused variable 'username__iexact'"
+    confidence: 100
+    classification: protocol_signature
+    reason: Required keyword name in a structural typing contract; the implementation consumes it dynamically.
+    owner: endoreg_db maintainers
+    review_after: 2026-12-23
+  - <<: *protocol_signature
+    path: endoreg_db/services/video_files/_ai.py
+    message: "unused variable 'high_quality'"
+  - <<: *protocol_signature
+    path: endoreg_db/helpers/typing.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/utils/pydantic_models/db_config.py
+    message: "unused variable 'ask_override'"
+  - <<: *protocol_signature
+    path: endoreg_db/views/anonymization/validate.py
+    message: "unused variable 'objs'"
+  - <<: *protocol_signature
+    path: endoreg_db/views/anonymization/validate.py
+    message: "unused variable 'through_defaults'"
+  - <<: *protocol_signature
+    path: endoreg_db/services/reports/runtime_validation.py
+    message: "unused variable 'p_examination'"
+    reason: Required keyword parameter in the KnowledgeBase runtime protocol; the validated ledger payload is passed under this name and consumed by the concrete implementation.
+    review_after: 2026-11-13
+  - <<: *protocol_signature
+    path: endoreg_db/services/streaming/hls_media.py
+    message: "unused variable 'routing_key'"
+    reason: _HlsTaskDispatcher.apply_async declares the Celery keyword contract; dispatch_video_hls_materialization passes routing_key=queue to the concrete task dispatcher.
+    review_after: 2026-12-09
+  - &metric_signature
+    <<: *protocol_signature
+    path: endoreg_db/utils/ai/multilabel_classification_net.py
+    message: "unused variable 'y_true'"
+    reason: _MetricFunction.__call__ declares the scikit-learn precision_score, recall_score and f1_score keyword contract; calculate_metrics passes y_true, average and zero_division to all three concrete functions.
+    review_after: 2026-12-09
+  - <<: *metric_signature
+    message: "unused variable 'average'"
+  - <<: *metric_signature
+    message: "unused variable 'zero_division'"
+  - <<: *protocol_signature
+    path: endoreg_db/utils/rust_backend.py
+    message: "unused variable 'master_keys'"
+    reason: NativeBatchProcessor.stable_file_identities mirrors the native endoreg_rust_backend signature; stable_file_identities passes the configured reader keys positionally to the compiled processor.
+    review_after: 2027-01-22
+  - <<: *protocol_signature
+    path: endoreg_db/views/misc/upload_views.py
+    message: "unused variable 'mime'"
+    reason: _MagicModule.from_buffer declares the python-magic keyword contract; the upload content-type check invokes the concrete module with mime=True.
+    review_after: 2026-12-09
+
+  - <<: *protocol_signature
+    path: endoreg_db/services/raw_pdf_files/types.py
+    message: "unused variable 'fontsize'"
+    reason: PdfDocument.layout declares the PyMuPDF keyword contract; report_import_service calls document.layout with fontsize=10.
+    review_after: 2026-12-23
+  - <<: *protocol_signature
+    path: endoreg_db/services/raw_pdf_files/types.py
+    message: "unused variable 'xref'"
+    reason: PdfDocument.xref_set_key declares the PyMuPDF cross-reference contract; report_import_service calls result.xref_set_key to remove nondeterministic document identifiers.
+    review_after: 2026-12-23
+  - <<: *protocol_signature
+    path: endoreg_db/services/raw_pdf_files/types.py
+    message: "unused variable 'no_new_id'"
+    reason: PdfDocument.tobytes declares the PyMuPDF keyword contract; report_import_service passes no_new_id=True to preserve deterministic import identity.
+    review_after: 2026-12-23
+
+  - &framework_contract
+    path: endoreg_db/checks.py
+    message: "unused variable 'app_configs'"
+    confidence: 100
+    classification: framework_contract
+    reason: Required by the registered Django or Python framework callback signature.
+    owner: endoreg_db maintainers
+    review_after: 2026-12-23
+    occurrences: 2
+  - <<: *framework_contract
+    path: endoreg_db/checks.py
+    message: "unused variable 'databases'"
+    occurrences: 2
+  - <<: *framework_contract
+    path: endoreg_db/services/runtime/polling_coordinator.py
+    message: "unused variable 'exc_val'"
+    occurrences: 1
+  - <<: *framework_contract
+    path: endoreg_db/services/runtime/polling_coordinator.py
+    message: "unused variable 'exc_tb'"
+    occurrences: 1
+  - <<: *framework_contract
+    path: endoreg_db/services/runtime/reconciliation.py
+    message: "unused variable 'tb'"
+    occurrences: 1
+  - <<: *framework_contract
+    path: endoreg_db/urls/patient.py
+    message: "unused variable 'actions'"
+    occurrences: 1
+
+  - &compatibility_contract
+    path: endoreg_db/helpers/download_segmentation_model.py
+    message: "unused variable 'force_download'"
+    confidence: 100
+    classification: compatibility_contract
+    reason: Public compatibility parameter retained for existing callers; removal requires a consumer migration.
+    owner: endoreg_db maintainers
+    review_after: 2026-12-23
+  - <<: *compatibility_contract
+    path: endoreg_db/helpers/download_segmentation_model.py
+    message: "unused variable 'resume_download'"
+  - <<: *compatibility_contract
+    path: endoreg_db/services/video_files/_ai.py
+    message: "unused variable 'save_results'"
+  - &typing_only
+    path: endoreg_db/models/media/anonymization_metrics.py
+    message: "unused import 'AbstractBaseUser'"
+    confidence: 90
+    classification: typing_only
+    reason: Imported under TYPE_CHECKING and referenced by a forward type alias; it has no runtime import.
+    owner: endoreg_db maintainers
+    review_after: 2026-12-23
+  - <<: *typing_only
+    path: endoreg_db/models/media/pdf/pdf_processing_history.py
+    message: "unused import 'AbstractBaseUser'"
+  - <<: *typing_only
+    path: endoreg_db/services/raw_pdf_files/metadata.py
+    message: "unused import 'CenterModel'"
+
+deletion_candidates:
+  - &consumer_check
+    path: endoreg_db/helpers/download_segmentation_model.py
+    line_range: 1-50
+    symbol: download_segmentation_model
+    classification: compatibility_contract
+    evidence:
+      - No internal caller or re-export was found.
+      - The public module path may still be imported by deployment or downstream scripts not present in this repository.
+    reason: Likely superseded model-download helper, but external consumers have not been excluded.
+    recommended_action: verify_consumers
+    risk: medium
+    owner: endoreg_db maintainers
+    review_after: 2026-08-31
+  - <<: *consumer_check
+    path: endoreg_db/api_urls.py
+    line_range: 1-4
+    symbol: URL pattern export shim
+    evidence:
+      - No repository setting, URLConf, test, or script imports endoreg_db.api_urls.
+      - Host applications outside this repository may use the documented purpose of mounting raw API patterns.
+    reason: Internally unused host-integration shim with unresolved external consumers.

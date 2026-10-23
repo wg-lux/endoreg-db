@@ -1,0 +1,64 @@
+version: 1
+tier: service
+path: endoreg_db/services/runtime
+parent: ../structure.yml
+summary: Deployment readiness, offline execution, polling and reconciliation.
+responsibilities:
+- Validate and apply reviewed deployments and runtime readiness requirements.
+- Coordinate offline execution, polling, startup reconciliation and staging cleanup.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: assert_environment_readiness
+  file: environment_readiness.py
+  purpose: Raise when configured runtime requirements are unmet.
+- name: apply_deployment
+  file: deployment_setup.py
+  purpose: Apply the reviewed deployment plan under catalog and local-center ownership locks.
+files:
+- file: __init__.py
+  role: Deployment, Betriebsbereitschaft und Dienstkoordination.
+- file: deployment_setup.py
+  role: Reviewed deployment plans and atomic reference/default-center provisioning.
+- file: environment_readiness.py
+  role: Exports check_environment_readiness, assert_environment_readiness.
+- file: lifecycle_state_machine.py
+  role: Exports transition_service_lifecycle, transition_operation_lifecycle, reduce_operation_lifecycle.
+- file: offline_batch_runner.py
+  role: Exports load_offline_batch_runner_config, run_offline_batch.
+- file: polling_coordinator.py
+  role: Exports processing_coordination.
+- file: reconciliation.py
+  role: Exports should_run_startup_reconciliation.
+- file: runtime_wheel_staging.py
+  role: Exports reap_runtime_wheel_staging.
+dependencies:
+  internal:
+  - endoreg_db/config
+  - endoreg_db/import_files/context
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/media
+  - endoreg_db/services/reference_data
+  - endoreg_db/services/streaming
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+  - rest_framework
+  - yaml
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Local study server deployment
+  doc: docs/local_study_server_deployment.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_reconciliation_service.py tests/services/test_disk_pressure_cleanup_contract.py
+    tests/services/test_deployment_setup.py
+  files:
+  - tests/services/test_reconciliation_service.py
+  - tests/services/test_disk_pressure_cleanup_contract.py
+  - tests/services/test_deployment_setup.py

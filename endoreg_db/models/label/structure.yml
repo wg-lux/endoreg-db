@@ -1,0 +1,37 @@
+version: 1
+tier: module
+path: endoreg_db/models/label
+summary: Labels, segment coordinates and annotation persistence.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+- Preserve concurrent operation ownership and canonical media generation identity; raw media export is
+  prohibited.
+files:
+- file: label.py
+  role: Label vocabulary.
+- file: label_set.py
+  role: Label grouping.
+- file: label_video_segment/label_video_segment.py
+  role: Segment identity and retained workflow wrappers.
+- file: annotation/__init__.py
+  role: Image annotation models.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/label
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/label
+parent: ../structure.yml
+submodules: []

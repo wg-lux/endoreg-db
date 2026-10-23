@@ -1,0 +1,21 @@
+version: 1
+tier: domain
+path: rust
+parent: ../structure.yml
+summary: Native backend for typed media, encryption and lifecycle primitives.
+responsibilities:
+- Build the native Python extension and maintain Rust-backed primitives.
+boundaries:
+- Python service orchestration retains clinical workflow and publication ownership.
+files:
+- file: endoreg_rust_backend/Cargo.toml
+  role: Native crate build and dependencies
+- file: endoreg_rust_backend/src/lib.rs
+  role: Python extension registration
+- file: endoreg_rust_backend/src/timeline_index.rs
+  role: Read-only TimelineIndex applying the canonical frame/time boundary rules
+- file: endoreg_rust_backend/src/frame_ancestry.rs
+  role: Compose source_frame_indices from the recording to the final generation
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md

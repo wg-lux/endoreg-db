@@ -1,0 +1,38 @@
+version: 1
+tier: module
+path: endoreg_db/models/metadata
+summary: Sensitive identity, media metadata and prediction references.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+files:
+- file: sensitive_meta.py
+  role: Sensitive identity persistence; saves delegate verification invalidation to patient_identity and state aliases share is_verified.
+- file: sensitive_meta_logic.py
+  role: Existing identity helpers; delegates erased historical identity matching to secret_rotation services.
+- file: video_meta.py
+  role: Video and encoder metadata.
+- file: pdf_meta.py
+  role: Document parser metadata and flags.
+- file: video_prediction_meta.py
+  role: Prediction persistence; temporal windows delegate to video coordinate services.
+- file: model_meta.py
+  role: Model metadata persistence.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  - endoreg_db/utils
+  external:
+  - django
+  - numpy
+  - lx_dtypes
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/models/metadata
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models/metadata
+parent: ../structure.yml
+submodules: []

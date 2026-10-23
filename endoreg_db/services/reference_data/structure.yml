@@ -1,0 +1,60 @@
+version: 1
+tier: service
+path: endoreg_db/services/reference_data
+parent: ../structure.yml
+summary: Transactional projection and reconciliation of versioned clinical catalogs.
+responsibilities:
+- Plan and project versioned clinical reference catalogs transactionally.
+- Export natural-key catalog snapshots and reconcile legacy links.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: import_clinical_package and load_imported_package
+  file: clinical_projection.py
+  purpose: Preserve and restore all registered package families through validated immutable receipts.
+- name: plan_reference_catalog
+  file: catalog.py
+  purpose: Compare the selected versioned reference catalog with current persisted rows.
+- name: import_clinical_references
+  file: clinical_projection.py
+  purpose: Validate and transactionally project the resolved clinical knowledge graph.
+files:
+- file: package_deployment.py
+  role: Publish validated package archives and folders atomically through protected host filesystem operations.
+- file: __init__.py
+  role: Klinische Referenzen und versionierte Referenzkataloge.
+- file: catalog.py
+  role: Transactional projection of the complete, versioned reference catalogue.
+- file: catalog_export.py
+  role: Lossless natural-key representation for catalogue reconciliation and export.
+- file: catalog_migration.py
+  role: One-time atomic reconciliation of legacy colorectal indication links.
+- file: catalog_models.py
+  role: Explicit reference-catalog model bindings; YAML cannot import model classes.
+- file: clinical_projection.py
+  role: Fail-closed projection of a resolved, versioned clinical knowledge graph.
+dependencies:
+  internal:
+  - endoreg_db/helpers
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Governed clinical terminology
+  doc: docs/assisted_reporting_api_integration.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_reference_catalog.py tests/services/test_reference_catalog_migration.py
+    tests/services/test_clinical_reference_data.py
+  files:
+  - tests/services/test_package_deployment.py
+  - tests/services/test_reference_catalog.py
+  - tests/services/test_reference_catalog_migration.py
+  - tests/services/test_clinical_reference_data.py

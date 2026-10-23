@@ -1,0 +1,42 @@
+version: 1
+tier: module
+path: endoreg_db/models/state
+summary: Media, annotation and import states plus the audit ledger.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+- Preserve concurrent operation ownership and canonical media generation identity; raw media export is
+  prohibited.
+files:
+- file: sensitive_meta.py
+  role: Persist name/date-of-birth checks; derived is_verified and compatibility mutators delegate to the verification service.
+- file: video.py
+  role: Video lifecycle state.
+- file: raw_pdf.py
+  role: Document lifecycle state.
+- file: report_import_attempt.py
+  role: Fenced report import attempts.
+- file: clinical_workflow.py
+  role: Stored clinical workflow state per media record (compare-and-swap version) and its append-only transition log.
+- file: audit_ledger.py
+  role: Audit ledger and head persistence.
+- file: frame_annotation.py
+  role: Annotation queue state and retained compatibility behavior.
+- file: processing_history/processing_history.py
+  role: Common processing-history persistence.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  - endoreg_db/utils
+  external:
+  - django
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/models/state
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models/state
+parent: ../structure.yml
+submodules: []

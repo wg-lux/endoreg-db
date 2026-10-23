@@ -1,0 +1,36 @@
+version: 1
+tier: module
+path: endoreg_db/urls
+summary: Application route composition and public media URL ownership.
+responsibilities:
+- Compose authentication, patient, examination, media and upload routes.
+boundaries:
+- Deployment proxy adds the api prefix; avoid adding a second prefix in application routes.
+files:
+- file: stats.py
+  role: Statistics routes including media annotation comparisons.
+- file: __init__.py
+  role: DRF and Django Ninja URL composition.
+- file: media.py
+  role: Media route definitions.
+- file: upload.py
+  role: Upload routes.
+- file: patient.py
+  role: Patient routes.
+- file: auth.py
+  role: Authentication routes.
+dependencies:
+  internal:
+  - endoreg_db/views
+  - endoreg_db/authz
+  external:
+  - django
+  - rest_framework
+  - ninja
+tests:
+  directory: tests/utils
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/utils/test_media_urlpatterns_contract.py
+  files:
+  - tests/utils/test_media_urlpatterns_contract.py
+parent: ../structure.yml
+submodules: []

@@ -1,0 +1,59 @@
+version: 1
+tier: service
+path: endoreg_db/services/cases
+parent: ../structure.yml
+summary: Case lifecycle, document attachment and examination revision relationships.
+responsibilities:
+- Persist case lifecycle and explicit clinical anchor relationships.
+- Attach documents and manage immutable examination revisions.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: persist_case_graph
+  file: lifecycle.py
+  purpose: Atomically create or update a case and its explicit clinical anchors.
+- name: attach_document_to_case
+  file: documents.py
+  purpose: Attach a supported clinical document to its validated case relationship.
+files:
+- file: __init__.py
+  role: Falllebenszyklus, Dokumentzuordnung und Untersuchungsbeziehungen.
+- file: auto_resolution.py
+  role: Links inferred cases through center-scoped resolution and atomic checked metadata corrections; rejects conflicting persisted identities.
+- file: documents.py
+  role: Exports attach_document_to_case.
+- file: examination_links.py
+  role: Exports load_patient_examination_for_links, build_patient_examination_links.
+- file: examination_revisions.py
+  role: Atomic revision editing and explicit case selection over the canonical graph.
+- file: lifecycle.py
+  role: Exports validate_case_relationships, persist_case_graph, close_case.
+- file: resolution_state.py
+  role: Exports get_media_meta, get_case_resolution_meta, persist_case_resolution_state.
+dependencies:
+  internal:
+  - endoreg_db/export/frames
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/interoperability
+  - endoreg_db/services/media
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Center-scoped identity resolution
+  doc: feature-tracking/Anonymization.yml
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_case_persistence.py tests/services/test_examination_revisions.py
+    tests/services/test_case_persistence_transactions.py
+  files:
+  - tests/views/anonymization/test_sensitive_metadata_view.py
+  - tests/services/test_case_persistence.py
+  - tests/services/test_examination_revisions.py
+  - tests/services/test_case_persistence_transactions.py

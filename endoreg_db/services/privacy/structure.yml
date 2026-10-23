@@ -1,0 +1,63 @@
+version: 1
+tier: service
+path: endoreg_db/services/privacy
+parent: ../structure.yml
+summary: Anonymization workflows, patient pseudonyms and release-quality evaluation.
+responsibilities:
+- Coordinate anonymization and patient pseudonym generation.
+- Evaluate release privacy, anonymization metrics and quality evidence.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: AnonymizationService
+  file: workflow.py
+  purpose: Coordinate video and report anonymization workflows behind the HTTP view boundary.
+- name: generate_patient_pseudonym
+  file: patient_pseudonyms.py
+  purpose: Generate a pseudonym hash for an existing Patient using SensitiveMeta sensitive_meta_logic.
+files:
+- file: response_boundary.py
+  role: Identity-field rejection and HTTP response middleware; validate CSV headers and explicit JSON artifacts before streaming, preserve binary streams and defer rejected-resource cleanup to request completion.
+- file: __init__.py
+  role: Anonymisierung, Pseudonymisierung und Qualitätsmessung.
+- file: evaluation_manifest.py
+  role: Exports write_performance_evaluation_manifest, write_quality_evaluation_manifest, build_performance_evaluation_manifest.
+- file: k_pseudonymity.py
+  role: Exports build_k_pseudonymous_release.
+- file: k_pseudonymity_predicate.py
+  role: Exports evaluate_release_predicate, total_variation_distance, jensen_shannon_divergence.
+- file: metrics.py
+  role: Exports parse_metrics_filters, build_anonymization_metrics_payload, capture_sensitive_meta_metric_values.
+- file: patient_pseudonyms.py
+  role: Service for generating patient pseudonyms using SensitiveMeta sensitive_meta_logic.
+- file: quality_evaluation.py
+  role: Exports evaluate_anonymization_quality, evaluate_media_object, parse_quality_datetime.
+- file: workflow.py
+  role: Exports AnonymizationService.
+dependencies:
+  internal:
+  - endoreg_db/config
+  - endoreg_db/import_files/file_storage
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/raw_pdf_files
+  - endoreg_db/services/reports
+  - endoreg_db/services/video_files
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Anonymization and release
+  doc: docs/anonymization_contract.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_k_pseudonymity_predicate.py tests/services/test_evaluation_manifest.py
+    tests/services/test_anonymization_quality_evaluation.py
+  files:
+  - tests/services/test_k_pseudonymity_predicate.py
+  - tests/services/test_evaluation_manifest.py
+  - tests/services/test_anonymization_quality_evaluation.py
