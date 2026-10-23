@@ -308,7 +308,7 @@ def test_hub_read_and_training_scope_treat_missing_integrity_marker_as_intact(
     integrity_status: str | None,
 ) -> None:
     from endoreg_db.services.datasets.training_manifests import (
-        _approved_video_filter, # nqa
+        _approved_video_filter,  # nqa
     )
     from endoreg_db.views.access_control import (
         filter_video_read_queryset,

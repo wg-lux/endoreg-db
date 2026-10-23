@@ -907,7 +907,7 @@ requires-dist = [
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
     { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.0.9" },
-    { name = "lx-dtypes", specifier = "==0.5.7" },
+    { name = "lx-dtypes", specifier = ">=0.5.7" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
