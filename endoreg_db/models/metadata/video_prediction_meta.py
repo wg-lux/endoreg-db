@@ -88,9 +88,7 @@ class VideoPredictionMeta(models.Model):
     date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
         auto_now_add=True
     )
-    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(
-        auto_now=True
-    )
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
     prediction_array: models.BinaryField[Any, Any] = models.BinaryField(
         blank=True, null=True
     )

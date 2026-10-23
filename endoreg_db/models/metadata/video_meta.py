@@ -292,15 +292,9 @@ class FFMpegMeta(models.Model):
     Stores technical video stream information extracted using FFmpeg (ffprobe).
     """
 
-    width: models.IntegerField[Any, Any] = models.IntegerField(
-        null=True, blank=True
-    )
-    height: models.IntegerField[Any, Any] = models.IntegerField(
-        null=True, blank=True
-    )
-    duration: models.FloatField[Any, Any] = models.FloatField(
-        null=True, blank=True
-    )
+    width: models.IntegerField[Any, Any] = models.IntegerField(null=True, blank=True)
+    height: models.IntegerField[Any, Any] = models.IntegerField(null=True, blank=True)
+    duration: models.FloatField[Any, Any] = models.FloatField(null=True, blank=True)
     frame_rate_num: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )

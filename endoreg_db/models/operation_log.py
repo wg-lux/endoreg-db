@@ -67,13 +67,9 @@ class OperationLog(models.Model):
     )
 
     # Extra info
-    meta: models.JSONField[Any, Any] = models.JSONField(
-        null=True, blank=True
-    )
+    meta: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
 
-    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(
-        auto_now_add=True
-    )
+    created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         verbose_name = "Operation Log"
