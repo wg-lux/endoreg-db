@@ -28,6 +28,7 @@ from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
 from endoreg_db.services.hub.import_monitoring import (
     STORAGE_RETRY_MAX_RETRIES,
     is_retryable_storage_failure,
+    video_import_monitoring_status,
 )
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.annotations.segment_validation_workflow import (
@@ -59,7 +60,6 @@ def overview_upload_job_is_superseded(
         and getattr(state, "anonymization_status", None)
         in {
             AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
-            AnonymizationState.ANONYMIZED,
             AnonymizationState.VALIDATED,
         }
         and (
@@ -407,11 +407,15 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         else:
             raise TypeError(f"Unexpected object type: {type(instance)}")
 
-        # 2. Determine Status (Single Source of Truth: The State Model)
-        # This uses the @property .anonymization_status from VideoState/RawPdfState
+        # Keep stale media progress from hiding a fenced upload interruption.
         raw_status = getattr(
             state_obj, "anonymization_status", AnonymizationState.NOT_STARTED
         )
+        if isinstance(instance, VideoFile):
+            raw_status = video_import_monitoring_status(
+                instance,
+                upload_job=cast(UploadJob | None, self._overview_upload_job(instance)),
+            )
 
         return {
             "id": instance.pk,

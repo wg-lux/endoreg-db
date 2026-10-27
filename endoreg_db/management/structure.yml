@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/report_concept_embeddings.py
+  role: Center-scoped source hashes, local embedding capture and similarity CSV on standard output.
 - file: commands/collect_study_examination.py
   role: Explicit authorized stdin ledger collection with server-computed package evaluation.
 - file: commands/terminology_packages.py

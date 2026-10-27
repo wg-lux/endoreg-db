@@ -101,3 +101,85 @@ The matcher and document are scoped to a single invocation. An import stores
 evidence in its publication transaction; reprocessing replaces the evidence
 object. Previously completed imports reused without changes are not
 automatically analyzed again.
+
+## Persisted report-concept word embeddings
+
+The `report_concept_embeddings` criterion in
+[Reporting.yml](../feature-tracking/Reporting.yml) owns this feature.
+`ReportConceptEmbedding` stores an explicitly annotated **anonymized report text
+span**, its vector, and a foreign key to one persisted `PatientExamination`,
+`PatientFinding`, or `PatientFindingClassification`. Classification rows also
+snapshot the selected choice. Report, patient examination and center must agree.
+
+Only `RawPdfFile.anonymized_text` is an embedding input. The report must have
+`state.anonymized` and `state.anonymization_validated` set. Original `text`, images,
+video, concept labels and externally supplied vectors are not capture inputs.
+There is no fallback when anonymized text is absent. A report created from PDF,
+TXT, CSV or FHIR follows the same boundary after textual import and anonymization.
+
+Capture takes a `ReportConceptSpan` from `lx_dtypes.models.contracts.text_embedding`:
+report ID, SHA-256 of the current anonymized text, Python character offsets
+(start inclusive, end exclusive), concept kind and **persisted annotation ID**.
+The phrase is read from the locked report, never from caller-supplied text.
+Spans must contain 1–2000 characters. The stored concept link is an explicit
+alignment; report-level co-occurrence does not establish word-level synonyms.
+Existing annotation workflows can call `capture_report_concept_embedding` once
+such an alignment is known, supplying their authorized report queryset.
+
+An embedding retains model identity, revision, preprocessing identity and dimension.
+Vectors must be finite, nonzero and dimensionally consistent. Embeddings use
+`de_core_news_lg` 3.8.0, a locked EndoReg dependency installed from explosion's
+release wheel (`[tool.uv.sources]` in `pyproject.toml`; `uv sync` installs it, no
+runtime download). `default_report_text_embedder()` loads it once per process and
+checks its language, version and 300-dimensional static vectors before use.
+`SpacyReportTextEmbedder` averages static word vectors (`spacy-doc-vector-v1`) and
+rejects pipelines without them, including lx-anonymizer's bundled
+`de_core_news_sm`. That small model remains lx-anonymizer's anonymization NER model
+and the finding-extraction tokenizer; it is not an embedding model. Empty/OOV vectors
+fail. No text is sent to an external provider. A compatible local encoder can
+implement `ReportTextEmbedder` while keeping the same report-only capture boundary.
+
+`de_core_news_lg` is trained on general German text, not clinical language. On a
+small check of clinical synonym/distractor triples it ranked the synonym higher in
+only 6 of 11 cases (the small model: 5 of 12), so similarity rows are weak leads
+for review. A clinical embedding model would need its own evaluation. Changing the
+model starts a new embedding space; earlier vectors stay valid but are not mixed in.
+
+The service serializes captures on the report row. Repeating the same source,
+span, target and embedding space returns the existing row without inference.
+Changing the source or model revision creates a distinct identity. Stored evidence
+is not edited to follow a changed report or reassigned annotation: export rejects
+stale source hashes, changed concept snapshots, unvalidated reports and inactive
+annotations. Deleting a report or linked annotation cascades to its vectors.
+Database bulk writes bypass model validation and must not be used for capture.
+
+After installing the matching lx-dtypes version and applying migration
+`0110_report_concept_embedding`, the management command supports:
+
+```bash
+# Obtain the source hash without printing report text.
+python manage.py report_concept_embeddings source --center-id 1 --report-id 42
+
+# Supply one ReportConceptSpan JSON object on stdin. Uses de_core_news_lg;
+# add --spacy-model <installed package or directory> to choose another local model.
+python manage.py report_concept_embeddings capture --center-id 1 < annotation.json
+
+# Export the closest annotated spans within a center (optional --report-id).
+python manage.py report_concept_embeddings export --center-id 1 --top-k 20 > similarities.csv
+```
+
+All operations also support `--database`. For the JSON request, `concept_kind` is
+`examination`, `finding` or `classification`; `annotation_id` references the respective
+patient annotation row, not its terminology definition. No embeddings are generated
+automatically from every word in a report. Capture requires explicit
+source-to-concept alignments.
+
+Similarity export compares compatible model spaces and matching KB identities.
+It includes both phrases, annotation IDs/kinds, concept and choice names, source
+hashes/offsets, model provenance and cosine similarity. Results are candidate
+associations, not calibrated clinical probabilities or automatically approved KB
+synonyms. It performs bounded exact comparisons over at most 1000 selected vectors,
+with 1–100 neighbors per vector. Vectors use portable JSON storage; an approximate
+vector index is not required for this initial corpus. The command validates all
+selected evidence before writing CSV. Exported files contain anonymized report
+fragments and remain subject to the report's access and retention policy.

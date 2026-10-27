@@ -19,8 +19,9 @@ from lx_dtypes.models.contracts.anonymization import (
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files.clinical_contracts import (
-    resolve_lx_anonymization_state,
+from endoreg_db.services.hub.import_monitoring import (
+    latest_video_import_job,
+    video_import_monitoring_status,
 )
 from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.services.video_files import get_or_create_video_state
@@ -138,7 +139,9 @@ class AnonymizationService:
                 return dump_anonymization_status_payload(
                     AnonymizationStatusPayload(
                         media_type="video",
-                        anonymization_status=resolve_lx_anonymization_state(vf).value,
+                        anonymization_status=video_import_monitoring_status(
+                            vf, upload_job=latest_video_import_job(vf)
+                        ).value,
                         integrity_status=integrity_status,
                         integrity_error=integrity_error,
                         file_exists=file_exists(vf.raw_file),

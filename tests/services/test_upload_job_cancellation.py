@@ -64,6 +64,8 @@ def test_queued_cancellation_is_idempotent_and_redelivery_preserves_ciphertext(
         )
     initial_retry_count = job.retry_count
     if reserved:
+        if status == "retrying":
+            UploadJob.objects.filter(pk=job.pk).update(next_retry_at=timezone.now())
         acquire_upload_job_import_lease(
             upload_job_id=str(job.pk), owner="queued-task:delivery"
         )

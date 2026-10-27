@@ -948,15 +948,24 @@ definition_of_done:
   category: operations
   title: Partielle Importe werden sicher erkannt und wiederaufgenommen
   acceptance:
+  - Video overview and status polling project a matching terminal import_interrupted upload as failed
+    instead of stale in-progress media state. Newer attempts, newer media state, other centers/sources,
+    and completed or validated media are not overridden. Read requests never manufacture completion, modify
+    media state, approve validation, or infer success from streaming derivatives.
   - Reconciliation erkennt Datenbank-only, Storage-only, fehlende History, unvollständige HLS-Generation,
     abgelaufene Ownership und widersprüchliche Erfolgszustände.
   - Automatische Reparatur verändert nur eindeutig besessene, wiederherstellbare Zustände; unbekannte
     oder klinisch unsichere Zustände werden als LOST oder Quarantäne sichtbar und bleiben erhalten.
   - Retry ist begrenzt, idempotent, kapazitätsgeprüft und löscht nie die einzige gültige Quelle oder Generation.
   - Expired upload ownership is rechecked under row lock and fenced before terminal interruption; delayed
-    workers cannot publish or automatically reacquire a reconciled interruption. Unproven cancellation
-    cleanup is reported as an interruption, never successful cancellation. Source media and cancellation
-    intent remain preserved for explicit review.
+    workers cannot publish or reacquire a reconciled interruption themselves. The recurring retry coordinator
+    automatically admits retained raw-video sources with a center, source digest and remaining retry budget
+    under the row lock, using bounded backoff. Cancelled/dismissed jobs, active owners, pre-anonymized
+    sources, cleanup and exhausted budgets are excluded. Source bytes are verified before processing;
+    stale snapshots stay fenced after admission. Unproven cancellation cleanup remains an interruption,
+    never successful cancellation.
+  - Video retry handoff remains rediscoverable until worker admission; a lost broker send is retried after
+    a bounded interval without consuming processing retries or weakening exclusive execution ownership.
   - Nach klinischer Validierung darf die Start-Reconciliation entfernte Rohdateien nicht aus alten Kopien
     wieder verknüpfen; vor der Mutation wird der aktuelle Zustand unter Zeilensperre erneut geprüft. Die
     Übersicht zeigt historische Rohstream-Fehler bei validiertem Video und belegter aktueller fertiger
@@ -971,6 +980,20 @@ definition_of_done:
   assessment:
     status: in_progress
     evidence:
+    - kind: code
+      reference: services/hub/import_monitoring.py video_import_monitoring_status; services/privacy/workflow.py;
+        serializers/misc/file_overview.py. Read-only interruption projection shared by overview and polling;
+        native in-progress phases include metadata-pending anonymized output.
+    - kind: test
+      reference: '2026-10-27: PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer:/home/admin/endoreg-db
+        LD_LIBRARY_PATH=/nix/store/8v1vf27phb0ryv4qvsikxpjbm1y0wblr-postgresql-16.15-lib/lib RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false .venv/bin/pytest tests/views/anonymization/test_anonymization_overview.py
+        tests/services/test_upload_job_import_lease.py tests/services/test_reimport_upload_job_overview.py
+        tests/views/anonymization/test_upload_job_dismissal.py -q --tb=short: 137 passed, 1 plugin warning,
+        45.03s. Full .venv/bin/pyright --pythonpath .venv/bin/python: 0 errors, 17 external stub warnings;
+        scoped Pyright and Ruff clean; 67 structure manifests valid. Global tracker validation blocked
+        by unrelated MedicalLedgerIntegration.yml missing assessor metadata; this feature validates individually.
+        No deployment or automatic acceptance of interrupted media.'
     - kind: code
       reference: endoreg_db/services/reconciliation.py::ReconciliationService.clear_stale_lock_files;
         cleanup_orphaned_artifacts; reset_incomplete_processing_states
@@ -1046,39 +1069,17 @@ definition_of_done:
         cleanup warnings. Full Pyright before pytest: 0 errors, 24 warnings; final scoped seven changed
         Python files: 0 errors, 0 warnings. Structure: 65 manifests valid. Native refusal and unexpected
         result preserve ownership, cancellation intent and source; PostgreSQL concurrency regression included.'
-    note: 'Bounded expired raw-video ownership reconciliation and durable interruption guards implemented/tested.
-      No live job mutation; interrupted jobs retain media and require reviewed recovery, cancellation
-      cleanup is not assumed.
-
-      2026-10-15: Grenzen der historischen Aussage aus dem konvertierten Betriebsprotokoll übernommen;
-      keine neue Hostprüfung:
-
-      ## Grenzen der aussage
-
-
-      - Keine vollständige Dekodierung aller Videos oder klinische Sichtprüfung.
-
-      - Keine vollständige kryptografische Prüfung jedes Streaming-Segments.
-
-      - Keine allgemeine Produktionsfreigabe des Import- oder Wiederherstellungsprozesses.
-
-      - Historische Ursachen fehlender Metadaten und Herkunftsangaben bleiben teilweise unbekannt.
-
-      - Nicht jeder Fehlerstatus bedeutet verlorene Daten; früh gescheiterte Versuche können nie Ausgaben
-      erzeugt haben.
-
-      - Keine Treiberaktivierung, kein Neustart und kein neues Anwendungspaket ausgerollt.
-
-      - Verbleibende rote Felder für tatsächlich unvollständige oder unbelegte Zustände sind weiterhin
-      sachlich begründet.
-
-
-      2026-10-16: Abgelaufene Upload-Ausführung einschließlich ausstehender Abbruchabsicht wird vor jeder
-      Mutation durch Rust ownership_lost -> reconcile_fail autorisiert. Ablehnung und unerwarteter Endzustand
-      erhalten die gesamte Datenbankzeile und Quellbytes. ERROR/IMPORT_INTERRUPTED, Fencing, Abbruchabsicht
-      und Medienerhalt bleiben unverändert. Keine allgemeine Migration aller Zustandsmaschinen oder Produktionsfreigabe.'
-    assessed_by: codex-20261016-recovery-fsm
-    assessed_at: '2026-10-16T07:52:17.165173Z'
+    - kind: test
+      reference: '2026-10-27: 249 tests passed across import lease (including PostgreSQL multiprocess),
+        ingestion, retry monitoring, state machine, source fallback, cancellation, overview and reimport
+        suites; full Pyright 0 errors.'
+    note: 'Implemented bounded autonomous recovery of interrupted raw-video imports from retained verified
+      sources, with retry backoff, cancellation and cleanup exclusions, stale snapshot fencing, and rediscovery
+      of lost broker handoffs. Local validation: 249 targeted tests passed; full Pyright 0 errors (17
+      existing missing-stub warnings). No deployment performed; broader production readiness remains in
+      progress.'
+    assessed_by: codex-gc10-video60-20261027
+    assessed_at: '2026-10-27T10:52:06.099870Z'
 - id: import_pipeline_operator_documentation
   category: documentation
   title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert

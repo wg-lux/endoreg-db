@@ -186,6 +186,7 @@ from .state import (
     VideoState,
 )
 from .report import (
+    ReportConceptEmbedding,
     PatientExaminationReport,
 )
 
@@ -342,6 +343,7 @@ __all__ = [
     "AnonymizationMetricMediaType",
     "AnonymizationValidationMetric",
     "PatientExaminationReport",
+    "ReportConceptEmbedding",
     "TransferJob",
     "UploadJob",
     "QuarantineItem",

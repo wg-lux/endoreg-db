@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 files:
+- file: concept_embedding.py
+  role: Source-bound anonymized report span vectors linked to persisted clinical annotations.
 - file: patient_examination_report.py
   role: Report submission, draft and provenance persistence.
 - file: report.py

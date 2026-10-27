@@ -24,6 +24,80 @@ source_documents:
   disposition: reference
   note: Beschreibt Ledger-Modelle, EndoReg-Adapter und den vorgesehenen Django-Host-Integrationspfad.
 definition_of_done:
+- id: standardized_csv_export
+  category: functionality
+  title: Complete CSV exports cover clinical ledger and selected EndoReg tables
+  acceptance:
+  - Ledger exports preserve all current fields, including nested medication schedules and image annotations,
+    with headers for empty tables.
+  - Explicit Django querysets retain their database alias, filters, concrete fields and many-to-many relationships
+    without database writes.
+  - Regression tests verify populated medication and annotation data, duplicate identities, failed export
+    preservation and CSV read-back.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run shared-package Pyright, focused CSV export tests, structure lint and regenerate
+      the demo CSV directory.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/stats/test_standardized.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/django/test_standardized_export.py
+    - kind: document
+      reference: ../lx-data-models/docs/guides/standardized-csv-export.md
+    note: 'Complete ledger/KB/medical/image CSV projections and explicit Django queryset adapter implemented.
+      Full shared suite: 1876 passed, 1 skipped; final focused suite: 10 passed after examination UUID
+      conflict guard. Focused Pyright and Ruff clean; full Pyright has one pre-existing p_video_segment
+      fixture type error. Both structure linters, docs HTML and linkcheck passed (HTML has existing unlisted
+      medication license warning). Real EndoReg model introspection covered all 188 models and 256 tables
+      including M:N, without database queries; populated SQLite querysets and non-default alias covered
+      in tests. Regenerated 54 synthetic CSV tables, 739 rows, with headers and hashes verified. No live
+      EndoReg database export or overall production-readiness claim.'
+    assessed_by: codex-export-20261027
+    assessed_at: '2026-10-27T10:35:32.697064Z'
+- id: bmp_medication_persistence
+  category: functionality
+  title: BMP-shaped medication entries and ordered plans persist through the medical ledger
+  acceptance:
+  - Canonical patient medication rows preserve PZN, ordered substances, structured dosing and BMP notes;
+    ordered mixed medication, compound and free-text plan blocks survive reload and replay.
+  - Block references resolve only to the owning patient's canonical medication rows; missing or inconsistent
+    membership fails and foreign-patient writes roll back.
+  - Merged patches reject incompatible weekly dosing and bound notes; clearing a plan retains medication
+    records. Legacy dosage and intake times are preserved without inferred conversion.
+  - The additive migration preserves legacy membership and dosage, and a fixed pre-BMP request hash remains
+    unchanged when new fields are omitted.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the medical ledger roundtrip, transaction, create/read API and JSON-validation suites
+      against the sibling lx_dtypes contracts and migrated temporary PostgreSQL database. Run focused
+      Pyright and both repository structure linters.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_medical_ledger_roundtrip.py
+    - kind: test
+      reference: tests/services/test_medical_ledger_transactions.py
+    - kind: test
+      reference: tests/api/test_medical_ledger_create.py
+    - kind: test
+      reference: tests/api/test_medical_ledger_read.py
+    - kind: document
+      reference: docs/medical_ledger_contract.md
+    note: 'PR 34 head 691dbb8 integrated with additive EndoReg BMP persistence. PostgreSQL medical ledger
+      regression lane: 74 passed; fixed pre-BMP receipt hash vector: 1 passed. Shared current checkout:
+      1834 passed, 1 skipped. Focused Pyright, Ruff and both structure linters passed. Full-project Pyright
+      reports errors outside changed files (1 shared fixture error, 247 host errors); this bounded criterion
+      does not assert overall production readiness. Migration applied only to temporary test databases.'
+    assessed_by: codex-pr34-review-20261027
+    assessed_at: '2026-10-27T08:12:54.267657Z'
 - id: reporting_clinical_import_adapters
   category: interoperability
   title: Versioned clinical source adapters support reviewed reporting imports

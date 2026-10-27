@@ -37,6 +37,36 @@ contract remains defined in
 
 ## Ownership Boundary
 
+The overview and status polling distinguish retained media state from execution
+progress. A terminal `import_interrupted` upload with no owner overrides an older
+in-progress video status only for the same center and source digest. Both read
+paths report `failed`; the overview retains the operator-review diagnostic.
+Newer media state and completed or validated media remain authoritative. This
+projection does not modify the video, claim integrity loss, or authorize retry.
+In particular, streaming backfill finishing after an interruption does not prove
+that import finalization committed.
+
+The recurring upload retry task runs every 60 seconds. After fencing expired
+owners it admits interrupted raw-video imports with an available retained
+source, a SHA-256 source identity, a center, and remaining retry budget. The
+admission is rechecked under the upload row lock. Cancelled or dismissed imports,
+pre-anonymized inputs, active owners, cleanup in progress and exhausted budgets
+are excluded. Retries use the existing exponential delay (30 seconds initially,
+capped at 15 minutes) and the job's retry limit (three by default).
+Video retry dispatch remains `retrying` until worker admission. If no worker
+claims the handoff within 60 seconds, the coordinator can dispatch it again
+without consuming another processing retry. A database commit followed by a
+lost broker send therefore cannot strand an ownerless `processing` job. Repeated
+deliveries still contend for the same fenced import lease.
+
+Recovery schedules a new attempt; it never marks a candidate successful. The
+ordinary worker verifies the decrypted source digest before processing and
+passes the existing capacity, integrity, streaming and publication gates. Old
+leases and old upload snapshots remain fenced even after automatic recovery
+clears the terminal interruption marker. Missing or inconsistent sources and
+exhausted retries remain visible for operator review; source media and human
+validation are not rewritten by retry admission.
+
 | Concern | `endoreg-db` | `lx-anonymizer` |
 | --- | --- | --- |
 | Durable import-attempt state | Sole owner | Must not persist or infer it |

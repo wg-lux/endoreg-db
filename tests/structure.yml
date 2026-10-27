@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: services/test_report_concept_embeddings.py
+  role: Database source isolation, persisted annotation links, embedding versioning and similarity exports.
 - file: services/test_patient_uuid_generation.py
   role: Fixed UUIDv8 vectors, center/key separation, historical identity stability, and concurrent hash-based patient creation.
 - file: services/test_clinical_lifecycle_state_machine.py
@@ -35,7 +37,7 @@ files:
 - file: services/test_transfer_identity_boundary.py
   role: Reject identity fields before transfer persistence; preserve file-integrity checksums.
 - file: services/test_hub_pseudonyms.py
-  role: Salt-, hub-, kind- and record-separated UUIDv8 hub pseudonyms; local UUIDs rejected and absent from study bundles.
+  role: Hub pseudonym boundaries, all-key demographic attacks, random-mapping comparison, case linkage and mapping-compromise counterexamples.
 - file: services/test_source_patient_matching.py
   role: Real source identity hashes rejected at the hub without salt resolution, including repeats and distinct examinations.
 - file: scripts/test_benchmark_sha256.py

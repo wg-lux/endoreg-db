@@ -12,9 +12,11 @@ from endoreg_db.models import Center, UploadJob
 from endoreg_db.services.hub.upload_job_import_lease import (
     UploadJobImportInterrupted,
     reconcile_expired_upload_job_import_leases,
+    recover_interrupted_upload_jobs,
     UploadJobCleanupInProgress,
     UploadJobImportLeaseBusy,
     UploadJobImportLeaseLost,
+    UploadJobImportLease,
     UploadJobImportLeaseHeartbeat,
     acquire_upload_job_import_lease,
     heartbeat_upload_job_import_lease,
@@ -76,6 +78,211 @@ def _upload_job(center: Center) -> UploadJob:
         content_type="video/mp4",
         source_center=center,
     )
+
+
+def _recoverable_import() -> tuple[UploadJob, UploadJobImportLease]:
+    from endoreg_db.utils.hashs import get_file_hash
+    from endoreg_db.utils.storage import ensure_local_file
+
+    job = _upload_job(Center.objects.create(name="automatic-recovery"))
+    with ensure_local_file(job.file) as source:
+        job.content_hash = get_file_hash(source)
+    job.save(update_fields=["content_hash"])
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="lost-worker"
+    )
+    UploadJob.objects.filter(pk=job.pk).update(
+        status=UploadJob.Status.PROCESSING,
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    job.refresh_from_db()
+    return job, lease
+
+
+@pytest.mark.django_db
+def test_periodic_recovery_retries_retained_import_and_keeps_old_worker_fenced() -> (
+    None
+):
+    from unittest.mock import Mock
+    from endoreg_db.services.hub.import_monitoring import (
+        dispatch_due_upload_job_retries,
+    )
+    from endoreg_db.services.hub.ingest import _reserve_video_upload_import_handoff
+    from endoreg_db.services.hub.upload_job_state_machine import mark_upload_job_error
+
+    job, old_lease = _recoverable_import()
+    dispatcher = Mock()
+    result = dispatch_due_upload_job_retries(dispatcher=dispatcher, queue="pipeline")
+    current = UploadJob.objects.get(pk=job.pk)
+    assert current.status == UploadJob.Status.RETRYING
+    assert current.retryable and current.retry_count == 1
+    assert current.next_retry_at is not None
+    assert 25 <= (current.next_retry_at - timezone.now()).total_seconds() <= 30
+    assert result.dispatched_count == 0
+    assert recover_interrupted_upload_jobs() == 0
+    with pytest.raises(UploadJobImportLeaseBusy, match="scheduled retry"):
+        acquire_upload_job_import_lease(
+            upload_job_id=str(job.pk), owner="early-redelivery"
+        )
+    with pytest.raises(UploadJobImportLeaseLost):
+        with locked_upload_job_import_lease(old_lease):
+            pytest.fail("old worker regained publication rights")
+    with pytest.raises(UploadJobImportLeaseLost):
+        mark_upload_job_error(job, "stale worker failure")
+
+    UploadJob.objects.filter(pk=job.pk).update(next_retry_at=timezone.now())
+    assert (
+        dispatch_due_upload_job_retries(
+            dispatcher=dispatcher, queue="pipeline"
+        ).dispatched_count
+        == 1
+    )
+    dispatcher.apply_async.assert_called_once_with(
+        args=(str(job.pk),), queue="pipeline", routing_key="pipeline"
+    )
+    assert (
+        dispatch_due_upload_job_retries(
+            dispatcher=dispatcher, queue="pipeline"
+        ).dispatched_count
+        == 0
+    )
+    reserved, reservation, dispatched = _reserve_video_upload_import_handoff(
+        upload_job_id=str(job.pk), queue="ffmpeg_media", task_id="recovered-task"
+    )
+    assert dispatched and reservation is not None
+    assert reserved.processing_fencing_token == reservation.fencing_epoch
+    execution = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk),
+        owner="recovered-worker",
+        reservation_owner=reservation.owner,
+    )
+    assert execution.fencing_epoch > old_lease.fencing_epoch
+    with locked_upload_job_import_lease(execution) as owned:
+        assert owned.retry_count == 1
+        with owned.file.open("rb") as source:
+            assert source.read() == b"video"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "blocker",
+    [
+        "cancel",
+        "dismiss",
+        "source",
+        "persisted",
+        "center",
+        "hash",
+        "preanonymized",
+        "cleanup",
+        "budget",
+        "owner",
+        "epoch",
+    ],
+)
+def test_interrupted_recovery_preserves_ineligible_jobs(blocker: str) -> None:
+    job, _ = _recoverable_import()
+    assert reconcile_expired_upload_job_import_leases() == 1
+    changes: dict[str, dict[str, object]] = {
+        "cancel": {"cancellation_requested_at": timezone.now()},
+        "dismiss": {"overview_dismissed_at": timezone.now()},
+        "source": {"file": "upload_jobs/missing-source.mp4"},
+        "persisted": {"source_file_persisted": False},
+        "center": {"source_center": None},
+        "hash": {"content_hash": ""},
+        "preanonymized": {"storage_tier": UploadJob.StorageTier.UPLOAD_PREANONYMIZED},
+        "cleanup": {"cleanup_status": UploadJob.CleanupStatus.ELIGIBLE},
+        "budget": {"retry_count": job.max_retries},
+        "owner": {
+            "processing_lease_owner": "live-worker",
+            "processing_lease_expires_at": timezone.now() + timedelta(minutes=5),
+            "processing_heartbeat_at": timezone.now(),
+        },
+        "epoch": {"processing_fencing_token": 0},
+    }
+    UploadJob.objects.filter(pk=job.pk).update(**changes[blocker])
+    before = UploadJob.objects.values().get(pk=job.pk)
+    assert recover_interrupted_upload_jobs() == 0
+    assert UploadJob.objects.values().get(pk=job.pk) == before
+
+
+@pytest.mark.django_db
+def test_repeated_worker_loss_exhausts_existing_retry_budget() -> None:
+    job, _ = _recoverable_import()
+    for count in range(1, job.max_retries + 1):
+        assert reconcile_expired_upload_job_import_leases() == 1
+        assert recover_interrupted_upload_jobs() == 1
+        job.refresh_from_db()
+        assert job.retry_count == count
+        assert job.next_retry_at is not None
+        assert (
+            30 * 2 ** (count - 1) - 5
+            <= (job.next_retry_at - timezone.now()).total_seconds()
+            <= 30 * 2 ** (count - 1)
+        )
+        # Model the normal dispatch/claim followed by another worker loss.
+        from endoreg_db.services.hub.upload_job_state_machine import (
+            mark_upload_job_processing,
+        )
+
+        mark_upload_job_processing(job)
+        acquire_upload_job_import_lease(
+            upload_job_id=str(job.pk), owner=f"retry-{count}"
+        )
+        UploadJob.objects.filter(pk=job.pk).update(
+            processing_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+    assert reconcile_expired_upload_job_import_leases() == 1
+    assert recover_interrupted_upload_jobs() == 0
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.ERROR
+    assert job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+    assert job.retry_count == job.max_retries
+    assert not job.retryable
+
+
+@pytest.mark.django_db
+def test_recovery_fences_snapshots_of_the_terminal_interruption_too() -> None:
+    from endoreg_db.services.hub.upload_job_state_machine import mark_upload_job_error
+
+    job, _ = _recoverable_import()
+    assert reconcile_expired_upload_job_import_leases() == 1
+    job.refresh_from_db()
+    assert recover_interrupted_upload_jobs() == 1
+    with pytest.raises(UploadJobImportLeaseLost):
+        mark_upload_job_error(job, "late terminal callback")
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.RETRYING
+    assert job.retry_count == 1
+
+
+@pytest.mark.django_db(transaction=True)
+def test_concurrent_recovery_admits_only_one_retry() -> None:
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Barrier
+    from django.db import connections
+
+    job, old_lease = _recoverable_import()
+    assert reconcile_expired_upload_job_import_leases() == 1
+    barrier = Barrier(2)
+
+    def recover() -> int:
+        connections.close_all()
+        try:
+            barrier.wait(timeout=10)
+            return recover_interrupted_upload_jobs()
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        first = pool.submit(recover)
+        second = pool.submit(recover)
+        results = [first.result(timeout=20), second.result(timeout=20)]
+    assert sorted(results) == [0, 1]
+    job.refresh_from_db()
+    assert job.retry_count == 1
+    assert job.processing_fencing_token == old_lease.fencing_epoch + 1
+    assert job.status == UploadJob.Status.RETRYING
 
 
 @pytest.mark.django_db(transaction=True)

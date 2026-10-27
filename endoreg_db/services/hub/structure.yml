@@ -88,7 +88,7 @@ files:
 - file: upload_job_files.py
   role: Central ownership inventory shared by import staging and source cleanup.
 - file: upload_job_import_lease.py
-  role: Renewable fenced ownership and bounded expired-attempt reconciliation invoked by the retry dispatcher.
+  role: Renewable fenced ownership, expired-attempt reconciliation and bounded retained-source recovery invoked by the retry dispatcher.
 - file: upload_job_state_machine.py
   role: Exports validate_upload_job_status_transition, mark_upload_job_processing, mark_upload_job_completed.
 - file: video_provenance.py

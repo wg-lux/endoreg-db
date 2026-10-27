@@ -8,6 +8,10 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0110_report_concept_embedding.py
+  role: Persist versioned report-only vectors with exactly one clinical annotation and cascading source deletion.
+- file: migrations/0109_medication_bmp.py
+  role: Add validated BMP medication fields and ordered plan blocks while preserving legacy dosage and membership.
 - file: migrations/0104_patient_matching.py
   role: Persist matching budgets, sessions and UUID relationship edges.
 - file: migrations/0107_matching_worker_state.py

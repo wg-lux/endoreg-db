@@ -20,6 +20,33 @@ source_documents:
   note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den
     Vertrag mit lx-anonymizer.
 definition_of_done:
+- id: report_concept_embeddings
+  category: functionality
+  title: Persist anonymized report span embeddings with annotated concept links
+  acceptance:
+  - Only persisted anonymized report spans can reach embedding inference; raw text and non-text media
+    are never inputs.
+  - Versioned finite nonzero vectors retain source hash, offsets and foreign keys to persisted examination,
+    finding or classification annotations; retries are idempotent and stale or mismatched associations
+    fail.
+  - Center-scoped CSV export compares compatible embeddings and retains annotated concept provenance without
+    promoting candidate synonyms to clinical facts.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused type checks, database persistence and source-isolation tests, migration
+      consistency and structure validation.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_report_concept_embeddings.py
+    note: 'Embeddings use the locked de_core_news_lg 3.8.0 wheel (300-dim static vectors, contract-checked);
+      sm stays only for anonymization/finding extraction. 20 PostgreSQL tests pass. Open: synonym signal
+      is weak (6/11 triples); manual review by an assessor.'
+    assessed_by: claude-lx-data-models-43
+    assessed_at: '2026-10-27T12:21:50.494521Z'
 - id: finding_suggestion_review
   category: functionality
   title: Erkannte Import- und KI-Befunde werden explizit bestätigt
@@ -616,8 +643,8 @@ definition_of_done:
     - kind: test
       reference: '2026-10-14: report_import_service_unit and storage_state_management suites84 passed6
         conditional skips. Successful explicit retry uses one admission and no terminal failure cleanup;
-        actual state reset preserves source, snapshot, candidate and successful history, rejects stale ownership.
-        Focused Pyright0 errors1 stub warning; full backend Pyright0 errors6 warnings.'
+        actual state reset preserves source, snapshot, candidate and successful history, rejects stale
+        ownership. Focused Pyright0 errors1 stub warning; full backend Pyright0 errors6 warnings.'
     - kind: command
       reference: devenv tasks run rust:report-runtime
     - kind: command

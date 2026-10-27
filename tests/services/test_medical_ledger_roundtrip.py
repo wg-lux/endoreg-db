@@ -238,3 +238,160 @@ def test_complete_medical_ledger_rolls_back_on_late_reference_conflict() -> None
     assert not PatientLabValue.objects.filter(patient=patient).exists()
     assert not PatientMedication.objects.filter(patient=patient).exists()
     assert not PatientMedicationSchedule.objects.filter(patient=patient).exists()
+
+
+@pytest.mark.django_db
+def test_bmp_medication_blocks_roundtrip_patch_and_replay() -> None:
+    from endoreg_db.services.interoperability.medical_ledger import (
+        update_patient_medication,
+        update_patient_medication_schedule,
+    )
+    from lx_dtypes.models.ledger.medical.Write import (
+        PatientMedicationUpdate,
+        PatientMedicationScheduleUpdate,
+    )
+    from pydantic import ValidationError
+
+    patient = Patient.objects.create(patient_hash="bmp-roundtrip-synthetic")
+    payload = PatientMedicalLedgerCreate.model_validate(
+        {
+            "patient": str(_pk(patient)),
+            "medications": [
+                {
+                    "pzn": "12345678",
+                    "substances": [{"name": "Synthetic substance", "strength": "5 mg"}],
+                    "dosing": {"morning": "1/2", "weekday": 1},
+                    "dosage_form_code": "TAB",
+                    "unit_code": "1",
+                    "notes": "Synthetic note",
+                }
+            ],
+            "medication_schedules": [
+                {
+                    "blocks": [
+                        {
+                            "heading": {"text": "Preparation"},
+                            "rows": [
+                                {
+                                    "kind": "compound",
+                                    "entry": {
+                                        "text": "Synthetic compound",
+                                        "bound_note": "Synthetic continuation",
+                                    },
+                                },
+                                {
+                                    "kind": "free_text",
+                                    "entry": {"text": "Synthetic instruction"},
+                                },
+                            ],
+                        },
+                        {
+                            "heading": {"code": 425},
+                            "rows": [{"kind": "medication", "medication_index": 0}],
+                        },
+                    ]
+                }
+            ],
+        }
+    )
+    result = create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="bmp-roundtrip"
+    )
+    replay = create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="bmp-roundtrip"
+    )
+    assert replay.replayed
+    assert result.ledger.model_dump() == replay.ledger.model_dump()
+    record = PatientMedication.objects.get(patient=patient)
+    assert record.medication is None
+    assert record.dosing["morning"] == "1/2"
+    schedule = PatientMedicationSchedule.objects.get(patient=patient)
+    assert list(schedule.medication.all()) == [record]
+    loaded = build_patient_medical_ledger_for_patient(patient=patient)
+    assert loaded.medications[0].substances[0].strength == "5 mg"
+    blocks = loaded.medication_schedules[0].medication_blocks
+    assert [row.kind for row in blocks[0].rows] == ["compound", "free_text"]
+    assert blocks[1].heading is not None and blocks[1].heading.code == 425
+    assert blocks[1].rows[0].kind == "medication"
+    assert blocks[1].rows[0].medication.uuid == loaded.medications[0].uuid
+
+    with pytest.raises(ValidationError, match="bound_note"):
+        update_patient_medication(
+            patient=patient,
+            medication_id=_pk(record),
+            payload=PatientMedicationUpdate(
+                bound_note="cannot coexist with weekly dosing"
+            ),
+        )
+    record.refresh_from_db()
+    assert record.bound_note is None
+    updated = update_patient_medication(
+        patient=patient,
+        medication_id=_pk(record),
+        payload=PatientMedicationUpdate(notes="Updated note"),
+    )
+    assert updated.notes == "Updated note"
+    assert updated.dosing.weekday == 1
+    empty = update_patient_medication_schedule(
+        patient=patient,
+        schedule_id=_pk(schedule),
+        payload=PatientMedicationScheduleUpdate(blocks=[]),
+    )
+    assert empty.medication_blocks == [] and empty.medications == []
+    assert PatientMedication.objects.filter(pk=record.pk).exists()
+
+
+@pytest.mark.django_db
+def test_bmp_schedule_rejects_foreign_patient_without_partial_write() -> None:
+    from endoreg_db.services.interoperability.medical_ledger import (
+        create_patient_medication_schedule,
+        MedicalLedgerPatientResourceNotFound,
+    )
+    from lx_dtypes.models.ledger.medical.Write import PatientMedicationScheduleCreate
+
+    patient = Patient.objects.create(patient_hash="bmp-owner-synthetic")
+    foreign = Patient.objects.create(patient_hash="bmp-foreign-synthetic")
+    record = PatientMedication.objects.create(patient=foreign, pzn="12345678")
+    with pytest.raises(MedicalLedgerPatientResourceNotFound):
+        create_patient_medication_schedule(
+            patient=patient,
+            payload=PatientMedicationScheduleCreate.model_validate(
+                {
+                    "blocks": [
+                        {"rows": [{"kind": "medication", "medication_id": _pk(record)}]}
+                    ]
+                }
+            ),
+        )
+    assert not PatientMedicationSchedule.objects.filter(patient=patient).exists()
+
+
+@pytest.mark.django_db
+def test_legacy_medication_request_keeps_pre_bmp_receipt_hash() -> None:
+    from endoreg_db.models import MedicalLedgerWriteReceipt
+
+    patient = Patient.objects.create(pk=7000001, patient_hash="pr34-hash-synthetic")
+    unit = Unit.objects.create(name="pr34-unit", abbreviation="mg")
+    Medication.objects.create(name="pr34-synthetic", default_unit=unit)
+    MedicationIntakeTime.objects.create(name="pr34-morning", time=time(8, 0))
+    payload = PatientMedicalLedgerCreate.model_validate(
+        {
+            "patient": "7000001",
+            "medications": [
+                {
+                    "medication": "pr34-synthetic",
+                    "dosage": {"morning": 500},
+                    "intake_times": ["pr34-morning"],
+                }
+            ],
+            "medication_schedules": [{"medication_indices": [0]}],
+        }
+    )
+    create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="pr34-vector"
+    )
+    receipt = MedicalLedgerWriteReceipt.objects.get(patient=patient)
+    # Fixed vector generated using the contracts and hash algorithm before PR 34.
+    assert receipt.request_hash == (
+        "be9b9271cbf9b6974bc761f56253fba111fa4abd5e8ca093cf3c9b705b9b1230"
+    )

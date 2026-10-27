@@ -306,6 +306,12 @@ definition_of_done:
   category: security
   title: Nachweise für die Aussagen des Linkage-Manuskripts
   acceptance:
+  - Der aktuelle Vertrag patient_matching_lean/Site_scoped_linkage_publication(2)(1).docx wird gegen zwei
+    Szenarien mit allen kompromittierten Schlüsseln geprüft (nur Registerdaten; zusätzlich alle Quelldaten).
+    Speicheralternativen, Fallverknüpfung, Inhaltsinferenz und Grenzen der Lean-Aussagen werden getrennt
+    ausgewiesen. Registerbetrieb benötigt konkrete Rechtsgrundlagen, Rollen, Datenschutz-Folgenabschätzung
+    soweit erforderlich und überprüfte Schutzmaßnahmen; Tests oder Framework-Publikation gelten nicht
+    als rechtliche oder institutionelle Freigabe.
   - 'TODO-02: Historische Läufe (47-Test-Log, Bildbeobachtungen, HMAC-Scans, Plots, Umgebungsmanifeste)
     sind mit Commit, Dirty-State und Prüfsummen archiviert; andernfalls bleiben sie im Manuskript als
     historisch und nicht wiederholt gekennzeichnet.'
@@ -338,18 +344,51 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: document
-      reference: Site_scoped_linkage_with_formal_supplement_revised 1.docx
+      reference: patient_matching_lean/Site_scoped_linkage_with_formal_supplement_revised 1.docx
     - kind: command
       reference: DOCX ZIP/XML validated; 24 non-body package parts and 224 Lean-listing paragraphs unchanged;
         new UUID derivation, German care/research grounds, recipient-relative identifiability, references
         and obsolete-claim checks passed; LibreOffice PDF export succeeded; 67 structure manifests valid.
-    note: Manuskript am 23.10.2026 an deterministische lokale UUIDv8 angepasst. Deutsche Versorgungs-/Forschungsgrundlagen
+    - kind: document
+      reference: docs/patient_matching_threat_model.md
+    - kind: test
+      reference: tests/services/test_hub_pseudonyms.py
+    - kind: command
+      reference: '2026-10-26: .venv/bin/pyright --pythonpath .venv/bin/python: 0 errors, 17 missing-stub
+        warnings; prescribed .devenv/state/venv absent. PYTHONPATH=.:../lx-data-models .venv/bin/pytest
+        tests/services/test_hub_pseudonyms.py tests/services/test_patient_uuid_generation.py -q: 35 passed,
+        0 failed, 0 skipped, 1 warning, 37.79s; later temporary-directory cleanup warnings. lx-data-models
+        39f0386b2088e7be51f857b4b033e2bbbaf67993 with preexisting pyproject.toml change. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+        .venv/bin/pytest -c scripts/reidentification/pytest.ini --confcutdir=scripts/reidentification
+        scripts/reidentification/test_harness.py -q: 18 passed, 0 failed, 0 skipped, 1.34s. Ruff passed;
+        structure lint 67 manifests; tracker validate 38 definitions.'
+    - kind: document
+      reference: patient_matching_lean/Site_scoped_linkage_publication(2)(1).docx
+    - kind: command
+      reference: '2026-10-26 DOCX validation: ZIP CRC/XML pass; all non-document package parts unchanged;
+        equations and complete formal block unchanged; historical Table S4 unchanged; exactly one numerical
+        table and duplicate numerical image removed. LibreOffice PDF export: 20 pages; storage comparison,
+        legal interpretation and complete numerical table visually reviewed. Structure lint: 67 manifests.
+        No application code changes or new test run; R13 identifies the preceding 35+18 test evidence.'
+    note: 'Manuskript am 23.10.2026 an deterministische lokale UUIDv8 angepasst. Deutsche Versorgungs-/Forschungsgrundlagen
       und empfaengerbezogene Identifizierbarkeit nach C-413/23 P getrennt argumentiert. Betreiberangaben
       zu Deutschland, Doppelnutzung und Verantwortlichenvereinbarung als Angaben gekennzeichnet; keine
       Vertrags-, Deployment- oder Rechtsgrundlagenpruefung behauptet. Historische Experimente und Lean-Listing
       erhalten; keine neue formale Verifikation oder Erledigung der weiteren Evidenzkriterien.
-    assessed_by: codex-patient-uuid-20261023
-    assessed_at: '2026-10-23T09:53:22.925035Z'
+
+      2026-10-26: Beide vom Auftraggeber bestätigten Komplettschlüsselverlust-Szenarien gegen den aktuellen
+      DOCX-Vertrag bewertet. Zufällige lokale Studien-/Fallzuordnung nur als Alternative getestet; keine
+      Änderung produktiver Kennungen, keine Migration, Deployment- oder Rechtsfreigabe. Vollständiger
+      Quelldatenzugriff bleibt identifizierend. Installiertes lx_dtypes blockiert Django-Start wegen fehlendem
+      ReportExtractionReceipt; kompatibler lokaler Quellcheckout separat geprüft.
+
+      2026-10-26: Aktuelles DOCX auf Wunsch direkt überarbeitet. Genehmigtes Studienprotokoll als vom
+      Studienteam gegebene institutionelle Prämisse; positive Argumentation zur rechtmäßigen Registerverarbeitung
+      mit lokaler Pseudonymisierung und empfängerbezogener Nichtidentifizierbarkeit. Tabelle 2 qualitativ,
+      Tabelle S4 einzige Messzahlentabelle; doppelte Bildtabelle entfernt. Bestehende Messwerte und formaler
+      Anhang erhalten.'
+    assessed_by: codex-endoreg-openbao-20261026
+    assessed_at: '2026-10-26T15:32:01.465893Z'
 - id: source_local_patient_matching
   category: security
   title: Historischen zentralen Hashabgleich sperren

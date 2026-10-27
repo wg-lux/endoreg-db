@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.db import transaction
+from django.db.models import F
 from django.db.models.functions import Now
 
 from endoreg_db.services.imports.lease import (
@@ -20,8 +21,10 @@ from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
     validate_upload_job_interrupted_retry,
     validate_upload_job_interruption,
+    validate_upload_job_status_transition,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event
+from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
 DEFAULT_VIDEO_IMPORT_LEASE_SECONDS = 300
@@ -43,13 +46,13 @@ class UploadJobImportLeaseLost(RuntimeError):
 
 
 class UploadJobImportInterrupted(RuntimeError):
-    """Interrupted ownership requires reviewed recovery before another execution."""
+    """Interrupted ownership must pass recovery admission before another execution."""
 
 
 def raise_if_upload_job_import_interrupted(job: UploadJob) -> None:
     if job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED.value:
         raise UploadJobImportInterrupted(
-            "Interrupted import requires reviewed recovery before retry"
+            "Interrupted import requires recovery admission before retry"
         )
 
 
@@ -123,6 +126,17 @@ def acquire_upload_job_import_lease(
                 f"Upload job {job.pk} source cleanup is in progress"
             )
         database_now = _database_now(upload_job_id)
+        if (
+            job.status == UploadJob.Status.RETRYING
+            and job.next_retry_at is not None
+            and job.next_retry_at > database_now
+        ):
+            raise UploadJobImportLeaseBusy(
+                "Upload job is waiting for its scheduled retry",
+                retry_after_seconds=max(
+                    1, int((job.next_retry_at - database_now).total_seconds())
+                ),
+            )
         current_expiry = job.processing_lease_expires_at
         has_live_owner = (
             bool(job.processing_lease_owner)
@@ -390,3 +404,69 @@ def reconcile_expired_upload_job_import_leases(*, limit: int = 100) -> int:
             )
             reconciled += 1
     return reconciled
+
+
+def recover_interrupted_upload_jobs(*, limit: int = 100) -> int:
+    """Admit bounded retries of fenced raw imports with retained source identity.
+
+    Only the recurring recovery coordinator may clear an interruption. Workers
+    still enter through the ordinary source, capacity and publication gates;
+    neither a candidate master nor ready streaming proves import completion.
+    """
+    from endoreg_db.services.hub.import_monitoring import retry_delay_seconds
+
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    eligible = (
+        UploadJob.objects.filter(
+            status=UploadJob.Status.ERROR,
+            error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+            content_type__startswith="video/",
+            content_hash__regex=r"^[0-9a-f]{64}$",
+            source_center__isnull=False,
+            source_file_persisted=True,
+            cancellation_requested_at__isnull=True,
+            overview_dismissed_at__isnull=True,
+            processing_lease_owner="",
+            processing_lease_expires_at__isnull=True,
+            processing_fencing_token__gt=0,
+            cleanup_status__in=[
+                UploadJob.CleanupStatus.PENDING,
+                UploadJob.CleanupStatus.SKIPPED,
+            ],
+            retry_count__lt=F("max_retries"),
+        )
+        .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+        .exclude(file="")
+    )
+    candidates = tuple(
+        eligible.order_by("updated_at", "pk").values_list("pk", flat=True)[:limit]
+    )
+    recovered = 0
+    for job_id in candidates:
+        with transaction.atomic():
+            # Recheck every admission condition after concurrent recovery,
+            # cancellation, cleanup or another worker has released the row.
+            job = eligible.select_for_update(of=("self",)).filter(pk=job_id).first()
+            if job is None or not file_exists(job.file):
+                continue
+            validate_upload_job_status_transition(
+                current_status=job.status, target_status=UploadJob.Status.RETRYING.value
+            )
+            # This coordinator owns the locked interruption, unlike ordinary
+            # worker transitions which must continue rejecting that marker.
+            job.schedule_retry(
+                "Automatically retrying a fenced interrupted import from its retained source.",
+                error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
+                delay_seconds=retry_delay_seconds(job.retry_count),
+            )
+            emit_structured_event(
+                logger,
+                "video_import.interrupted_retry_scheduled",
+                upload_job_id=str(job.pk),
+                fencing_epoch=job.processing_fencing_token,
+                retry_count=job.retry_count,
+                max_retries=job.max_retries,
+            )
+            recovered += 1
+    return recovered

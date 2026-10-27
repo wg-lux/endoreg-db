@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Any, Protocol
 
 from django.db import transaction
@@ -8,6 +9,12 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.anonymization import (
+    AnonymizationPhase,
+    AnonymizationState,
+    anonymization_phase,
+)
 from endoreg_db.services.hub.upload_job_state_machine import (
     mark_upload_job_processing,
     schedule_upload_job_retry,
@@ -21,8 +28,55 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_RETRY_DELAY_SECONDS = 30
 MAX_RETRY_DELAY_SECONDS = 15 * 60
+RETRY_HANDOFF_TIMEOUT_SECONDS = 60
 STORAGE_RETRY_MAX_RETRIES = 96
 INSUFFICIENT_STORAGE_ERROR_PREFIX = "Insufficient pipeline storage."
+
+
+def video_import_monitoring_status(
+    video: VideoFile, *, upload_job: UploadJob | None
+) -> AnonymizationState:
+    """Project an interrupted attempt without rewriting ambiguous media state.
+
+    Streaming backfill can finish after the import owner dies; it does not
+    commit import completion. A newer media state or completed publication
+    must not be replaced by an older interrupted upload's diagnostics.
+    """
+    state = video.state
+    status = state.anonymization_status if state else AnonymizationState.NOT_STARTED
+    if (
+        state is not None
+        and anonymization_phase(status) is AnonymizationPhase.IN_PROGRESS
+        and upload_job is not None
+        and upload_job.status == UploadJob.Status.ERROR
+        and upload_job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+        and not upload_job.processing_lease_owner
+        and (upload_job.source_center.pk if upload_job.source_center else None)
+        == video.center_id
+        and bool(video.raw_video_hash)
+        and upload_job.content_hash == video.raw_video_hash
+        and upload_job.content_type.startswith("video/")
+        and upload_job.updated_at >= state.date_modified
+    ):
+        return AnonymizationState.FAILED
+    return status
+
+
+def latest_video_import_job(video: VideoFile) -> UploadJob | None:
+    """Use the overview's source/center scope and newest-attempt ordering."""
+    if not video.raw_video_hash:
+        return None
+    return (
+        UploadJob.objects.select_related("source_center")
+        .filter(
+            source_center_id=video.center_id,
+            content_hash=video.raw_video_hash,
+            content_type__startswith="video/",
+        )
+        .exclude(dismissed_upload_job_filter())
+        .order_by("-updated_at", "-created_at")
+        .first()
+    )
 
 
 def can_dismiss_upload_job(job: UploadJob) -> bool:
@@ -204,31 +258,42 @@ def dispatch_due_upload_job_retries(
         raise ValueError("limit must be positive")
     from endoreg_db.services.hub.upload_job_import_lease import (
         reconcile_expired_upload_job_import_leases,
+        recover_interrupted_upload_jobs,
     )
 
     reconcile_expired_upload_job_import_leases(limit=limit)
-    due_ids = tuple(
-        UploadJob.objects.filter(
-            status=UploadJob.Status.RETRYING,
-            retryable=True,
-            next_retry_at__lte=timezone.now(),
+    recover_interrupted_upload_jobs(limit=limit)
+    due_jobs = UploadJob.objects.filter(
+        status=UploadJob.Status.RETRYING,
+        retryable=True,
+        next_retry_at__lte=timezone.now(),
+    ).filter(
+        Q(last_attempt_at__isnull=True)
+        | Q(last_attempt_at__lt=F("next_retry_at"))
+        | Q(
+            last_attempt_at__lte=timezone.now()
+            - timedelta(seconds=RETRY_HANDOFF_TIMEOUT_SECONDS)
         )
-        .order_by("next_retry_at", "created_at")
-        .values_list("pk", flat=True)[:limit]
+    )
+    due_ids = tuple(
+        due_jobs.order_by("next_retry_at", "created_at").values_list("pk", flat=True)[
+            :limit
+        ]
     )
     dispatched_count = 0
     failed_count = 0
     for upload_job_id in due_ids:
         with transaction.atomic():
-            upload_job = UploadJob.objects.select_for_update().get(pk=upload_job_id)
-            if (
-                upload_job.status != UploadJob.Status.RETRYING.value
-                or not upload_job.retryable
-                or upload_job.next_retry_at is None
-                or upload_job.next_retry_at > timezone.now()
-            ):
+            upload_job = due_jobs.select_for_update().filter(pk=upload_job_id).first()
+            if upload_job is None:
                 continue
-            mark_upload_job_processing(upload_job)
+            if upload_job.content_type.startswith("video/"):
+                # A broker handoff is not worker ownership. Keep rediscovery
+                # possible if the process dies before sending or delivery is lost.
+                upload_job.last_attempt_at = timezone.now()
+                upload_job.save(update_fields=["last_attempt_at", "updated_at"])
+            else:
+                mark_upload_job_processing(upload_job)
         try:
             dispatcher.apply_async(
                 args=(str(upload_job.pk),),

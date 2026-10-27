@@ -1,5 +1,17 @@
 # Messergebnis: zusätzlicher Identitätsgewinn nach HMAC-Schlüsselverlust
 
+Aktuelle Vertragseinordnung (26.10.2026):
+[vollständiger Schlüsselverlust, Speichervarianten und Registerbetrieb](../../docs/patient_matching_threat_model.md).
+Der aktuelle Vertrag hält Quellkennungen lokal, erlaubt aber separate Hub-Pseudonyme.
+Bei Kenntnis aller Schlüssel ist auch die demografisch abgeleitete Hub-Kennung
+nachrechenbar. Die unten gemessene Begrenzung durch einen einzigen exponierten
+Zentrumsschlüssel gilt nicht für gleichzeitige Kompromittierung aller Schlüssel.
+Eine getrennte zufällige lokale Zuordnung ist die bevorzugte untersuchte Alternative,
+kein hier eingeführtes Produktionsverfahren. Bei zusätzlichem Zugriff auf Originale
+und Rückzuordnungen ist Nicht-Rückführbarkeit nicht erreichbar. Die folgenden
+Messzahlen bleiben unveränderte historische Ergebnisse, keine neue Messung dieser
+beiden Szenarien.
+
 Stand: 21.10.2026. Untersucht wurde `prototype`, Commit
 `a965c67454013a92a95470e533a7f38a40ef4ddd`, mit bereits vorhandenem Dirty State.
 Die unveränderten Produktionshelfer und ihre geladenen Anwendungsabhängigkeiten

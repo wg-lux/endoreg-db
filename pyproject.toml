@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.6.4"
+version = "1.6.5"
 
 requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
@@ -79,7 +79,9 @@ dependencies = [
   "python-magic>=0.4.27",
   "python-jose[cryptography]>=3.5.0",
   "mozilla-django-oidc>=4.0.1",
-  "lx-anonymizer[gpu]==1.0.9",
+  "lx-anonymizer[gpu]==1.1.0",
+  # Static German word vectors for report-concept embeddings (see uv sources).
+  "de-core-news-lg==3.8.0",
   "googlemaps>=4.10.0",
   "numba>=0.63.1",
   "ziglang>=0.15.2",
@@ -254,6 +256,8 @@ environments = [
 [tool.uv.sources]
 # Pin the published artifact while PyPI's compressed index omits this release.
 endoreg-rust-backend = { path = "dist/endoreg_rust_backend-0.1.0-cp312-cp312-linux_x86_64.whl" }
+# spaCy models are not on PyPI; pin explosion's release wheel (hash locked in uv.lock).
+de-core-news-lg = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
 # lx-anonymizer = { path = "../lx-anonymizer", editable = true }
 # Optional sibling checkout for local lx-ai-core development.
 # lx-ai-core = { path = "../lx-ai-core", editable = true }

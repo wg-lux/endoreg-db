@@ -282,3 +282,24 @@ rules without copying clinical source data.
 - [MII Medication 2026 module](https://www.medizininformatik-initiative.de/Kerndatensatz/KDS_Medikation_2026/MIIIGModulMedikation-BeschreibungModul.html)
 - [MII Laboratory 2026 profiles](https://www.medizininformatik-initiative.de/Kerndatensatz/KDS_Laborbefund_2026/MIIIGModulLaborbefund-TechnischeImplementierung-FHIR-Profile.html)
 - [KBV BMP specification](https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/EXT_ITA_VGEX_BMP_Anlage3_mitAend.pdf)
+
+
+## BMP medication fields and ordered plans
+
+Migration `0109_medication_bmp` adds typed BMP fields to canonical patient
+medications and nullable JSON `blocks` to schedules. Existing dosage and intake
+relations are preserved; no automatic conversion to BMP quantities is performed.
+A null block value denotes legacy membership. A block list stores ordered
+headings and discriminated rows using the shared lx_dtypes write contracts;
+medication rows reference canonical patient-owned primary keys. Compound and
+free-text rows store their validated text inline. The service atomically updates
+block content and matching many-to-many membership, and the read adapter rejects
+missing, extra or foreign-patient references. Clearing a plan preserves medication
+records. Partial medication updates validate the complete merged entry first.
+
+Deploy this migration and service together with the PR 34 shared contracts.
+The shared API retains legacy dosage/intake and flat membership fields. New
+BMP fields are additive; old idempotency request hashes omit their empty defaults.
+The migration does not reinterpret historical dosages. Reversing it after BMP
+writes discards the new fields and cannot restore the non-null catalog constraint
+for PZN-only rows: export and reconcile those records before any rollback.

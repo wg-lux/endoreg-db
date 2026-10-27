@@ -62,6 +62,40 @@ def _create_upload_job(
     )
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("identity", ["matching", "missing", "changed"])
+def test_upload_source_checks_plaintext_identity_before_processing(
+    ingest_center: Center, identity: str
+) -> None:
+    from endoreg_db.services.hub.ingest import _ensure_upload_job_local_file
+    from endoreg_db.utils.hashs import get_file_hash
+    from endoreg_db.utils.storage import ensure_local_file
+
+    job = _create_upload_job(
+        center=ingest_center, content_type="video/mp4", filename="source.mp4"
+    )
+    with ensure_local_file(job.file) as path:
+        expected = get_file_hash(path)
+    job.content_hash = (
+        "0" * 64 if identity == "changed" else "" if identity == "missing" else expected
+    )
+    job.save(update_fields=["content_hash"])
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="source-verifier"
+    )
+    if identity == "changed":
+        with pytest.raises(OSError, match="content-hash verification"):
+            with _ensure_upload_job_local_file(job, lease=lease):
+                pytest.fail("changed source reached processing")
+    else:
+        with _ensure_upload_job_local_file(job, lease=lease) as verified:
+            assert get_file_hash(verified) == expected
+        job.refresh_from_db()
+        assert job.content_hash == expected
+    with job.file.open("rb") as source:
+        assert source.read() == b"contract-source"
+
+
 def _report_dispatch_result(
     status: str,
     *,

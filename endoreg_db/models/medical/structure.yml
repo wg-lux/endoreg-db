@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 files:
+- file: patient/patient_medication.py
+  role: Patient medication with validated legacy dosage and BMP fields.
+- file: patient/patient_medication_schedule.py
+  role: Patient-owned medication membership and validated ordered BMP block references.
 - file: patient/patient_examination.py
   role: Examination persistence with a unique stable UUID and thin center-scoped hash-resolution facade to patient_identity services.
 - file: disease.py

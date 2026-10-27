@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from unittest.mock import Mock
+from datetime import timedelta
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -111,3 +112,52 @@ def test_processing_failure_is_scheduled_through_native_retry_state() -> None:
     assert upload_job.status == UploadJob.Status.RETRYING
     assert upload_job.retryable is True
     assert upload_job.next_retry_at is not None
+
+
+@pytest.mark.django_db
+def test_lost_video_retry_handoff_is_redispatched_until_a_worker_claims_it() -> None:
+    from endoreg_db.services.hub.upload_job_state_machine import (
+        mark_upload_job_processing,
+    )
+
+    job = UploadJob.objects.create(
+        content_type="video/mp4", status=UploadJob.Status.PROCESSING
+    )
+    assert schedule_processing_retry(job, technical_detail="worker stopped")
+    UploadJob.objects.filter(pk=job.pk).update(next_retry_at=timezone.now())
+    dispatcher = Mock()
+    assert (
+        dispatch_due_upload_job_retries(
+            dispatcher=dispatcher, queue="pipeline"
+        ).dispatched_count
+        == 1
+    )
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.RETRYING
+    assert job.retryable and job.retry_count == 1
+    assert (
+        dispatch_due_upload_job_retries(
+            dispatcher=dispatcher, queue="pipeline"
+        ).dispatched_count
+        == 0
+    )
+    # No worker claimed the first message: periodic recovery rediscovers it.
+    UploadJob.objects.filter(pk=job.pk).update(
+        last_attempt_at=timezone.now() - timedelta(seconds=61)
+    )
+    assert (
+        dispatch_due_upload_job_retries(
+            dispatcher=dispatcher, queue="pipeline"
+        ).dispatched_count
+        == 1
+    )
+    assert dispatcher.apply_async.call_count == 2
+    job.refresh_from_db()
+    assert job.retry_count == 1
+    mark_upload_job_processing(job)
+    assert (
+        dispatch_due_upload_job_retries(
+            dispatcher=dispatcher, queue="pipeline"
+        ).dispatched_count
+        == 0
+    )

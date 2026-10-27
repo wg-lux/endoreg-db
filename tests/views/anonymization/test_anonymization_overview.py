@@ -43,6 +43,170 @@ from endoreg_db.services.streaming import hls_media as hls_media
 
 @pytest.mark.django_db
 @pytest.mark.parametrize(
+    "progress",
+    ["started", "extracting_frames", "processing_anonymization", "anonymized"],
+)
+def test_interrupted_video_progress_agrees_between_overview_and_polling(
+    progress: str,
+) -> None:
+    from endoreg_db.services.hub.upload_job_import_lease import (
+        reconcile_expired_upload_job_import_leases,
+    )
+
+    cache.clear()
+    center = Center.objects.create(name="interrupted-progress")
+    state = VideoState.objects.create(
+        processing_started=progress != "anonymized",
+        anonymized=progress == "anonymized",
+        was_created=progress == "extracting_frames",
+        frames_extracted=progress == "processing_anonymization",
+    )
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash="a" * 64,
+        processed_file="processed_videos_final/candidate.mp4",
+        processed_video_hash="b" * 64,
+        state=state,
+        meta={},
+    )
+    job = UploadJob.objects.create(
+        source_center=center,
+        content_hash=video.raw_video_hash,
+        content_type="video/mp4",
+        status=UploadJob.Status.PROCESSING,
+        processing_lease_owner="terminated-import",
+        processing_fencing_token=1,
+        processing_heartbeat_at=timezone.now() - timedelta(seconds=2),
+        processing_lease_expires_at=timezone.now() - timedelta(seconds=1),
+    )
+    user = User.objects.create_user(username="interrupted-progress-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    initial = AnonymizationService.get_status(video.pk, kind="video")
+    assert initial is not None
+    assert initial["anonymization_status"] == progress
+    assert reconcile_expired_upload_job_import_leases() == 1
+    # A later streaming backfill does not commit the interrupted import.
+    VideoHlsArtifact.objects.create(
+        video=video,
+        artifact_kind="processed",
+        status="ready",
+        source_file_name=video.processed_file.name,
+        source_content_hash=video.processed_video_hash,
+        source_generation_id=uuid5(
+            NAMESPACE_URL, f"endoreg-db:hls:processed:{video.processed_video_hash}"
+        ),
+        segment_count=628,
+    )
+    before = VideoState.objects.values().get(pk=state.pk)
+
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    row = next(row for row in response.data if row["id"] == video.pk)
+    assert row["anonymization_status"] == "failed"
+    assert row["anonymization_phase"] == "failed"
+    assert row["upload_job"]["id"] == str(job.pk)
+    assert row["upload_job"]["error_code"] == "import_interrupted"
+    assert row["hls_materializations"][0]["status"] == "ready"
+
+    request = APIRequestFactory().get(
+        f"/api/anonymization/{video.pk}/status/", {"kind": "video"}
+    )
+    force_authenticate(request, user=user)
+    polled = anonymization_status(request, file_id=video.pk)
+    assert polled.status_code == 200
+    assert polled.data["anonymization_status"] == row["anonymization_status"]
+    assert polled.data["anonymization_phase"] == row["anonymization_phase"]
+    assert not polled.data["integrity_status"]
+    assert before == VideoState.objects.values().get(pk=state.pk)
+    video.refresh_from_db()
+    assert video.processed_file.name == "processed_videos_final/candidate.mp4"
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.ERROR
+    assert not state.anonymization_validated and not state.ready_for_export
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "change",
+    [
+        "center",
+        "hash",
+        "media_type",
+        "live_owner",
+        "newer_state",
+        "newer_job",
+        "completed",
+        "validated",
+    ],
+)
+def test_interrupted_upload_does_not_override_unrelated_or_newer_video_state(
+    change: str,
+) -> None:
+    center = Center.objects.create(name="interruption-scope")
+    state = VideoState.objects.create(processing_started=True, was_created=False)
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash="a" * 64,
+        state=state,
+        meta={},
+        processed_file="processed_videos_final/retained.mp4",
+        processed_video_hash="b" * 64,
+    )
+    job = UploadJob.objects.create(
+        source_center=Center.objects.create(name="other-center")
+        if change == "center"
+        else center,
+        content_hash="c" * 64 if change == "hash" else video.raw_video_hash,
+        content_type="application/pdf" if change == "media_type" else "video/mp4",
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+        processing_lease_owner="current-owner" if change == "live_owner" else "",
+        processing_fencing_token=1 if change == "live_owner" else 0,
+        processing_heartbeat_at=timezone.now() if change == "live_owner" else None,
+        processing_lease_expires_at=(
+            timezone.now() + timedelta(minutes=5) if change == "live_owner" else None
+        ),
+    )
+    if change == "newer_job":
+        UploadJob.objects.create(
+            source_center=center,
+            content_hash=video.raw_video_hash,
+            content_type="video/mp4",
+            status=UploadJob.Status.PROCESSING,
+            processing_lease_owner="new-attempt",
+            processing_fencing_token=1,
+            processing_heartbeat_at=timezone.now(),
+            processing_lease_expires_at=timezone.now() + timedelta(minutes=5),
+        )
+    if change in {"newer_state", "completed", "validated"}:
+        state.sensitive_meta_processed = change in {"completed", "validated"}
+        state.anonymized = state.sensitive_meta_processed
+        state.anonymization_validated = change == "validated"
+        state.save()
+        if change != "newer_state":
+            job.save(update_fields=["updated_at"])
+    expected = state.anonymization_status.value
+    user = User.objects.create_user(username="interruption-scope-reader")
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    row = next(
+        row
+        for row in response.data
+        if row["id"] == video.pk and row["media_type"] == "video"
+    )
+    assert row["anonymization_status"] == expected
+    polled = AnonymizationService.get_status(video.pk, kind="video")
+    assert polled is not None
+    assert polled["anonymization_status"] == expected
+    job.refresh_from_db()
+    assert job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
     "content_type,expected",
     [
         ("application/pdf", "pdf"),

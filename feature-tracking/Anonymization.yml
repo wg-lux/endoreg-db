@@ -29,8 +29,12 @@ definition_of_done:
     and membership abstentions.
   - Differentially validate the offline evaluator against production helpers and publish measured work,
     isolation checks and limitations.
-  - Measure current deterministic local and hub UUIDv8 mappings with exposed, absent and wrong keys,
-    independent centre keys and already-labelled controls; retain historical evidence separately.
+  - Measure current deterministic local and hub UUIDv8 mappings with exposed, absent and wrong keys, independent
+    centre keys and already-labelled controls; retain historical evidence separately.
+  - Evaluate all active and historical keys exposed for every centre, separately for register-only data
+    and complete source/mapping/backup access. Compare demographic recomputation against stored random
+    mappings, preserving within-case linkage and demonstrating identification after mapping disclosure.
+    Finite negative results must not be described as anonymity or legal approval.
   required: false
   verification:
     kind: manual
@@ -49,12 +53,31 @@ definition_of_done:
       note: '23 October 2026: 45 current UUID/hash-control cases replayed and independently rescored;
         18 harness tests passed. Shared-key exposure yields 192 matches, 144 new correct and 12 false
         assignments for both local and hub UUIDs; no-key and wrong-key controls yield zero.'
+    - kind: document
+      reference: docs/patient_matching_threat_model.md
+    - kind: test
+      reference: tests/services/test_hub_pseudonyms.py
+    - kind: command
+      reference: '2026-10-26: .venv/bin/pyright --pythonpath .venv/bin/python: 0 errors, 17 missing-stub
+        warnings; prescribed .devenv/state/venv absent. PYTHONPATH=.:../lx-data-models .venv/bin/pytest
+        tests/services/test_hub_pseudonyms.py tests/services/test_patient_uuid_generation.py -q: 35 passed,
+        0 failed, 0 skipped, 1 warning, 37.79s; later temporary-directory cleanup warnings. lx-data-models
+        39f0386b2088e7be51f857b4b033e2bbbaf67993 with preexisting pyproject.toml change. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+        .venv/bin/pytest -c scripts/reidentification/pytest.ini --confcutdir=scripts/reidentification
+        scripts/reidentification/test_harness.py -q: 18 passed, 0 failed, 0 skipped, 1.34s. Ruff passed;
+        structure lint 67 manifests; tracker validate 38 definitions.'
     note: 'Bounded synthetic experiment executed: 48 case pairs, three independent subject seeds; complete
       replay and independent rescoring agree. No production-readiness or clinical-population probability
       claim. Missing external hashs.py attachment and encrypted-file integration coverage are documented
-      limitations.'
-    assessed_by: codex-reidentification-20261021-a
-    assessed_at: '2026-10-21T07:33:15.494669Z'
+      limitations.
+
+      2026-10-26: Beide vom Auftraggeber bestätigten Komplettschlüsselverlust-Szenarien gegen den aktuellen
+      DOCX-Vertrag bewertet. Zufällige lokale Studien-/Fallzuordnung nur als Alternative getestet; keine
+      Änderung produktiver Kennungen, keine Migration, Deployment- oder Rechtsfreigabe. Vollständiger
+      Quelldatenzugriff bleibt identifizierend. Installiertes lx_dtypes blockiert Django-Start wegen fehlendem
+      ReportExtractionReceipt; kompatibler lokaler Quellcheckout separat geprüft.'
+    assessed_by: codex-endoreg-openbao-20261026
+    assessed_at: '2026-10-26T15:14:28.831053Z'
 - id: identity_hash_response_boundary
   category: security
   title: Identity hashes never leave through browser or export responses

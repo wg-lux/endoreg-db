@@ -38,7 +38,12 @@ from lx_dtypes.models.contracts.reference_catalog import (
     ReferenceCatalogPayload,
     ReferenceKind,
 )
-from lx_dtypes.models.contracts.medication import MedicationPeriodFields
+from lx_dtypes.models.ledger.medical.Write import (
+    MedicationScheduleBlockCreate,
+    MedicationRowRefCreate,
+    MedicationRowRefAggregateCreate,
+)
+from lx_dtypes.models.ledger.medical.Pydantic import MedicationScheduleMedicationRow
 
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.administration.case.case import Case
@@ -272,7 +277,8 @@ def validate_medical_references(
 ) -> None:
     """Validate snapshot references without creating or modifying clinical rows."""
     for medication in medications:
-        _resolve_medication(medication.medication)
+        if medication.medication is not None:
+            _resolve_medication(medication.medication)
         _resolve_indication(medication.medication_indication)
         _resolve_unit(medication.unit)
         _resolve_intake_times(medication.intake_times)
@@ -469,6 +475,24 @@ def _canonical_medical_ledger_request_hash(
         for field in ("start_at", "end_at"):
             if medication[field] is None:
                 medication.pop(field)
+    # Additive BMP defaults must not invalidate existing idempotency receipts.
+    for medication in data["medications"]:
+        for name in (
+            "pzn",
+            "substances",
+            "dosage_form",
+            "dosage_form_code",
+            "unit_code",
+            "notes",
+            "bound_note",
+        ):
+            if medication[name] is None or medication[name] == []:
+                medication.pop(name)
+        if all(value is None for value in medication["dosing"].values()):
+            medication.pop("dosing")
+    for schedule in data["medication_schedules"]:
+        if not schedule["blocks"]:
+            schedule.pop("blocks")
     serialized = json.dumps(
         data,
         sort_keys=True,
@@ -609,6 +633,10 @@ def _stabilize_projection_created_at(
         schedule.created_at = created_at
         for medication in schedule.medications:
             medication.created_at = created_at
+        for block in schedule.medication_blocks:
+            for row in block.rows:
+                if isinstance(row, MedicationScheduleMedicationRow):
+                    row.medication.created_at = created_at
     return ledger
 
 
@@ -688,12 +716,33 @@ def _create_patient_medical_ledger_once(
         if case is not None:
             case.patient_medications.add(*medication_records)
         for schedule_payload in payload.medication_schedules:
-            schedule = PatientMedicationSchedule.objects.create(patient=locked_patient)
-            schedule.medication.set(
-                [
-                    medication_records[index]
-                    for index in schedule_payload.medication_indices
-                ]
+            blocks = [
+                MedicationScheduleBlockCreate.model_validate(
+                    {
+                        "heading": block.heading,
+                        "rows": [
+                            MedicationRowRefCreate(
+                                medication_id=medication_records[
+                                    row.medication_index
+                                ].pk
+                            )
+                            if isinstance(row, MedicationRowRefAggregateCreate)
+                            else row.model_dump()
+                            for row in block.rows
+                        ],
+                    }
+                )
+                for block in schedule_payload.blocks
+            ]
+            schedule = _create_patient_medication_schedule_record(
+                patient=locked_patient,
+                payload=PatientMedicationScheduleCreate(
+                    blocks=blocks,
+                    medication_ids=[
+                        medication_records[index].pk
+                        for index in schedule_payload.medication_indices
+                    ],
+                ),
             )
             _after_aggregate_persistence_step("medication_schedule")
             if case is not None:
@@ -775,10 +824,20 @@ def _create_patient_medication_record(
 ) -> PatientMedication:
     medication = PatientMedication.objects.create(
         patient=patient,
-        medication=_resolve_medication(payload.medication),
+        medication=_resolve_medication(payload.medication)
+        if payload.medication is not None
+        else None,
         medication_indication=_resolve_indication(payload.medication_indication),
         unit=_resolve_unit(payload.unit),
         dosage=payload.dosage,
+        pzn=payload.pzn,
+        substances=[item.model_dump() for item in payload.substances],
+        dosing=payload.dosing.model_dump(),
+        dosage_form=payload.dosage_form,
+        dosage_form_code=payload.dosage_form_code,
+        unit_code=payload.unit_code,
+        notes=payload.notes,
+        bound_note=payload.bound_note,
         active=payload.active,
         start_at=payload.start_at,
         end_at=payload.end_at,
@@ -811,14 +870,17 @@ def update_patient_medication(
     if medication is None:
         raise MedicalLedgerPatientResourceNotFound
 
-    # Validate the complete interval before mutating a partially updated row.
-    MedicationPeriodFields.model_validate(
+    # Validate the merged record before changing fields or relations.
+    current = patient_medication_from_endoreg(medication)
+    PatientMedicationCreate.model_validate(
         {
-            "start_at": medication.start_at,
-            "end_at": medication.end_at,
-            **payload.model_dump(include={"start_at", "end_at"}, exclude_unset=True),
-        },
-        strict=True,
+            **{
+                name: value
+                for name, value in current.model_dump().items()
+                if name in PatientMedicationCreate.model_fields
+            },
+            **payload.model_dump(exclude_unset=True),
+        }
     )
     update_fields: list[str] = []
     for period_field in ("start_at", "end_at"):
@@ -826,7 +888,11 @@ def update_patient_medication(
             setattr(medication, period_field, getattr(payload, period_field))
             update_fields.append(period_field)
     if "medication" in payload.model_fields_set:
-        medication.medication = _resolve_medication(payload.medication or "")
+        medication.medication = (
+            _resolve_medication(payload.medication)
+            if payload.medication is not None
+            else None
+        )
         update_fields.append("medication")
     if "medication_indication" in payload.model_fields_set:
         medication.medication_indication = cast(
@@ -843,6 +909,19 @@ def update_patient_medication(
     if "active" in payload.model_fields_set:
         medication.active = bool(payload.active)
         update_fields.append("active")
+    for name in (
+        "pzn",
+        "substances",
+        "dosing",
+        "dosage_form",
+        "dosage_form_code",
+        "unit_code",
+        "notes",
+        "bound_note",
+    ):
+        if name in payload.model_fields_set:
+            setattr(medication, name, payload.model_dump(mode="json")[name])
+            update_fields.append(name)
     if update_fields:
         medication.save(update_fields=update_fields)
     if "intake_times" in payload.model_fields_set:
@@ -850,17 +929,45 @@ def update_patient_medication(
     return patient_medication_from_endoreg(medication)
 
 
+def _set_schedule_content(
+    *,
+    schedule: PatientMedicationSchedule,
+    patient: Patient,
+    payload: PatientMedicationScheduleCreate,
+) -> None:
+    ids = payload.medication_ids or [
+        row.medication_id
+        for block in payload.blocks
+        for row in block.rows
+        if isinstance(row, MedicationRowRefCreate)
+    ]
+    medications = _patient_medications_by_ids(patient=patient, medication_ids=ids)
+    schedule.blocks = (
+        [block.model_dump(mode="json") for block in payload.blocks]
+        if payload.blocks or not payload.medication_ids
+        else None
+    )
+    schedule.save()
+    schedule.medication.set(medications)
+
+
+def _create_patient_medication_schedule_record(
+    *,
+    patient: Patient,
+    payload: PatientMedicationScheduleCreate,
+) -> PatientMedicationSchedule:
+    schedule = PatientMedicationSchedule(patient=patient)
+    _set_schedule_content(schedule=schedule, patient=patient, payload=payload)
+    return schedule
+
+
 @transaction.atomic
 def create_patient_medication_schedule(
     *, patient: Patient, payload: PatientMedicationScheduleCreate
 ) -> PatientMedicationScheduleLedger:
-    medications = _patient_medications_by_ids(
-        patient=patient,
-        medication_ids=payload.medication_ids,
+    return patient_medication_schedule_from_endoreg(
+        _create_patient_medication_schedule_record(patient=patient, payload=payload)
     )
-    schedule = PatientMedicationSchedule.objects.create(patient=patient)
-    schedule.medication.set(medications)
-    return patient_medication_schedule_from_endoreg(schedule)
 
 
 @transaction.atomic
@@ -877,12 +984,7 @@ def update_patient_medication_schedule(
     )
     if schedule is None:
         raise MedicalLedgerPatientResourceNotFound
-    medications = _patient_medications_by_ids(
-        patient=patient,
-        medication_ids=payload.medication_ids,
-    )
-    schedule.medication.set(medications)
-    schedule.save(update_fields=["updated_at"])
+    _set_schedule_content(schedule=schedule, patient=patient, payload=payload)
     return patient_medication_schedule_from_endoreg(schedule)
 
 

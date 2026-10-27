@@ -125,12 +125,20 @@ def validate_upload_job_status_transition(
 def _guard_interrupted_upload_job(upload_job: UploadJob) -> None:
     from endoreg_db.services.hub.upload_job_import_lease import (
         raise_if_upload_job_import_interrupted,
+        UploadJobImportLeaseLost,
     )
 
     # Callers hold this lock through their transition; a stale in-memory object
     # must not erase a reconciliation decision committed by another worker.
     current = UploadJob.objects.select_for_update().get(pk=upload_job.pk)
     raise_if_upload_job_import_interrupted(current)
+    if (
+        current.processing_fencing_token != upload_job.processing_fencing_token
+        or current.status != upload_job.status
+    ):
+        raise UploadJobImportLeaseLost(
+            "Upload job snapshot belongs to a superseded import epoch or state"
+        )
 
 
 @transaction.atomic

@@ -535,6 +535,14 @@ wheels = [
 ]
 
 [[package]]
+name = "de-core-news-lg"
+version = "3.8.0"
+source = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
+wheels = [
+    { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl", hash = "sha256:36fda650e476b54d5e87803635e36dadd1e8e034c4b5962088586d684f4c9fed" },
+]
+
+[[package]]
 name = "decorator"
 version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -764,12 +772,13 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.6.3"
+version = "1.6.5"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
     { name = "celery-types" },
     { name = "cryptography" },
+    { name = "de-core-news-lg" },
     { name = "django" },
     { name = "django-bootstrap5" },
     { name = "django-cors-headers" },
@@ -883,6 +892,7 @@ requires-dist = [
     { name = "celery", extras = ["redis"], specifier = ">=5.5.3" },
     { name = "celery-types", specifier = ">=0.26.0" },
     { name = "cryptography", specifier = ">=44.0.2" },
+    { name = "de-core-news-lg", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" },
     { name = "django", specifier = ">=5.2.4" },
     { name = "django-bootstrap5", specifier = ">=25.2" },
     { name = "django-cors-headers", specifier = ">=4.8.0" },
@@ -906,7 +916,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.0.9" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.0" },
     { name = "lx-dtypes", specifier = ">=0.5.7" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1193,6 +1203,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/4b/2d/57fd21d84d93efb4b
 wheels = [
     { url = "https://files.pythonhosted.org/packages/de/cc/f99f4bc7295023d7bd9ebbfd51f75cc530ca262c1227666268b8208f4b77/hf_xet-1.5.1-cp37-abi3-manylinux2014_x86_64.manylinux_2_17_x86_64.whl", hash = "sha256:892e3a3a3aecc12aded8b93cf4f9cd059282c7de0732f7d55026f3abdf474350", size = 4514864, upload-time = "2026-06-08T23:02:44.497Z" },
     { url = "https://files.pythonhosted.org/packages/fb/d1/90a498d05447980b977b1669246eeeeae4cfb0ea3e7a286eaba627f91bf9/hf_xet-1.5.1-cp37-abi3-musllinux_1_2_x86_64.whl", hash = "sha256:6208adb15d192b90e4c2ad2a27ed864359b2cb0f2494eb6d7c7f3699ac02e2bf", size = 4719498, upload-time = "2026-06-08T23:02:49.268Z" },
+]
+
+[[package]]
+name = "hl7"
+version = "0.4.5"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b4/3a/67e8f7b695423eecbc38a1e8439bbb69fb234945dd3527fbdfdcec869cd0/hl7-0.4.5.tar.gz", hash = "sha256:b6eb97499ebe236e00c3009d43e6b0f040de002df12a292fa5efbd2ce2a8a838", size = 48796, upload-time = "2022-03-31T11:30:18.604Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8d/2b/024977b044ca3aa79153e0a4ff13cc465064ccf9cf7b60df46e6eab8340e/hl7-0.4.5-py2.py3-none-any.whl", hash = "sha256:f46bf7c165801fd40e8fcc9f2be41c5794415039adc97646aee7ee6b20ce8ccd", size = 25495, upload-time = "2022-03-31T11:30:16.696Z" },
 ]
 
 [[package]]
@@ -1596,7 +1615,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "1.0.9"
+version = "1.1.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1628,9 +1647,9 @@ dependencies = [
     { name = "ultralytics" },
     { name = "verovio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/b0/13/9e5ce299d4e09ef4a53a09bf7a5f2729e79bd2fa696649a3a774c292176b/lx_anonymizer-1.0.9.tar.gz", hash = "sha256:9fbb10c888ba6a99878ff88c6327dd9ec9133b57b0d256b24e091567e3f84916", size = 16294144, upload-time = "2026-10-16T09:29:51.107Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/ae/b3/5eeec56f071bc99354f2e4be0163cf198b35f92ba1f9b44a47a53b6eec76/lx_anonymizer-1.1.0.tar.gz", hash = "sha256:e735f19c6b3f1692f64592be98b1e5f92fe013a395fc2a33dfc0d6d7017dab7a", size = 16378417, upload-time = "2026-10-27T13:33:47.931Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d0/a0/aac86dd180af1b60661c4b508650396f66738c53144b39735c9721b75ae5/lx_anonymizer-1.0.9-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:23f186c94996edb6a97fbcd33f505c7b51f922cf8ccceea336558cc49d220ee7", size = 16197978, upload-time = "2026-10-16T09:29:44.233Z" },
+    { url = "https://files.pythonhosted.org/packages/2d/69/10ec9309ba1877f70c8418b2a926a00b6a7152cfeb5f5d208292caf03b76/lx_anonymizer-1.1.0-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:b4072a778bfd470e244f1c45e7d956cc00fef5da794b175eb15f7ea396b7a52b", size = 16201183, upload-time = "2026-10-27T13:33:43.751Z" },
 ]
 
 [package.optional-dependencies]
@@ -1643,7 +1662,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.5.7"
+version = "0.6.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1651,6 +1670,7 @@ dependencies = [
     { name = "django-ninja" },
     { name = "django-stubs", extra = ["compatible-mypy"] },
     { name = "django-stubs-ext" },
+    { name = "hl7" },
     { name = "icecream" },
     { name = "numpy" },
     { name = "openpyxl" },
@@ -1667,9 +1687,9 @@ dependencies = [
     { name = "scipy" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/28/49/54ef468925292e4c146618c914e9009ebb4b645940579df00d344d8be676/lx_dtypes-0.5.7.tar.gz", hash = "sha256:2aca8ec7d14abfcbf735c3f5adc692be021870c0285f207f0475aa94b4ef5c64", size = 4890896, upload-time = "2026-10-23T08:58:37.164Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/52/24/5696ad16105da60540d5407927163a51792364d8a0b7e25a145320791ea3/lx_dtypes-0.6.0.tar.gz", hash = "sha256:b4ea5befa04fdb2e85bda42e67a5a9d1c2f19df626ef234cca7a378824da2def", size = 4923428, upload-time = "2026-10-27T13:28:59.144Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/9f/b3/71677d43d771cdea35644f6df272909b1203f482f14686937806654d9b78/lx_dtypes-0.5.7-py3-none-any.whl", hash = "sha256:7adfaf3a5fbfce17060cb02ac2abb632109bf65e7ff29751b49db4c0269a4b2e", size = 1297267, upload-time = "2026-10-23T08:58:32.076Z" },
+    { url = "https://files.pythonhosted.org/packages/bb/37/6d583a982d584c3470701983f3081b790a40430eeb2888e09ff874bde53a/lx_dtypes-0.6.0-py3-none-any.whl", hash = "sha256:7491a5a3c8ed2473e9514ae58e909f21a3da214083dddcc54cc1b32e22f55833", size = 1320936, upload-time = "2026-10-27T13:28:56.8Z" },
 ]
 
 [[package]]

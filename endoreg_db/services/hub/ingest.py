@@ -646,6 +646,7 @@ def _ensure_upload_job_local_file(
         except OSError:
             pass
         else:
+            _verify_upload_source_identity(job, lease=lease, file_path=Path(file_path))
             yield Path(file_path)
             return
         fallback_path = _safe_existing_media_root_path(job.file.name)
@@ -669,14 +670,7 @@ def _ensure_upload_job_local_file(
             )
         else:
             plaintext_path = fallback_path
-        fallback_hash = get_file_hash(plaintext_path)
-        with locked_upload_job_import_lease(lease) as owned_job:
-            if owned_job.content_hash and fallback_hash != owned_job.content_hash:
-                raise IOError("Fallback upload source failed content-hash verification")
-            if not owned_job.content_hash:
-                owned_job.content_hash = fallback_hash
-                owned_job.save(update_fields=["content_hash", "updated_at"])
-            job.content_hash = owned_job.content_hash
+        _verify_upload_source_identity(job, lease=lease, file_path=plaintext_path)
         emit_structured_event(
             logger,
             "import.verified_source_fallback",
@@ -685,6 +679,19 @@ def _ensure_upload_job_local_file(
             encrypted=encrypted,
         )
         yield plaintext_path
+
+
+def _verify_upload_source_identity(
+    job: UploadJob, *, lease: UploadJobImportLease, file_path: Path
+) -> None:
+    source_hash = get_file_hash(file_path)
+    with locked_upload_job_import_lease(lease) as owned_job:
+        if owned_job.content_hash and source_hash != owned_job.content_hash:
+            raise IOError("Upload source failed content-hash verification")
+        if not owned_job.content_hash:
+            owned_job.content_hash = source_hash
+            owned_job.save(update_fields=["content_hash", "updated_at"])
+        job.content_hash = owned_job.content_hash
 
 
 def _reserve_video_upload_import_handoff(
@@ -745,6 +752,7 @@ def _reserve_video_upload_import_handoff(
         except UploadJobImportLeaseBusy:
             return job, None, False
 
+        job.refresh_from_db()
         mark_upload_job_processing(job)
         _update_upload_provenance(
             job,

@@ -40,6 +40,7 @@ dependencies:
   - endoreg_db/import_files/file_storage
   - endoreg_db/models
   - endoreg_db/schemas
+  - endoreg_db/services/hub
   - endoreg_db/services/raw_pdf_files
   - endoreg_db/services/reports
   - endoreg_db/services/video_files
