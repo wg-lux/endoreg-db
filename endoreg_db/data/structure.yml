@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Follow shared terminology and package version registry; do not place patient data or secrets here.
 files:
+- file: spacy/manifest.yml
+  role: Provenance and SHA-256 inventory for the deployment-provisioned German model and licenses.
 - file: setup_config.yaml
   role: Packaged setup configuration.
 - file: __init__.py

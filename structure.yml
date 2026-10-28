@@ -24,7 +24,7 @@ files:
 - file: AGENTS.md
   role: Binding agent instructions and map maintenance protocol
 - file: pyproject.toml
-  role: Project dependencies and packaging
+  role: Project dependencies and packaging; large model data is deployment-provisioned.
 - file: .pre-commit-config.yaml
   role: Local automated preflight hooks
 - file: pytest.ini

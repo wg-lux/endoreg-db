@@ -33,8 +33,8 @@ class Command(BaseCommand):
             "--spacy-model",
             help=(
                 "Override: installed local spaCy package or model directory with "
-                "static word vectors; no downloads. Default: the pinned "
-                "de_core_news_lg 3.8.0 dependency"
+                "static word vectors; no downloads. Default: de_core_news_lg 3.8.0 at "
+                "ENDOREG_REPORT_EMBEDDING_MODEL_PATH (provisioned by deployment)"
             ),
         )
         parser.add_argument("--top-k", type=int, default=20)

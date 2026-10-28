@@ -11,7 +11,7 @@ boundaries:
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
 - file: services/test_report_concept_embeddings.py
-  role: Database source isolation, persisted annotation links, embedding versioning and similarity exports.
+  role: Source isolation, provisioned model path validation and integrity, embedding versioning and similarity exports.
 - file: services/test_patient_uuid_generation.py
   role: Fixed UUIDv8 vectors, center/key separation, historical identity stability, and concurrent hash-based patient creation.
 - file: services/test_clinical_lifecycle_state_machine.py

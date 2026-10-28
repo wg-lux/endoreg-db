@@ -31,6 +31,9 @@ definition_of_done:
     fail.
   - Center-scoped CSV export compares compatible embeddings and retains annotated concept provenance without
     promoting candidate synonyms to clinical facts.
+  - LuxNix provisions hash-pinned de_core_news_lg 3.8.0 data outside Python distributions; inference loads
+    the explicit local path offline and fails if it is absent or incompatible.
+  - Wheel and source distribution sizes stay below the project's 200 MB upload limit.
   required: true
   verification:
     kind: manual
@@ -42,11 +45,16 @@ definition_of_done:
     evidence:
     - kind: test
       reference: tests/services/test_report_concept_embeddings.py
-    note: 'Embeddings use the locked de_core_news_lg 3.8.0 wheel (300-dim static vectors, contract-checked);
-      sm stays only for anonymization/finding extraction. 20 PostgreSQL tests pass. Open: synonym signal
-      is weak (6/11 triples); manual review by an assessor.'
-    assessed_by: claude-lx-data-models-43
-    assessed_at: '2026-10-27T12:21:50.494521Z'
+    - kind: test
+      reference: '2026-10-28: ENDOREG_REPORT_EMBEDDING_MODEL_PATH=/nix/store/ng951s8a8ym89sx0q1vl1k47lg22fsa0-de-core-news-lg-3.8.0-data pytest tests/services/test_report_concept_embeddings.py tests/utils/test_paths.py
+        -q --tb=short: 72 passed, 2 warnings in 118.64s; scoped Pyright 0 errors/0 warnings; uv lock --check
+        passed.'
+    note: 'Berichtsvektoren werden ausschließlich aus dem expliziten, durch das Deployment bereitgestellten
+      Modellpfad geladen und gegen Sprache, Modellname, Version und Dimension geprüft. Isolierte Embedding-/Pfadregression:
+      72 Tests bestanden; gezielter Pyright und uv lock --check bestanden. Historische Paketgrößen- und
+      LuxNix-Evidenz bleibt erhalten; keine neue Veröffentlichung, Host-Aktivierung oder klinische Abnahme.'
+    assessed_by: codex-export-review-20261028
+    assessed_at: '2026-10-28T16:15:34.323816Z'
 - id: finding_suggestion_review
   category: functionality
   title: Erkannte Import- und KI-Befunde werden explizit bestätigt

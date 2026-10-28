@@ -24,6 +24,7 @@ from endoreg_db.config.env import (
     DEFAULT_DJANGO_SETTINGS_MODULE,
     DJANGO_SETTINGS_MODULE_ENV,
     RUNTIME_ROOT_ENV,
+    env_str,
     get_runtime_root,
 )
 
@@ -53,6 +54,21 @@ LOG_DIR_NAME = "logs"
 QUARANTINE_DIR_NAME = "quarantine"
 MIGRATION_STAGING_DIR_NAME = "migration_staging"
 MANIFEST_DIR_NAME = "manifests"
+
+
+def get_report_embedding_model_path() -> Path:
+    """Public model asset provisioned by deployment, outside mutable clinical storage."""
+    configured = env_str("ENDOREG_REPORT_EMBEDDING_MODEL_PATH").strip()
+    if not configured:
+        raise RuntimeError(
+            "ENDOREG_REPORT_EMBEDDING_MODEL_PATH must name the provisioned model directory"
+        )
+    path = Path(configured)
+    if not path.is_absolute() or not path.is_dir():
+        raise RuntimeError(
+            "ENDOREG_REPORT_EMBEDDING_MODEL_PATH must be an existing absolute directory"
+        )
+    return path
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:

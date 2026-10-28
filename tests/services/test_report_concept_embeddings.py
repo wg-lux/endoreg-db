@@ -1,6 +1,7 @@
 from io import StringIO
 from typing import Literal, cast
 from math import isclose
+from pathlib import Path
 from thinc.types import Floats1d
 
 import numpy as np
@@ -28,6 +29,7 @@ from endoreg_db.models import (
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.report.concept_embedding import ReportConceptEmbedding
+from endoreg_db.utils.paths import get_report_embedding_model_path
 from endoreg_db.services.reports.concept_embeddings import (
     SpacyReportTextEmbedder,
     anonymized_report_hash,
@@ -269,9 +271,22 @@ def test_concurrent_retries_create_one_vector(report: RawPdfFile) -> None:
     assert ReportConceptEmbedding.objects.count() == 1
 
 
-def test_default_embedder_is_the_pinned_large_model() -> None:
+def test_default_embedder_is_the_pinned_large_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_load = spacy.load
+    loaded: list[Path] = []
+
+    def load_bundled(path: Path) -> spacy.language.Language:
+        assert path == get_report_embedding_model_path()
+        loaded.append(path)
+        return original_load(path)
+
+    default_report_text_embedder.cache_clear()
+    monkeypatch.setattr(spacy, "load", load_bundled)
     embedder = default_report_text_embedder()
     assert embedder is default_report_text_embedder()  # loaded once per process
+    assert loaded == [get_report_embedding_model_path()]
     assert embedder.space.model_dump() == {
         "model": "de_core_news_lg",
         "revision": "3.8.0",
@@ -280,6 +295,76 @@ def test_default_embedder_is_the_pinned_large_model() -> None:
     }
     vector = TextEmbedding(space=embedder.space, vector=list(embedder.embed("Polyp")))
     assert len(vector.vector) == 300
+
+
+def test_provisioned_model_inventory() -> None:
+    import yaml
+    from endoreg_db.utils.hashs import get_file_hash
+
+    root = get_report_embedding_model_path()
+    manifest_path = (
+        Path(__file__).resolve().parents[2] / "endoreg_db/data/spacy/manifest.yml"
+    )
+    manifest = yaml.safe_load(manifest_path.read_text())
+    expected = manifest["files_sha256"]
+    assert {
+        path.relative_to(root).as_posix() for path in root.rglob("*") if path.is_file()
+    } == set(expected)
+    assert {"LICENSE", "LICENSES_SOURCES", "config.cfg", "vocab/vectors"} <= set(
+        expected
+    )
+    for relative, digest in expected.items():
+        assert get_file_hash(root / relative) == digest
+
+
+@pytest.mark.parametrize("error", [OSError("missing"), ValueError("corrupt")])
+def test_missing_or_corrupt_provisioned_model_fails(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    def fail_load(path: Path) -> spacy.language.Language:
+        raise error
+
+    default_report_text_embedder.cache_clear()
+    monkeypatch.setattr(spacy, "load", fail_load)
+    with pytest.raises(
+        RuntimeError, match="missing or corrupt; rebuild the model asset"
+    ):
+        default_report_text_embedder()
+
+
+@pytest.mark.parametrize("configured", [None, "", "  ", "relative/model"])
+def test_model_path_requires_explicit_absolute_directory(
+    monkeypatch: pytest.MonkeyPatch, configured: str | None
+) -> None:
+    if configured is None:
+        monkeypatch.delenv("ENDOREG_REPORT_EMBEDDING_MODEL_PATH", raising=False)
+    else:
+        monkeypatch.setenv("ENDOREG_REPORT_EMBEDDING_MODEL_PATH", configured)
+    with pytest.raises(RuntimeError, match="ENDOREG_REPORT_EMBEDDING_MODEL_PATH"):
+        get_report_embedding_model_path()
+
+
+def test_model_path_rejects_missing_directory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("ENDOREG_REPORT_EMBEDDING_MODEL_PATH", str(tmp_path / "missing"))
+    with pytest.raises(RuntimeError, match="existing absolute directory"):
+        get_report_embedding_model_path()
+
+
+def test_wrong_provisioned_model_identity_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    nlp = default_report_text_embedder().nlp
+    default_report_text_embedder.cache_clear()
+    monkeypatch.setitem(nlp.meta, "name", "core_news_md")
+
+    def load_wrong_model(path: Path) -> spacy.language.Language:
+        return nlp
+
+    monkeypatch.setattr(spacy, "load", load_wrong_model)
+    with pytest.raises(RuntimeError, match="does not match"):
+        default_report_text_embedder()
 
 
 def test_capture_command_defaults_to_the_large_model(

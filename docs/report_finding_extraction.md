@@ -128,9 +128,18 @@ such an alignment is known, supplying their authorized report queryset.
 
 An embedding retains model identity, revision, preprocessing identity and dimension.
 Vectors must be finite, nonzero and dimensionally consistent. Embeddings use
-`de_core_news_lg` 3.8.0, a locked EndoReg dependency installed from explosion's
-release wheel (`[tool.uv.sources]` in `pyproject.toml`; `uv sync` installs it, no
-runtime download). `default_report_text_embedder()` loads it once per process and
+`de_core_news_lg` 3.8.0. LuxNix stellt die öffentlichen Modelldaten einschließlich
+Originallizenzen über `packages/report-embedding-model/default.nix` als separat
+hash-geprüftes Nix-Store-Artefakt bereit. Die gemeinsame Dienstumgebung setzt
+`ENDOREG_REPORT_EMBEDDING_MODEL_PATH` auf dieses Verzeichnis; Web, Worker und
+Wartungsbefehle verwenden denselben Pfad. Wheel und Quelldistribution enthalten
+nur das Herkunfts- und Prüfsummenverzeichnis `endoreg_db/data/spacy/manifest.yml`.
+Für lokale Tests muss dieselbe Variable auf ein bereitgestelltes Modellverzeichnis
+zeigen. Fehlende Konfiguration und ungültige Pfade führen beim Embedding-Aufruf
+zu einem Fehler; es gibt keinen automatischen Download oder Modellwechsel.
+Der öffentliche Modellbestand liegt außerhalb des verschlüsselten klinischen
+Laufzeitspeichers; Patientendaten verlassen diesen dadurch nicht.
+`default_report_text_embedder()` loads it once per process and
 checks its language, version and 300-dimensional static vectors before use.
 `SpacyReportTextEmbedder` averages static word vectors (`spacy-doc-vector-v1`) and
 rejects pipelines without them, including lx-anonymizer's bundled

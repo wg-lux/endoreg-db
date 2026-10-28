@@ -19,7 +19,7 @@ entrypoints:
   purpose: Persist an edited report and its clinical snapshot in one transaction.
 files:
 - file: concept_embeddings.py
-  role: Explicit validated anonymized span capture, local vector inference and scoped exact similarity export.
+  role: Validated anonymized span capture, deployment-provisioned German model inference and scoped similarity export.
 - file: completion.py
   role: Read-only canonical attempt and extraction receipt projections for job/API completion.
 - file: __init__.py

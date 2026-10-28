@@ -535,14 +535,6 @@ wheels = [
 ]
 
 [[package]]
-name = "de-core-news-lg"
-version = "3.8.0"
-source = { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" }
-wheels = [
-    { url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl", hash = "sha256:36fda650e476b54d5e87803635e36dadd1e8e034c4b5962088586d684f4c9fed" },
-]
-
-[[package]]
 name = "decorator"
 version = "5.3.1"
 source = { registry = "https://pypi.org/simple" }
@@ -778,7 +770,6 @@ dependencies = [
     { name = "celery", extra = ["redis"] },
     { name = "celery-types" },
     { name = "cryptography" },
-    { name = "de-core-news-lg" },
     { name = "django" },
     { name = "django-bootstrap5" },
     { name = "django-cors-headers" },
@@ -824,6 +815,7 @@ dependencies = [
     { name = "scipy" },
     { name = "snakemake" },
     { name = "soundfile" },
+    { name = "spacy" },
     { name = "sphinx" },
     { name = "sphinx-rtd-theme" },
     { name = "tesseract" },
@@ -892,7 +884,6 @@ requires-dist = [
     { name = "celery", extras = ["redis"], specifier = ">=5.5.3" },
     { name = "celery-types", specifier = ">=0.26.0" },
     { name = "cryptography", specifier = ">=44.0.2" },
-    { name = "de-core-news-lg", url = "https://github.com/explosion/spacy-models/releases/download/de_core_news_lg-3.8.0/de_core_news_lg-3.8.0-py3-none-any.whl" },
     { name = "django", specifier = ">=5.2.4" },
     { name = "django-bootstrap5", specifier = ">=25.2" },
     { name = "django-cors-headers", specifier = ">=4.8.0" },
@@ -957,6 +948,7 @@ requires-dist = [
     { name = "scipy", specifier = ">=1.16.1" },
     { name = "snakemake", specifier = "==9.23.1" },
     { name = "soundfile", specifier = "==0.12.1" },
+    { name = "spacy", specifier = ">=3.8.0,<3.9.0" },
     { name = "sphinx", specifier = ">=8.2.3" },
     { name = "sphinx", marker = "extra == 'docs'", specifier = ">=8.2.3,<9.0" },
     { name = "sphinx-autodoc-typehints", marker = "extra == 'docs'", specifier = ">=3.5.2" },

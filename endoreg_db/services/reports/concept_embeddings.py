@@ -25,6 +25,7 @@ from endoreg_db.models.medical.patient.patient_finding_classification import (
 from endoreg_db.models.report.concept_embedding import ReportConceptEmbedding
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.utils.hashs import get_bytes_hash
+from endoreg_db.utils.paths import get_report_embedding_model_path
 
 if TYPE_CHECKING:
     from spacy.language import Language
@@ -67,7 +68,7 @@ _DEFAULT_EMBEDDING_DIMENSIONS = 300
 
 @cache
 def default_report_text_embedder() -> SpacyReportTextEmbedder:
-    """Load the pinned ``de_core_news_lg`` dependency once per process.
+    """Load deployment-provisioned ``de_core_news_lg`` data once per process.
 
     The pipeline is checked against its model contract, as lx-anonymizer checks its
     bundled model, so a mismatched installation fails instead of starting a new space.
@@ -75,19 +76,19 @@ def default_report_text_embedder() -> SpacyReportTextEmbedder:
     import spacy
 
     try:
-        nlp = spacy.load(DEFAULT_EMBEDDING_MODEL)
-    except OSError as exc:
+        nlp = spacy.load(get_report_embedding_model_path())
+    except (OSError, ValueError) as exc:
         raise RuntimeError(
-            f"{DEFAULT_EMBEDDING_MODEL} is not installed; reinstall EndoReg with its "
-            "locked dependencies (uv sync)"
+            f"Provisioned {DEFAULT_EMBEDDING_MODEL} is missing or corrupt; rebuild the model asset"
         ) from exc
     if (
         nlp.lang != "de"
+        or nlp.meta.get("name") != "core_news_lg"
         or nlp.meta.get("version") != DEFAULT_EMBEDDING_MODEL_VERSION
         or nlp.vocab.vectors_length != _DEFAULT_EMBEDDING_DIMENSIONS
     ):
         raise RuntimeError(
-            f"Installed {DEFAULT_EMBEDDING_MODEL} does not match its "
+            f"Provisioned {DEFAULT_EMBEDDING_MODEL} does not match its "
             f"{DEFAULT_EMBEDDING_MODEL_VERSION} embedding contract"
         )
     return SpacyReportTextEmbedder(

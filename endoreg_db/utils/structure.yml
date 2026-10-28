@@ -26,6 +26,9 @@ files:
 - file: storage/__init__.py
   role: Encrypted storage integration.
 entrypoints:
+- name: get_report_embedding_model_path
+  file: paths.py
+  purpose: Validate the explicit deployment-provisioned report-embedding model path outside runtime storage.
 - name: get_patient_uuid
   file: hashs.py
   purpose: Center-scoped keyed UUIDv8 derivation for new hash-based local patient identities; hub derivation uses separate domain inputs.
