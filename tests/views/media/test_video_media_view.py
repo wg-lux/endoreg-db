@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 from typing import Any, cast
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth.models import Group, User
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
 from endoreg_db.helpers.typing import m2m_add_relation
 from endoreg_db.models import (
     Center,
+    Label,
+    LabelVideoSegment,
     PortalUserInfo,
     SensitiveMeta,
     VideoFile,
@@ -45,6 +50,61 @@ class VideoMediaViewTests(TestCase):
         assert payload["count"] == 1
         assert payload["results"][0]["id"] == self.video.pk
         assert payload["results"][0]["original_file_name"] == f"video-{self.video.pk}"
+
+    def test_list_segments_reuse_one_video_and_metadata_without_extra_queries(
+        self,
+    ) -> None:
+        self.client.force_login(self.user)
+        VideoFile.objects.filter(pk=self.video.pk).update(
+            fps=25.0, frame_count=100, duration=4.0
+        )
+        label = Label.objects.create(name=f"list-segments-{uuid4().hex}")
+        original_from_db = VideoFile.from_db
+        loaded: list[VideoFile] = []
+
+        def record_video(
+            db: str, field_names: list[str], values: list[object]
+        ) -> VideoFile:
+            video = original_from_db(db, field_names, values)
+            loaded.append(video)
+            return video
+
+        query_counts: list[int] = []
+        for segment_count in (1, 8):
+            LabelVideoSegment.objects.filter(video_file=self.video).delete()
+            LabelVideoSegment.objects.bulk_create(
+                [
+                    LabelVideoSegment(
+                        video_file=self.video,
+                        label=label,
+                        start_frame_number=index * 2,
+                        end_frame_number=index * 2 + 1,
+                    )
+                    for index in range(segment_count)
+                ]
+            )
+            loaded.clear()
+            with (
+                self.subTest(segment_count=segment_count),
+                patch.object(VideoFile, "from_db", side_effect=record_video),
+                CaptureQueriesContext(connection) as queries,
+            ):
+                response = self.client.get("/api/media/videos/")
+            assert response.status_code == 200, response.content
+            query_counts.append(len(queries))
+            assert len(loaded) == 1
+            parent = loaded[0]
+            with self.assertNumQueries(0):
+                segments = list(parent.label_video_segments.all())
+                assert len(segments) == segment_count
+                assert all(segment.video_file is parent for segment in segments)
+                assert all(
+                    segment.video_file.meta is parent.meta for segment in segments
+                )
+            returned = response.json()["results"][0]["segments"]
+            assert len(returned) == segment_count
+            assert returned[-1]["end_time"] == (segment_count * 2 - 1) / 25
+        assert query_counts[0] == query_counts[1]
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_centerless_hub_list_only_returns_anonymized_processed_videos(self) -> None:

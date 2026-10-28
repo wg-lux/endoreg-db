@@ -202,10 +202,11 @@ class VideoMediaView(APIView):
     def _list_videos(self, request: Request) -> Response:
         try:
             segments_queryset: QuerySet[LabelVideoSegment] = (
-                LabelVideoSegment.objects.select_related(
-                    "label",
-                    "video_file",
-                ).order_by("start_frame_number")
+                # Reverse-FK prefetch binds the existing parent video to each segment.
+                # Joining it again duplicates large timeline JSON for every segment.
+                LabelVideoSegment.objects.select_related("label").order_by(
+                    "start_frame_number"
+                )
             )
             segments_prefetch = Prefetch(
                 "label_video_segments",
