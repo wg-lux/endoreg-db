@@ -378,7 +378,7 @@ class VideoImportService:
             try:
                 _finalize_video_failure_if_owned(ctx)
             except Exception as ownership_exc:
-                logger.error(
+                logger.exception(
                     "Skipping video failure finalization due to invalid ownership: attempt=%s error=%s",
                     ctx.attempt_id,
                     ownership_exc,

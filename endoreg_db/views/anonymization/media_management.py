@@ -55,7 +55,7 @@ class MediaManagementView(APIView):
         try:
             return Response(self._get_status_overview())
         except Exception as exc:  # pragma: no cover - defensive boundary
-            logger.error("Error getting media status overview: %s", exc)
+            logger.exception("Error getting media status overview: %s", exc)
             return Response(
                 {"error": "Failed to get status overview"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -75,7 +75,7 @@ class MediaManagementView(APIView):
             result = self._perform_cleanup(query)
             return Response(result.model_dump(mode="python"))
         except Exception as exc:  # pragma: no cover - defensive boundary
-            logger.error("Error during media cleanup: %s", exc)
+            logger.exception("Error during media cleanup: %s", exc)
             return Response(
                 {"error": "Cleanup operation failed"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -368,7 +368,7 @@ def force_remove_media(
             status=status.HTTP_409_CONFLICT,
         )
     except Exception as exc:  # pragma: no cover - defensive boundary
-        logger.error("Error force removing media %s: %s", file_id, exc)
+        logger.exception("Error force removing media %s: %s", file_id, exc)
         return Response(
             {"error": "Force removal failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -423,7 +423,7 @@ def reset_processing_status(request: HttpRequest, file_id: int) -> Response:
             status=status.HTTP_404_NOT_FOUND,
         )
     except Exception as exc:  # pragma: no cover - defensive boundary
-        logger.error("Error resetting status for media %s: %s", file_id, exc)
+        logger.exception("Error resetting status for media %s: %s", file_id, exc)
         return Response(
             {"error": "Reset status failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

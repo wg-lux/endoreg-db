@@ -159,7 +159,7 @@ def atomic_copy_with_fallback(
                 available_space=free_space,
             ) from exc
 
-        logger.error("Copy operation failed: %s -> %s: %s", src_path, dst_path, exc)
+        logger.exception("Copy operation failed: %s -> %s: %s", src_path, dst_path, exc)
         raise
 
 
@@ -418,7 +418,7 @@ def _create_from_file(
         raise
 
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Failed to create VideoFile from %s: (%s) %s",
             file_path,
             type(exc).__name__,

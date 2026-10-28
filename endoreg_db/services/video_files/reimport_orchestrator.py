@@ -312,7 +312,7 @@ class VideoReimportOrchestrator:
                 status.HTTP_200_OK,
             )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "Failed to re-import video %s: %s",
                 self.raw_video_hash,
                 exc,

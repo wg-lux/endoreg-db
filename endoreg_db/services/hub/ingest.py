@@ -2033,7 +2033,7 @@ def _mutate_fenced_failed_video_upload(
             mutation(owned_job)
         release_upload_job_import_lease(attempt.lease)
     except UploadJobImportLeaseLost:
-        logger.error(fenced_message, attempt.job_id)
+        logger.exception(fenced_message, attempt.job_id)
 
 
 def _schedule_video_upload_storage_retry(
@@ -2141,7 +2141,7 @@ def _handle_video_upload_import_failure(
         # must reacquire an expired lease rather than stealing a live epoch.
         raise exc
     if isinstance(exc, UploadJobImportLeaseLost):
-        logger.error(
+        logger.exception(
             "Stale video upload worker fenced for %s: %s",
             attempt.job_id,
             exc,

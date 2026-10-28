@@ -563,7 +563,7 @@ class ReportImportService:
         try:
             renew_report_import_fence(fence)
         except StaleReportImportAttemptError:
-            self.logger.error(
+            self.logger.exception(
                 "Skipping failure finalization for superseded report import "
                 "(content_hash=%s, token=%s).",
                 fence.content_hash,

@@ -757,7 +757,7 @@ def anonymization_current(request: Request, file_id: int) -> Response:
         pass
 
     except (ValueError, TypeError, AttributeError) as e:
-        logger.error(f"Error in set_current_for_validation: {e}")
+        logger.exception(f"Error in set_current_for_validation: {e}")
         return Response({"status": "error", "message": str(e)}, status=500)
 
     return Response({"status": "error", "message": "File not found"}, status=404)
@@ -775,7 +775,7 @@ def polling_coordinator_info(request: Request) -> Response:
         info = PollingCoordinator.get_processing_locks_info()
         return Response(info)
     except Exception as e:
-        logger.error(f"Error getting polling coordinator info: {e}")
+        logger.exception(f"Error getting polling coordinator info: {e}")
         return Response(
             {"error": "Failed to get coordinator info"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -801,7 +801,7 @@ def clear_processing_locks(request: Request) -> Response:
             }
         )
     except Exception as e:
-        logger.error(f"Error clearing processing locks: {e}")
+        logger.exception(f"Error clearing processing locks: {e}")
         return Response(
             {"error": "Failed to clear locks"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

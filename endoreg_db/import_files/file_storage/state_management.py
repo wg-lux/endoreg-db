@@ -571,7 +571,7 @@ def nuke_transcoding_dir(transcoding_dir: str | Path | None = None) -> bool:
         return True
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Unexpected error while nuking transcoding dir: %s", e, exc_info=True
         )
         return False

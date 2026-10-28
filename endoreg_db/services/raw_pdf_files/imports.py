@@ -61,7 +61,7 @@ def create_raw_pdf_file_from_path(
         pdf_hash = get_file_hash(file_path)
         logger.debug("Calculated PDF hash: %s", pdf_hash)
     except Exception as exc:
-        logger.error("Could not calculate hash for %s: %s", file_path, exc)
+        logger.exception("Could not calculate hash for %s: %s", file_path, exc)
         raise ValueError(f"Could not calculate hash for {file_path}") from exc
 
     existing_pdf_file = model.objects.filter(pdf_hash=pdf_hash).first()
@@ -111,7 +111,7 @@ def create_raw_pdf_file_from_path(
         return raw_pdf
 
     except Exception as exc:
-        logger.error("Error processing or saving file %s: %s", file_path, exc)
+        logger.exception("Error processing or saving file %s: %s", file_path, exc)
         raise RuntimeError(f"PDF processing failed: {exc}") from exc
 
 

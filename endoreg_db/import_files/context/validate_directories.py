@@ -47,7 +47,7 @@ def validate_directories(dirs: Iterable[Path] | None = None) -> bool:
                 ok = False
 
         except Exception as e:
-            logger.error(f"Failed to create or validate directory '{d}': {e}")
+            logger.exception(f"Failed to create or validate directory '{d}': {e}")
             ok = False
 
     return ok

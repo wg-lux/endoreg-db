@@ -269,7 +269,7 @@ class VideoMediaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as exc:
-            logger.error("Unexpected error in video list view: %s", exc)
+            logger.exception("Unexpected error in video list view: %s", exc)
             return Response(
                 {"error": "Failed to retrieve video list"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
