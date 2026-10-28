@@ -33,7 +33,7 @@ from tests.services.test_secret_rotation import write_ring
 
 @pytest.mark.django_db
 def test_validation_erasure_is_complete_idempotent_and_preserves_identity(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     center = Center.objects.create(name=f"erasure-{uuid4().hex}")
     meta = SensitiveMeta.objects.create(
@@ -84,7 +84,7 @@ def test_validation_erasure_is_complete_idempotent_and_preserves_identity(
 
 
 @pytest.mark.django_db
-def test_erasure_rejects_identity_changed_since_validation(base_db_data: bool) -> None:
+def test_erasure_rejects_identity_changed_since_validation(gender_data: None) -> None:
     center = Center.objects.create(name=f"changed-before-erasure-{uuid4().hex}")
     meta = SensitiveMeta.objects.create(
         center=center,
@@ -104,7 +104,7 @@ def test_erasure_rejects_identity_changed_since_validation(base_db_data: bool) -
 @pytest.mark.django_db
 @pytest.mark.parametrize("wrong_salt", [False, True])
 def test_legacy_salt_enrollment_preserves_identity_or_fails(
-    base_db_data: bool,
+    gender_data: None,
     wrong_salt: bool,
 ) -> None:
     center = Center.objects.create(name=f"legacy-salt-{uuid4().hex}")
@@ -139,7 +139,7 @@ def test_legacy_salt_enrollment_preserves_identity_or_fails(
 
 @pytest.mark.django_db
 def test_erased_legacy_identity_requires_explicit_enrollment_review(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     center = Center.objects.create(name=f"legacy-erased-{uuid4().hex}")
     first = SensitiveMeta.objects.create(
@@ -165,7 +165,7 @@ def test_erased_legacy_identity_requires_explicit_enrollment_review(
 
 
 @pytest.mark.django_db
-def test_empty_extraction_has_no_invented_identity(base_db_data: bool) -> None:
+def test_empty_extraction_has_no_invented_identity(gender_data: None) -> None:
     center = Center.objects.create(name=f"unresolved-{uuid4().hex}")
     report = RawPdfFile.objects.create(center=center, pdf_hash=uuid4().hex)
     before = Patient.objects.count()
@@ -185,7 +185,7 @@ def test_empty_extraction_has_no_invented_identity(base_db_data: bool) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize("erased", [False, True])
 def test_legacy_name_concatenation_collision_fails_without_partial_writes(
-    base_db_data: bool,
+    gender_data: None,
     erased: bool,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -247,7 +247,7 @@ def test_legacy_name_concatenation_collision_fails_without_partial_writes(
 
 
 @pytest.mark.django_db
-def test_erased_identity_reuse_and_salt_drift_are_verified(base_db_data: bool) -> None:
+def test_erased_identity_reuse_and_salt_drift_are_verified(gender_data: None) -> None:
     center = Center.objects.create(name=f"salt-drift-{uuid4().hex}")
     first = SensitiveMeta.objects.create(
         center=center,
@@ -279,7 +279,7 @@ def test_erased_identity_reuse_and_salt_drift_are_verified(base_db_data: bool) -
 
 @pytest.mark.django_db
 def test_missing_examination_date_never_creates_an_examination(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     center = Center.objects.create(name=f"no-exam-{uuid4().hex}")
     meta = SensitiveMeta.objects.create(
@@ -298,7 +298,7 @@ def test_missing_examination_date_never_creates_an_examination(
 @pytest.mark.django_db
 @pytest.mark.parametrize("verified", [False, True])
 def test_provisional_legacy_hash_is_not_global_salt_evidence(
-    base_db_data: bool,
+    gender_data: None,
     verified: bool,
 ) -> None:
     center = Center.objects.create(name=f"provisional-{uuid4().hex}")
@@ -340,7 +340,7 @@ def test_provisional_legacy_hash_is_not_global_salt_evidence(
 
 
 @pytest.mark.django_db
-def test_every_verified_legacy_identity_is_checked(base_db_data: bool) -> None:
+def test_every_verified_legacy_identity_is_checked(gender_data: None) -> None:
     center = Center.objects.create(name=f"all-evidence-{uuid4().hex}")
     rows = [
         SensitiveMeta.objects.create(

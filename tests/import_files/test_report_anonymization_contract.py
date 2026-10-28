@@ -117,7 +117,6 @@ def _persistence_result(
 def test_report_anonymizer_uses_canonical_attempt_contract(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    base_db_data: bool,
     llm_available: bool,
     caplog: pytest.LogCaptureFixture,
 ) -> None:
@@ -214,7 +213,6 @@ def test_report_anonymizer_uses_canonical_attempt_contract(
 def test_report_anonymizer_fails_when_canonical_method_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    base_db_data: bool,
 ) -> None:
     import endoreg_db.import_files.processing.report_processing.report_anonymization as module
 
@@ -268,7 +266,6 @@ def test_report_anonymizer_fails_when_canonical_method_is_missing(
 def test_report_anonymizer_rejects_untrusted_result_before_mutation(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    base_db_data: bool,
     defect: str,
     message: str,
 ) -> None:
@@ -380,7 +377,6 @@ def test_report_anonymizer_rejects_untrusted_result_before_mutation(
 @pytest.mark.django_db
 def test_persist_report_anonymization_result_rolls_back_text_fields_on_meta_error(
     monkeypatch: pytest.MonkeyPatch,
-    base_db_data: bool,
 ) -> None:
     report = _create_report_for_tests(
         pdf_hash="rollback-" + uuid.uuid4().hex,
@@ -416,9 +412,7 @@ def test_persist_report_anonymization_result_rolls_back_text_fields_on_meta_erro
 
 
 @pytest.mark.django_db
-def test_persist_report_anonymization_result_uses_db_freshness(
-    base_db_data: bool,
-) -> None:
+def test_persist_report_anonymization_result_uses_db_freshness() -> None:
     report = _create_report_for_tests(
         pdf_hash="freshness-" + uuid.uuid4().hex,
         file="freshness-report.pdf",
@@ -447,9 +441,9 @@ def test_persist_report_anonymization_result_uses_db_freshness(
 
 
 @pytest.mark.django_db
-def test_persist_report_anonymization_keeps_sensitive_meta_stable_on_idempotent_updates(
-    base_db_data: bool,
-) -> None:
+def test_persist_report_anonymization_keeps_sensitive_meta_stable_on_idempotent_updates() -> (
+    None
+):
     report = _create_report_for_tests(
         pdf_hash="idempotent-" + uuid.uuid4().hex,
         file="idempotent-report.pdf",
@@ -486,9 +480,7 @@ def test_persist_report_anonymization_keeps_sensitive_meta_stable_on_idempotent_
 
 
 @pytest.mark.django_db
-def test_persist_sensitive_meta_candidate_returns_sensitive_meta_instance(
-    base_db_data: bool,
-) -> None:
+def test_persist_sensitive_meta_candidate_returns_sensitive_meta_instance() -> None:
     report = _create_report_for_tests(
         pdf_hash="candidate-" + uuid.uuid4().hex,
         file="candidate-report.pdf",
@@ -507,7 +499,7 @@ def test_persist_sensitive_meta_candidate_returns_sensitive_meta_instance(
 
 @pytest.mark.django_db
 def test_report_pseudonym_resolver_reuses_existing_patient_name(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     report = _create_report_for_tests()
     candidate = LxSensitiveMeta.model_validate(
@@ -541,7 +533,7 @@ def test_report_pseudonym_resolver_reuses_existing_patient_name(
 @pytest.mark.django_db
 @pytest.mark.parametrize("conflict", ["duplicate", "real_person", "center"])
 def test_report_pseudonym_resolver_rejects_identity_conflicts(
-    base_db_data: bool,
+    gender_data: None,
     conflict: str,
 ) -> None:
     report = _create_report_for_tests()
@@ -585,7 +577,7 @@ def test_report_pseudonym_resolver_rejects_identity_conflicts(
 
 @pytest.mark.django_db
 def test_report_pseudonym_resolver_does_not_reuse_foreign_center_patient(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     report = _create_report_for_tests()
     candidate = LxSensitiveMeta.model_validate(
@@ -628,7 +620,6 @@ def test_report_pseudonym_resolver_does_not_reuse_foreign_center_patient(
 def test_report_persistence_failure_uses_cleanable_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    base_db_data: bool,
 ) -> None:
     import endoreg_db.import_files.processing.report_processing.report_anonymization as module
     from endoreg_db.import_files.file_storage.cleanup import cleanup_staging_files
@@ -691,7 +682,6 @@ def test_persisted_receipt_rejects_invalid_evidence() -> None:
 def test_producer_extraction_reaches_native_fenced_host(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    base_db_data: bool,
     provider_fails: bool,
     fallback: bool,
     rollback: bool,

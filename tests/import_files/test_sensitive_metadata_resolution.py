@@ -71,7 +71,7 @@ def _identity(meta: SensitiveMeta) -> tuple[str, str, int, int]:
 @pytest.mark.parametrize("legacy_aliases", [False, True])
 @pytest.mark.parametrize("german_dates", [False, True])
 def test_extraction_resolves_same_identity_and_review_for_video_and_report(
-    base_db_data: bool,
+    gender_data: None,
     client: Client,
     legacy_aliases: bool,
     german_dates: bool,
@@ -164,7 +164,7 @@ def test_extraction_resolves_same_identity_and_review_for_video_and_report(
 
 @pytest.mark.django_db
 def test_invalid_recognized_metadata_does_not_create_a_relation(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     center = Center.objects.create(name=f"metadata-invalid-{uuid4().hex}")
     video = VideoFile.objects.create(center=center, raw_video_hash=uuid4().hex)
@@ -181,7 +181,7 @@ def test_invalid_recognized_metadata_does_not_create_a_relation(
 @pytest.mark.django_db
 @pytest.mark.parametrize("media_type", ["videos", "pdfs"])
 def test_review_read_does_not_create_missing_sensitive_metadata(
-    base_db_data: bool, client: Client, media_type: str
+    gender_data: None, client: Client, media_type: str
 ) -> None:
     center = Center.objects.create(name=f"metadata-missing-{uuid4().hex}")
     user = User.objects.create_user(username=f"missing-review-{uuid4().hex}")
