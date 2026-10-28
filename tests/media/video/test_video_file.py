@@ -125,7 +125,7 @@ class VideoFileModelTest(TestCase):
                         f"VideoFile with pk {video_file.pk} not found for cleanup."
                     )
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"Error during cleanup of video file (UUID: {video_file.raw_video_hash}): {e}",
                         exc_info=True,
                     )

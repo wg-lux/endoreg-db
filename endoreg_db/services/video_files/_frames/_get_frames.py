@@ -19,14 +19,14 @@ def _get_frames(video: "VideoFile") -> "QuerySet[Frame]":
         # Access related manager directly
         return video.frames.order_by("frame_number")
     except AttributeError:
-        logger.error(
+        logger.exception(
             "Could not access frames for video %s. 'frames' related manager not found.",
             video.raw_video_hash,
         )
         # Fallback query
         return Frame.objects.filter(video=video).order_by("frame_number")
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error getting frames for video %s: %s",
             video.raw_video_hash,
             e,

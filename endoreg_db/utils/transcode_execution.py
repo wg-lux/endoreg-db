@@ -5,7 +5,7 @@ import os
 import signal
 import subprocess
 from pathlib import Path
-from typing import Any, List, Optional, Tuple, TypedDict, Unpack, cast
+from typing import Any, Optional, TypedDict, Unpack, cast
 
 from lx_dtypes.models.contracts.media_streaming import (
     FfmpegStreamProbeEntry,
@@ -60,7 +60,9 @@ def _delete_partial_output(output_path: Path, *, reason: str) -> None:
     try:
         safe_unlink_file(output_path, missing_ok=True)
     except OSError as e:
-        logger.error("Failed to delete %s output file %s: %s", reason, output_path, e)
+        logger.exception(
+            "Failed to delete %s output file %s: %s", reason, output_path, e
+        )
 
 
 def _stream_info_has_video_stream(stream_info: JsonObject | None) -> bool:
@@ -69,7 +71,7 @@ def _stream_info_has_video_stream(stream_info: JsonObject | None) -> bool:
     try:
         return validate_ffmpeg_stream_info(stream_info).has_video_stream
     except ValidationError as exc:
-        logger.error("Invalid ffprobe stream info payload: %s", exc)
+        logger.exception("Invalid ffprobe stream info payload: %s", exc)
         return False
 
 
@@ -110,7 +112,7 @@ def _stderr_indicates_timestamp_fault(stderr_output: str) -> bool:
     return has_timestamp_signal and has_fault_signal
 
 
-def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
+def _run_ffmpeg_command(command: list[str]) -> tuple[int, str]:
     from endoreg_db.services.video_storage.frame_provenance import (
         run_with_frame_provenance,
     )
@@ -118,7 +120,7 @@ def _run_ffmpeg_command(command: List[str]) -> Tuple[int, str]:
     return run_with_frame_provenance(command, _run_ffmpeg_process)
 
 
-def _run_ffmpeg_process(command: List[str]) -> Tuple[int, str]:
+def _run_ffmpeg_process(command: list[str]) -> tuple[int, str]:
     """Run ffmpeg while preserving timeout behavior for long transcodes."""
     process = subprocess.Popen(
         command,
@@ -191,20 +193,24 @@ def get_stream_info(
         )
         return cast(JsonObject, json.loads(result.stdout))
     except subprocess.CalledProcessError as e:
-        logger.error("ffprobe command failed for %s: %s\n%s", file_path, e, e.stderr)
+        logger.exception(
+            "ffprobe command failed for %s: %s\n%s", file_path, e, e.stderr
+        )
         return None
     except subprocess.TimeoutExpired as e:
-        logger.error(
+        logger.exception(
             "ffprobe command timed out for %s after %ss",
             file_path,
             e.timeout,
         )
         return None
     except json.JSONDecodeError as e:
-        logger.error("Failed to parse ffprobe JSON output for %s: %s", file_path, e)
+        logger.exception("Failed to parse ffprobe JSON output for %s: %s", file_path, e)
         return None
     except Exception as e:
-        logger.error("Error running ffprobe for %s: %s", file_path, e, exc_info=True)
+        logger.exception(
+            "Error running ffprobe for %s: %s", file_path, e, exc_info=True
+        )
         return None
 
 
@@ -216,7 +222,7 @@ def transcode_video(
     preset: str = "auto",  # Changed default to "auto" for automatic selection
     audio_codec: str = "aac",
     audio_bitrate: str = "128k",
-    extra_args: Optional[List[str]] = None,
+    extra_args: Optional[list[str]] = None,
     quality_mode: str = "balanced",  # New parameter: 'fast', 'balanced', 'quality'
     force_cpu: bool = False,  # New parameter to force CPU encoding
 ) -> Optional[Path]:
@@ -362,7 +368,7 @@ def transcode_video(
             _delete_partial_output(output_path, reason="incomplete")
             return None
     except subprocess.TimeoutExpired:
-        logger.error(
+        logger.exception(
             "FFmpeg transcoding timed out for %s after %ss.",
             input_path.name,
             FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
@@ -371,12 +377,12 @@ def transcode_video(
         return None
 
     except FileNotFoundError:
-        logger.error(
+        logger.exception(
             "ffmpeg command not found. Ensure FFmpeg is installed and in the system's PATH."
         )
         return None
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error during transcoding of %s: %s", input_path.name, e, exc_info=True
         )
         return None
@@ -387,11 +393,11 @@ def _transcode_video_with_timestamp_repair(
     ffmpeg_executable: str,
     input_path: Path,
     output_path: Path,
-    encoder_args: List[str],
+    encoder_args: list[str],
     encoder_type: str,
     audio_codec: str,
     audio_bitrate: str,
-    extra_args: Optional[List[str]],
+    extra_args: Optional[list[str]],
     quality_mode: str,
     custom_crf: Optional[int],
     force_cpu: bool,
@@ -420,7 +426,7 @@ def _transcode_video_with_timestamp_repair(
         try:
             returncode, stderr_output = _run_ffmpeg_command(command)
         except subprocess.TimeoutExpired:
-            logger.error(
+            logger.exception(
                 "Timestamp repair transcode timed out for %s with mode %s after %ss.",
                 input_path.name,
                 mode.value,
@@ -485,7 +491,7 @@ def _transcode_video_with_timestamp_repair(
             try:
                 returncode, stderr_output = _run_ffmpeg_command(command)
             except subprocess.TimeoutExpired:
-                logger.error(
+                logger.exception(
                     "CPU timestamp repair transcode timed out for %s with mode %s after %ss.",
                     input_path.name,
                     mode.value,
@@ -527,7 +533,7 @@ def _transcode_video_fallback(
     output_path: Path,
     audio_codec: str,
     audio_bitrate: str,
-    extra_args: Optional[List[str]],
+    extra_args: Optional[list[str]],
     quality_mode: str,
     custom_crf: Optional[int],
 ) -> Optional[Path]:
@@ -593,7 +599,7 @@ def _transcode_video_fallback(
             return None
 
     except subprocess.TimeoutExpired:
-        logger.error(
+        logger.exception(
             "CPU fallback transcoding timed out for %s after %ss.",
             input_path.name,
             FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
@@ -601,7 +607,7 @@ def _transcode_video_fallback(
         _delete_partial_output(output_path, reason="timed-out")
         return None
     except Exception as e:
-        logger.error("Error during CPU fallback transcoding: %s", e, exc_info=True)
+        logger.exception("Error during CPU fallback transcoding: %s", e, exc_info=True)
         return None
 
 
@@ -701,7 +707,7 @@ def transcode_videofile_if_required(
                 )
                 return output_path
             except Exception as e:
-                logger.error(
+                logger.exception(
                     "Failed to copy %s to %s: %s",
                     input_path.name,
                     output_path.name,

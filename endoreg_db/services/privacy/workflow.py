@@ -257,7 +257,7 @@ class AnonymizationService:
             logger.info(f"Video anonymization completed for VideoFile ID: {file_id}")
             return "video"
         except Exception as error:
-            logger.error(f"Failed to anonymize VideoFile {file_id}: {error}")
+            logger.exception(f"Failed to anonymize VideoFile {file_id}: {error}")
             raise
 
     def _start_report(
@@ -299,7 +299,7 @@ class AnonymizationService:
             logger.info(f"report processing completed for RawPdfFile ID: {file_id}")
             return "pdf"
         except Exception as error:
-            logger.error(f"Failed to process RawPdfFile {file_id}: {error}")
+            logger.exception(f"Failed to process RawPdfFile {file_id}: {error}")
             raise
 
     @staticmethod

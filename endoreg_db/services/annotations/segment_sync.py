@@ -152,8 +152,8 @@ def create_user_segment_from_annotation(
             return new_segment
 
     except VideoFile.DoesNotExist:
-        logger.error(f"Video {video_id} not found, cannot create user segment")
+        logger.exception(f"Video {video_id} not found, cannot create user segment")
         return None
     except Exception as e:
-        logger.error(f"Error creating user segment from annotation: {e}")
+        logger.exception(f"Error creating user segment from annotation: {e}")
         return None

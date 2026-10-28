@@ -51,7 +51,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
             serializer = PatientExaminationSerializer(instance)
             return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
         except Exception as e:
-            logger.error(f"Error retrieving examination: {str(e)}")
+            logger.exception(f"Error retrieving examination: {str(e)}")
             return Response(
                 {"error": "Failed to retrieve examination"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -90,7 +90,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
                 )
 
         except Exception as e:
-            logger.error(f"Error updating examination: {str(e)}")
+            logger.exception(f"Error updating examination: {str(e)}")
             return Response(
                 {"error": "Failed to update examination", "message": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

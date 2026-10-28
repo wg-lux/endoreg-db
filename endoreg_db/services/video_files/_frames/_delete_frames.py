@@ -2,7 +2,7 @@
 import logging
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from django.db import transaction
 
@@ -78,8 +78,8 @@ def _delete_frames(video: "VideoFile") -> str:
     """
     from endoreg_db.models.media.frame.frame import Frame
 
-    deleted_messages: List[str] = []
-    error_messages: List[str] = []
+    deleted_messages: list[str] = []
+    error_messages: list[str] = []
     state_updated: bool = False
     db_updated: bool = False
     cleanup_directories: list[Path] = []
@@ -117,7 +117,7 @@ def _delete_frames(video: "VideoFile") -> str:
             deleted_messages.append(msg)
     except Exception as e:
         msg = f"Error deleting temporary anonymized frame directory {temp_anonym_frame_dir}: {e}"
-        logger.error(msg, exc_info=True)
+        logger.exception(msg, exc_info=True)
         error_messages.append(msg)
 
     try:
@@ -166,7 +166,7 @@ def _delete_frames(video: "VideoFile") -> str:
             db_updated = True
         except Exception as db_err:
             msg = f"Failed to update is_extracted flag for Frame objects for video %s: {db_err}"
-            logger.error(msg, exc_info=True)
+            logger.exception(msg, exc_info=True)
             error_messages.append(msg)
             raise RuntimeError(
                 "Failed to update extracted frame flags during frame deletion "
@@ -177,7 +177,7 @@ def _delete_frames(video: "VideoFile") -> str:
         msg = (
             f"Failed to update state after deleting frame files for video %s: {state_e}"
         )
-        logger.error(msg, exc_info=True)
+        logger.exception(msg, exc_info=True)
         error_messages.append(msg)
         raise RuntimeError(
             f"Failed to update state during frame file deletion for video {video.raw_video_hash}"
@@ -197,7 +197,7 @@ def _delete_frames(video: "VideoFile") -> str:
                         video.raw_video_hash,
                     )
                 except Exception as cleanup_exc:
-                    logger.error(
+                    logger.exception(
                         "Failed to delete non-dataset frame files for %s: %s",
                         frame_dir,
                         cleanup_exc,
@@ -227,7 +227,7 @@ def _delete_frames(video: "VideoFile") -> str:
                             )
                             apply_frame_cache_dir_mode(original_path)
                         except Exception as restore_exc:
-                            logger.error(
+                            logger.exception(
                                 "Failed to restore staged frame directory "
                                 "%s -> %s after cleanup failure: %s",
                                 staged_path,
@@ -235,7 +235,7 @@ def _delete_frames(video: "VideoFile") -> str:
                                 restore_exc,
                                 exc_info=True,
                             )
-                    logger.error(
+                    logger.exception(
                         "Failed to finalize staged frame directory cleanup for %s: %s",
                         staged_path,
                         cleanup_exc,

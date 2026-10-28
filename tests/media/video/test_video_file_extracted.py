@@ -3,7 +3,7 @@ import logging
 import os
 import unittest
 from logging import getLogger
-from typing import Union, cast
+from typing import cast
 
 import pytest
 from django.conf import settings
@@ -39,7 +39,7 @@ FFMPEG_AVAILABLE = is_ffmpeg_available()
 
 @pytest.mark.usefixtures("base_db_data")
 class VideoFileModelExtractedTest(TransactionTestCase):
-    video_file: Union[VideoFile, MockVideoFile]
+    video_file: VideoFile | MockVideoFile
     video: "VideoFile"
     center: Center | object
     endo_processor: EndoscopyProcessor | object
@@ -68,7 +68,7 @@ class VideoFileModelExtractedTest(TransactionTestCase):
             from ...helpers.default_objects import get_default_video_file
 
             self.video_file = cast(
-                Union[VideoFile, MockVideoFile],
+                VideoFile | MockVideoFile,
                 get_cached_or_create("pipeline_test_video", get_default_video_file),
             )
 
@@ -129,7 +129,7 @@ class VideoFileModelExtractedTest(TransactionTestCase):
         from ...helpers.default_objects import get_default_video_file
 
         self.video_file = cast(
-            Union[VideoFile, MockVideoFile],
+            VideoFile | MockVideoFile,
             get_cached_or_create("real_pipeline_video", get_default_video_file),
         )
 

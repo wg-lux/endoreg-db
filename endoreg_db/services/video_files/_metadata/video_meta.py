@@ -169,7 +169,7 @@ def _update_video_meta(
                     )
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to update/create VideoMeta for video %s: %s",
             video.raw_video_hash,
             e,

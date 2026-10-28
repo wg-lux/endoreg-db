@@ -570,7 +570,7 @@ def _bulk_write_failure_descriptor(
 
 def _bulk_write_failure_response(error: DatabaseError) -> Response:
     descriptor = _bulk_write_failure_descriptor(error)
-    logger.error(
+    logger.exception(
         "Bulk frame annotation write failed at the database boundary.",
         extra={
             "error_code": descriptor.code,
@@ -1166,7 +1166,7 @@ class FrameAnnotationBulkUpsertView(APIView):
     Bulk upsert endpoint for frame-level annotations.
 
     Accepted payload formats:
-    1) List payload:
+    1) list payload:
        [
          {frame_id, label_id, information_source_name, ...},
          ...

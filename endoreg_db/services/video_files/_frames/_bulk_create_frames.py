@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.frame.frame import Frame
@@ -10,14 +10,14 @@ logger = logging.getLogger(__name__)
 __all__ = ["_bulk_create_frames"]
 
 
-def _bulk_create_frames(video: "VideoFile", frames_to_create: List["Frame"]):
+def _bulk_create_frames(video: "VideoFile", frames_to_create: list["Frame"]):
     """Helper function to perform bulk_create with ignore_conflicts."""
     from endoreg_db.models.media.frame.frame import Frame
 
     try:
         Frame.objects.bulk_create(frames_to_create, ignore_conflicts=True)
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error during bulk creation of frames for video %s: %s",
             video.raw_video_hash,
             e,

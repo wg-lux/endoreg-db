@@ -148,7 +148,7 @@ class Frame(models.Model):
                 )
             return image
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Error reading frame file %s (Frame %s, Video %s): %s",
                 frame_path,
                 self.pk,

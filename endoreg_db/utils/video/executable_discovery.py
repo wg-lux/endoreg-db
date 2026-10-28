@@ -151,7 +151,7 @@ def check_ffmpeg_availability() -> Literal[True]:
         error_msg = (
             "FFmpeg is not available. Please install it and ensure it's in your PATH."
         )
-        logger.error(error_msg)
+        logger.exception(error_msg)
         raise FileNotFoundError(error_msg)
     # logger.info("FFmpeg is available.") # Caller can log if needed
     return True

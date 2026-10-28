@@ -208,9 +208,7 @@ def _update_or_append_ffmpeg_arg(args: list[str], key: str, value: str) -> None:
 
     value_index = index + 1
     if value_index >= len(args):
-        logger.error(
-            "Missing value for %s argument. Appending required value.", key
-        )
+        logger.error("Missing value for %s argument. Appending required value.", key)
         args.append(value)
         return
 

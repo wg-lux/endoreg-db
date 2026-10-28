@@ -82,7 +82,7 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):
                 )
 
         except Exception as e:
-            logger.error(f"Error creating examination: {str(e)}")
+            logger.exception(f"Error creating examination: {str(e)}")
             return Response(
                 {"error": "Failed to create examination", "message": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

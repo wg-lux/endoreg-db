@@ -320,7 +320,7 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
             safe_delete_field_file(video.processed_file, missing_ok=True)
             video.processed_file.name = previous_name
             video.processed_video_hash = previous_hash
-        logger.error(
+        logger.exception(
             "Streamed anonymization failed for video %s: %s",
             video.raw_video_hash,
             e,
@@ -403,7 +403,7 @@ def _cleanup_raw_assets(
             )
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error during post-commit cleanup of raw assets for video %s: %s",
             raw_video_hash,
             e,

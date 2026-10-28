@@ -1,6 +1,6 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
-from typing import TYPE_CHECKING, Set
+from typing import TYPE_CHECKING
 
 from django.db import transaction
 
@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 @transaction.atomic
 def _mark_frames_extracted_status(
-    video: "VideoFile", extracted_frame_numbers: Set[int], status: bool
+    video: "VideoFile", extracted_frame_numbers: set[int], status: bool
 ):
     """
     Bulk updates the is_extracted status for a set of frame numbers.
@@ -86,12 +86,12 @@ def _mark_frames_extracted_status(
                             video.raw_video_hash,
                         )
                 except Frame.DoesNotExist:
-                    logger.error(
+                    logger.exception(
                         "Verification check: Frame 0 does not exist for video %s during status check.",
                         video.raw_video_hash,
                     )
                 except Exception as verify_e:
-                    logger.error(
+                    logger.exception(
                         "Verification check: Error checking frame 0 status for video %s: %s",
                         video.raw_video_hash,
                         verify_e,
@@ -100,7 +100,7 @@ def _mark_frames_extracted_status(
 
         return updated_count
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to bulk update is_extracted status for video %s: %s",
             video.raw_video_hash,
             e,

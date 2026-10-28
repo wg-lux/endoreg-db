@@ -59,7 +59,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_REGULAR)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_REGULAR}' does not exist. Base data might be missing."
             )
             return None
@@ -75,7 +75,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_ON_CALL)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_ON_CALL}' does not exist. Base data might be missing."
             )
             return None
@@ -91,7 +91,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_WARD)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_WARD}' does not exist. Base data might be missing."
             )
             return None
@@ -107,7 +107,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_OFF_HOURS)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_OFF_HOURS}' does not exist. Base data might be missing."
             )
             return None

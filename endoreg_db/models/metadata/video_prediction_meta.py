@@ -3,7 +3,7 @@ import logging
 import pickle
 from collections.abc import Iterable
 from typing import TYPE_CHECKING, Protocol, cast, Any
-from typing import List, Optional, Tuple
+from typing import Optional
 
 import numpy as np
 import numpy.typing as npt
@@ -175,7 +175,7 @@ class VideoPredictionMeta(models.Model):
             try:
                 return pickle.loads(self.prediction_array)
             except (pickle.UnpicklingError, TypeError, EOFError) as e:
-                logger.error(f"Error unpickling prediction array for {self}: {e}")
+                logger.exception(f"Error unpickling prediction array for {self}: {e}")
                 return None
 
     def calculate_prediction_array(
@@ -251,7 +251,7 @@ class VideoPredictionMeta(models.Model):
         )
 
     def create_video_segments_for_label(
-        self, segments: List[Tuple[int, int]], label: "Label"
+        self, segments: list[tuple[int, int]], label: "Label"
     ):
         """
         Creates LabelVideoSegment instances for the given label and segments.

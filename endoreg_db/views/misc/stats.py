@@ -113,7 +113,7 @@ class ExaminationStatsView(APIView):
             return Response(stats_data, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error fetching examination stats: {str(e)}")
+            logger.exception(f"Error fetching examination stats: {str(e)}")
             return Response(
                 {"error": "Failed to fetch examination statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -162,7 +162,7 @@ class VideoSegmentStatsView(APIView):
             return Response(stats_data, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error fetching video segment stats: {str(e)}")
+            logger.exception(f"Error fetching video segment stats: {str(e)}")
             return Response(
                 {"error": "Failed to fetch video segment statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -236,7 +236,7 @@ class SensitiveMetaStatsView(APIView):
             return Response(stats_data, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error fetching sensitive meta stats: {str(e)}")
+            logger.exception(f"Error fetching sensitive meta stats: {str(e)}")
             return Response(
                 {"error": "Failed to fetch sensitive meta statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -292,7 +292,7 @@ class GeneralStatsView(APIView):
             return Response(stats_data, status=status.HTTP_200_OK)
 
         except Exception as e:
-            logger.error(f"Error fetching general stats: {str(e)}")
+            logger.exception(f"Error fetching general stats: {str(e)}")
             return Response(
                 {"error": "Failed to fetch general statistics"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

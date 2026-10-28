@@ -172,7 +172,7 @@ class PdfMediaView(APIView):
         except (Http404, PermissionDenied):
             raise
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 f"Unexpected error in report detail view for ID {pk}: {str(exc)}"
             )
             return Response(
@@ -253,7 +253,7 @@ class PdfMediaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as exc:
-            logger.error(f"Unexpected error in report list view: {str(exc)}")
+            logger.exception(f"Unexpected error in report list view: {str(exc)}")
             return Response(
                 {"error": "Failed to retrieve report list"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

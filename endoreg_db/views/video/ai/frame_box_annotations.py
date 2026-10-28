@@ -586,7 +586,7 @@ class FrameBoxAnnotationView(APIView):
                     fallback_annotator=fallback_annotator,
                 )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "Frame box annotation persistence failed: %s",
                 exc,
                 exc_info=True,

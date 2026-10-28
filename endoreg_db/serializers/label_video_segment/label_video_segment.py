@@ -543,7 +543,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             )  # this function handles segment.save()
             return segment
         except Exception as exc:
-            logger.error("Error creating segment: %s", exc)
+            logger.exception("Error creating segment: %s", exc)
             raise serializers.ValidationError(str(exc)) from exc
 
     def update(
@@ -608,7 +608,7 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             instance.save()
             return instance
         except Exception as exc:
-            logger.error("Error updating segment %s: %s", instance.pk, exc)
+            logger.exception("Error updating segment %s: %s", instance.pk, exc)
             raise serializers.ValidationError(str(exc)) from exc
 
     def to_representation(self, instance: LabelVideoSegment) -> dict[str, object]:

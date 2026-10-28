@@ -142,7 +142,7 @@ class Command(BaseCommand):
             self.display_cleanup_summary(storage_info, final_storage)
 
         except Exception as exc:
-            logger.error(f"Storage management failed: {exc}")
+            logger.exception(f"Storage management failed: {exc}")
             raise CommandError(f"Storage management failed: {exc}") from exc
 
     def get_storage_info(self) -> StorageManagementInfoPayload:
@@ -166,7 +166,7 @@ class Command(BaseCommand):
                 warning=usage_percent >= 85.0,
             )
         except (OSError, ValidationError, ZeroDivisionError) as exc:
-            logger.error(f"Failed to get storage info: {exc}")
+            logger.exception(f"Failed to get storage info: {exc}")
             raise
 
     def get_directory_size(self, path: Path) -> int:
@@ -472,7 +472,7 @@ class Command(BaseCommand):
                     f"Using fallback filter, found {old_videos.count()} processed videos"
                 )
             except (DatabaseError, FieldError) as exc:
-                logger.error(f"Failed to query videos: {exc}")
+                logger.exception(f"Failed to query videos: {exc}")
                 return total_freed
 
         for video in old_videos:
@@ -563,7 +563,7 @@ class Command(BaseCommand):
                     )
 
         except OSError as exc:
-            logger.error(f"Failed to clean frames directory: {exc}")
+            logger.exception(f"Failed to clean frames directory: {exc}")
 
         self.stdout.write(
             f"✅ Aggressive frames cleanup: {total_freed / (1024**3):.2f} GB freed"
@@ -591,7 +591,7 @@ class Command(BaseCommand):
                     total_freed += file_size
 
         except OSError as exc:
-            logger.error(f"Failed to clean uploads directory: {exc}")
+            logger.exception(f"Failed to clean uploads directory: {exc}")
 
         self.stdout.write(
             f"✅ Aggressive upload cleanup: {total_freed / (1024**3):.2f} GB freed"
@@ -634,7 +634,7 @@ class Command(BaseCommand):
                     continue
 
         except (DatabaseError, FieldError) as exc:
-            logger.error(f"Failed to query processed videos: {exc}")
+            logger.exception(f"Failed to query processed videos: {exc}")
 
         self.stdout.write(
             f"✅ Aggressive processed videos cleanup: {total_freed / (1024**3):.2f} GB freed"

@@ -342,7 +342,7 @@ def run_video_anonymization_correction(
     except Exception as exc:
         safe_unlink_file(temp_output_path, missing_ok=True)
         history.mark_failure(str(exc))
-        logger.error(
+        logger.exception(
             "Anonymization correction job failed for video %s: %s",
             video_id,
             exc,

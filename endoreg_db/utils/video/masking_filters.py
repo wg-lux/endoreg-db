@@ -5,7 +5,8 @@ import tempfile
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Iterable, Optional
+from typing import Optional
+from collections.abc import Iterable
 
 from lx_dtypes.models.contracts.endoscopy_processor import (
     RoiBoxCore,
@@ -302,7 +303,7 @@ def blacken_video_frame_intervals(
             return None
         return output_path
     except subprocess.TimeoutExpired:
-        logger.error(
+        logger.exception(
             "FFmpeg outside blackening timed out for %s after %ss.",
             input_path.name,
             FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
@@ -416,7 +417,7 @@ def mask_video_to_roi_and_blacken_intervals(
             return None
         return output_path
     except subprocess.TimeoutExpired:
-        logger.error(
+        logger.exception(
             "FFmpeg ROI masking timed out for %s after %ss.",
             input_path.name,
             FFMPEG_TRANSCODE_TIMEOUT_SECONDS,

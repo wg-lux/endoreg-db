@@ -344,7 +344,7 @@ def _rebuild_processed_video_owned(
         replace_completed = True
         return True
     except AssertionError as ae:
-        logger.error(
+        logger.exception(
             "Assertion error while streaming outside-frame rebuild for VideoFile %s: %s",
             video.raw_video_hash,
             ae,
@@ -359,7 +359,7 @@ def _rebuild_processed_video_owned(
     except MediaOperationDeferred:
         raise
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error creating video without 'outside' frames for VideoFile %s: %s",
             video.raw_video_hash,
             e,

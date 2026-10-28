@@ -159,7 +159,7 @@ def _initialize_video_specs(
             source=observed_video_path,
             detail=str(error),
         )
-        logger.error(
+        logger.exception(
             "Failed to initialize specs for %s: %s",
             getattr(video, "raw_video_hash", None),
             error,

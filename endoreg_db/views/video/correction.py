@@ -270,7 +270,7 @@ class VideoAnonymizationCorrectionView(APIView):
                 _validation_error_message(exc), status.HTTP_400_BAD_REQUEST
             )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "Anonymization correction dispatch failed for video %s: %s",
                 pk,
                 exc,
@@ -492,7 +492,7 @@ def update_segments_after_frame_removal(
 
     Args:
         video: VideoFile instance whose segments should be updated
-        removed_frames: List of frame numbers that were removed (sorted)
+        removed_frames: list of frame numbers that were removed (sorted)
 
     Returns:
         dict: {
@@ -794,7 +794,7 @@ class VideoApplyMaskView(APIView):
                 raise Exception("Masking failed - check FFmpeg logs")
 
         except Exception as e:
-            logger.error(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
+            logger.exception(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
             temp_output_path = _part_output_path(_masked_output_path(video))
             safe_unlink_file(temp_output_path, missing_ok=True)
 
@@ -1001,7 +1001,7 @@ class VideoRemoveFramesView(APIView):
                 raise Exception("Frame removal failed - check FFmpeg logs")
 
         except Exception as e:
-            logger.error(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
+            logger.exception(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
             temp_output_path = _part_output_path(_cleaned_output_path(video))
             safe_unlink_file(temp_output_path, missing_ok=True)
 

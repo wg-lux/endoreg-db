@@ -166,7 +166,7 @@ def _cleanup_after_commit(video_id: int) -> None:
     try:
         result = cleanup_processed_video_generations(video_id, apply=True)
     except Exception as exc:
-        logger.error(
+        logger.exception(
             json.dumps(
                 {
                     "event": "processed_cleanup_failed",

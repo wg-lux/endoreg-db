@@ -730,7 +730,7 @@ def video_segments_stats(request: Request) -> Response:
         raise
 
     except Exception as e:
-        logger.error(f"Error fetching video segment stats: {e}")
+        logger.exception(f"Error fetching video segment stats: {e}")
         return Response(
             {"error": "Failed to fetch segment statistics"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -794,7 +794,7 @@ def video_segments_collection(request: Request) -> Response:
                 except MediaOperationDeferred:
                     raise
                 except Exception as e:
-                    logger.error(f"Error creating video segment: {str(e)}")
+                    logger.exception(f"Error creating video segment: {str(e)}")
                     return Response(
                         {"error": f"Failed to create segment: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -944,7 +944,7 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
                 except MediaOperationDeferred:
                     raise
                 except Exception as e:
-                    logger.error(f"Error creating segment for video {pk}: {str(e)}")
+                    logger.exception(f"Error creating segment for video {pk}: {str(e)}")
                     return Response(
                         {"error": f"Failed to create segment: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1189,7 +1189,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
                 except MediaOperationDeferred:
                     raise
                 except Exception as e:
-                    logger.error(f"Error updating segment {segment_id}: {str(e)}")
+                    logger.exception(f"Error updating segment {segment_id}: {str(e)}")
                     return Response(
                         {"error": f"Failed to update segment: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1228,7 +1228,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
         except MediaOperationDeferred:
             raise
         except Exception as e:
-            logger.error(f"Error deleting segment {segment_id}: {str(e)}")
+            logger.exception(f"Error deleting segment {segment_id}: {str(e)}")
             return Response(
                 {"error": f"Failed to delete segment: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1407,7 +1407,7 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
     except MediaOperationDeferred:
         raise
     except Exception as e:
-        logger.error(f"Error validating segment {segment_id} in video {pk}: {e}")
+        logger.exception(f"Error validating segment {segment_id} in video {pk}: {e}")
         return Response(
             {"error": f"Validation failed: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1550,7 +1550,7 @@ def _validate_one_bulk_segment(
     except MediaOperationDeferred:
         raise
     except Exception as exc:
-        logger.error("Error validating segment %s: %s", segment.pk, exc)
+        logger.exception("Error validating segment %s: %s", segment.pk, exc)
         return False
 
 
@@ -1871,7 +1871,7 @@ def _execute_bulk_validation(
     except MediaOperationDeferred:
         raise
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Error in bulk validation for video %s: %s",
             video_id,
             exc,

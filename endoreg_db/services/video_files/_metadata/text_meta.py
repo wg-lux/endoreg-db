@@ -76,7 +76,7 @@ def _update_text_metadata(
                 else None
             )
     except Exception as text_extract_e:
-        logger.error(
+        logger.exception(
             "Failed during text extraction step for video %s: %s",
             video.raw_video_hash,
             text_extract_e,
@@ -170,7 +170,7 @@ def _update_text_metadata(
             return sensitive_meta
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to update/create SensitiveMeta or state for video %s: %s",
             video.raw_video_hash,
             e,

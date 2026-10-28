@@ -8,12 +8,12 @@ Provides REST API endpoints for managing video-based patient examinations.
 Handles CRUD operations for PatientExamination records linked to VideoFile instances.
 
 **API Endpoints:**
-- GET /api/video-examinations/ - List all video examinations
+- GET /api/video-examinations/ - list all video examinations
 - GET /api/video-examinations/{id}/ - Get examination details
 - POST /api/video-examinations/ - Create new examination
 - PATCH /api/video-examinations/{id}/ - Update examination
 - DELETE /api/video-examinations/{id}/ - Delete examination
-- GET /api/video/{video_id}/examinations/ - List examinations for specific video
+- GET /api/video/{video_id}/examinations/ - list examinations for specific video
 
 **Frontend Integration:**
 Used by VideoExaminationAnnotation.vue for annotation workflow.
@@ -157,7 +157,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
             video_id: ID of the video
 
         Returns:
-            200: List of examinations for the video
+            200: list of examinations for the video
             404: Video not found
         """
         try:
@@ -220,7 +220,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
                     response_serializer.data, status=status.HTTP_201_CREATED
                 )
         except Exception as e:
-            logger.error(f"Error creating video examination: {str(e)}")
+            logger.exception(f"Error creating video examination: {str(e)}")
             return Response(
                 {"error": "Internal server error while creating examination"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -271,7 +271,7 @@ class VideoExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
                     status=status.HTTP_204_NO_CONTENT,
                 )
         except Exception as e:
-            logger.error(f"Error deleting examination {examination_id}: {str(e)}")
+            logger.exception(f"Error deleting examination {examination_id}: {str(e)}")
             return Response(
                 {"error": "Internal server error while deleting examination"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

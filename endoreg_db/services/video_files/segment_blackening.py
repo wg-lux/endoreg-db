@@ -153,7 +153,7 @@ def is_outside_frame_blackening_history(
             isinstance(config, dict)
             and config.get("kind") == OUTSIDE_FRAME_BLACKENING_KIND
         ):
-            logger.error(
+            logger.exception(
                 "Malformed outside-frame blackening config on VideoProcessingHistory %s.",
                 history_record.pk,
             )

@@ -24,7 +24,7 @@ def _get_frame_range(
             frame_number__lte=end_frame_number,
         ).order_by("frame_number")
     except AttributeError:
-        logger.error(
+        logger.exception(
             "Could not access frame range for video %s via related manager.",
             video.raw_video_hash,
         )
@@ -35,7 +35,7 @@ def _get_frame_range(
             frame_number__lte=end_frame_number,
         ).order_by("frame_number")
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error getting frame range (%d-%d) for video %s: %s",
             start_frame_number,
             end_frame_number,

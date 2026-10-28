@@ -30,7 +30,7 @@ def _serializer_data(serializer: _SerializerDataLike) -> JsonValue:
 
 class PatientExaminationListView(generics.ListAPIView[PatientExamination]):
     """
-    List PatientExamination instances with filtering.
+    list PatientExamination instances with filtering.
     GET /api/examinations/list/
 
     Query parameters:
@@ -89,7 +89,7 @@ class PatientExaminationListView(generics.ListAPIView[PatientExamination]):
             )
 
         except Exception as e:
-            logger.error(f"Error listing examinations: {str(e)}")
+            logger.exception(f"Error listing examinations: {str(e)}")
             return Response(
                 {"error": "Failed to list examinations"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

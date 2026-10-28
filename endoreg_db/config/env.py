@@ -20,7 +20,6 @@ from math import isfinite
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
     Literal,
     Optional,
     TypeAlias,
@@ -871,7 +870,7 @@ def get_drf_throttle_anon_rate() -> str:
     return env_str("DRF_THROTTLE_ANON", DEFAULT_DRF_THROTTLE_ANON)
 
 
-def build_default_cache_settings() -> Dict[str, Dict[str, Any]]:
+def build_default_cache_settings() -> dict[str, dict[str, Any]]:
     return {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -881,7 +880,7 @@ def build_default_cache_settings() -> Dict[str, Dict[str, Any]]:
     }
 
 
-def build_base_rest_framework_settings() -> Dict[str, Any]:
+def build_base_rest_framework_settings() -> dict[str, Any]:
     return {
         "DEFAULT_THROTTLE_CLASSES": [
             "rest_framework.throttling.UserRateThrottle",

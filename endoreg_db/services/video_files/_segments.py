@@ -235,7 +235,7 @@ def _get_outside_segments(
             segments = segments.filter(state__is_validated=True)
         return segments
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error getting '%s' segments for video %s: %s",
             outside_label_name,
             video.raw_video_hash,
@@ -322,7 +322,7 @@ def _get_outside_frames(
     try:
         return video.frames.filter(q_objects).distinct().order_by("frame_number")
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error filtering outside frames for video %s: %s",
             video.raw_video_hash,
             e,

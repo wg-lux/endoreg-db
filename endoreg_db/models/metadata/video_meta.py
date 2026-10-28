@@ -117,7 +117,7 @@ class VideoMeta(models.Model):
             meta.initialize_ffmpeg_meta(video_path)
         except Exception as e:
             # Re-raise exceptions from ffmpeg meta initialization
-            logger.error(
+            logger.exception(
                 "Failed during FFMpegMeta initialization within create_from_file for %s: %s",
                 video_path.name,
                 e,
@@ -206,7 +206,7 @@ class VideoMeta(models.Model):
 
         except Exception as e:
             # Log the error and re-raise it
-            logger.error(
+            logger.exception(
                 "Failed to create or link FFMpegMeta from %s: %s",
                 video_path,
                 e,
@@ -349,7 +349,7 @@ class FFMpegMeta(models.Model):
                 file_path
             )  # Use the new utility
         except Exception as probe_err:
-            logger.error(
+            logger.exception(
                 "ffprobe execution failed for %s: %s",
                 file_path,
                 probe_err,
@@ -443,7 +443,7 @@ class FFMpegMeta(models.Model):
             )
             return instance
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Error creating FFMpegMeta DB record from %s: %s",
                 file_path.name,
                 e,

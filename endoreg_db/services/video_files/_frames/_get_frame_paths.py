@@ -1,7 +1,7 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, List
+from typing import TYPE_CHECKING
 
 from endoreg_db.services.video_files.io import get_video_frame_dir_path
 
@@ -11,7 +11,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _get_frame_paths(video: "VideoFile") -> List[Path]:
+def _get_frame_paths(video: "VideoFile") -> list[Path]:
     """Returns a sorted list of Path objects for extracted frame image files."""
     frame_dir = get_video_frame_dir_path(video)
     if not frame_dir or not frame_dir.exists():
@@ -27,7 +27,7 @@ def _get_frame_paths(video: "VideoFile") -> List[Path]:
     try:
         frame_paths.sort(key=lambda p: int(p.stem.split("_")[-1]))
     except (ValueError, IndexError) as e:
-        logger.error(
+        logger.exception(
             "Error sorting frame paths in %s: %s. Found paths: %s",
             frame_dir,
             e,
