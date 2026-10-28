@@ -63,6 +63,7 @@ class WorkloadTaskFamily(StrEnum):
     UPLOAD_JOB_RETRY = "upload_job_retry"
     MODEL_TRAINING_RETRY = "model_training_retry"
     AUDIT_LEDGER_INTEGRITY = "audit_ledger_integrity"
+    FRAME_ANNOTATION_EXPORT = "frame_annotation_export"
     UNKNOWN = "unknown"
 
 
@@ -113,6 +114,7 @@ _TASK_FAMILY_BY_NAME: dict[str, WorkloadTaskFamily] = {
     "endoreg_db.refresh_audit_ledger_integrity_status": (
         WorkloadTaskFamily.AUDIT_LEDGER_INTEGRITY
     ),
+    "endoreg_db.frame_annotation_export": WorkloadTaskFamily.FRAME_ANNOTATION_EXPORT,
 }
 
 

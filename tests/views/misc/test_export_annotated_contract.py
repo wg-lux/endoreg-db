@@ -19,6 +19,7 @@ from lx_dtypes.models.contracts.video_frame_export import export_config
 from endoreg_db.models import (
     Center,
     Frame,
+    FrameAnnotationExportJob,
     ImageClassificationAnnotation,
     InformationSource,
     Label,
@@ -45,6 +46,7 @@ from endoreg_db.services.video_storage.contracts import evidence_as_json
 from endoreg_db.services.video_storage.recording_time import recording_time_evidence
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.file_operations import (
+    advisory_file_lock,
     atomic_write_file,
     ensure_directory,
     safe_rmtree,
@@ -649,6 +651,7 @@ class ExportAnnotatedContractTests(TestCase):
             {"output_dir": "data/../../outside"},
             {"output_path": "/tmp/annotations.csv"},
             {"output_path": "../annotations.csv"},
+            {"output_path": "export_manifest.json"},
         ]
         for overrides in unsafe_locations:
             with self.subTest(overrides=overrides):
@@ -685,6 +688,44 @@ class ExportAnnotatedContractTests(TestCase):
         assert response.status_code == 400, response.content
         assert "Invalid export location" in str(response.json())
         assert "config" not in captured
+
+    def test_api_cannot_replace_active_job_lock_or_its_aliases(self) -> None:
+        root = ensure_directory(_export_root())
+        suffix = uuid4().hex[:8]
+        victim = root / ".locks" / f"reserved-{suffix}.lock"
+        self.addCleanup(safe_unlink_file, victim, missing_ok=True)
+        directory_alias = root / f"lock-directory-{suffix}"
+        directory_alias.symlink_to(root / ".locks", target_is_directory=True)
+        self.addCleanup(safe_unlink_file, directory_alias, missing_ok=True)
+        run = ensure_directory(root / f"lock-file-{suffix}")
+        self.addCleanup(safe_rmtree, run, missing_ok=True)
+        file_alias = run / "annotations.csv"
+        file_alias.symlink_to(victim)
+        with advisory_file_lock(lock_path=victim, timeout_seconds=0):
+            original_inode = victim.stat().st_ino
+            original_content = victim.read_bytes()
+            for output_dir, output_path in (
+                (".locks", victim.name),
+                (directory_alias.name, victim.name),
+                (run.name, file_alias.name),
+            ):
+                with self.subTest(output_dir=output_dir):
+                    captured: dict[str, export_config] = {}
+                    with patch(
+                        "endoreg_db.services.media.export_annotated.AnnotationExporterClient",
+                        return_value=_FakeExporterClient(captured),
+                    ):
+                        response = self.client.post(
+                            "/api/media/videos/export-annotated/",
+                            data=self._valid_payload(
+                                output_dir=output_dir, output_path=output_path
+                            ),
+                            content_type="application/json",
+                        )
+                    assert response.status_code == 400, response.content
+                    assert "config" not in captured
+                    assert victim.stat().st_ino == original_inode
+                    assert victim.read_bytes() == original_content
 
 
 def _run_media_tool(command: list[str]) -> str:
@@ -781,6 +822,15 @@ class ExportAnnotatedPresentationTimestampEndToEndTests(TestCase):
     def test_frontend_payload_exports_named_video_manifest_and_identical_frames(
         self,
     ) -> None:
+        self._assert_real_export(dataset_job=False)
+
+    @override_settings(CELERY_TASK_ALWAYS_EAGER=True, CELERY_TASK_EAGER_PROPAGATES=True)
+    def test_dataset_job_dispatches_real_task_and_exports_identical_artifacts(
+        self,
+    ) -> None:
+        self._assert_real_export(dataset_job=True)
+
+    def _assert_real_export(self, *, dataset_job: bool) -> None:
         ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
         ffprobe_executable = ffmpeg_wrapper.resolve_ffprobe_executable()
         if ffmpeg_executable is None or ffprobe_executable is None:
@@ -810,7 +860,9 @@ class ExportAnnotatedPresentationTimestampEndToEndTests(TestCase):
         assert len(set(timestamps)) == 24
 
         suffix = uuid4().hex[:8]
-        center = Center.objects.create(name=f"pts-e2e-center-{suffix}")
+        center = Center.objects.create(
+            name=f"pts-e2e-center-{suffix}", center_key=f"pts-e2e-center-{suffix}"
+        )
         state = VideoState.objects.create(
             anonymization_validated=True,
             outside_segments_removed=True,
@@ -898,31 +950,53 @@ class ExportAnnotatedPresentationTimestampEndToEndTests(TestCase):
         PortalUserInfo.objects.create(user=user).centers.add(center)
         self.client.force_login(user)
 
-        output_dir = f"data/export/video_{video.pk}_annotated"
+        output_dir = f"video_{video.pk}_annotated"
         self.addCleanup(safe_rmtree, _export_root() / output_dir, missing_ok=True)
-        # Mirrors lx-annotate buildAnnotationExportRequest after snake_case conversion.
-        response = self.client.post(
-            "/api/media/videos/export-annotated/",
-            data={
-                "output_path": "annotations.json",
-                "output_dir": output_dir,
-                "output_format": "json",
-                "export_profile": "pts_dataset_v1",
-                "video_id": video.pk,
-                "segment_ids": [segment.pk],
-                "use_export_flags": False,
-                "export_videos": True,
-                "export_frames": True,
-                "use_frame_pk_paths": True,
-                "transcode_frames": True,
-                "transcode_quality": 2,
-                "transcode_ext": "png",
-            },
-            content_type="application/json",
-        )
-
-        assert response.status_code == 200, response.content
-        result = response.json()
+        payload = {
+            "output_path": "annotations.json",
+            "output_dir": output_dir,
+            "output_format": "json",
+            "export_profile": "pts_dataset_v1",
+            "video_id": video.pk,
+            "segment_ids": [segment.pk],
+            "use_export_flags": False,
+            "export_videos": True,
+            "export_frames": True,
+            "use_frame_pk_paths": True,
+            "transcode_frames": True,
+            "transcode_quality": 2,
+            "transcode_ext": "png",
+        }
+        if dataset_job:
+            payload["center_key"] = center.center_key
+            with self.captureOnCommitCallbacks(execute=True):
+                response = self.client.post(
+                    "/api/media/videos/export-annotated/jobs/start/",
+                    data=payload,
+                    content_type="application/json",
+                )
+            assert response.status_code == 202, response.content
+            job_id = response.json()["id"]
+            job = FrameAnnotationExportJob.objects.get(pk=job_id)
+            assert job.celery_task_id
+            detail = self.client.get(
+                f"/api/media/videos/export-annotated/jobs/{job_id}/"
+            )
+            assert detail.status_code == 200, detail.content
+            assert detail.json()["status"] == "completed", detail.content
+            result = detail.json()["result"]
+            for key in ("output_path", "frame_output_dir", "video_output_dir"):
+                relative = Path(result[key])
+                assert not relative.is_absolute()
+                result[key] = str(_export_root() / relative)
+        else:
+            response = self.client.post(
+                "/api/media/videos/export-annotated/",
+                data=payload,
+                content_type="application/json",
+            )
+            assert response.status_code == 200, response.content
+            result = response.json()
         exported_annotations = Path(result["output_path"])
         assert exported_annotations == _export_root() / output_dir / "annotations.json"
         assert result["row_count"] == len(selected_indices)

@@ -521,6 +521,7 @@ def export_frames_with_labels_to_csv(
         load_base_db_data()
 
     output_file = Path(output_path)
+    validate_annotation_table_destination(output_file)
     ensure_directory(output_file.parent)
 
     if annotations is None:
@@ -601,6 +602,7 @@ def export_frames_with_labels_to_json(
         load_base_db_data()
 
     output_file = Path(output_path)
+    validate_annotation_table_destination(output_file)
     ensure_directory(output_file.parent)
 
     if annotations is None:
@@ -686,9 +688,19 @@ def _snapshot_annotations(
     return annotations
 
 
+def validate_annotation_table_destination(output_file: Path) -> None:
+    """Keep annotation data distinct from its reserved manifest, including aliases."""
+    manifest_path = output_file.parent / FRAME_ANNOTATION_EXPORT_MANIFEST_NAME
+    if output_file.resolve() == manifest_path.resolve():
+        raise ValueError(
+            "Annotation table must not overwrite the reserved export manifest."
+        )
+
+
 def _write_annotation_rows(
     output_file: Path, rows: list[AnnotationRow], *, output_format: str
 ) -> Path:
+    validate_annotation_table_destination(output_file)
     ensure_directory(output_file.parent)
     if output_format == "json":
         content = json.dumps(rows, indent=2, ensure_ascii=False)
@@ -711,7 +723,8 @@ def _resolve_output_path(config: export_config) -> Path:
     if output_dir:
         base_dir = Path(output_dir)
         if not output_path.is_absolute():
-            return base_dir / output_path
+            output_path = base_dir / output_path
+    validate_annotation_table_destination(output_path)
     return output_path
 
 
@@ -888,6 +901,8 @@ def _export_videos_from_annotations(
                     exported_count += 1
                     continue
                 except OSError as exc:
+                    if strict_media_validation:
+                        raise
                     logger.warning(
                         "Failed to export video %s from %s: %s",
                         video.pk,
@@ -910,6 +925,8 @@ def _export_videos_from_annotations(
                     )
                     exported_count += 1
                 except OSError as exc:
+                    if strict_media_validation:
+                        raise
                     logger.warning(
                         "Failed to export video %s from %s: %s",
                         video.pk,
@@ -973,12 +990,16 @@ def _export_frames_from_annotations(
             else frame.relative_path
         )
         if not frame_relative_path:
+            if strict_media_validation:
+                raise ValueError(f"Export frame {frame.pk} has no relative path")
             continue
         try:
             frame_relative_path = normalize_protected_media_relative_path(
                 frame_relative_path
             )
         except ValueError as exc:
+            if strict_media_validation:
+                raise
             logger.warning(
                 "Skipping frame %s with unsafe relative path %r: %s",
                 frame.pk,
@@ -999,6 +1020,10 @@ def _export_frames_from_annotations(
             generated_frame_root=generated_frame_root,
         )
         if source_path is None or not source_path.exists():
+            if strict_media_validation:
+                raise FileNotFoundError(
+                    f"Export source missing for video {video.pk} frame {frame.pk}"
+                )
             logger.warning(
                 "Frame source missing for video %s frame %s",
                 video.pk,
@@ -1014,6 +1039,8 @@ def _export_frames_from_annotations(
             exported_count += 1
             copied_frames.add(frame_key)
         except OSError as exc:
+            if strict_media_validation:
+                raise
             logger.warning(
                 "Failed to export frame %s from %s: %s",
                 frame.pk,

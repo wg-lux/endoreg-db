@@ -16,6 +16,7 @@ from lx_dtypes.models.contracts.video_frame_export import export_config, export_
 from endoreg_db.export.frames.export_frames_with_labels import (
     AnnotationExporterClient,
     ExportJobFailedError,
+    validate_annotation_table_destination,
 )
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -66,9 +67,19 @@ def confine_export_location(
             f"Export directory must stay within the annotation export root: {relative_dir}"
         )
     # Resolving the full destination rejects existing nested symlinks that escape.
-    if not (output_dir / relative_file).resolve().is_relative_to(export_root):
+    table_path = (output_dir / relative_file).resolve()
+    if not table_path.is_relative_to(export_root):
         raise ValidationError(
             f"Export table must stay within the annotation export root: {relative_file}"
+        )
+    try:
+        validate_annotation_table_destination(output_dir / relative_file)
+    except ValueError as exc:
+        raise ValidationError(f"Invalid export location: {exc}") from exc
+    lock_root = (export_root / ".locks").resolve()
+    if output_dir.is_relative_to(lock_root) or table_path.is_relative_to(lock_root):
+        raise ValidationError(
+            "Invalid export location: .locks is reserved for job locks."
         )
     return output_dir, Path(relative_file)
 

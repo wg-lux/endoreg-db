@@ -2087,7 +2087,6 @@ models:
   - export:endoreg_db/services/reports/frame_export.py
   - import:endoreg_db/import_files/processing/video_processing/video_anonymization.py
   - job:endoreg_db/management/commands/load_legacy_data.py
-  - job:endoreg_db/services/jobs/frame_extraction_jobs.py
   - job:endoreg_db/services/jobs/model_training_jobs.py
   - service:endoreg_db/services/annotations/buckets.py
   - service:endoreg_db/services/annotations/segment_annotations.py
@@ -2127,6 +2126,41 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.FrameAnnotationExportJob
+  kind: registered
+  python_path: endoreg_db.models.media.video.frame_annotation_export_job.FrameAnnotationExportJob
+  source_path: endoreg_db/models/media/video/frame_annotation_export_job.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_frameannotationexportjob
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - config
+  - result
+  custom_clean: true
+  custom_save: true
+  target: shared_lx_dtypes_contract
+  owner: endoreg_db maintainers
+  rationale: The job config is the shared lx-dtypes VideoFrameAnnotationExportConfigPayload contract and
+    the result a local schema; both are canonicalized at the model boundary for every normal save.
+  ownership_evidence:
+  - endoreg_db/models/media/video/frame_annotation_export_job.py:FrameAnnotationExportJob.clean
+  - endoreg_db/schemas/frame_annotation_export_job.py:FrameAnnotationExportJobResult
+  - lx_dtypes.models.contracts.video_frame_export.VideoFrameAnnotationExportConfigPayload
+  boundary_consumers:
+  - api:endoreg_db/views/media/frame_annotation_export_jobs.py
+  - job:endoreg_db/services/media/frame_annotation_export_jobs.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.video_frame_export.YamlValue
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.frame_annotation_export_job.dump_frame_annotation_export_job_config
+  - endoreg_db.schemas.frame_annotation_export_job.dump_frame_annotation_export_job_result
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.FrameBoxAnnotation
   kind: registered
   python_path: endoreg_db.models.label.annotation.frame_box.FrameBoxAnnotation
@@ -2155,34 +2189,6 @@ models:
   - service:endoreg_db/services/privacy/evaluation_manifest.py
   - service:endoreg_db/services/privacy/metrics.py
   - service:endoreg_db/services/privacy/quality_evaluation.py
-  dynamic_model_references: []
-  module_lx_dtypes_imports: []
-  module_endoreg_schema_imports: []
-  exception_owner: null
-  exception_review_by: null
-  exception_exit_criteria: null
-- label: endoreg_db.FrameExtractionRequest
-  kind: registered
-  python_path: endoreg_db.models.media.video.frame_extraction_request.FrameExtractionRequest
-  source_path: endoreg_db/models/media/video/frame_extraction_request.py
-  base_classes:
-  - django.db.models.base.Model
-  db_table: frame_extraction_request
-  abstract: false
-  proxy: false
-  managed: true
-  json_fields: []
-  custom_clean: false
-  custom_save: false
-  target: local_boundary_schema
-  owner: endoreg_db maintainers
-  rationale: The shape is EndoReg workflow, storage, job, or operational state; its typed boundary remains
-    local while persistence stays in Django.
-  ownership_evidence:
-  - endoreg_db/models/media/video/frame_extraction_request.py:FrameExtractionRequest
-  - job:endoreg_db/services/jobs/frame_extraction_jobs.py
-  boundary_consumers:
-  - job:endoreg_db/services/jobs/frame_extraction_jobs.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -5922,7 +5928,6 @@ models:
   - job:endoreg_db/management/commands/reconcile_segment_validation_state.py
   - job:endoreg_db/management/commands/storage_management.py
   - job:endoreg_db/management/commands/transcode_processed_videos.py
-  - job:endoreg_db/services/jobs/frame_extraction_jobs.py
   - job:endoreg_db/services/jobs/video_correction_jobs.py
   - job:endoreg_db/services/jobs/video_fps_normalization_jobs.py
   - job:endoreg_db/services/jobs/video_post_validation_jobs.py

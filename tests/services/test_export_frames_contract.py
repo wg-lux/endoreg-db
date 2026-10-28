@@ -6,7 +6,7 @@ import json
 # pyright: reportPrivateUsage=false
 from collections.abc import Generator, Iterator
 from concurrent.futures import ThreadPoolExecutor
-from contextlib import AbstractContextManager, contextmanager
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -1339,3 +1339,140 @@ def test_missing_ancestry_is_reported_as_unverified(
     assert export_module._recording_timestamp_identity(cast(VideoFile, None)) == (
         "unverified"
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("collision", ["name", "table_alias", "manifest_alias"])
+def test_export_rejects_manifest_collision_before_writing(
+    collision: str, tmp_path: Path
+) -> None:
+    manifest = tmp_path / "export_manifest.json"
+    table = tmp_path / "annotations.json"
+    if collision == "name":
+        table = manifest
+    elif collision == "table_alias":
+        table.symlink_to(manifest)
+    else:
+        manifest.symlink_to(table)
+    table.write_text("existing export")
+
+    with pytest.raises(ValueError, match="reserved export manifest"):
+        export_module.AnnotationExporterClient().run_export(
+            export_module.export_config(
+                output_dir=tmp_path,
+                output_path=table.name,
+                export_profile="pts_dataset_v1",
+                export_frames=False,
+                all_centers=True,
+            )
+        )
+    assert table.read_text() == "existing export"
+    assert manifest.read_text() == "existing export"
+
+
+def _accept_test_media(_video: object) -> None:
+    pass
+
+
+@pytest.mark.parametrize("strict", [True, False])
+@pytest.mark.parametrize("failure", ["missing", "empty_path", "unsafe_path", "copy"])
+def test_frame_asset_failure_obeys_strict_export_contract(
+    strict: bool, failure: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _VideoDouble(pk=72)
+    source = tmp_path / "source.png"
+    if failure != "missing":
+        source.write_bytes(b"processed image")
+    relative_path = {
+        "empty_path": "",
+        "unsafe_path": "../outside.png",
+    }.get(failure, "frame.png")
+    frame = _FrameDouble(
+        pk=15,
+        video=cast(VideoFile, video),
+        relative_path=relative_path,
+        file_path=str(source),
+    )
+    annotations = cast(
+        list[ImageClassificationAnnotation], [_AnnotationDouble(frame=frame)]
+    )
+    monkeypatch.setattr(
+        export_module, "assert_video_media_export_ready", _accept_test_media
+    )
+
+    def frame_source(_frame: object, **_kwargs: object) -> Path:
+        return source
+
+    monkeypatch.setattr(export_module, "_resolve_frame_source_path", frame_source)
+
+    def refuse_copy(*, source: Path, destination: Path) -> None:
+        raise OSError("output volume unavailable")
+
+    if failure == "copy":
+        monkeypatch.setattr(export_module, "atomic_copy_file", refuse_copy)
+    with pytest.raises((ValueError, OSError)) if strict else nullcontext():
+        count = export_module._export_frames_from_annotations(
+            annotations,
+            output_dir=tmp_path / "exported",
+            use_frame_pk_paths=False,
+            frame_ext="png",
+            strict_media_validation=strict,
+        )
+        assert count == 0
+
+
+@pytest.mark.parametrize("strict", [True, False])
+@pytest.mark.parametrize("source_kind", ["local", "storage"])
+def test_video_copy_failure_obeys_strict_export_contract(
+    strict: bool, source_kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _VideoDouble(pk=73, processed_file=_NamedFile("processed.mp4"))
+    source = tmp_path / "processed.mp4"
+    source.write_bytes(b"processed video")
+    frame = _FrameDouble(
+        pk=16,
+        video=cast(VideoFile, video),
+        relative_path="frame.png",
+        file_path="frame.png",
+    )
+    annotations = cast(
+        list[ImageClassificationAnnotation], [_AnnotationDouble(frame=frame)]
+    )
+    monkeypatch.setattr(
+        export_module, "assert_video_media_export_ready", _accept_test_media
+    )
+
+    def video_source(_video: object) -> Path | None:
+        return source if source_kind == "local" else None
+
+    monkeypatch.setattr(
+        export_module, "_resolve_processed_video_source_path", video_source
+    )
+
+    @contextmanager
+    def stored_file(_field: object) -> Generator[Path]:
+        yield source
+
+    def refuse_copy(*, source: Path, destination: Path) -> None:
+        raise OSError("output volume unavailable")
+
+    monkeypatch.setattr(export_module, "ensure_local_file", stored_file)
+    monkeypatch.setattr(export_module, "atomic_copy_file", refuse_copy)
+    if strict:
+        with pytest.raises(OSError, match="output volume unavailable"):
+            export_module._export_videos_from_annotations(
+                annotations,
+                output_dir=tmp_path / "videos",
+                strict_media_validation=True,
+                video_file_names={video.pk: "processed.mp4"},
+            )
+    else:
+        assert (
+            export_module._export_videos_from_annotations(
+                annotations,
+                output_dir=tmp_path / "videos",
+                strict_media_validation=False,
+                video_file_names={video.pk: "processed.mp4"},
+            )
+            == 0
+        )

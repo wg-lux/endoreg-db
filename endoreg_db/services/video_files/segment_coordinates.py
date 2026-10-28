@@ -139,7 +139,8 @@ def _recording_coordinates(
     )
 
 
-def _bundle_ancestry(bundle: VideoProvenanceBundle) -> list[int]:
+def bundle_frame_ancestry(bundle: VideoProvenanceBundle) -> list[int]:
+    """Recording frame index of every processed frame across all transformations."""
     transformations = bundle.transformations
     try:
         ancestry = compose_frame_ancestry(
@@ -166,7 +167,7 @@ def segment_timeline_coordinates(
     if isinstance(provenance, VideoProvenanceBundle):
         output = provenance.transformations[-1].output
         recording: VideoFrameTimeline | None = provenance.transformations[0].source
-        ancestry: list[int] | None = _bundle_ancestry(provenance)
+        ancestry: list[int] | None = bundle_frame_ancestry(provenance)
         status = RecordingMappingStatus.VERIFIED
     else:
         output = provenance.processed_timeline
@@ -239,6 +240,7 @@ __all__ = [
     "SegmentGenerationCoordinates",
     "SegmentRecordingCoordinates",
     "SegmentTimelineCoordinates",
+    "bundle_frame_ancestry",
     "segment_timeline_coordinates",
     "wire_timeline_coordinates",
 ]

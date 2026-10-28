@@ -97,6 +97,21 @@ def run_video_reimport_task(
 
 
 @shared_task(
+    name="endoreg_db.frame_annotation_export",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def run_frame_annotation_export_task(_task: Task[[str], str], job_id: str) -> str:
+    from endoreg_db.services.media.frame_annotation_export_jobs import (
+        run_frame_annotation_export_job,
+    )
+
+    return str(run_frame_annotation_export_job(job_id).status)
+
+
+@shared_task(
     name="endoreg_db.video_fps_normalization",
     bind=True,
     acks_late=True,

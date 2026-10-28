@@ -8,6 +8,8 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0113_frameannotationexportjob.py
+  role: Persist center-scoped browser export jobs, typed payloads and exclusive active run names.
 - file: migrations/0114_uploadjob_processing_stack.py
   role: Persist Rust-owned remaining import work and stable checkpoint references on upload jobs.
 - file: migrations/0111_delete_frameextractionrequest.py
@@ -47,7 +49,7 @@ files:
 - file: migrations/__init__.py
   role: Schema migrations package; review schema changes with owning model manifest.
 - file: export/frames/export_frames_with_labels.py
-  role: Frame export workflow with one annotation selection and shared media integrity and CSV encoding services.
+  role: Frame export workflow with one annotation selection, reserved manifest destination validation, strict asset delivery and shared media integrity and CSV encoding services.
 - file: helpers/data_loader.py
   role: Reference-data loader helpers.
 - file: factories/__init__.py

@@ -8,6 +8,7 @@ from .medical.patient.examination_revision import (
 )
 
 from .media.video.video_transcode_job import VideoTranscodeJob
+from .media.video.frame_annotation_export_job import FrameAnnotationExportJob
 
 from .hub.storage_operator_dispatch_receipt import StorageOperatorDispatchReceipt
 
@@ -237,6 +238,7 @@ __all__ = [
     "ExaminationRevision",
     "CaseExaminationRecord",
     "VideoTranscodeJob",
+    "FrameAnnotationExportJob",
     "StorageOperatorDispatchReceipt",
     "StorageNodeActionReceipt",
     "StorageArtifactPublication",

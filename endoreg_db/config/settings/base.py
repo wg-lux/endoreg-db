@@ -161,6 +161,10 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_FFMPEG_MEDIA_QUEUE,
         "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
     },
+    "endoreg_db.frame_annotation_export": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
+    },
     "endoreg_db.process_upload_job": {
         "queue": CELERY_PIPELINE_QUEUE,
         "routing_key": CELERY_PIPELINE_QUEUE,

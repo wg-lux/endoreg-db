@@ -2,6 +2,12 @@ from endoreg_db.views.video.provenance_recovery import VideoProvenanceRecoveryVi
 from django.urls import URLPattern, path
 from endoreg_db.views.media.finding_suggestions import FindingSuggestionsView
 from endoreg_db.views.media.export_downloads import VideoExportDownloadView
+from endoreg_db.views.media.frame_annotation_export_jobs import (
+    FrameAnnotationExportJobDetailView,
+    FrameAnnotationExportJobListView,
+    FrameAnnotationExportJobStartView,
+    FrameAnnotationExportJobValidateView,
+)
 
 from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
@@ -281,6 +287,26 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/export-annotated/",
         export_annotated,
         name="video-annotated-export",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/",
+        FrameAnnotationExportJobListView.as_view(),
+        name="video-annotated-export-job-list",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/start/",
+        FrameAnnotationExportJobStartView.as_view(),
+        name="video-annotated-export-job-start",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/validate/",
+        FrameAnnotationExportJobValidateView.as_view(),
+        name="video-annotated-export-job-validate",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/<uuid:job_id>/",
+        FrameAnnotationExportJobDetailView.as_view(),
+        name="video-annotated-export-job-detail",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
     path(

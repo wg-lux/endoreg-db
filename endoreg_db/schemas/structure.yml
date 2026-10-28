@@ -23,6 +23,8 @@ files:
   role: Video profile, timeline, quality, recording-time and export file-name evidence.
 - file: frame_annotation_export.py
   role: Manifest of pts_dataset_v1 frame exports with inclusive segment timestamps and recording-timestamp identity.
+- file: frame_annotation_export_job.py
+  role: Persisted config (lx_dtypes YAML export contract) and result of browser-started frame annotation export jobs.
 - file: import_file.py
   role: Import source snapshot and persisted preparation checkpoint contracts.
 - file: report_persistence.py

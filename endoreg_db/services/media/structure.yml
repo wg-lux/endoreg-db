@@ -23,6 +23,8 @@ files:
   role: Medienintegrität, Operationsleases und Exportfreigabe.
 - file: export_annotated.py
   role: Exports ExportConflictError, ExportAnnotatedService and the shared confine_export_location path boundary.
+- file: frame_annotation_export_jobs.py
+  role: Center-scoped dataset export jobs over AnnotationExporterClient with single-segment run directories, run-lock exclusion and claim-token fencing.
 - file: export_downloads.py
   role: Read-only browser exports of accepted processed media and annotations.
 - file: export_policy.py
@@ -72,7 +74,7 @@ tests:
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/services/test_media_integrity_reconciliation_plan.py
     tests/services/test_hub_storage_rotation.py tests/views/media/test_video_export_downloads.py
     tests/services/test_export_frames_contract.py tests/views/misc/test_export_annotated_contract.py
-    tests/services/test_export_file_names.py
+    tests/services/test_export_file_names.py tests/services/test_frame_annotation_export_jobs.py
   files:
   - tests/services/test_hls_media.py
   - tests/services/test_media_integrity_reconciliation_plan.py
@@ -81,3 +83,4 @@ tests:
   - tests/services/test_export_frames_contract.py
   - tests/views/misc/test_export_annotated_contract.py
   - tests/services/test_export_file_names.py
+  - tests/services/test_frame_annotation_export_jobs.py

@@ -84,6 +84,10 @@ hosts the shared API on both mounts.
 | `/endoreg-api/media/pdfs/<pk>/sensitive-metadata/verify/` | Verify report sensitive metadata | `tests/views/anonymization/test_sensitive_metadata_view.py` |
 | `/endoreg-api/media/sensitive-media-id/<pk>/<media_type>/` | Resolve media item -> sensitive metadata id | `tests/views/anonymization/test_sensitive_metadata_view.py` |
 | `/endoreg-api/media/pdfs/<pk>/stream/` | report stream (raw/processed, nginx handoff) | `tests/views/report/test_report_stream.py` |
+| `/endoreg-api/media/videos/export-annotated/jobs/` | List center-scoped dataset export jobs (recent first) | `tests/views/media/test_frame_annotation_export_jobs_api.py` |
+| `/endoreg-api/media/videos/export-annotated/jobs/start/` | Queue a dataset-wide frame annotation export job from the YAML export contract | `tests/views/media/test_frame_annotation_export_jobs_api.py`, `tests/services/test_frame_annotation_export_jobs.py` |
+| `/endoreg-api/media/videos/export-annotated/jobs/validate/` | Validate export config, center scope and run directory without side effects | `tests/views/media/test_frame_annotation_export_jobs_api.py` |
+| `/endoreg-api/media/videos/export-annotated/jobs/<job_id>/` | Read one center-scoped export job status | `tests/views/media/test_frame_annotation_export_jobs_api.py` |
 | `/endoreg-api/media/videos/<pk>/stream/` | Video stream (raw/processed, nginx handoff) | `tests/views/video/test_video_stream.py` |
 | `/endoreg-api/media/videos/<video_id>/frames/<frame_number>/stream/` | Frame stream | `tests/views/media/test_frame_stream.py` |
 

@@ -1,0 +1,222 @@
+schema_version: '1.0'
+id: annotation_dataset_export_jobs
+name: Datensatzweiter Annotationsexport aus dem Frontend
+description: Der YAML-basierte Frame-Annotationsexport (scripts/export_frame_annotations.py) wird aus
+  lx-annotate als Formular gestartet. Die Konfiguration nutzt denselben lx_dtypes-Vertrag wie YAML und
+  Skript, läuft als Celery-Job mit persistiertem Status und bleibt auf freigegebene Zentren und das geschützte
+  Exportverzeichnis begrenzt.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/annotation_export_guide.md
+  disposition: reference
+  note: Beschreibt Konfiguration, Ausgabeort, Skript, API und Frontend-Ablauf.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Frame-Exportvertrag, Präsentationszeitstempel-Identität und Speichergrenzen.
+definition_of_done:
+- id: documented_scope
+  category: requirements
+  title: Umfang und Grenzen des Frontend-Exports sind dokumentiert
+  acceptance:
+  - Der Leitfaden beschreibt Formularfelder, YAML-Import/-Download, Prüfen, Starten, Statusabfrage und
+    Ausgabeort unterhalb von frame_annotation_exports.
+  - Nicht unterstützte Optionen (load_base_data aus dem Browser) und die Zentrumsregeln sind benannt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Leitfaden gegen Service, API und Frontend-Komponente prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: 'docs/annotation_export_guide.md: browser fields, YAML contract, forbidden browser base-data
+        loading, scoped output and strict failure rules reviewed against current backend and frontend.'
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:20.899907Z'
+- id: job_lifecycle
+  category: functionality
+  title: Export läuft als persistierter Celery-Job mit abfragbarem Status
+  acceptance:
+  - POST legt einen Job im Status queued an, dispatcht ihn erst nach Commit und antwortet mit 202 und
+    Job-ID.
+  - Der Worker setzt running, danach completed mit Zeilen-, Frame- und Videozahlen oder failed mit Fehlermeldung;
+    Konfiguration und Ergebnis werden am Modell typisiert validiert.
+  - Ausgabeverzeichnisse sind genau ein kanonisches Pfadsegment direkt unter dem Exportwurzelverzeichnis;
+    verschachtelte oder überlappende Laufverzeichnisse sind dadurch ausgeschlossen. Ein zweiter aktiver
+    Job für dasselbe Segment wird mit 409 abgelehnt (Datenbank-Unique-Constraint).
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_frame_annotation_export_jobs.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-28: backend job/API 51 passed,18 subtests; reserved lock namespace 4 passed,7
+        subtests; inactive account/center revocation 3 passed; frontend isolated 101 passed across15 suites;
+        source/test typing and production Vite build passed.'
+    - kind: test
+      reference: '2026-10-28: real API -> on_commit -> eager Celery task -> exporter -> FFmpeg integration
+        passed; job task ID, completed status, six pixel-identical frames, video hash, manifest and counts
+        checked. Four export suites: 136 passed, 29 subtests.'
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:24.164498Z'
+- id: contract_parity
+  category: functionality
+  title: Formular, YAML und Skript teilen einen Konfigurationsvertrag
+  acceptance:
+  - Anfragen werden mit VideoFrameAnnotationExportConfigPayload validiert; unbekannte Felder schlagen
+    mit 400 fehl.
+  - Ein Prüfen-Endpunkt validiert Konfiguration, Zentrum und Ausgabeort ohne Datenbank- oder Dateisystemänderung.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/media/test_frame_annotation_export_jobs_api.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-28: four export suites 136 passed, 29 subtests; strict payload/unknown fields/nulls
+        and write-free validation checked. Shared config serves script, API and worker.'
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:27.508632Z'
+- id: center_scope_and_paths
+  category: security
+  title: Zentrumsumfang und Ausgabepfade sind serverseitig erzwungen
+  acceptance:
+  - Jeder Job hat genau einen Umfang; Zentrumsmitarbeitende dürfen nur eigene center_key-Werte nutzen,
+    all_centers ist auf Staff- und Superuser beschränkt.
+  - Erstellung und Worker-Start erfordern einen aktiven authentifizierten Anforderer. Deaktivierung oder
+    Zentrumsrechteentzug nach dem Einreihen beendet den Job vor dem Export mit failed.
+  - Jobliste und Jobdetail zeigen nur Jobs im Zentrumsumfang des Benutzers.
+  - Ausgabeverzeichnis und Tabellenpfad bleiben unterhalb des geschützten Exportwurzelverzeichnisses;
+    absolute, mehrsegmentige oder ausbrechende Pfade schlagen mit 400 fehl. Das vollständig aufgelöste
+    Tabellenziel wird geprüft, sodass vorhandene Symlinks nicht aus der Wurzel führen.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/views/media/test_frame_annotation_export_jobs_api.py
+    - tests/services/test_frame_annotation_export_jobs.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-28: backend job/API 51 passed,18 subtests; reserved lock namespace 4 passed,7
+        subtests; inactive account/center revocation 3 passed; frontend isolated 101 passed across15 suites;
+        source/test typing and production Vite build passed.'
+    - kind: test
+      reference: '2026-10-28: four export suites 136 passed, 29 subtests; center/account revocation, cross-scope
+        visibility, path/lock symlink attacks, reserved manifest and alias rejection covered.'
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:31.184282Z'
+- id: automated_tests
+  category: testing
+  title: Backend- und Frontend-Tests decken Vertrag und Ablauf ab
+  acceptance:
+  - Parametrisierte Backend-Tests decken gültige Konfigurationen, ungültige Eingaben, Zentrumsregeln,
+    Konflikte und Jobzustände ab.
+  - Ein Vitest-Test in lx-annotate deckt Validierung, Start, Statusabfrage und YAML-Import ab.
+  - Ein Integrationstest startet den Job über die API und den echten Celery-Task und prüft die vom echten
+    Exporter erzeugten Tabellen, Manifestdaten und pixelidentischen Frames.
+  - Reservierte Manifestziele werden vor Schreibzugriffen abgewiesen; strikte Exporte schlagen bei fehlenden
+    oder nicht kopierbaren angeforderten Medien fehl statt unvollständige Ausgaben als erfolgreich zu
+    melden.
+  required: true
+  verification:
+    kind: manual
+    instructions: Backend-pytest und lx-annotate Vitest für DatasetAnnotationExport ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-28: backend job/API 51 passed,18 subtests; reserved lock namespace 4 passed,7
+        subtests; inactive account/center revocation 3 passed; frontend isolated 101 passed across15 suites;
+        source/test typing and production Vite build passed.'
+    - kind: test
+      reference: '2026-10-28: enabled-video four export suites 136 passed, 29 subtests, 1 existing warning
+        in 65.10s. Includes actual eager Celery/FFmpeg artifact proof and 15 strict-failure/collision
+        cases. Frontend 76 tests across 12 suites; source/test typing and ESLint passed. Global Pyright
+        0 errors, 2 existing warnings.'
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:33.585357Z'
+- id: worker_failure_visibility
+  category: operations
+  title: Abgebrochene Worker hinterlassen keinen stillen Dauerstatus
+  acceptance:
+  - Der Worker hält während Claim und Export eine prozessgebundene Advisory-Dateisperre je Laufverzeichnis
+    (file_operations.advisory_file_lock); der Kernel gibt sie beim Prozessende frei.
+  - Doppelte Celery-Zustellung bei gehaltener Sperre ändert den Job nicht; bei freier Sperre und Status
+    running gilt der frühere Worker als verloren und der Job wird lost.
+  - Ein neuer Job, dessen Laufverzeichnis noch von einem als lost markierten, weiterlaufenden Worker gesperrt
+    ist, wird failed statt parallel zu schreiben.
+  - Alle Statusübergänge nach dem Claim sind über ein Claim-Token gefenct; ein veralteter Worker kann
+    lost oder failed nicht überschreiben.
+  - Fehlschlagender Dispatch setzt den Job sofort failed; ohne Heartbeat oder Worker-Start werden Jobs
+    lost und geben das Laufverzeichnis in der Datenbank frei.
+  required: true
+  verification:
+    kind: manual
+    instructions: Sperr-, Doppelzustellungs-, Stale-Worker- und Dispatch-Fehlertests in tests/services/test_frame_annotation_export_jobs.py
+      ausführen und gegen LongRunningServiceStateMachines prüfen.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-28: tests/services/test_frame_annotation_export_jobs.py passed in the 136-test
+        export lane: separate-process lock release, duplicate delivery, stale claim fencing, locked lost
+        writer, dispatch failure and stale job recovery covered.'
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:35.802760Z'
+- id: operator_documentation
+  category: documentation
+  title: Bedienung ist im Exportleitfaden beschrieben
+  acceptance:
+  - docs/annotation_export_guide.md und docs/api_route_test_matrix.md führen die neuen Routen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Routenmatrix mit scripts/check_route_matrix.py prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: document
+      reference: docs/annotation_export_guide.md and docs/api_route_test_matrix.md reviewed; packaged
+        wheel resolves all four export job routes and registers endoreg_db.frame_annotation_export on
+        ffmpeg_media.
+    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
+      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    assessed_by: codex-focused-commits-20261028
+    assessed_at: '2026-10-28T18:10:37.793255Z'

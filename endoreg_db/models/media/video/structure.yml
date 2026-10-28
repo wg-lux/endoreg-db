@@ -18,6 +18,8 @@ files:
   role: Frame source provenance.
 - file: video_processing.py
   role: Video processing-history persistence.
+- file: frame_annotation_export_job.py
+  role: Persistence-only state of browser-started frame annotation dataset export jobs; config and result validated at save.
 dependencies:
   internal:
   - endoreg_db/services/video_files

@@ -34,7 +34,7 @@ definition_of_done:
     ffmpeg_media, inference samt llm_inference, model_training und maintenance sowie
     Celery Beat; Prozessstart, Drain, Restart und Shutdown bleiben Eigentum des Deployments beziehungsweise
     Supervisors und werden nicht aus fachlichen Jobzuständen abgeleitet.
-  - Das Operationsinventar umfasst alle 15 Shared Tasks in endoreg_db/tasks.py, Import und Reimport, Anonymisierung
+  - Das Operationsinventar umfasst alle Shared Tasks in endoreg_db/tasks.py, Import und Reimport, Anonymisierung
     und Korrektur, Transcoding und HTTP Live Streaming, Frame- und Segmentverarbeitung, Inferenz und Training,
     Reportverarbeitung, Cleanup, Transfer, Storage-Balancing und Reconciliation sowie die beiden zeitgesteuerten
     Videoformat-Audit- und Repair-Oneshots.

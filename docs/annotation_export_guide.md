@@ -381,6 +381,50 @@ and `limit` are optional filters because selected segments already carry their
 label and provenance identity. The safe defaults are `export_frames=true`,
 `export_videos=false`, and `use_export_flags=true`.
 
+## Dataset Export Jobs (Frontend)
+
+The lx-annotate export page (`/export?mode=dataset`, tab "Trainingsdatensatz")
+starts the same YAML-configured export as `scripts/export_frame_annotations.py`
+across many videos. Scope and readiness are tracked in
+`feature-tracking/AnnotationDatasetExportJobs.yml`.
+
+The request body is the YAML export contract
+(`VideoFrameAnnotationExportConfigPayload`); the form can import a YAML file
+and download its current state as YAML. Unknown fields fail with `400`.
+
+| Route | Purpose |
+|---|---|
+| `POST /endoreg-api/media/videos/export-annotated/jobs/validate/` | Check config, center scope and run directory without side effects |
+| `POST /endoreg-api/media/videos/export-annotated/jobs/start/` | Queue a Celery job; answers `202` with the job |
+| `GET /endoreg-api/media/videos/export-annotated/jobs/` | Latest 20 jobs within the caller's center scope |
+| `GET /endoreg-api/media/videos/export-annotated/jobs/<job_id>/` | One job's status, counts and output locations |
+
+Rules enforced by the backend:
+
+- Exactly one scope: `center_key` or `all_centers`. Center staff may only use
+  centers on their portal profile; `all_centers` requires a staff or superuser
+  account. Job lists only show jobs in the caller's scope.
+- `output_dir` is a run name: one path segment of letters, digits, `.`, `_`,
+  `-`, starting with a letter or digit. It is created directly beneath the
+  protected `frame_annotation_exports` storage directory; `output_path` is one
+  file name inside it. Run names that resolve elsewhere through symlinks fail.
+- `load_base_data` cannot be started from the browser; use the script.
+- A second active job for the same run name answers `409`.
+- Results report locations relative to `frame_annotation_exports`.
+- `export_manifest.json` is reserved; annotation tables cannot use that name
+  or a symlink alias of the manifest. Strict exports fail if a requested frame
+  or video is missing, unsafe to access, or cannot be copied. A failed run's
+  partial files are not a complete dataset.
+
+Job states are `queued`, `running`, `completed`, `failed` and `lost`. The worker
+holds a process-owned lock on the run directory from claim to completion and
+revalidates scope and paths before exporting. A duplicate delivery while that
+lock is held changes nothing; a running job whose lock is free, whose heartbeat
+is older than 10 minutes, or that stayed queued for 24 hours becomes `lost`. A
+new job whose run directory is still locked by a lost but running worker
+fails instead of writing in parallel. Start a new run name after `failed` or
+`lost`; partial output of the old run is not reused.
+
 ## Segment API Inputs
 
 Create or update a segment. ICA is generated automatically:
