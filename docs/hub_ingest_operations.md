@@ -96,9 +96,27 @@ Import attempt, anonymization, HLS materialization, and cleanup are monitored se
 | `anonymized` | Generation fully published; raw and processed HLS are ready for video | None | Verify generation correlation and cleanup axis |
 | `error` | Terminal, stably coded error | No automatic retry | Check error code; correct configuration or plan safe re-import |
 | `lost` | Source or ledger is inconsistent | Fail-closed | Secure logs and storage; never manually set to success |
+| `cancel_requested` | Operator cancelled while a worker still owns the import | The owner unwinds at its next checkpoint | Wait for `cancelled`; an expired owner becomes an interruption `error` |
+| `cancelled` | Cancellation acknowledged; no execution owns the job | None | Terminal; start a new upload to import again |
 | Quarantine | Protected source isolated from active import flow | No automatic deletion | Reconcile ledger and document review decision |
 
 Allowed main transitions are `pending -> processing -> anonymized`, `processing -> retrying -> processing`, and `retrying -> error` once attempts are exhausted. `lost` is terminal. A quarantine entry has its own review lifecycle and does not overwrite an upload job status.
+
+Status transitions must be validated through the native Rust operation lifecycle (`lifecycle_state_v3`). The helpers in `endoreg_db/services/hub/upload_job_state_machine.py` use `validate_upload_job_status_transition`; cancellation helpers validate through it before persisting cancellation intent or acknowledgement. Each status maps to exactly one native state:
+
+| UploadJob status | Native operation state |
+| --- | --- |
+| `pending` | `queued` |
+| `processing`, `cancel_requested` | `running` |
+| `retrying` | `retry_wait` |
+| `anonymized` | `succeeded` |
+| `error` | `failed` |
+| `lost` | `lost` |
+| `cancelled` | `cancelled` |
+
+`cancel_requested` shares `running` with `processing`, so the state machine adds one rule: a cancellation request can only become `cancelled`, an interruption `error`, or `lost`. It can never return to `processing`, `retrying` or `pending`. A native `cancelled` state accepts no further transitions.
+
+Anonymization status follows the same rule. Its phase (`not_started`, `in_progress`, `awaiting_validation`, `validated`, `failed`) is derived by the native engine through `anonymization_phase`. Status filters, processing statistics and reconciliation use this phase, or `anonymization_states_in_phase` for query filters. Deletion and transfer consumers must also use native phases; their scope and verification remain in [StateMachineConformance.yml](../feature-tracking/StateMachineConformance.yml), including the unresolved destructive-cleanup policy. `anonymized` is an in-progress status and must not be treated as finished or sufficient for hub transfer.
 
 The retry policy starts at 30 seconds, doubles the delay per attempt, is capped at 15 minutes, and defaults to three attempts. The periodic task `endoreg_db.retry_due_upload_jobs` claims due jobs under a database lock and hands them off idempotently to the pipeline queue.
 
