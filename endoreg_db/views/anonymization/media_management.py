@@ -15,7 +15,11 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationPhase,
+    AnonymizationState,
+    anonymization_phase,
+)
 from endoreg_db.schemas.case_documents import CaseDocumentMediaType
 from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -124,24 +128,20 @@ class MediaManagementView(APIView):
             resolved = (
                 state.anonymization_status if state else AnonymizationState.NOT_STARTED
             )
-            if resolved == AnonymizationState.NOT_STARTED:
-                stats["not_started"] += 1
-            elif resolved in {
-                AnonymizationState.EXTRACTING_FRAMES,
-                AnonymizationState.PROCESSING_ANONYMIZING,
-            }:
-                stats["processing"] += 1
-            elif resolved == AnonymizationState.DONE_PROCESSING_ANONYMIZATION:
-                stats["done"] += 1
-            elif resolved == AnonymizationState.FAILED:
-                stats["failed"] += 1
-            elif resolved == AnonymizationState.VALIDATED:
-                stats["validated"] += 1
-            if resolved not in {
-                AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
-                AnonymizationState.VALIDATED,
-            }:
-                stats["unfinished"] += 1
+            match anonymization_phase(resolved):
+                case AnonymizationPhase.NOT_STARTED:
+                    stats["not_started"] += 1
+                    stats["unfinished"] += 1
+                case AnonymizationPhase.IN_PROGRESS:
+                    stats["processing"] += 1
+                    stats["unfinished"] += 1
+                case AnonymizationPhase.FAILED:
+                    stats["failed"] += 1
+                    stats["unfinished"] += 1
+                case AnonymizationPhase.AWAITING_VALIDATION:
+                    stats["done"] += 1
+                case AnonymizationPhase.VALIDATED:
+                    stats["validated"] += 1
         return stats
 
     def _perform_cleanup(

@@ -1,0 +1,200 @@
+schema_version: '1.0'
+id: state_machine_conformance
+name: Upload-job and anonymization state machine conformance
+description: Every UploadJob status mutation reduces through the native Rust operation lifecycle, and
+  every consumer of anonymization status branches on the Rust-derived phase instead of hand-maintained
+  status sets. Findings come from the 2026-10-28 get-dead-code review of state-machine diversions.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: .agents/skills/get-dead-code/SKILL.md
+  disposition: reference
+  note: Review method; static findings are candidates, not deletion authority.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: UploadJob lifecycle operations; the authoritative reducers are rust/endoreg_rust_backend/src/lifecycle_state.rs
+    (lifecycle_state_v3) and import_state.rs.
+definition_of_done:
+- id: upload_job_cancellation_lifecycle
+  category: functionality
+  title: Cancellation statuses reduce through the native lifecycle
+  acceptance:
+  - CANCEL_REQUESTED and CANCELLED are mapped in the UploadJob lifecycle table. CANCEL_REQUESTED is a
+    running operation with recorded cancellation intent; CANCELLED reduces through the native cancel event.
+  - request_upload_job_cancellation and finalize_upload_job_cancellation validate every status write through
+    validate_upload_job_status_transition before saving.
+  - A cancellation request cannot be reverted to PROCESSING, RETRYING or PENDING; it can only end as CANCELLED,
+    an interruption ERROR, or LOST.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_upload_job_cancellation.py
+    - tests/services/test_upload_job_state_machine.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_state_machine.py
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_cancellation.py
+    - kind: test
+      reference: '2026-10-28 HEAD d85d1650 + working tree: pyright on changed files 0 errors; pytest tests/services/test_upload_job_state_machine.py
+        tests/services/test_upload_job_cancellation.py tests/views/anonymization/test_upload_job_cancellation.py
+        => 84 passed.'
+    note: Implemented in working tree; awaiting independent review and commit.
+    assessed_by: claude-lx-annotate-09
+    assessed_at: '2026-10-28T16:26:52.550349Z'
+- id: upload_job_recovery_admission
+  category: operations
+  title: Retry and recovery admission share one state-machine entry point
+  acceptance:
+  - Automatic persisted-stack recovery and user priority requests use the same admission function;
+    Rust owns the remaining stage stack and fixed checkpoint reference persisted on UploadJob.
+  - The checkpoint resume in UploadJobRetryView and recover_interrupted_upload_jobs use one typed admission
+    function in upload_job_state_machine instead of calling UploadJob.schedule_retry with inline validation.
+  - The admission keeps the row-lock and fencing-token snapshot check, and accepts an IMPORT_INTERRUPTED
+    job only through this explicit recovery path.
+  - Redundant retry-budget arithmetic is removed; the retry budget is never raised by an operator resume.
+  - validate_upload_job_interruption derives its decision from the native reducer for the actual current
+    status instead of reducing a constant path behind a Python status set.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_upload_job_import_lease.py
+    - tests/import_files/test_import_checkpoints.py
+    - tests/import_files/test_import_checkpoint_duplicate_execution.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: migration_lost_marking
+  category: operations
+  title: Migration cleanup marks LOST only through the fenced state machine
+  acceptance:
+  - migration_mark_eligible marks a job LOST through mark_upload_job_integrity_lost, which validates the
+    native transition and emits the structured lifecycle log.
+  - A job with a live processing lease is not marked LOST; the command reports it and leaves it unchanged.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the migration_mark_eligible command tests for pending, processing with an expired
+      lease, and processing with a live lease.
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: anonymization_phase_consumers
+  category: requirements
+  title: Status consumers branch on the Rust-derived phase
+  acceptance:
+  - Runtime reconciliation selects in-progress media by the native phase, including the anonymized status.
+  - Media-management statistics count every in-progress status, including started and anonymized, as processing.
+  - The video media status filter uses the native SQL status annotation instead of re-deriving statuses
+    from raw state flags.
+  - The PDF redaction response reports the status derived from the persisted state, not a constant.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the focused reconciliation, media-management, video-media filter and PDF redaction
+      tests.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/state/anonymization.py
+    - kind: code
+      reference: endoreg_db/services/runtime/reconciliation.py
+    - kind: code
+      reference: endoreg_db/views/anonymization/media_management.py
+    - kind: code
+      reference: endoreg_db/views/media/video_media.py
+    - kind: code
+      reference: endoreg_db/views/pdf/pdf_redaction.py
+    - kind: test
+      reference: '2026-10-28 HEAD 30430d54 + working tree: pyright on changed files 0 errors; URLconf
+        import ok; pytest test_anonymization_phase, test_video_media_view, test_media_management_endpoints,
+        test_pdf_redaction, test_reconciliation_service, test_upload_job_state_machine, test_upload_job_cancellation
+        => 127 passed (default skips); video/media/reconciliation with RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        => 52 passed.'
+    note: Implemented in working tree; awaiting independent review and commit. The video status filter
+      value validated now follows anonymization_validated (native rule) instead of sensitive_meta.is_verified;
+      no frontend consumer sends status.
+    assessed_by: claude-lx-annotate-09
+    assessed_at: '2026-10-28T16:44:59.838912Z'
+- id: phase_gated_destructive_and_outbound_paths
+  category: security
+  title: Deletion and outbound transfer gates use native phases
+  acceptance:
+  - The media-management cleanup selects deletion candidates by native phase. Media in any in-progress
+    phase are not deleted unless the existing force contract applies; the behavior change is covered by
+    tests before it ships.
+  - The lx-annotate hub transfer gate (lx_annotate/hub/hub_export_payloads.py) admits only the awaiting_validation
+    and validated phases; the in-progress anonymized status is rejected. The explicit anonymization_validated
+    requirement at the transfer boundary is unchanged.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the media-management cleanup tests in endoreg-db and the hub export payload tests
+      in lx-annotate, including a media row in the anonymized (in-progress) status.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_payloads.py
+    - kind: test
+      reference: '2026-10-28 lx-annotate HEAD d66892f2 + working tree, installed endoreg-db wheel: pyright
+        hub_export_payloads.py 0 errors (4 pre-existing SimpleNamespace errors in untouched guard tests);
+        pytest tests/hub/test_hub_export_payload_guards.py test_hub_export_payloads.py test_hub_export_end_to_end.py
+        test_hub_export_worker.py test_video_frame_provenance_export.py => 85 passed; every AnonymizationState
+        parametrized, anonymized rejected.'
+    note: Hub transfer gate done (bullet 2). Media-management cleanup (bullet 1) awaits a user decision
+      on in-progress deletion semantics.
+    assessed_by: claude-lx-annotate-09
+    assessed_at: '2026-10-28T16:50:34.587158Z'
+- id: conformance_tests
+  category: testing
+  title: Conformance tests prevent new diversions
+  acceptance:
+  - A test asserts that every UploadJob.Status value is mapped in the lifecycle table.
+  - A test asserts that every AnonymizationState value has exactly one native phase and that phase-based
+    consumers agree with the native classification for all statuses.
+  - Pyright passes for changed modules before pytest runs.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_upload_job_state_machine.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: state_machine_documentation
+  category: documentation
+  title: Lifecycle mapping and phase rule are documented
+  acceptance:
+  - The hub ingest operations documentation lists the UploadJob status to native lifecycle mapping, including
+    cancellation, and states that consumers branch on native phases rather than status sets.
+  required: true
+  verification:
+    kind: manual
+    instructions: Compare docs/hub_ingest_operations.md with the lifecycle table and the native phase
+      rules.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

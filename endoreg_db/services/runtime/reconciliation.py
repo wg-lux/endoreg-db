@@ -12,7 +12,8 @@ from endoreg_db.config.env import reconciliation_disabled
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.anonymization import (
-    AnonymizationState,
+    AnonymizationPhase,
+    anonymization_states_in_phase,
     anonymization_status_case,
 )
 from endoreg_db.models.state.raw_pdf import RawPdfState
@@ -252,11 +253,7 @@ class ReconciliationService:
         proved current in the same database transaction.
         """
 
-        active_statuses = (
-            AnonymizationState.STARTED,
-            AnonymizationState.EXTRACTING_FRAMES,
-            AnonymizationState.PROCESSING_ANONYMIZING,
-        )
+        active_statuses = anonymization_states_in_phase(AnonymizationPhase.IN_PROGRESS)
         video_states = (
             VideoState.objects.select_related("video_file")
             .annotate(

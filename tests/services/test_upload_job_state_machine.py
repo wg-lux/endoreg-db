@@ -145,3 +145,55 @@ def test_upload_job_interruption_requires_active_execution(current_status: str) 
     else:
         with pytest.raises(ValueError, match="no active execution to interrupt"):
             validate_upload_job_interruption(current_status=current_status)
+
+
+@pytest.mark.parametrize("status", list(UploadJob.Status))
+def test_every_upload_job_status_reduces_through_the_native_lifecycle(
+    status: UploadJob.Status,
+) -> None:
+    validate_upload_job_status_transition(
+        current_status=status.value, target_status=status.value
+    )
+
+
+@pytest.mark.parametrize(
+    ("current_status", "target_status"),
+    [
+        (UploadJob.Status.PENDING.value, UploadJob.Status.CANCELLED.value),
+        (UploadJob.Status.RETRYING.value, UploadJob.Status.CANCELLED.value),
+        (UploadJob.Status.PROCESSING.value, UploadJob.Status.CANCELLED.value),
+        (UploadJob.Status.PROCESSING.value, UploadJob.Status.CANCEL_REQUESTED.value),
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.CANCELLED.value),
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.ERROR.value),
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.LOST.value),
+    ],
+)
+def test_cancellation_reduces_through_native_cancel(
+    current_status: str, target_status: str
+) -> None:
+    validate_upload_job_status_transition(
+        current_status=current_status, target_status=target_status
+    )
+
+
+@pytest.mark.parametrize(
+    ("current_status", "target_status"),
+    [
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.PROCESSING.value),
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.RETRYING.value),
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.PENDING.value),
+        (UploadJob.Status.CANCEL_REQUESTED.value, UploadJob.Status.ANONYMIZED.value),
+        (UploadJob.Status.CANCELLED.value, UploadJob.Status.PROCESSING.value),
+        (UploadJob.Status.CANCELLED.value, UploadJob.Status.RETRYING.value),
+        (UploadJob.Status.CANCELLED.value, UploadJob.Status.ERROR.value),
+        (UploadJob.Status.ANONYMIZED.value, UploadJob.Status.CANCELLED.value),
+        (UploadJob.Status.ERROR.value, UploadJob.Status.CANCELLED.value),
+    ],
+)
+def test_cancellation_intent_and_outcome_are_irreversible(
+    current_status: str, target_status: str
+) -> None:
+    with pytest.raises(ValueError, match="invalid UploadJob status transition"):
+        validate_upload_job_status_transition(
+            current_status=current_status, target_status=target_status
+        )

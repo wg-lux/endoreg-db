@@ -29,6 +29,11 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.anonymization import (
+    AnonymizationPhase,
+    anonymization_states_in_phase,
+    anonymization_status_case,
+)
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
 from endoreg_db.serializers.video.video_file_list import (
@@ -43,6 +48,15 @@ from endoreg_db.views.access_control import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Public filter tokens; membership is resolved by the native phase rules.
+_STATUS_FILTER_PHASES: dict[str, AnonymizationPhase] = {
+    "not_started": AnonymizationPhase.NOT_STARTED,
+    "processing": AnonymizationPhase.IN_PROGRESS,
+    "done_processing_anonymization": AnonymizationPhase.AWAITING_VALIDATION,
+    "validated": AnonymizationPhase.VALIDATED,
+    "failed": AnonymizationPhase.FAILED,
+}
 
 
 class _SerializerLike(Protocol):
@@ -267,37 +281,19 @@ class VideoMediaView(APIView):
         query_params: Mapping[str, str],
     ) -> QuerySet[VideoFile]:
         status_filter = _query_str_param(query_params, "status", "").strip().lower()
-        failed_query = Q(state__processing_error=True) | Q(
-            meta__integrity_status="lost"
+        phase = _STATUS_FILTER_PHASES.get(status_filter)
+        if phase is None:
+            return queryset
+        integrity_lost = Q(meta__integrity_status="lost")
+        in_phase = Q(import_status__in=anonymization_states_in_phase(phase))
+        queryset = queryset.annotate(
+            import_status=anonymization_status_case(
+                relation_prefix="state", include_missing_relation=True
+            )
         )
-
-        if status_filter == "not_started":
-            queryset = queryset.filter(
-                Q(state__isnull=True)
-                | Q(
-                    state__frames_extracted=False,
-                    state__sensitive_meta_processed=False,
-                )
-            ).exclude(failed_query)
-        elif status_filter == "processing":
-            queryset = queryset.filter(
-                state__frames_extracted=True,
-                state__sensitive_meta_processed=False,
-            ).exclude(failed_query)
-        elif status_filter == "done_processing_anonymization":
-            queryset = queryset.filter(
-                state__anonymized=True,
-                sensitive_meta__is_verified=False,
-            ).exclude(failed_query)
-        elif status_filter == "validated":
-            queryset = queryset.filter(
-                state__anonymized=True,
-                sensitive_meta__is_verified=True,
-            ).exclude(failed_query)
-        elif status_filter == "failed":
-            queryset = queryset.filter(failed_query)
-
-        return queryset
+        if phase is AnonymizationPhase.FAILED:
+            return queryset.filter(in_phase | integrity_lost)
+        return queryset.filter(in_phase).exclude(integrity_lost)
 
     def _get_next_url(
         self,

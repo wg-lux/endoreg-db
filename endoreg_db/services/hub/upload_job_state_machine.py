@@ -21,7 +21,19 @@ _UPLOAD_JOB_STATES: dict[str, OperationLifecycleState] = {
     UploadJob.Status.ANONYMIZED.value: OperationLifecycleState.SUCCEEDED,
     UploadJob.Status.ERROR.value: OperationLifecycleState.FAILED,
     UploadJob.Status.LOST.value: OperationLifecycleState.LOST,
+    # Execution continues until its owner unwinds; the intent itself is irreversible.
+    UploadJob.Status.CANCEL_REQUESTED.value: OperationLifecycleState.RUNNING,
+    UploadJob.Status.CANCELLED.value: OperationLifecycleState.CANCELLED,
 }
+
+_CANCEL_REQUESTED_EXITS = frozenset(
+    {
+        UploadJob.Status.CANCEL_REQUESTED.value,
+        UploadJob.Status.CANCELLED.value,
+        UploadJob.Status.ERROR.value,
+        UploadJob.Status.LOST.value,
+    }
+)
 
 _UPLOAD_JOB_EVENTS: dict[
     tuple[OperationLifecycleState, OperationLifecycleState],
@@ -80,6 +92,15 @@ _UPLOAD_JOB_EVENTS: dict[
     (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.LOST): (
         OperationLifecycleEvent.INTEGRITY_LOST,
     ),
+    (OperationLifecycleState.QUEUED, OperationLifecycleState.CANCELLED): (
+        OperationLifecycleEvent.CANCEL,
+    ),
+    (OperationLifecycleState.RUNNING, OperationLifecycleState.CANCELLED): (
+        OperationLifecycleEvent.CANCEL,
+    ),
+    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.CANCELLED): (
+        OperationLifecycleEvent.CANCEL,
+    ),
 }
 
 _IDEMPOTENT_EVENTS: dict[OperationLifecycleState, OperationLifecycleEvent] = {
@@ -89,6 +110,7 @@ _IDEMPOTENT_EVENTS: dict[OperationLifecycleState, OperationLifecycleEvent] = {
     OperationLifecycleState.SUCCEEDED: OperationLifecycleEvent.SUCCEED,
     OperationLifecycleState.FAILED: OperationLifecycleEvent.FAIL,
     OperationLifecycleState.LOST: OperationLifecycleEvent.INTEGRITY_LOST,
+    OperationLifecycleState.CANCELLED: OperationLifecycleEvent.CANCEL,
 }
 
 
@@ -103,6 +125,13 @@ def validate_upload_job_status_transition(
         target_state = _UPLOAD_JOB_STATES[target_status]
     except KeyError as exc:
         raise ValueError(f"unknown UploadJob status: {exc.args[0]}") from exc
+    if (
+        current_status == UploadJob.Status.CANCEL_REQUESTED.value
+        and target_status not in _CANCEL_REQUESTED_EXITS
+    ):
+        raise ValueError(
+            f"invalid UploadJob status transition: {current_status} -> {target_status}"
+        )
 
     if current_state is target_state:
         events: Sequence[OperationLifecycleEvent] = (_IDEMPOTENT_EVENTS[current_state],)
@@ -123,7 +152,9 @@ def validate_upload_job_status_transition(
         )
 
 
-def _guard_interrupted_upload_job(upload_job: UploadJob) -> None:
+def _guard_interrupted_upload_job(
+    upload_job: UploadJob, *, allow_interrupted: bool = False
+) -> None:
     from endoreg_db.services.hub.upload_job_import_lease import (
         raise_if_upload_job_import_interrupted,
         UploadJobImportLeaseLost,
@@ -132,7 +163,8 @@ def _guard_interrupted_upload_job(upload_job: UploadJob) -> None:
     # Callers hold this lock through their transition; a stale in-memory object
     # must not erase a reconciliation decision committed by another worker.
     current = UploadJob.objects.select_for_update().get(pk=upload_job.pk)
-    raise_if_upload_job_import_interrupted(current)
+    if not allow_interrupted:
+        raise_if_upload_job_import_interrupted(current)
     if (
         current.processing_fencing_token != upload_job.processing_fencing_token
         or current.status != upload_job.status
@@ -201,16 +233,19 @@ def mark_upload_job_integrity_lost(
 
 def validate_upload_job_interruption(*, current_status: str) -> None:
     """Authorize expired execution interruption through the native lifecycle."""
-    if current_status not in (
-        UploadJob.Status.PROCESSING.value,
-        UploadJob.Status.CANCEL_REQUESTED.value,
-    ):
+    try:
+        current_state = _UPLOAD_JOB_STATES[current_status]
+    except KeyError as exc:
+        raise ValueError(
+            f"UploadJob has no active execution to interrupt: {current_status}"
+        ) from exc
+    if current_state is not OperationLifecycleState.RUNNING:
         raise ValueError(
             f"UploadJob has no active execution to interrupt: {current_status}"
         )
-    # Cancellation intent does not prove that execution or cleanup finished.
+    # Cancellation intent does not prove execution or cleanup finished.
     interrupted_state = reduce_operation_lifecycle(
-        OperationLifecycleState.RUNNING,
+        current_state,
         (
             OperationLifecycleEvent.OWNERSHIP_LOST,
             OperationLifecycleEvent.RECONCILE_FAIL,

@@ -129,6 +129,7 @@ def test_expired_import_attempt_is_fenced_after_recovery_claim() -> None:
     first = acquire_upload_job_import_lease(
         upload_job_id=str(job.pk), owner="first-attempt"
     )
+    job.refresh_from_db()
     mark_upload_job_processing(job)
     UploadJob.objects.filter(pk=job.pk).update(
         processing_lease_expires_at=timezone.now() - timedelta(seconds=1)

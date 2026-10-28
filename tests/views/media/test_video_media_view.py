@@ -7,7 +7,13 @@ from django.contrib.auth.models import Group, User
 from django.core.files.base import ContentFile
 from django.test import TestCase, override_settings
 from endoreg_db.helpers.typing import m2m_add_relation
-from endoreg_db.models import Center, PortalUserInfo, SensitiveMeta, VideoFile
+from endoreg_db.models import (
+    Center,
+    PortalUserInfo,
+    SensitiveMeta,
+    VideoFile,
+    VideoState,
+)
 
 
 class VideoMediaViewTests(TestCase):
@@ -137,3 +143,33 @@ class VideoMediaViewTests(TestCase):
         assert response.status_code == 403
         self.video.refresh_from_db()
         assert self.video.export_segments_by_video is False
+
+    def test_status_filter_follows_native_phase(self) -> None:
+        def video_with(**flags: bool) -> int:
+            return VideoFile.objects.create(
+                center=self.center,
+                raw_video_hash=f"phase-{uuid4().hex}",
+                state=VideoState.objects.create(was_created=False, **flags),
+            ).pk
+
+        expected = {
+            "processing": {
+                video_with(anonymized=True),
+                video_with(processing_started=True),
+            },
+            "done_processing_anonymization": {
+                video_with(sensitive_meta_processed=True)
+            },
+            "validated": {video_with(anonymization_validated=True)},
+            "failed": {video_with(processing_error=True, anonymization_validated=True)},
+        }
+        expected["not_started"] = {self.video.pk, video_with()}
+        self.client.force_login(self.user)
+
+        for status_filter, video_ids in expected.items():
+            response = self.client.get(
+                "/api/media/videos/", {"status": status_filter, "limit": 50}
+            )
+            assert response.status_code == 200, response.content
+            returned = {row["id"] for row in response.json()["results"]}
+            assert returned == video_ids, status_filter

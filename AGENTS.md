@@ -207,6 +207,7 @@ You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 architectural invariants and roadmap for all code generation, refactoring, and
 system design. Use lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
 
+States of all Import stages are only owned by the Rust State Machine for memory safety. Dont duplicate that.
 ## Mandatory Report Rules For All Agents
 
 Reports are used to describe imported report Texts that can come from PDF, TXT or CSV and FHIR exports from Databases like SAP or Meona. They can also describe LXDM structured reports built through a report template using lx_dtypes reporting.

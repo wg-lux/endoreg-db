@@ -38,6 +38,15 @@ def anonymization_phase(status: AnonymizationState | str) -> AnonymizationPhase:
     return AnonymizationPhase(rust_anonymization_status_phase(str(status)))
 
 
+def anonymization_states_in_phase(
+    *phases: AnonymizationPhase,
+) -> tuple[AnonymizationState, ...]:
+    """Statuses the native engine classifies into ``phases``, for query filters."""
+    return tuple(
+        state for state in AnonymizationState if anonymization_phase(state) in phases
+    )
+
+
 def derive_video_anonymization_state(
     *,
     processing_error: bool,

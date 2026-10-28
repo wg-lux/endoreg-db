@@ -312,11 +312,14 @@ def _persist_redaction(
 
 def _redaction_response(persisted: _PersistedRedaction) -> Response:
     pdf = persisted.pdf
+    status_after = _state_status_value(_pdf_state(pdf))
+    if status_after is None:
+        raise RuntimeError("Redacted report has no persisted anonymization state")
     response_payload = PdfRedactionResponse(
         file_id=_pdf_pk(pdf),
         revision_id=_history_pk(persisted.history_entry),
         processed_stream_url=build_pdf_stream_path(_pdf_pk(pdf), file_type="processed"),
-        status="done_processing_anonymization",
+        status=status_after,
         anonymization_validated=False,
         updated_at=_pdf_updated_at(pdf),
     )

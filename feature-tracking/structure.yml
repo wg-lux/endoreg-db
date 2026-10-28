@@ -25,6 +25,8 @@ files:
   role: Required feature categories and evidence policy
 - file: CodeQuality.yml
   role: Code quality scope including hierarchical agent context
+- file: StateMachineConformance.yml
+  role: Native upload lifecycle and anonymization phase consumer conformance criteria.
 - file: test_tracker.py
   role: Feature registry, evidence, locking and message regression tests
 - file: reports/lx_dtypes_release_parity.yml

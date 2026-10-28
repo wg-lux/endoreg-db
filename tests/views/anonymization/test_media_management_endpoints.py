@@ -238,6 +238,9 @@ class MediaManagementEndpointTests(TestCase):
         ({"anonymization_validated": True}, "validated"),
         ({"sensitive_meta_processed": True}, "done"),
         ({"processing_started": True, "frames_extracted": True}, "processing"),
+        # Native in_progress statuses that a hand-maintained set left uncounted.
+        ({"processing_started": True}, "processing"),
+        ({"anonymized": True}, "processing"),
     ],
 )
 def test_media_stats_use_canonical_state(
