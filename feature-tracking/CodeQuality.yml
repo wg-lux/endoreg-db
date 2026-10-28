@@ -982,6 +982,21 @@ definition_of_done:
         Vollständiger Pyright zuvor: 0 Fehler/24 Warnungen; abschließend sieben geänderte Python-Dateien:
         0 Fehler/0 Warnungen. Ruff und git diff --check für tests/services/test_lifecycle_state_machine.py
         bestanden.'
+    - kind: test
+      reference: '2026-10-28: Gemeinsame Regression über AST-JSONField-Guard, datensparsame Fehlerlogs,
+        Profiling, Schlüsselkonfiguration, Upload-Fencing, UUID-Schemarestaurierung, Bitraten-Retry, Storage-Rotation,
+        Report-Fencing, Legacy-Hash-Migration und DICOM: 221 passed, 1 warning in 100.90s. UUID-Migrationstest
+        stellt alle aktuellen Migrationsblätter im finally wieder her.'
+    - kind: command
+      reference: '2026-10-28: Vollständiger Pyright 0 Fehler/2 bestehende Warnungen; AST-Guard separat
+        0 Fehler/0 Warnungen; fokussierter Ruff und git diff --check bestanden; 67 Strukturmanifeste validiert.'
+    - kind: test
+      reference: '2026-10-28: 129 verbleibende ursprüngliche Fehler-/Error-Fälle nachgeprüft: 128 passed,
+        1 fehlende Modellkonfiguration, 151 warnings in 267.99s. Anschließend vollständige Report-Embedding-Suite
+        mit dem vorhandenen LuxNix-Modell de_core_news_lg 3.8.0 über ENDOREG_REPORT_EMBEDDING_MODEL_PATH:
+        29 passed, 2 warnings in 67.22s; Modellinventar samt Dateihashes verifiziert. Keine Ersatzmodelle
+        oder Konfigurations-Fallbacks eingeführt. Historische Terminologie-, Prefork- und alte temporäre
+        Aufräumwarnungen bleiben sichtbar.'
     note: 'Regression 2026-09-29: Basisdaten innerhalb der Testtransaktion, Migrationsteardown auf aktuelle
       Migrationsblätter und vertragskonforme Job-/PDF-Testaufbauten. Gemeinsame Regression: 205 bestanden,
       3 übersprungen. Aktivierte Report-Importfälle über Haupt-/Nachlauf bestanden; einmaliger SQLite-Schreibkonflikt
@@ -993,8 +1008,8 @@ definition_of_done:
       inkompatible Vertragsversionen; native Fehler behalten ihre Ursache und ihre öffentliche Fehlerklasse.
       Übergangsregeln bleiben unverändert in Rust. 15 zusätzliche parametrisierte Fälle; keine Produktionsänderung
       oder Gesamtfreigabe.'
-    assessed_by: codex-20261016-quality-fsm
-    assessed_at: '2026-10-16T07:52:17.978384Z'
+    assessed_by: codex-test-analysis-20261028
+    assessed_at: '2026-10-28T13:33:34.494460Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam

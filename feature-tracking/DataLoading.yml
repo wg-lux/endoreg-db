@@ -152,6 +152,9 @@ definition_of_done:
   title: Loader, dependencies, and idempotency are tested automatically
   acceptance:
   - Representative valid variants and all important boundary failures have tests.
+  - Reporting-concept diagnostics emit at most one runtime warning per affected module while preserving
+    every definition and source location for package linting; warnings-as-errors and immutable release
+    bytes remain unchanged.
   required: true
   verification:
     kind: command
@@ -161,7 +164,7 @@ definition_of_done:
     - -q
     timeout_seconds: 900
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: .devenv/state/venv/bin/pyright tests/dataloader/test_dataloader_missing_tables.py tests/dataloader/test_dataloader_foreign_keys.py
@@ -171,12 +174,21 @@ definition_of_done:
     - kind: test
       reference: tests/dataloader/test_dataloader_missing_tables.py; tests/dataloader/test_dataloader_foreign_keys.py;
         tests/dataloader/test_load_base_db_data_command.py; tests/dataloader/test_yaml_model_loader.py
+    - kind: test
+      reference: '2026-10-28, lx-data-models: 161 fokussierte Tests bestanden in 223.94s. Runtime gruppiert
+        Reporting-Konzeptwarnungen pro Modul; alle 132 historischen STAR-Quellstellen bleiben im Warning-Objekt
+        und in der Paket-Lintausgabe erhalten. Aktuelle Pakete warnungsfrei, strikte Warnungsfilter weiter
+        wirksam; historische YAML-Dateien und Katalogdigests unverändert.'
+    - kind: command
+      reference: '2026-10-28, lx-data-models: vollständiger Pyright 0 Fehler/0 Warnungen; Ruff, git diff
+        --check und Strukturprüfung bestanden. Bestehende Video-Segment-Fixture validiert ihr DataDict
+        am Pydantic-Rand mit model_validate.'
     note: The dataloader suite covers representative base-data commands, canonical wrapper delegation,
       ordered orchestration, idempotent named updates, relationship resolution, source selection, missing
       schema and directory handling, lock retries, fail-loud validation and non-lock database failures,
       and safe rejection of Python-tagged YAML before loader delegation.
-    assessed_by: codex-feature-advance-20260902
-    assessed_at: '2026-09-02T11:48:18.686270Z'
+    assessed_by: codex-test-analysis-20261028
+    assessed_at: '2026-10-28T13:50:54.564618Z'
 - id: safe_inputs
   category: security
   title: YAML loading executes no code and does not escape its data source
