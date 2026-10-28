@@ -9,7 +9,7 @@ boundaries:
 - Feature scope and readiness evidence belong in feature-tracking YAML.
 files:
 - file: patient_matching_threat_model.md
-  role: Current manuscript contract, all-key-compromise scenarios, storage comparison and German register-study safeguards; historical matching assessment retained.
+  role: Current linkage contract, complete key-compromise scenarios, storage alternatives and German registry safeguards in English.
 - file: patient_matching_2pc_assessment.md
   role: Evidence-based evaluation of exact existing-HMAC two-party matching, prototype measurements and proof obligations.
 - file: source_patient_matching.md
