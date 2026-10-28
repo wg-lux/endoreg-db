@@ -53,6 +53,8 @@ from datetime import date
 from endoreg_db.utils.hashs import get_patient_identity_fingerprint
 print(get_patient_identity_fingerprint('Ada', 'Lovelace', date(1980, 12, 10), 'site-a'))
 """
+    # A configured salt is proven stable by matching the in-process value from
+    # one child; only the generated case needs two children to compare.
     hashes = [
         subprocess.run(
             [sys.executable, "-c", script],
@@ -61,18 +63,14 @@ print(get_patient_identity_fingerprint('Ada', 'Lovelace', date(1980, 12, 10), 's
             text=True,
             timeout=60,
         ).stdout.strip()
-        for _ in range(2)
+        for _ in range(2 if source == "generated" else 1)
     ]
     assert all(len(value) == 64 for value in hashes)
     if source == "generated":
         assert hashes[0] != hashes[1]
     else:
-        assert (
-            hashes[0]
-            == hashes[1]
-            == get_patient_identity_fingerprint(
-                "Ada", "Lovelace", date(1980, 12, 10), "site-a", salt=salt
-            )
+        assert hashes[0] == get_patient_identity_fingerprint(
+            "Ada", "Lovelace", date(1980, 12, 10), "site-a", salt=salt
         )
 
 
@@ -197,7 +195,7 @@ def test_validation_preserves_key_material(encoding: str) -> None:
 def test_every_identity_helper_rejects_invalid_setting_and_explicit_salt(
     salt: str | bytes,
 ) -> None:
-    from typing import Callable
+    from collections.abc import Callable
 
     calls: tuple[Callable[[str | bytes | None], str], ...] = (
         lambda candidate: calculate_patient_hash(

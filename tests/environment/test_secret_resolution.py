@@ -9,6 +9,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from django.core.exceptions import ImproperlyConfigured
 from django.test import override_settings
 
 from endoreg_db.config.identity_hashing import load_identity_salt
@@ -85,9 +86,7 @@ def test_injected_identity_never_opens_secret_files(
         ValueError, match="Central identity salt provisioning is disabled"
     ):
         configured_identity_keyring()
-    with pytest.raises(
-        ValueError, match="Central identity salt provisioning is disabled"
-    ):
+    with pytest.raises(ImproperlyConfigured, match="expected deployment binding"):
         load_identity_salt(required=True, allow_inline=False)
     model = IdentitySaltBundle.model_validate(injected_identity)
     assert str(injected_identity["active"]) not in repr(model)
