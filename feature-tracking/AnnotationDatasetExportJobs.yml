@@ -64,24 +64,19 @@ definition_of_done:
     status: verified
     evidence:
     - kind: test
-      reference: '2026-10-28: backend job/API 51 passed,18 subtests; reserved lock namespace 4 passed,7
-        subtests; inactive account/center revocation 3 passed; frontend isolated 101 passed across15 suites;
-        source/test typing and production Vite build passed.'
-    - kind: test
-      reference: '2026-10-28: real API -> on_commit -> eager Celery task -> exporter -> FFmpeg integration
-        passed; job task ID, completed status, six pixel-identical frames, video hash, manifest and counts
-        checked. Four export suites: 136 passed, 29 subtests.'
+      reference: '2026-10-28: four export suites 136 passed, 29 subtests; actual API/on_commit/eager Celery/FFmpeg
+        job produced six pixel-identical frames, correct video hash, manifest, counts and completed status.'
     - kind: command
-      reference: '2026-10-28: maturin build --release produced dist/release-1.6.10/endoreg_db-1.6.10-cp312-cp312-linux_x86_64.whl;
-        SHA256 011033708636da50ff3fa3f5e5b64d49f25542e477e66a21fce73c7c5843bc9c. Isolated wheel import
-        verified all packaged Python sources, four job routes, registered ffmpeg_media task, migration
-        leaf 0113 after 0114 with no conflicts/model drift, native adopt_published and mismatch rejection,
-        and reserved-manifest rejection.'
-    note: Verified source and exact release wheel. Deploy this artifact, apply migrations, restart API
-      and ffmpeg_media workers; live broker and host acceptance remain rollout checks. No environment
-      installation or host deployment was performed.
+      reference: 'Release artifact: dist/endoreg_db-1.6.10-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl;
+        SHA256 56cd7c9225888afc0e88bb5f67617b218dee5bd6f710aecd6c85a814f14e2d81. All 1044 packaged Python
+        files match committed source. Isolated wheel import verifies four job routes, registered ffmpeg_media
+        task, migration 0113 after 0114 with no graph conflict/model drift, and bundled Rust adopt_published
+        with mismatch rejection.'
+    note: Verified backend release artifact for deployment. Install this wheel, apply migrations and restart
+      API plus ffmpeg_media workers. Live broker/host acceptance remains a rollout check; no deployment
+      was performed.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:11:58.022163Z'
+    assessed_at: '2026-10-28T18:15:28.919366Z'
 - id: contract_parity
   category: functionality
   title: Formular, YAML und Skript teilen einen Konfigurationsvertrag
