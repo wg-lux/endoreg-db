@@ -132,7 +132,7 @@ in `lx_dtypes.models.contracts.video_provenance`. Apply migration
 must deploy the matching shared contract and application changes together.
 
 Dependency versions come from `pyproject.toml` and `uv.lock`; the current source
-requires `lx-dtypes>=0.5.3` and pins `lx-anonymizer[gpu]==1.0.8`. Synchronize the
+requires `lx-dtypes>=0.5.3` and pins `lx-anonymizer[gpu]==1.1.1`. Synchronize the
 project environment before verification and check the installed execution-hook
 interface. A sibling checkout used by static analysis does not establish that
 the installed worker package provides those hooks. Use the coordinated release
@@ -487,6 +487,9 @@ use the existing validated generation-publication workflow with fresh content ke
 
 - **Joint Photographic Experts Group (JPEG):** the encoded image format used
   for in-memory annotation responses and explicit frame exports.
+- **MP4 track timescale:** the number of ticks per second stored for an MP4
+  track. It must equal the source time-base denominator for recorded
+  presentation timestamps to survive transcoding unchanged.
 - **MPEG-4 Part 14 (MP4):** the Moving Picture Experts Group container format
   used for canonical and compatibility video files.
 - **HTTP Live Streaming (HLS):** the playlist-and-segment streaming format used
@@ -844,6 +847,35 @@ Python GIL. Independent requests use separate file handles. A missing native
 extension at process start uses the byte-identical Python reference reader,
 while native key, authentication, geometry, or length failures stop the
 response instead of falling back.
+
+### Presentation Timestamp Identity During Transcoding
+
+Every canonical transcode with timestamp passthrough (`-copyts` and
+`-fps_mode passthrough`) to MP4 pins the MP4 track timescale to the source time
+base. Without this, the MP4 muxer rescales time bases coarser than 1/10000
+(for example 1/1000 or QuickTime 1/600) and renumbers every tick. After
+encoding, each output frame is compared with the tick of the source frame it
+was decoded from under an identical time base.
+
+The comparison is a hard verification only when the source is a published
+processed generation whose timestamps are already stored as the video's frame
+coordinates (`processed_video_hash` and `meta.source_timeline.content_hash`
+both equal the source content hash). Such an attempt fails with
+`PresentationTimestampChangedError` and nothing is published. Import and
+anonymization transcode media whose processed timestamps are not stored yet:
+a change, or a time base that cannot be expressed as an MP4 timescale, never
+fails the import. It is logged as `transcode_presentation_timestamps_changed`
+or `transcode_track_timescale_unrepresentable`, recorded in the provenance
+receipt, and the frame rows are remapped to the new generation as before. The
+explicit `annotation_fps_resample_v1` workflow (`-fpsmax`) is outside this
+guarantee.
+
+The pinned `lx-anonymizer` 1.1.1 frame-drop filters preserve decoded video and
+audio timestamps without a host filter rewrite. Retained frames keep their
+recorded timestamps and removed spans remain as time gaps of unchanged total
+duration. The host execution hook still enforces the timestamp arguments and
+records decoder ancestry; real encoding-path tests verify the library boundary.
+
 
 ## Inventory and Migration
 

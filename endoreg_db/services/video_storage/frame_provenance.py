@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+import logging
+from collections.abc import Callable, Sequence
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from lx_dtypes.models.contracts.video_provenance import (
     VideoFrameProvenancePayload,
@@ -23,9 +24,100 @@ from endoreg_db.utils.file_operations import (
     protected_temporary_directory,
 )
 from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.structured_logging import emit_structured_event
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
+
+
+logger = logging.getLogger(__name__)
+
+# Canonical masters are MP4; their muxer otherwise rescales coarse time bases.
+_TRACK_TIMESCALE_OUTPUT_SUFFIXES = frozenset({".mp4", ".m4v", ".mov"})
+
+type PresentationTimestampIdentity = Literal[
+    "identical_ticks", "identical_instants", "changed"
+]
+
+
+class PresentationTimestampChangedError(ValueError):
+    """A timestamp-passthrough transcode altered recorded presentation timestamps."""
+
+
+def presentation_timestamp_identity(
+    source: VideoFrameTimeline,
+    output: VideoFrameTimeline,
+    source_frame_indices: Sequence[int],
+) -> PresentationTimestampIdentity:
+    """Compare every output frame with the source frame it was decoded from.
+
+    ``identical_ticks`` means the same time base and integer timestamps, so
+    recorded values can be used unchanged; ``identical_instants`` means equal
+    rational times in a different time base.
+    """
+    if len(source_frame_indices) != len(output.presentation_timestamps):
+        raise ValueError("Frame ancestry does not cover every output frame")
+    pairs = [
+        (output.presentation_timestamps[index], source.presentation_timestamps[origin])
+        for index, origin in enumerate(source_frame_indices)
+    ]
+    if (output.time_base_num, output.time_base_den) == (
+        source.time_base_num,
+        source.time_base_den,
+    ) and all(output_tick == source_tick for output_tick, source_tick in pairs):
+        return "identical_ticks"
+    output_base = Fraction(output.time_base_num, output.time_base_den)
+    source_base = Fraction(source.time_base_num, source.time_base_den)
+    if all(
+        output_tick * output_base == source_tick * source_base
+        for output_tick, source_tick in pairs
+    ):
+        return "identical_instants"
+    return "changed"
+
+
+def _is_timestamp_passthrough(command: Sequence[str]) -> bool:
+    if "-copyts" not in command or "-fpsmax" in command:
+        return False
+    return any(
+        flag == "-fps_mode" and value == "passthrough"
+        for flag, value in zip(command, command[1:])
+    )
+
+
+def _mp4_track_timescale(timeline: VideoFrameTimeline) -> int:
+    """Timescale that stores the source ticks unchanged in an MP4 track."""
+    numerator, denominator = timeline.time_base_num, timeline.time_base_den
+    if denominator % numerator:
+        raise PresentationTimestampChangedError(
+            f"Time base {numerator}/{denominator} cannot be stored as an MP4 "
+            "track timescale without changing presentation timestamps"
+        )
+    return denominator // numerator
+
+
+def _with_source_track_timescale(
+    command: list[str], *, source: VideoFrameTimeline
+) -> list[str]:
+    if "-video_track_timescale" in command:
+        return command
+    timescale = _mp4_track_timescale(source)
+    return [*command[:-1], "-video_track_timescale", str(timescale), command[-1]]
+
+
+def presentation_timestamps_are_stored(source: VideoFrameTimeline) -> bool:
+    """Whether the source is a published processed generation whose timestamps
+    are the video's persisted frame coordinates.
+
+    Import and anonymization transcode media whose processed timestamps are not
+    stored yet; their frame rows are remapped to the new generation afterwards.
+    """
+    from endoreg_db.models.media.video.video_file import VideoFile
+
+    return VideoFile.objects.filter(
+        processed_video_hash=source.content_hash,
+        meta__source_timeline__content_hash=source.content_hash,
+    ).exists()
 
 
 def encoder_provenance_args(path: Path) -> list[str]:
@@ -119,6 +211,29 @@ def run_with_frame_provenance(
     source = capture_canonical_timeline(
         source_path, probe_video_artifact(source_path), require_original_pts=True
     )
+    # Recorded timestamps are matched against external clocks, so passthrough
+    # transcodes to canonical MP4 keep the exact source ticks. A change is fatal
+    # only for stored timestamps; otherwise it is logged and recorded in the
+    # provenance receipt while frame rows are remapped to the new generation.
+    preserve_ticks = (
+        _is_timestamp_passthrough(command)
+        and output_path.suffix.lower() in _TRACK_TIMESCALE_OUTPUT_SUFFIXES
+    )
+    # The database is consulted only when a change actually occurs.
+    if preserve_ticks:
+        try:
+            command = _with_source_track_timescale(command, source=source)
+        except PresentationTimestampChangedError:
+            if presentation_timestamps_are_stored(source):
+                raise
+            emit_structured_event(
+                logger,
+                "transcode_track_timescale_unrepresentable",
+                level=logging.WARNING,
+                source_content_hash=source.content_hash,
+                time_base_num=source.time_base_num,
+                time_base_den=source.time_base_den,
+            )
     with protected_temporary_directory(prefix="frame-provenance-") as directory:
         stats_path = directory / "encoder.txt"
         atomic_create_file(destination=stats_path, content=(), file_mode=0o600)
@@ -138,6 +253,24 @@ def run_with_frame_provenance(
             output=output,
             allow_decoder_offset="-copyts" not in command,
         )
+        if preserve_ticks:
+            identity = presentation_timestamp_identity(
+                proof.source, proof.output, proof.source_frame_indices
+            )
+            if identity != "identical_ticks":
+                if presentation_timestamps_are_stored(source):
+                    raise PresentationTimestampChangedError(
+                        "Transcode changed stored presentation timestamps "
+                        f"({identity}); the output is not published"
+                    )
+                emit_structured_event(
+                    logger,
+                    "transcode_presentation_timestamps_changed",
+                    level=logging.WARNING,
+                    source_content_hash=source.content_hash,
+                    output_content_hash=output.content_hash,
+                    identity=identity,
+                )
         persist_frame_provenance(proof)
         return result
 

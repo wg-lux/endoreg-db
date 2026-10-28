@@ -916,7 +916,7 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.0" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.1" },
     { name = "lx-dtypes", specifier = ">=0.5.7" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
@@ -1615,7 +1615,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "1.1.0"
+version = "1.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1647,9 +1647,9 @@ dependencies = [
     { name = "ultralytics" },
     { name = "verovio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ae/b3/5eeec56f071bc99354f2e4be0163cf198b35f92ba1f9b44a47a53b6eec76/lx_anonymizer-1.1.0.tar.gz", hash = "sha256:e735f19c6b3f1692f64592be98b1e5f92fe013a395fc2a33dfc0d6d7017dab7a", size = 16378417, upload-time = "2026-10-27T13:33:47.931Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/56/88/304ee11429991b8cb98f408392710c36e88825d202d4dfbee1a199c12478/lx_anonymizer-1.1.1.tar.gz", hash = "sha256:9e258222fb502548dba70155fd5978f804499f2437bd1031c9dd8e9c5afbeb78", size = 16382100, upload-time = "2026-10-28T10:05:47.038Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/2d/69/10ec9309ba1877f70c8418b2a926a00b6a7152cfeb5f5d208292caf03b76/lx_anonymizer-1.1.0-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:b4072a778bfd470e244f1c45e7d956cc00fef5da794b175eb15f7ea396b7a52b", size = 16201183, upload-time = "2026-10-27T13:33:43.751Z" },
+    { url = "https://files.pythonhosted.org/packages/a4/4e/c206cdc9bc0193452e1f99e8ca67c83708af7d6ba605321ac00c2a79c962/lx_anonymizer-1.1.1-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:49ff316a90842c7910f8d2fd744eb72d1409a235f83fbaa7b41410a4f0f1f532", size = 16202694, upload-time = "2026-10-28T10:04:32.389Z" },
 ]
 
 [package.optional-dependencies]

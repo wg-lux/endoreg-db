@@ -24,7 +24,7 @@ from endoreg_db.services.video_storage.frame_provenance import (
     provenance_chain,
     read_encoder_provenance,
 )
-from endoreg_db.services.video_storage import probes
+from endoreg_db.services.video_storage import frame_provenance, probes
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.transcode_execution import (
     _run_ffmpeg_command,
@@ -421,16 +421,19 @@ def test_library_cleaner_records_each_real_encoding_path(
         if operation == "detector"
         else "ffmpeg_encoder_input_v1"
     )
+    # Every encoding path keeps the recorded ticks of each retained frame; frame
+    # removal leaves a gap instead of re-timing later frames.
+    assert (receipt.output.time_base_num, receipt.output.time_base_den) == (
+        receipt.source.time_base_num,
+        receipt.source.time_base_den,
+    )
+    assert receipt.output.presentation_timestamps == [
+        receipt.source.presentation_timestamps[index]
+        for index in receipt.source_frame_indices
+    ]
     if operation.startswith("mask"):
         if operation == "mask_offset":
             assert receipt.source.presentation_timestamps[0] > 0
-        assert [
-            Fraction(value * receipt.source.time_base_num, receipt.source.time_base_den)
-            for value in receipt.source.presentation_timestamps
-        ] == [
-            Fraction(value * receipt.output.time_base_num, receipt.output.time_base_den)
-            for value in receipt.output.presentation_timestamps
-        ]
         if operation != "mask_full":
             pixels = subprocess.run(
                 [
@@ -597,3 +600,321 @@ def test_original_frame_timestamps_cannot_fall_back_to_estimates(
         probes.probe_video_frame_timestamps(
             Path("video.mp4"), require_original_pts=True
         )
+
+
+def _timeline(time_base: tuple[int, int], ticks: list[int]) -> VideoFrameTimeline:
+    return VideoFrameTimeline(
+        content_hash="a" * 64,
+        time_base_num=time_base[0],
+        time_base_den=time_base[1],
+        presentation_timestamps=ticks,
+    )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("output", "indices", "expected"),
+    [
+        (_timeline((1, 600), [0, 20, 40]), [0, 1, 2], "identical_ticks"),
+        # Removed frames leave a gap; retained frames keep their ticks.
+        (_timeline((1, 600), [0, 40]), [0, 2], "identical_ticks"),
+        (_timeline((1, 19_200), [0, 640, 1280]), [0, 1, 2], "identical_instants"),
+        # Closing a removal gap re-times later frames.
+        (_timeline((1, 600), [0, 20]), [0, 2], "changed"),
+    ],
+)
+def test_presentation_timestamp_identity(
+    output: VideoFrameTimeline, indices: list[int], expected: str
+) -> None:
+    source = _timeline((1, 600), [0, 20, 40])
+
+    assert frame_provenance.presentation_timestamp_identity(
+        source, output, indices
+    ) == (expected)
+
+
+@pytest.mark.unit
+def test_presentation_timestamp_identity_rejects_incomplete_ancestry() -> None:
+    source = _timeline((1, 600), [0, 20, 40])
+    with pytest.raises(ValueError, match="ancestry"):
+        frame_provenance.presentation_timestamp_identity(source, source, [0, 1])
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("time_base", "expected"), [((1, 600), 600), ((1, 90_000), 90_000), ((2, 50), 25)]
+)
+def test_mp4_track_timescale_keeps_source_ticks(
+    time_base: tuple[int, int], expected: int
+) -> None:
+    assert frame_provenance._mp4_track_timescale(_timeline(time_base, [0])) == expected
+
+
+@pytest.mark.unit
+def test_unrepresentable_time_base_fails_closed() -> None:
+    with pytest.raises(frame_provenance.PresentationTimestampChangedError):
+        frame_provenance._mp4_track_timescale(_timeline((1001, 30_000), [0]))
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("command", "expected"),
+    [
+        (["ffmpeg", "-copyts", "-i", "a", "-fps_mode", "passthrough", "b.mp4"], True),
+        (["ffmpeg", "-i", "a", "-fps_mode", "passthrough", "b.mp4"], False),
+        (["ffmpeg", "-copyts", "-i", "a", "-fpsmax", "50", "b.mp4"], False),
+        (
+            [
+                "ffmpeg",
+                "-copyts",
+                "-i",
+                "a",
+                "-fps_mode",
+                "passthrough",
+                "-fpsmax",
+                "50",
+                "b.mp4",
+            ],
+            False,
+        ),
+    ],
+)
+def test_only_timestamp_passthrough_commands_must_keep_ticks(
+    command: list[str], expected: bool
+) -> None:
+    assert frame_provenance._is_timestamp_passthrough(command) is expected
+
+
+@pytest.mark.django_db
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("timescale", [600, 1000, 90_000])
+def test_passthrough_transcode_keeps_coarse_source_ticks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, timescale: int
+) -> None:
+    monkeypatch.setattr(ffmpeg_wrapper, "get_stream_info", real_stream_info)
+    ffmpeg = resolve_ffmpeg_executable()
+    assert ffmpeg is not None
+    source, output = tmp_path / "source.mp4", tmp_path / "output.mp4"
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=30000/1001:duration=1",
+            "-c:v",
+            "libx264",
+            "-video_track_timescale",
+            str(timescale),
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+    returncode, _stderr = _run_ffmpeg_command(
+        [
+            ffmpeg,
+            "-nostdin",
+            "-y",
+            "-copyts",
+            "-i",
+            str(source),
+            "-c:v",
+            "libx264",
+            "-fps_mode",
+            "passthrough",
+            "-enc_time_base",
+            "demux",
+            str(output),
+        ]
+    )
+
+    assert returncode == 0
+    receipt = VideoFrameProvenancePayload.model_validate(
+        VideoFrameProvenance.objects.get().payload
+    )
+    assert (receipt.output.time_base_num, receipt.output.time_base_den) == (
+        1,
+        timescale,
+    )
+    assert (
+        receipt.output.presentation_timestamps == receipt.source.presentation_timestamps
+    )
+
+
+def _processed_timeline_meta(content_hash: str) -> dict[str, object]:
+    from datetime import UTC, datetime
+
+    from endoreg_db.schemas.video_storage import (
+        VideoArtifactProbe,
+        VideoSourceTimelineEvidence,
+        VideoTimelineContract,
+    )
+    from endoreg_db.services.video_storage.contracts import evidence_as_json
+
+    evidence = VideoSourceTimelineEvidence(
+        persisted_at=datetime.now(UTC),
+        source=VideoArtifactProbe(
+            codec_name="h264",
+            pixel_format="yuv420p",
+            width=64,
+            height=64,
+            size_bytes=1024,
+            timeline=VideoTimelineContract(
+                fps_num=30,
+                fps_den=1,
+                duration_seconds=1.0,
+                frame_count=20,
+                time_base_num=1,
+                time_base_den=90_000,
+            ),
+        ),
+        timestamp_mapping="ffprobe_pts",
+        artifact_kind="processed",
+        content_hash=content_hash,
+    )
+    return {"source_timeline": evidence_as_json(evidence)}
+
+
+def _variable_rate_source(ffmpeg: str, path: Path) -> None:
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=30",
+            "-vf",
+            "setpts='if(lt(N,10),N/30,10/30+(N-10)/24)/TB'",
+            "-frames:v",
+            "20",
+            "-fps_mode",
+            "passthrough",
+            "-c:v",
+            "libx264",
+            "-video_track_timescale",
+            "90000",
+            str(path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+
+
+def _retiming_command(ffmpeg: str, source: Path, output: Path) -> list[str]:
+    # A constant-rate re-timing filter changes every timestamp after frame 10.
+    return [
+        ffmpeg,
+        "-nostdin",
+        "-y",
+        "-copyts",
+        "-i",
+        str(source),
+        "-vf",
+        "setpts=N/(30*TB)",
+        "-c:v",
+        "libx264",
+        "-fps_mode",
+        "passthrough",
+        "-enc_time_base",
+        "demux",
+        str(output),
+    ]
+
+
+@pytest.mark.django_db
+@pytest.mark.ffmpeg
+def test_retiming_without_stored_timestamps_never_fails_import(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    monkeypatch.setattr(ffmpeg_wrapper, "get_stream_info", real_stream_info)
+    ffmpeg = resolve_ffmpeg_executable()
+    assert ffmpeg is not None
+    source, output = tmp_path / "raw.mp4", tmp_path / "anonymized.mp4"
+    _variable_rate_source(ffmpeg, source)
+
+    with caplog.at_level("WARNING"):
+        returncode, _stderr = _run_ffmpeg_command(
+            _retiming_command(ffmpeg, source, output)
+        )
+
+    assert returncode == 0
+    assert "transcode_presentation_timestamps_changed" in caplog.text
+    receipt = VideoFrameProvenancePayload.model_validate(
+        VideoFrameProvenance.objects.get().payload
+    )
+    # The change stays visible in provenance for later export reporting.
+    assert (
+        frame_provenance.presentation_timestamp_identity(
+            receipt.source, receipt.output, receipt.source_frame_indices
+        )
+        == "changed"
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.ffmpeg
+def test_retiming_stored_processed_timestamps_fails_closed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.models import Center, VideoFile
+    from endoreg_db.utils.hashs import get_file_hash
+
+    monkeypatch.setattr(ffmpeg_wrapper, "get_stream_info", real_stream_info)
+    ffmpeg = resolve_ffmpeg_executable()
+    assert ffmpeg is not None
+    source, output = tmp_path / "processed.mp4", tmp_path / "renormalized.mp4"
+    _variable_rate_source(ffmpeg, source)
+    processed_hash = get_file_hash(source)
+    VideoFile.objects.create(
+        center=Center.objects.create(name="stored-pts-center"),
+        raw_video_hash="stored-pts-recording",
+        processed_video_hash=processed_hash,
+        meta=_processed_timeline_meta(processed_hash),
+    )
+
+    with pytest.raises(frame_provenance.PresentationTimestampChangedError):
+        _run_ffmpeg_command(_retiming_command(ffmpeg, source, output))
+    assert not VideoFrameProvenance.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("processed_hash", "timeline_hash", "expected"),
+    [
+        ("a" * 64, "a" * 64, True),
+        # A published video whose stored timeline belongs to another generation.
+        ("a" * 64, "b" * 64, False),
+        ("b" * 64, "a" * 64, False),
+    ],
+)
+def test_presentation_timestamps_are_stored_only_for_published_timeline(
+    processed_hash: str, timeline_hash: str, expected: bool
+) -> None:
+    from endoreg_db.models import Center, VideoFile
+
+    VideoFile.objects.create(
+        center=Center.objects.create(
+            name=f"stored-check-{processed_hash[0]}{timeline_hash[0]}"
+        ),
+        raw_video_hash=f"stored-check-{processed_hash[0]}{timeline_hash[0]}",
+        processed_video_hash=processed_hash,
+        meta=_processed_timeline_meta(timeline_hash),
+    )
+
+    assert (
+        frame_provenance.presentation_timestamps_are_stored(
+            VideoFrameTimeline(
+                content_hash="a" * 64,
+                time_base_num=1,
+                time_base_den=600,
+                presentation_timestamps=[0],
+            )
+        )
+        is expected
+    )

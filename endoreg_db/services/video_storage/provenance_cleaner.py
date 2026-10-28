@@ -51,12 +51,16 @@ def _observe_decoded_frames(
 
 def _run_encoder(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     # Host storage policy owns timestamp fidelity and the bounded process timeout.
-    timeline_options = ["-enc_time_base", "demux"]
+    # Newer lx-anonymizer commands already carry these options; add only missing ones.
+    timeline_options: list[str] = []
+    if "-enc_time_base" not in cmd:
+        timeline_options.extend(["-enc_time_base", "demux"])
     if "-fps_mode" not in cmd:
         timeline_options.extend(["-fps_mode", "passthrough"])
+    input_options = [] if "-copyts" in cmd else ["-copyts"]
     command = [
         cmd[0],
-        "-copyts",
+        *input_options,
         *cmd[1:-1],
         *timeline_options,
         cmd[-1],

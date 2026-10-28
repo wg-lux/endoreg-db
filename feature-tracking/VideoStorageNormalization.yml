@@ -1989,7 +1989,7 @@ definition_of_done:
       tests, then verify frontend consumers and real variable-rate decode pixel/timestamp identity.
     timeout_seconds: 900
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: code
       reference: endoreg_db/utils/frame_stream.py
@@ -2019,14 +2019,23 @@ definition_of_done:
         Korrektur der Hub-Fixture 28 passed in 67.54s. Echte lokale und Hugging-Face-Gewichte, verschlüsselte
         Frame-Dekodierung, Annahme verifizierter/ungeklärter Provenienz, ungültige Endgrenzen und bestehende
         Frame-Stream-/Zeitachsenregressionen geprüft.'
-    note: 'Bestehende Decoder- und unveränderte Frontend-Evidenz erhalten. Ergänzt: empfangene verifizierte
-      oder ausdrücklich ungeklärte Provenienz liefert hashgebundene vollständige Koordinaten mit Aufnahmebindung
-      und Konfliktabweisung. Partielle Streaming-Inferenz übernimmt die tatsächlich beobachtete exklusive
-      Endgrenze. 250 Tests und 3 Subtests über abschließende Teilläufe bestanden; geänderte Python-Dateien
-      Pyright 0 Fehler/0 Warnungen. Gesamt-Pyright meldet 13 Fehler in nicht durch diesen Patch geänderten
-      Patient-Matching-Tests; keine repositoryweite oder neue Deployment-Freigabe.'
-    assessed_by: codex-test-review-20261020
-    assessed_at: '2026-10-20T11:24:14.432555Z'
+    - kind: test
+      reference: tests/services/test_frame_provenance.py (Zeitstempelidentität, MP4-Timescale 600/1000/90000,
+        Frame-Removal ohne Umtaktung)
+    - kind: command
+      reference: '2026-10-28: Passthrough-Transcodes nach MP4 fixieren die Track-Timescale auf die Quell-Zeitbasis
+        und verlangen identische Ticks je Ausgabeframe zum Ursprungsframe, sonst PresentationTimestampChangedError
+        ohne Veröffentlichung. Host-Shim entfernt setpts=N/FRAME_RATE/TB aus lx-anonymizer-Frame-Removal;
+        entfernte Spannen bleiben als Zeitlücken (Nutzerentscheid). Echte FFmpeg-Läufe: alle Pfade (mask,
+        mask_full, mask_offset, detector, remove) mit identischen Ticks. Keine Produktionsabnahme.'
+    - kind: command
+      reference: '2026-10-28: lx-anonymizer 1.1.1 installiert und gepinnt; redundanter Host-Filterrewrite
+        entfernt. Gezielter Pyright: 0 Fehler, 0 Warnungen. RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest tests/services/test_frame_provenance.py -q --tb=short: 63 passed, 1 bestehende Pluginwarnung
+        in 112,76 s; reale Maskierungs-, Detektor- und Frame-Removal-Pfade eingeschlossen. Strukturprüfung
+        (67 Manifeste) und git diff --check bestanden. Keine Produktionsabnahme.'
+    assessed_by: codex-video-commit-audit-20261028
+    assessed_at: '2026-10-28T08:02:19.894881Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request
