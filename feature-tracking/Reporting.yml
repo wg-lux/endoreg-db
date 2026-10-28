@@ -46,15 +46,19 @@ definition_of_done:
     - kind: test
       reference: tests/services/test_report_concept_embeddings.py
     - kind: test
-      reference: '2026-10-28: ENDOREG_REPORT_EMBEDDING_MODEL_PATH=/nix/store/ng951s8a8ym89sx0q1vl1k47lg22fsa0-de-core-news-lg-3.8.0-data pytest tests/services/test_report_concept_embeddings.py tests/utils/test_paths.py
-        -q --tb=short: 72 passed, 2 warnings in 118.64s; scoped Pyright 0 errors/0 warnings; uv lock --check
-        passed.'
-    note: 'Berichtsvektoren werden ausschließlich aus dem expliziten, durch das Deployment bereitgestellten
-      Modellpfad geladen und gegen Sprache, Modellname, Version und Dimension geprüft. Isolierte Embedding-/Pfadregression:
-      72 Tests bestanden; gezielter Pyright und uv lock --check bestanden. Historische Paketgrößen- und
-      LuxNix-Evidenz bleibt erhalten; keine neue Veröffentlichung, Host-Aktivierung oder klinische Abnahme.'
-    assessed_by: codex-export-review-20261028
-    assessed_at: '2026-10-28T16:15:34.323816Z'
+      reference: '2026-10-28: ENDOREG_REPORT_EMBEDDING_MODEL_PATH=/nix/store/ng951s8a8ym89sx0q1vl1k47lg22fsa0-de-core-news-lg-3.8.0-data
+        pytest tests/services/test_report_concept_embeddings.py tests/utils/test_paths.py -q --tb=short:
+        72 passed, 2 warnings in 118.64s; scoped Pyright 0 errors/0 warnings; uv lock --check passed.'
+    note: 'LuxNix stellt de_core_news_lg 3.8.0 als separat SHA-256-geprüftes Nix-Store-Artefakt bereit.
+      Backend lädt ausschließlich ENDOREG_REPORT_EMBEDDING_MODEL_PATH und prüft Sprache, Modellname, Version
+      und 300 Dimensionen. Wheel 2,72 MB, Quelldistribution 1,53 MB; keine Modelldaten oder separate Modelldistribution
+      enthalten. Installierter Wheel-Prüflauf mit gebautem Nix-Modell erfolgreich. Vollständiger Pyright-Lauf:
+      0 Fehler, 2 bestehende Warnungen; abschließender fokussierter Lauf: 0 Fehler, 0 Warnungen. 73 Embedding-/Pfadtests
+      bestanden. LuxNix-Umgebungstest für Web und zwei Worker bestanden. Beide Strukturprüfungen und uv
+      lock --check erfolgreich. Keine Veröffentlichung oder Host-Aktivierung; breitere ReportReader-Produktionsreife
+      und klinische Synonymqualität bleiben offen.'
+    assessed_by: codex-focused-20261028
+    assessed_at: '2026-10-28T16:43:40.527016Z'
 - id: finding_suggestion_review
   category: functionality
   title: Erkannte Import- und KI-Befunde werden explizit bestätigt
