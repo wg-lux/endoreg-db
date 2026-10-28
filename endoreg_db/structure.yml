@@ -10,6 +10,8 @@ boundaries:
 files:
 - file: migrations/0111_delete_frameextractionrequest.py
   role: Retire the unused frame extraction request table; frame files are export-only.
+- file: migrations/0112_alter_center_center_key.py
+  role: Align required center-key model validation with canonical state while retaining database uniqueness.
 - file: migrations/0110_report_concept_embedding.py
   role: Persist versioned report-only vectors with exactly one clinical annotation and cascading source deletion.
 - file: migrations/0109_medication_bmp.py

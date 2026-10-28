@@ -55,6 +55,7 @@ definition_of_done:
   acceptance:
   - Django loads the endoreg_db migration graph without conflicts.
   - The declared max migration is the only endoreg_db leaf.
+  - Center.center_key remains globally unique and its current model definition matches migration state.
   required: true
   verification:
     kind: command
@@ -63,10 +64,10 @@ definition_of_done:
     - shell
     - --
     - ./.devenv/state/venv/bin/pytest
-    - tests/migrations/test_canonical_graph.py
+    - tests/administration/center/test_center.py
     timeout_seconds: 300
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
@@ -90,11 +91,18 @@ definition_of_done:
         max_migration.txt (0081_video_optimized_playback), independently of the loaded graph. Exactly
         one matching leaf, no conflicts and no unapplied migrations remain required. Focused Pyright and
         Ruff passed.'
-    note: The declared endpoint in max_migration.txt is the only conflict-free Endoreg leaf; an isolated
-      fresh SQLite installation applies the complete graph with no unapplied migrations. Numbered migration
-      files were not modified by the assertion correction.
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:09:26.442727Z'
+    - kind: test
+      reference: tests/administration/center/test_center.py
+    note: 'Kanonischer Leaf 0112_alter_center_center_key; bestehende nummerierte Migrationen unverändert.
+      Globale Eindeutigkeit von Center.center_key wieder im Modell deklariert, blank=False durch additive
+      Migration mit dem Modellzustand abgeglichen. Fünf PostgreSQL-Centertests bestanden: eindeutiger
+      Leaf, konfliktfreier Graph, keine ausstehenden Modelländerungen, echte Duplicate-Key-Ablehnung und
+      vorhandene Ladeprüfungen. Vollständiger Pyright-Lauf: 0 Fehler, 2 bestehende Warnungen. LX-Annotate
+      package-migrations nach lokaler Neuinstallation: No changes detected. Verwaiste nicht im RECORD
+      enthaltene 0109-Alter-Migration lokal gesichert; keine Produktionsdatenbank geändert. Neuer Backend-Release
+      für andere Installationen noch erforderlich.'
+    assessed_by: codex-model-bundle-20261028
+    assessed_at: '2026-10-28T12:04:23.552942Z'
 - id: fresh_install
   category: testing
   title: A fresh database can apply the canonical migration graph
@@ -104,16 +112,15 @@ definition_of_done:
     Django-Startup; Startup- und Migrationsfehler bleiben mit stderr sichtbar.
   required: true
   verification:
-    kind: command
-    command:
-    - devenv
-    - shell
-    - --
-    - ./.devenv/state/venv/bin/pytest
-    - tests/migrations/test_canonical_graph.py
+    kind: manual
+    instructions: Apply the complete canonical graph from zero to an isolated PostgreSQL database with
+      a fresh runtime root initialized through get_runtime_paths; verify the declared leaf, no conflicts
+      and no unapplied migrations. Preserve subprocess stderr for startup or migration failures. Historical
+      SQLite evidence is not current PostgreSQL verification; restore a reusable PostgreSQL lane before
+      reassessment.
     timeout_seconds: 600
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: devenv shell -- ./.devenv/state/venv/bin/pytest tests/migrations/test_canonical_graph.py
@@ -138,12 +145,12 @@ definition_of_done:
         -q -n 2 --dist=loadscope --tb=short: 37 passed, 9 subtests passed, 7 warnings in 94.08s.'
     - kind: command
       reference: '.devenv/state/venv/bin/pyright: 0 errors, 6 bestehende Warnungen.'
-    note: Neuinstallation mit isolierter SQLite-Datenbank und eigenem Runtime-Root erfolgreich. Verzeichnisse
-      werden vor django.setup über get_runtime_paths initialisiert; stderr bleibt bei Fehlern sichtbar.
-      Deklarierter Leaf, Konfliktfreiheit, vollständig angewendete Migrationen und entfernte optimized_playback-Spalten
-      geprüft. Keine nummerierte Migration verändert.
-    assessed_by: codex-tests-20260924-a
-    assessed_at: '2026-09-24T09:23:45.438160Z'
+    note: Historical evidence covers the retired SQLite subprocess regression. The center-key fix verifies
+      graph shape and model state, not a fresh PostgreSQL installation. A reusable isolated PostgreSQL
+      from-zero migration lane and current verification remain outstanding; no whole-feature production-readiness
+      claim.
+    assessed_by: codex-export-review-20261028
+    assessed_at: '2026-10-28T16:21:50.479874Z'
 - id: safe_boundary
   category: security
   title: Migration verification does not weaken storage or cryptographic boundaries

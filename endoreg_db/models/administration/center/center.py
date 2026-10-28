@@ -28,7 +28,7 @@ class Center(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     center_key: models.CharField[Any, Any] = models.CharField(
         max_length=255,
-        unique=False,
+        unique=True,
         blank=False,
     )
     display_name: models.CharField[Any, Any] = models.CharField(
