@@ -31,13 +31,21 @@ from endoreg_db.services.imports.checkpoints import (
     prepared_import_artifact,
     clear_import_checkpoint,
     media_import_checkpoint,
+    checkpoint_retry_media,
 )
-from endoreg_db.services.imports.processing import update_import_processing_stack
+from endoreg_db.services.imports.processing import (
+    update_import_processing_stack,
+    record_published_import,
+    prioritize_checkpoint,
+)
 from endoreg_db.services.imports.recovery import (
     recover_persisted_import_stacks,
 )
 from endoreg_db.services.reports.import_fencing import acquire_report_import_fence
-from endoreg_db.views.anonymization.overview import UploadJobRetryView
+from endoreg_db.views.anonymization.overview import (
+    UploadJobRetryView,
+    _attach_overview_upload_jobs,
+)
 from endoreg_db import tasks
 from endoreg_db.utils.hashs import get_bytes_hash
 from tests.import_files.test_import_checkpoints import (
@@ -120,6 +128,57 @@ def test_model_rejects_reordered_or_cross_job_stack(
             job.save(update_fields=["processing_stack"])
         job.refresh_from_db()
         assert job.processing_stack == saved.model_dump(mode="json")
+
+
+def test_published_adoption_cannot_replace_native_checkpoint_identity(
+    tracked: tuple[ImportContext, UploadJob],
+) -> None:
+    ctx, job = tracked
+    prepared_stack(ctx, job)
+    assert ctx.instance is not None and ctx.file_hash is not None
+    for _ in range(2):
+        job.refresh_from_db()
+        saved = job.processing_stack
+        with pytest.raises(ValueError):
+            record_published_import(
+                job.pk, media_id=int(ctx.instance.pk) + 1, source_sha256=ctx.file_hash
+            )
+        job.refresh_from_db()
+        assert job.processing_stack == saved
+        record_published_import(
+            job.pk, media_id=int(ctx.instance.pk), source_sha256=ctx.file_hash
+        )
+    job.refresh_from_db()
+    assert ImportProcessingStack.model_validate(job.processing_stack).remaining == [
+        "complete_upload"
+    ]
+
+
+def test_priority_uses_the_persisted_normalized_report_identity(
+    tracked: tuple[ImportContext, UploadJob],
+) -> None:
+    ctx, job = tracked
+    if ctx.current_report is None:
+        pytest.skip("Text-to-PDF normalization is report-specific")
+    saved = prepared_stack(ctx, job)
+    job.content_type = "text/plain"
+    job.content_hash = get_bytes_hash(b"original text before PDF normalization")
+    job.status = UploadJob.Status.ERROR
+    job.error_code = UploadJob.ErrorCode.IMPORT_INTERRUPTED
+    job.save()
+    _attach_overview_upload_jobs([ctx.current_report])
+    assert getattr(ctx.current_report, "_overview_upload_job", None) == job
+    assert checkpoint_retry_media(job) == ctx.current_report
+    assert prioritize_checkpoint(job)
+    job.refresh_from_db()
+    stack = ImportProcessingStack.model_validate(job.processing_stack)
+    assert stack.source_sha256 == saved.source_sha256 != job.content_hash
+    assert stack.checkpoint == saved.checkpoint
+    assert stack.priority == 1
+    # The already-admitted final retry may still be prioritized without adding budget.
+    job.retry_count = job.max_retries
+    job.save(update_fields=["retry_count"])
+    assert checkpoint_retry_media(job, include_queued=True) == ctx.current_report
 
 
 def test_missing_receipt_cannot_repeat_a_completed_stage(

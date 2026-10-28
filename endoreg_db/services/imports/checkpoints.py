@@ -24,11 +24,14 @@ from endoreg_db.models.state.anonymization import (
     anonymization_phase,
 )
 from endoreg_db.schemas.import_file import ImportCheckpoint
+from endoreg_db.schemas.import_processing import ImportProcessingStack
+from endoreg_db.services.hub.upload_job_state_machine import upload_job_recovery_filter
 from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.imports.processing import (
     update_import_processing_stack,
     record_published_import,
     initialize_import_processing_stack,
+    import_source_hash,
 )
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
@@ -75,47 +78,28 @@ def checkpoint_retry_media(
     """Admission hint; publication still authenticates bytes under a fresh fence."""
     center_id = cast(int | None, getattr(job, "source_center_id", None))
     if (
-        not (
-            (
-                job.status == UploadJob.Status.ERROR
-                and job.retry_count < job.max_retries
-                and job.error_code
-                in {
-                    UploadJob.ErrorCode.PROCESSING_FAILED,
-                    UploadJob.ErrorCode.IMPORT_INTERRUPTED,
-                }
-            )
-            or (
-                include_queued
-                and job.status == UploadJob.Status.RETRYING
-                and job.retryable
-                and (
-                    job.last_attempt_at is None
-                    or (
-                        job.next_retry_at is not None
-                        and job.last_attempt_at < job.next_retry_at
-                    )
-                )
-            )
-        )
-        or job.processing_lease_owner
-        or job.processing_lease_expires_at is not None
-        or job.cancellation_requested_at is not None
-        or job.cleanup_status
-        not in {UploadJob.CleanupStatus.PENDING, UploadJob.CleanupStatus.SKIPPED}
+        not UploadJob.objects.filter(
+            upload_job_recovery_filter(include_queued=include_queued), pk=job.pk
+        ).exists()
         or not job.source_file_persisted
         or center_id is None
         or not job.content_hash
         or not job.file.name
     ):
         return None
+    stack = (
+        ImportProcessingStack.model_validate(job.processing_stack)
+        if job.processing_stack is not None
+        else None
+    )
+    source_hash = import_source_hash(job)
     if job.content_type.startswith("video/"):
         instance = VideoFile.objects.filter(
-            raw_video_hash=job.content_hash, center_id=center_id
+            raw_video_hash=source_hash, center_id=center_id
         ).first()
     else:
         instance = RawPdfFile.objects.filter(
-            pdf_hash=job.content_hash, center_id=center_id
+            pdf_hash=source_hash, center_id=center_id
         ).first()
     if instance is None:
         return None
@@ -124,7 +108,12 @@ def checkpoint_retry_media(
     checkpoint = media_import_checkpoint(instance)
     if (
         checkpoint is None
-        or checkpoint.source_sha256 != job.content_hash
+        or checkpoint.source_sha256 != source_hash
+        or (
+            stack is not None
+            and stack.checkpoint is not None
+            and stack.checkpoint.media_id != instance.pk
+        )
         or checkpoint.sensitive_meta_id != instance.sensitive_meta_id
         or not file_exists(job.file)
     ):

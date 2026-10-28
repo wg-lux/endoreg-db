@@ -14,6 +14,15 @@ from endoreg_db.utils.rust_backend import (
 )
 
 
+def import_source_hash(job: UploadJob) -> str:
+    """Use the native normalized source binding; unbound legacy jobs use intake identity."""
+    if job.processing_stack is not None:
+        stack = ImportProcessingStack.model_validate(job.processing_stack)
+        if stack.source_sha256 is not None:
+            return stack.source_sha256
+    return job.content_hash
+
+
 @transaction.atomic
 def update_import_processing_stack(
     job_id: UUID,
@@ -67,12 +76,8 @@ def initialize_import_processing_stack(
 @transaction.atomic
 def record_published_import(job_id: UUID, *, media_id: int, source_sha256: str) -> None:
     """Adopt an independently verified published artifact through native events."""
-    stack = update_import_processing_stack(
-        job_id, "bind_source", source_sha256=source_sha256
-    )
-    if stack.checkpoint is None:
-        update_import_processing_stack(job_id, "prepared", media_id=media_id)
-    update_import_processing_stack(job_id, "published")
+    update_import_processing_stack(job_id, "bind_source", source_sha256=source_sha256)
+    update_import_processing_stack(job_id, "adopt_published", media_id=media_id)
 
 
 def complete_import_processing_stack(job: UploadJob) -> None:

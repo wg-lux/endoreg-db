@@ -31,6 +31,7 @@ from endoreg_db.services.runtime.polling_coordinator import (
     ProcessingLockContext,
 )
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
+from endoreg_db.services.imports.processing import import_source_hash
 from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.hub.import_monitoring import (
     is_retryable_storage_failure,
@@ -118,7 +119,9 @@ def _attach_overview_upload_jobs(
     if sensitive_meta_ids:
         filters |= Q(sensitive_meta_id__in=sensitive_meta_ids)
     if content_hashes:
-        filters |= Q(content_hash__in=content_hashes)
+        filters |= Q(content_hash__in=content_hashes) | Q(
+            processing_stack__source_sha256__in=content_hashes
+        )
 
     upload_jobs = (
         UploadJob.objects.select_related("source_center")
@@ -132,19 +135,17 @@ def _attach_overview_upload_jobs(
     for upload_job in upload_jobs:
         upload_job_like = cast(_OverviewUploadJobLike, upload_job)
         center_id = upload_job_like.source_center_id
+        content_hash = import_source_hash(upload_job)
         media_type = overview_upload_job_media_type(upload_job.content_type)
         if upload_job_like.sensitive_meta_id:
             by_sensitive_meta_id.setdefault(
                 (center_id, media_type, upload_job_like.sensitive_meta_id), []
             ).append(upload_job)
         if (
-            upload_job_like.content_hash
-            and (center_id, media_type, upload_job_like.content_hash)
-            not in by_content_hash
+            content_hash
+            and (center_id, media_type, content_hash) not in by_content_hash
         ):
-            by_content_hash[(center_id, media_type, upload_job_like.content_hash)] = (
-                upload_job
-            )
+            by_content_hash[(center_id, media_type, content_hash)] = upload_job
 
     for item in items:
         overview_item = cast(_OverviewItem, item)

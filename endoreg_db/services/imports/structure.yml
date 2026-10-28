@@ -18,7 +18,7 @@ entrypoints:
   purpose: Renew on a worker connection; surface failure before the next mutation.
 files:
 - file: processing.py
-  role: Persist Rust stack transitions and prioritize recoverable jobs through shared admission.
+  role: Persist Rust stack transitions, resolve canonical source identity and prioritize jobs through shared admission.
 - file: recovery.py
   role: Recover expired report ownership and rediscover durable stacks for the existing retry dispatcher.
 - file: checkpoints.py
@@ -39,6 +39,7 @@ dependencies:
   - endoreg_db/schemas
   - endoreg_db/utils
   - endoreg_db/services/jobs
+  - endoreg_db/services/hub
   external:
   - django
   - yaml

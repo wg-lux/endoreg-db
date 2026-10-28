@@ -12,7 +12,11 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models import PortalUserInfo, UploadJob
-from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLeaseLost
+from endoreg_db.services.hub.upload_job_import_lease import (
+    UploadJobImportLeaseLost,
+    acquire_upload_job_import_lease,
+    release_upload_job_import_lease,
+)
 from endoreg_db.services.hub.upload_job_state_machine import (
     validate_upload_job_status_transition,
 )
@@ -206,10 +210,15 @@ def test_live_lease_or_retired_checkpoint_blocks_resume_admission(
 ) -> None:
     checkpoint(context)
     job = failed_job(context)
+    job.error_code = UploadJob.ErrorCode.PROCESSING_FAILED
+    job.save(update_fields=["error_code"])
     assert checkpoint_retry_media(job) == context.instance
-    job.processing_lease_owner = "live-worker"
+    # The overview snapshot may predate another worker's persisted lease claim.
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="live-worker"
+    )
     assert checkpoint_retry_media(job) is None
-    job.processing_lease_owner = ""
+    release_upload_job_import_lease(lease)
     # Publication committed: replaying the resume must not republish the media.
     with django_capture_on_commit_callbacks(execute=True):
         clear_import_checkpoint(context)

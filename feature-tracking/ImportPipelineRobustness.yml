@@ -951,6 +951,9 @@ definition_of_done:
   - Remaining import stages, their ordered transitions, fixed workflow/checkpoint reference and priority
     are owned by Rust and persisted on UploadJob. Worker restart rediscovery resumes the same stack
     through fenced publication, respects retry limits and never duplicates a completed stage.
+    Adopting verified published media is one native event; Python must not select stage transitions
+    or permit a different media identity. Recovery hints and coordinators share the authoritative
+    admission predicate; report checkpoint lookup uses the normalized identity bound in the stack.
   - Users prioritize eligible checkpoint recovery instead of restarting it manually. Priority is durable
     and orders dispatcher handoffs; it never preempts active workers or expands retry budgets.
   - Video and report imports persist typed completed-stage checkpoints with encrypted artifacts. A new
@@ -1120,6 +1123,18 @@ definition_of_done:
         Scoped Pyright 0 errors/0 warnings; Ruff, both structure validators and trackers passed.
         Pending export migration is ordered after the standalone stack migration; export source
         remains outside this changeset. Deployment acceptance remains pending.'
+    - kind: test
+      reference: '2026-10-28 SSOT follow-up audit fixed Python adoption-stage selection,
+        duplicated admission guards, and raw-upload identity overriding the normalized stack binding.
+        Native import_processing tests 3 passed after maturin develop --skip-install.
+        Shared foreground recovery verification by codex-focused-commits-20261028 reported
+        129 passed, 3 skipped, 1 warning with video tests enabled, including the corrected real-lease
+        fixture and immutable-media adoption. Final processing_stack plus anonymization_overview
+        verification: 123 passed, 3 report-specific skips, 1 existing plugin warning in 56.55s;
+        covers actual overview association with the normalized native source identity. Focused Pyright
+        0 errors/0 warnings, Ruff and both repositories structure/feature validators passed.
+        The release wheel must contain the matching rebuilt native adoption event; deployed
+        TXT conversion and interrupted-worker acceptance remain rollout checks.'
     assessed_by: codex-import-checkpoints-20261028
     assessed_at: '2026-10-28T16:21:49.185900Z'
 - id: import_pipeline_operator_documentation

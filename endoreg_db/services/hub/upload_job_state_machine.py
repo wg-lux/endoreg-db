@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Sequence
 
 from django.db import transaction, IntegrityError
-from django.db.models import Field, UniqueConstraint
+from django.db.models import F, Q, Field, UniqueConstraint
 
 from endoreg_db.models.hub.upload_job import UploadJob, UploadJobSensitiveMeta
 from endoreg_db.services.runtime.lifecycle_state_machine import (
@@ -275,6 +275,36 @@ def validate_upload_job_interrupted_retry(*, current_status: str) -> None:
         )
 
 
+def idle_upload_job_recovery_filter() -> Q:
+    """Shared ownership/cleanup policy for recovery hints and locked admission."""
+    return Q(
+        processing_lease_owner="",
+        processing_lease_expires_at__isnull=True,
+        cancellation_requested_at__isnull=True,
+        cleanup_status__in=[
+            UploadJob.CleanupStatus.PENDING,
+            UploadJob.CleanupStatus.SKIPPED,
+        ],
+    )
+
+
+def upload_job_recovery_filter(*, include_queued: bool = False) -> Q:
+    """Canonical persisted recovery policy; native reducers validate transitions."""
+    eligible = Q(
+        status=UploadJob.Status.ERROR,
+        error_code__in=[
+            UploadJob.ErrorCode.PROCESSING_FAILED,
+            UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+        ],
+        retry_count__lt=F("max_retries"),
+    )
+    if include_queued:
+        eligible |= Q(status=UploadJob.Status.RETRYING, retryable=True) & (
+            Q(last_attempt_at__isnull=True) | Q(last_attempt_at__lt=F("next_retry_at"))
+        )
+    return idle_upload_job_recovery_filter() & eligible
+
+
 def recovery_identity_conflict(upload_job: UploadJob) -> bool:
     """Query the model's authoritative conditional unique identities."""
     for constraint in UploadJob._meta.constraints:
@@ -308,20 +338,9 @@ def admit_upload_job_recovery(
         raise ValueError("delay_seconds must be positive")
     _guard_interrupted_upload_job(upload_job, allow_interrupted=True)
     upload_job.refresh_from_db()
-    if (
-        upload_job.status != UploadJob.Status.ERROR
-        or upload_job.error_code
-        not in {
-            UploadJob.ErrorCode.PROCESSING_FAILED,
-            UploadJob.ErrorCode.IMPORT_INTERRUPTED,
-        }
-        or upload_job.processing_lease_owner
-        or upload_job.processing_lease_expires_at is not None
-        or upload_job.cancellation_requested_at is not None
-        or upload_job.cleanup_status
-        not in {UploadJob.CleanupStatus.PENDING, UploadJob.CleanupStatus.SKIPPED}
-        or upload_job.retry_count >= upload_job.max_retries
-    ):
+    if not UploadJob.objects.filter(
+        upload_job_recovery_filter(), pk=upload_job.pk
+    ).exists():
         return False
     # Reuse the model's unique identities and predicates; recovery must not
     # create a second active owner of content or an idempotency scope.

@@ -8,7 +8,6 @@ from datetime import datetime, timedelta
 
 from django.conf import settings
 from django.db import transaction
-from django.db.models import F
 from django.db.models.functions import Now
 
 from endoreg_db.services.imports.lease import (
@@ -20,6 +19,7 @@ from endoreg_db.services.imports.lease import (
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
     admit_upload_job_recovery,
+    upload_job_recovery_filter,
     validate_upload_job_interrupted_retry,
     validate_upload_job_interruption,
 )
@@ -419,22 +419,14 @@ def recover_interrupted_upload_jobs(*, limit: int = 100) -> int:
         raise ValueError("limit must be positive")
     eligible = (
         UploadJob.objects.filter(
-            status=UploadJob.Status.ERROR,
+            upload_job_recovery_filter(),
             error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
             content_type__startswith="video/",
             content_hash__regex=r"^[0-9a-f]{64}$",
             source_center__isnull=False,
             source_file_persisted=True,
-            cancellation_requested_at__isnull=True,
             overview_dismissed_at__isnull=True,
-            processing_lease_owner="",
-            processing_lease_expires_at__isnull=True,
             processing_fencing_token__gt=0,
-            cleanup_status__in=[
-                UploadJob.CleanupStatus.PENDING,
-                UploadJob.CleanupStatus.SKIPPED,
-            ],
-            retry_count__lt=F("max_retries"),
         )
         .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
         .exclude(file="")

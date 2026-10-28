@@ -96,6 +96,22 @@ impl ProcessingStack {
                 self.source_sha256 = Some(hash.into());
             }
             "prepare" if self.remaining.first() == Some(&Stage::PrepareArtifact) => (),
+            "adopt_published" => {
+                // Callers supply verified publication evidence, never a stage plan.
+                if self.checkpoint.is_none()
+                    || self.remaining.first() == Some(&Stage::PublishArtifact)
+                {
+                    self.apply("prepared", media_id, None)?;
+                } else if self
+                    .checkpoint
+                    .as_ref()
+                    .map(|checkpoint| checkpoint.media_id)
+                    != media_id
+                {
+                    return Err("Published artifact does not match the checkpoint media".into());
+                }
+                self.apply("published", None, None)?;
+            }
             "prioritize" if !self.remaining.is_empty() => self.priority = 1,
             "reset" => {
                 self.remaining = STAGES.to_vec();
@@ -214,5 +230,18 @@ mod tests {
         assert!(state.validate().is_err());
         state.remaining = vec![Stage::CompleteUpload];
         assert!(state.validate().is_err());
+    }
+
+    #[test]
+    fn published_adoption_owns_stage_selection_and_preserves_media_identity() {
+        let mut state = stack();
+        state.apply("adopt_published", Some(7), None).unwrap();
+        assert_eq!(state.remaining, vec![Stage::CompleteUpload]);
+        state.apply("adopt_published", Some(7), None).unwrap();
+        assert!(state.apply("adopt_published", Some(8), None).is_err());
+        state.apply("completed", None, None).unwrap();
+        state.apply("adopt_published", Some(7), None).unwrap();
+        assert!(state.apply("adopt_published", Some(8), None).is_err());
+        assert!(state.remaining.is_empty());
     }
 }

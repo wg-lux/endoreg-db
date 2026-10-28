@@ -11,6 +11,8 @@ from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
 from endoreg_db.schemas.import_processing import ImportProcessingStack
 from endoreg_db.services.hub.upload_job_state_machine import (
     admit_upload_job_recovery,
+    idle_upload_job_recovery_filter,
+    upload_job_recovery_filter,
     mark_upload_job_error,
 )
 from endoreg_db.services.reports.import_fencing import (
@@ -28,18 +30,11 @@ def recover_persisted_import_stacks(*, limit: int = 100) -> int:
         raise ValueError("limit must be positive")
     eligible = (
         UploadJob.objects.filter(
+            idle_upload_job_recovery_filter(),
             processing_stack__isnull=False,
             source_center__isnull=False,
             source_file_persisted=True,
-            cancellation_requested_at__isnull=True,
             overview_dismissed_at__isnull=True,
-            processing_lease_owner="",
-            processing_lease_expires_at__isnull=True,
-            cleanup_status__in=[
-                UploadJob.CleanupStatus.PENDING,
-                UploadJob.CleanupStatus.SKIPPED,
-            ],
-            retry_count__lt=F("max_retries"),
         )
         .exclude(file="")
         .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
@@ -48,6 +43,7 @@ def recover_persisted_import_stacks(*, limit: int = 100) -> int:
 
     reports = eligible.filter(
         status=UploadJob.Status.PROCESSING,
+        retry_count__lt=F("max_retries"),
         content_type__in=["application/pdf", "text/plain"],
         last_attempt_at__lte=timezone.now()
         - timedelta(seconds=RETRY_HANDOFF_TIMEOUT_SECONDS),
@@ -93,7 +89,7 @@ def recover_persisted_import_stacks(*, limit: int = 100) -> int:
             )
 
     interrupted = eligible.filter(
-        status=UploadJob.Status.ERROR, error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED
+        upload_job_recovery_filter(), error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED
     )
     identifiers = tuple(
         interrupted.order_by("updated_at", "pk").values_list("pk", flat=True)[:limit]
