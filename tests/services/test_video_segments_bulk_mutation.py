@@ -49,6 +49,32 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
             ]
         )
 
+    def test_export_flag_preserves_review_and_frame_annotations(self):
+        for defer in (True, False):
+            with self.subTest(defer_annotation_sync=defer):
+                sync = MagicMock()
+                delete = MagicMock()
+                bulk_mutate_video_segments(
+                    video=self.video,
+                    payload={
+                        "defer_annotation_sync": defer,
+                        "updates": [
+                            {"id": self.update_segment.pk, "export_segment": defer}
+                        ],
+                    },
+                    sync_frame_annotations=sync,
+                    delete_frame_annotations_for_segment=delete,
+                )
+                sync.assert_not_called()
+                delete.assert_not_called()
+                self.update_segment.refresh_from_db()
+                self.assertEqual(self.update_segment.export_segment, defer)
+                self.assertEqual(self.update_segment.start_frame_number, 10)
+                self.assertEqual(self.update_segment.end_frame_number, 20)
+                state = self.video.get_or_create_state()
+                self.assertTrue(state.segment_annotations_created)
+                self.assertTrue(state.segment_annotations_validated)
+
     def test_service_shapes_dataset_attachment_response(self):
         dataset = AIDataSet.objects.create(
             name="bulk-segment-service-dataset",

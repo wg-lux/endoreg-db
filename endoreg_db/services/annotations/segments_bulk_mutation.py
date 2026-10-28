@@ -134,7 +134,14 @@ def bulk_mutate_video_segments(
                 [*created_segment_objects, *updated_segments],
             )
 
-            if mutation_request.defer_annotation_sync:
+            if mutation_request.defer_annotation_sync and (
+                mutation_request.creates
+                or mutation_request.deletes
+                or any(
+                    not _is_export_flag_update(item)
+                    for item in mutation_request.updates
+                )
+            ):
                 mark_segment_annotations_stale(video)
 
             if mutation_request.ai_dataset is not None:
@@ -152,6 +159,13 @@ def bulk_mutate_video_segments(
         deleted_segment_ids=deleted_segment_ids,
         attached_segment_ids=attached_segment_ids,
     )
+
+
+def _is_export_flag_update(item: object) -> bool:
+    return isinstance(item, Mapping) and set(cast(Mapping[str, object], item)) == {
+        "id",
+        "export_segment",
+    }
 
 
 def validate_bulk_segment_mutation_payload(
@@ -312,6 +326,9 @@ def _update_segments(
             )
 
         updated_segment = serializer.save()
+        if _is_export_flag_update(item_map):
+            updated_segments.append(updated_segment)
+            continue
         if defer_annotation_sync:
             delete_frame_annotations_for_segment(
                 video=old_snapshot["video"],
