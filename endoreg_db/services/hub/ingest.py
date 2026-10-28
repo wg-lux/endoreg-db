@@ -16,7 +16,8 @@ from collections.abc import Callable, Iterable
 from contextlib import ExitStack, contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Generator, Protocol, cast
+from typing import Any, Protocol, cast
+from collections.abc import Generator
 from datetime import timedelta
 from django.conf import settings
 from django.utils import timezone

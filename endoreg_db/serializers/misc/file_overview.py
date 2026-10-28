@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
-from typing import Iterable, Literal, Protocol, TypedDict, cast
+from typing import Literal, Protocol, TypedDict, cast
+from collections.abc import Iterable
 
 from rest_framework import serializers
 

@@ -7,7 +7,7 @@ import logging
 import shutil
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Protocol, Type, TypedDict, cast
+from typing import TYPE_CHECKING, Optional, Protocol, TypedDict, cast
 
 from endoreg_db.config.env import get_ffmpeg_transcode_quality_mode
 from endoreg_db.exceptions import InsufficientStorageError
@@ -232,7 +232,7 @@ def _prepare_import_staging(
 
 def _existing_readable_video(
     *,
-    cls_model: Type["VideoFile"],
+    cls_model: type["VideoFile"],
     raw_video_hash: str,
 ) -> "VideoFile | None":
     existing_video = cls_model.objects.filter(raw_video_hash=raw_video_hash).first()
@@ -284,7 +284,7 @@ def _cleanup_failed_import(
 
 
 def _create_from_file(
-    cls_model: Type["VideoFile"],
+    cls_model: type["VideoFile"],
     file_path: Path,
     center_name: str,
     processor_name: Optional[str],

@@ -8,10 +8,22 @@ module working for existing callers.
 
 import logging
 
+from .transcode_execution import (
+    FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
+    _delete_partial_output,
+    _run_ffmpeg_command,
+    _stderr_indicates_timestamp_fault,
+    _transcode_output_is_valid,
+    _transcode_video_fallback,
+    _transcode_video_with_timestamp_repair,
+    get_stream_info,
+    transcode_video,
+    transcode_videofile_if_required,
+)
 from .video.command_construction import (
+    _TIMESTAMP_REPAIR_SEQUENCE,
     FFprobeInputPolicy,
     TimestampRepairMode,
-    _TIMESTAMP_REPAIR_SEQUENCE,
     _build_extract_frame_range_command,
     _build_extract_frames_command,
     _build_ffprobe_stream_info_command,
@@ -54,39 +66,14 @@ from .video.masking_filters import (
     blacken_video_frame_intervals,
     mask_video_to_roi_and_blacken_intervals,
 )
-from .transcode_execution import (
-    FFMPEG_TRANSCODE_TIMEOUT_SECONDS,
-    _delete_partial_output,
-    _run_ffmpeg_command,
-    _stderr_indicates_timestamp_fault,
-    _transcode_output_is_valid,
-    _transcode_video_fallback,
-    _transcode_video_with_timestamp_repair,
-    get_stream_info,
-    transcode_video,
-    transcode_videofile_if_required,
-)
 
 logger = logging.getLogger("ffmpeg_wrapper")
 
 __all__ = [
-    "is_ffmpeg_available",
-    "check_ffmpeg_availability",
-    "resolve_ffmpeg_executable",
-    "resolve_ffprobe_executable",
-    "get_stream_info",
-    "assemble_video_from_frames",
-    "transcode_video",
-    "transcode_videofile_if_required",
-    "blacken_video_frame_intervals",
-    "mask_video_to_roi_and_blacken_intervals",
-    "extract_frames",
-    "extract_frame_range",
-    "extract_frames_by_presentation_timestamp",
-    "TimestampRepairMode",
-    "FFprobeInputPolicy",
     "FFMPEG_TRANSCODE_TIMEOUT_SECONDS",
     "_TIMESTAMP_REPAIR_SEQUENCE",
+    "FFprobeInputPolicy",
+    "TimestampRepairMode",
     "_blacken_filter_args",
     "_blacken_filter_args_from_normalized",
     "_build_blacken_filter_expression",
@@ -116,4 +103,17 @@ __all__ = [
     "_transcode_video_fallback",
     "_transcode_video_with_timestamp_repair",
     "_update_or_append_ffmpeg_arg",
+    "assemble_video_from_frames",
+    "blacken_video_frame_intervals",
+    "check_ffmpeg_availability",
+    "extract_frame_range",
+    "extract_frames",
+    "extract_frames_by_presentation_timestamp",
+    "get_stream_info",
+    "is_ffmpeg_available",
+    "mask_video_to_roi_and_blacken_intervals",
+    "resolve_ffmpeg_executable",
+    "resolve_ffprobe_executable",
+    "transcode_video",
+    "transcode_videofile_if_required",
 ]

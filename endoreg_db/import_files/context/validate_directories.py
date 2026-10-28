@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 from endoreg_db.utils.file_operations import ensure_directory
 from endoreg_db.utils.paths import get_runtime_paths
 
