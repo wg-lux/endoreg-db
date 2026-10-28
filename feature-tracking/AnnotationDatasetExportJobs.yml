@@ -71,10 +71,17 @@ definition_of_done:
       reference: '2026-10-28: real API -> on_commit -> eager Celery task -> exporter -> FFmpeg integration
         passed; job task ID, completed status, six pixel-identical frames, video hash, manifest and counts
         checked. Four export suites: 136 passed, 29 subtests.'
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    - kind: command
+      reference: '2026-10-28: maturin build --release produced dist/release-1.6.10/endoreg_db-1.6.10-cp312-cp312-linux_x86_64.whl;
+        SHA256 011033708636da50ff3fa3f5e5b64d49f25542e477e66a21fce73c7c5843bc9c. Isolated wheel import
+        verified all packaged Python sources, four job routes, registered ffmpeg_media task, migration
+        leaf 0113 after 0114 with no conflicts/model drift, native adopt_published and mismatch rejection,
+        and reserved-manifest rejection.'
+    note: Verified source and exact release wheel. Deploy this artifact, apply migrations, restart API
+      and ffmpeg_media workers; live broker and host acceptance remain rollout checks. No environment
+      installation or host deployment was performed.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:24.164498Z'
+    assessed_at: '2026-10-28T18:11:58.022163Z'
 - id: contract_parity
   category: functionality
   title: Formular, YAML und Skript teilen einen Konfigurationsvertrag
