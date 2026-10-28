@@ -41,7 +41,8 @@
 - The loader provisions the governed registry through the existing hydration helper before invoking reconciliation.
 - Fresh installations and equivalent catalogues use the normal strict importer; only the known conflicts use the bounded repair.
 - Successful reruns preserve existing IDs and import receipts; failures block dependent service startup.
-- The flag requires endoreg_reference@1.0.0 and a compatible backend release; standard load_base_db_data remains strict without it.
+- The flag requires endoreg_reference@1.0.0 and a compatible backend release; standard load_base_db_data cannot repair legacy relationships.
+- Both startup paths reuse an identical catalogue receipt when all bound rows exist, without comparing fields or relationships. Add --verify for full reconciliation; reuse scope remains in [DataLoading.yml](../../feature-tracking/DataLoading.yml).
 - Add --dry-run to preview without hydration or database changes; the registry must already be provisioned.
 
 ### Preparation
@@ -70,7 +71,8 @@
 
 #### Behavior
 
-- Checks the pinned catalogue content and current database state under the existing catalogue writer lock and PostgreSQL advisory lock.
+- Checks the pinned catalogue content under the existing catalogue writer lock and PostgreSQL advisory lock; an identical receipt with all bound rows returns unchanged unless --verify is given.
+- Otherwise compares current database state before applying the following steps.
 - Locks existing catalogue rows and recomputes the plan before changing relationships.
 - Creates the missing dependencies through the existing importer and updates only the seven specified relationships.
 - Imports the complete catalogue and reruns strict reconciliation before committing one database transaction.

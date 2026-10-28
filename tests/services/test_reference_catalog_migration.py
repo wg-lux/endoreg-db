@@ -317,6 +317,10 @@ def test_migration_does_not_rewrite_previously_imported_clinical_meaning(
     reviewed = plan_catalog_migration(legacy_catalogue)
     assert not reviewed.can_apply
     before = export_reference_catalog()
+    # The receipt is current and every bound row exists, so the default startup
+    # path reuses it without writes; only the explicit full check reports drift.
+    assert apply_catalog_migration(legacy_catalogue).unchanged
+    assert export_reference_catalog() == before
     with pytest.raises(ValueError, match="blockers"):
-        apply_catalog_migration(legacy_catalogue)
+        apply_catalog_migration(legacy_catalogue, verify=True)
     assert export_reference_catalog() == before

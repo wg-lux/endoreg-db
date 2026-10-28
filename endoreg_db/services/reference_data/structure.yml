@@ -15,6 +15,9 @@ entrypoints:
 - name: plan_reference_catalog
   file: catalog.py
   purpose: Compare the selected versioned reference catalog with current persisted rows.
+- name: reuse_current_catalog
+  file: catalog.py
+  purpose: Skip row comparison when a receipt with the identical digest and all bound rows exists.
 - name: import_clinical_references
   file: clinical_projection.py
   purpose: Validate and transactionally project the resolved clinical knowledge graph.

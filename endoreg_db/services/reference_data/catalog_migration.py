@@ -29,6 +29,7 @@ from endoreg_db.services.reference_data.catalog import (
     import_reference_catalog_in_transaction,
     plan_reference_catalog,
     reference_catalog_transaction,
+    reuse_current_catalog,
     select_catalog,
 )
 from endoreg_db.services.reference_data.catalog_export import export_reference_row
@@ -47,8 +48,9 @@ def migration_spec() -> MigrationSpec:
     )
 
 
-def plan_catalog_migration(snapshot: ReferenceCatalogSnapshot) -> MigrationPlan:
-    spec = migration_spec()
+def _require_pinned_snapshot(
+    snapshot: ReferenceCatalogSnapshot, spec: MigrationSpec
+) -> None:
     if (
         snapshot.identity.knowledge_base_module != spec.module
         or snapshot.identity.knowledge_base_version != spec.version
@@ -58,6 +60,11 @@ def plan_catalog_migration(snapshot: ReferenceCatalogSnapshot) -> MigrationPlan:
         raise ValueError(
             "Migration requires the pinned endoreg_reference@1.0.0 content digest"
         )
+
+
+def plan_catalog_migration(snapshot: ReferenceCatalogSnapshot) -> MigrationPlan:
+    spec = migration_spec()
+    _require_pinned_snapshot(snapshot, spec)
     plan = plan_reference_catalog(snapshot, adopt_existing=True)
     # Clean installations and equivalent legacy catalogues use the normal importer.
     if plan.can_import:
@@ -129,9 +136,18 @@ def plan_catalog_migration(snapshot: ReferenceCatalogSnapshot) -> MigrationPlan:
     )
 
 
-def apply_catalog_migration(snapshot: ReferenceCatalogSnapshot) -> CatalogPlan:
+def apply_catalog_migration(
+    snapshot: ReferenceCatalogSnapshot, *, verify: bool = False
+) -> CatalogPlan:
     spec = migration_spec()
     with reference_catalog_transaction():
+        if not verify:
+            # The pinned digest still gates reuse: a receipt for other content
+            # never satisfies this migration.
+            _require_pinned_snapshot(snapshot, spec)
+            reused = reuse_current_catalog(snapshot)
+            if reused is not None:
+                return reused
         initial = plan_catalog_migration(snapshot)
         # Lock existing catalogue rows as well as the shared cooperating-writer lock.
         for kind, model in CATALOG_MODELS.items():

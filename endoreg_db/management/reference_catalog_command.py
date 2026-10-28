@@ -20,6 +20,11 @@ class ReferenceCatalogCommand(BaseCommand):
         parser.add_argument("--dry-run", action="store_true")
         parser.add_argument("--format", choices=("json", "yml"), default="json")
         parser.add_argument("--verbose", action="store_true")
+        parser.add_argument(
+            "--verify",
+            action="store_true",
+            help="Compare every catalogue row even when an identical receipt exists.",
+        )
 
     def handle(self, *args: str, **options: object) -> None:
         # Provision the governed registry explicitly at the bootstrap boundary.
@@ -35,6 +40,7 @@ class ReferenceCatalogCommand(BaseCommand):
             format=options["format"],
             record_types=[kind.value for kind in self.record_types],
             adopt_existing=True,
+            verify=options["verify"],
             stdout=self.stdout,
             stderr=self.stderr,
         )

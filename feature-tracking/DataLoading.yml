@@ -122,6 +122,9 @@ definition_of_done:
   acceptance:
   - Repeated load_base_db_data runs produce the same domain state without duplicates.
   - Dependencies are resolved explicitly, and invalid YAML data is rejected loudly.
+  - A repeated load_base_db_data run (including --reconcile-legacy) whose catalogue digest matches the stored
+    receipt and whose bound rows all exist skips the row-level comparison; changed YAML content, missing bound
+    rows, or --verify run the full fail-closed reconciliation.
   required: true
   verification:
     kind: manual

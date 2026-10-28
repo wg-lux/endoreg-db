@@ -20,7 +20,7 @@ files:
 - file: commands/rotate_identity_salt.py
   role: Private review-file parsing and command adapter for whole-run identity salt migration.
 - file: commands/load_base_db_data.py
-  role: Canonical base reference-data command.
+  role: Canonical base reference-data command; reuses an unchanged catalogue receipt unless --verify is given.
 - file: commands/setup_endoreg_db.py
   role: Application setup command.
 - file: commands/materialize_video_hls.py

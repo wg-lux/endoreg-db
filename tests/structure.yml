@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: services/test_reference_catalog_receipt_reuse.py
+  role: Receipt-digest reuse, fallback on missing rows or changed content, --verify drift detection and reconcile startup.
 - file: import_files/test_import_processing_stack.py
   role: Native stack persistence, stable restart references, automatic recovery, priority ordering and missing-capability rejection.
 - file: import_files/test_import_checkpoints.py

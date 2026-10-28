@@ -26,6 +26,11 @@ class Command(BaseCommand):
         parser.add_argument(
             "--dry-run", action="store_true", help="Show changes without writing them."
         )
+        parser.add_argument(
+            "--verify",
+            action="store_true",
+            help="Compare every catalogue row even when an identical receipt exists.",
+        )
 
     def handle(self, *args: str, **options: object) -> None:
         def render(result: BaseModel) -> None:
@@ -48,7 +53,7 @@ class Command(BaseCommand):
                 if not plan.can_apply:
                     raise CommandError("Catalogue migration contains blockers")
                 return
-            result = apply_catalog_migration(snapshot)
+            result = apply_catalog_migration(snapshot, verify=options["verify"] is True)
             render(result)
         except (
             ValueError,

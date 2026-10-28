@@ -155,7 +155,13 @@ catalogue. Its `--dry-run` variant never provisions registry files. Both module
 and version can be selected explicitly. No command imports patient data, creates
 user-owned cohorts or changes study activation.
 
-The plan distinguishes creation, equivalent legacy adoption, reuse and conflict.
+Unchanged startup imports reuse a receipt with the same catalogue digest when
+all bound rows still exist; they do not compare persisted fields or relations.
+Use `--verify` for a full comparison, or `--dry-run` for a full write-free plan.
+This also applies to `load_base_db_data --reconcile-legacy` and the individual
+bootstrap commands. Scope remains in [DataLoading.yml](../../feature-tracking/DataLoading.yml).
+
+The full plan distinguishes creation, equivalent legacy adoption, reuse and conflict.
 Adoption retains primary keys and records `legacy_equivalent`; it does not claim
 the historical records originated from the newly imported package. Duplicate
 identities, changed fields or relations, missing imported rows and changed
@@ -165,8 +171,9 @@ conflicts through reviewed mappings or a separately versioned definition; there
 is no force-overwrite or YAML fallback option.
 
 All catalogue rows, foreign keys, many-to-many links and the validated immutable
-receipt commit in one transaction. Reimport checks the persisted definitions
-instead of silently repairing drift. Reference imports use the same process and
+receipt commit in one transaction. Full reconciliation checks persisted definitions
+instead of repairing drift; receipt reuse leaves local changes untouched.
+Reference imports use the same process and
 PostgreSQL advisory locks as preset provisioning. An import failure rolls back
 its changes; restoring a deployment must restore captured records and their
 original receipts together.

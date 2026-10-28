@@ -242,6 +242,63 @@ def plan_reference_catalog(
     )
 
 
+def reuse_current_catalog(snapshot: ReferenceCatalogSnapshot) -> CatalogPlan | None:
+    """Return the receipt-backed plan when this exact snapshot is already projected.
+
+    The stored receipt must carry the same content digest for the same module,
+    version and projection, and every row it binds must still exist. Any other
+    state returns None so callers run the full field-level reconciliation, which
+    also reports content changes for an already imported version as conflicts.
+    """
+    if not connection.in_atomic_block:
+        raise RuntimeError("Catalogue reuse check requires the reference transaction")
+    snapshot = ReferenceCatalogSnapshot.model_validate_json(
+        snapshot.model_dump_json(by_alias=True)
+    )
+    row = ReferenceCatalogImport.objects.filter(
+        module=snapshot.identity.knowledge_base_module,
+        version=snapshot.identity.knowledge_base_version,
+        projection=snapshot.projection,
+    ).first()
+    if row is None or row.snapshot_id != snapshot.snapshot_id:
+        return None
+    receipt = ReferenceCatalogReceipt.model_validate(row.payload)
+    if receipt.snapshot != snapshot:
+        raise ValueError("Reference catalogue receipt does not match its digest")
+    bound: dict[ReferenceKind, set[int]] = {}
+    for binding in receipt.bindings:
+        bound.setdefault(binding.kind, set()).add(binding.row_id)
+    for kind, row_ids in bound.items():
+        present = CATALOG_MODELS[kind]._base_manager.filter(pk__in=row_ids).count()
+        if present != len(row_ids):
+            return None
+    emit_structured_event(
+        logger,
+        "reference_catalog.reused",
+        module=row.module,
+        version=row.version,
+        snapshot_id=row.snapshot_id,
+        projection=row.projection,
+        records=len(receipt.bindings),
+    )
+    return CatalogPlan(
+        module=row.module,
+        version=row.version,
+        snapshot_id=row.snapshot_id,
+        projection=row.projection,
+        changes=[
+            CatalogChange(
+                kind=binding.kind,
+                identity=binding.identity,
+                action="reuse",
+                row_id=binding.row_id,
+            )
+            for binding in receipt.bindings
+        ],
+        unchanged=True,
+    )
+
+
 @contextmanager
 def reference_catalog_transaction() -> Generator[None]:
     """Serialize all cooperating reference writers around one database transaction."""

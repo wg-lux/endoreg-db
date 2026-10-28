@@ -10,9 +10,12 @@ from pydantic import TypeAdapter
 import yaml
 
 from endoreg_db.services.reference_data.catalog import (
+    CatalogPlan,
     catalog_snapshot,
     import_reference_catalog,
     plan_reference_catalog,
+    reference_catalog_transaction,
+    reuse_current_catalog,
     select_catalog,
 )
 
@@ -37,6 +40,11 @@ class Command(BaseCommand):
             action="store_true",
             help="Bind equivalent legacy rows without rewriting their clinical meaning.",
         )
+        parser.add_argument(
+            "--verify",
+            action="store_true",
+            help="Compare every catalogue row even when an identical receipt exists.",
+        )
 
     def handle(self, *args: str, **options: object) -> None:
         module, version = options["module"], options["module_version"]
@@ -54,11 +62,8 @@ class Command(BaseCommand):
             snapshot = select_catalog(
                 catalog_snapshot(package), {ReferenceKind(kind) for kind in kinds}
             )
-            plan = plan_reference_catalog(
-                snapshot, adopt_existing=options["adopt_existing"] is True
-            )
 
-            def render() -> None:
+            def render(plan: CatalogPlan) -> None:
                 if options["format"] == "yml":
                     self.stdout.write(
                         yaml.safe_dump(
@@ -70,8 +75,17 @@ class Command(BaseCommand):
                 else:
                     self.stdout.write(plan.model_dump_json(indent=2))
 
+            if options["dry_run"] is not True and options["verify"] is not True:
+                with reference_catalog_transaction():
+                    reused = reuse_current_catalog(snapshot)
+                if reused is not None:
+                    render(reused)
+                    return
+            plan = plan_reference_catalog(
+                snapshot, adopt_existing=options["adopt_existing"] is True
+            )
             if not plan.can_import:
-                render()
+                render(plan)
                 raise CommandError(
                     "Reference catalogue reconciliation has conflicts; no rows were changed"
                 )
@@ -79,7 +93,7 @@ class Command(BaseCommand):
                 plan = import_reference_catalog(
                     snapshot, adopt_existing=options["adopt_existing"] is True
                 )
-            render()
+            render(plan)
         except DatabaseError as exc:
             raise CommandError(
                 "Reference catalogue database operation failed; verify database migrations before retrying"

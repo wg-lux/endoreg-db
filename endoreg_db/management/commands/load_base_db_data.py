@@ -32,6 +32,7 @@ class Command(ReferenceCatalogCommand):
             "migrate_reference_catalog",
             dry_run=options["dry_run"],
             format=options["format"],
+            verify=options["verify"],
             stdout=self.stdout,
             stderr=self.stderr,
         )
