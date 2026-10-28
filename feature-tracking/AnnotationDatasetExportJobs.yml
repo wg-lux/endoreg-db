@@ -37,10 +37,11 @@ definition_of_done:
     - kind: document
       reference: 'docs/annotation_export_guide.md: browser fields, YAML contract, forbidden browser base-data
         loading, scoped output and strict failure rules reviewed against current backend and frontend.'
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:20.899907Z'
+    assessed_at: '2026-10-28T18:45:07.526264Z'
 - id: job_lifecycle
   category: functionality
   title: Export läuft als persistierter Celery-Job mit abfragbarem Status
@@ -64,19 +65,19 @@ definition_of_done:
     status: verified
     evidence:
     - kind: test
-      reference: '2026-10-28: four export suites 136 passed, 29 subtests; actual API/on_commit/eager Celery/FFmpeg
-        job produced six pixel-identical frames, correct video hash, manifest, counts and completed status.'
+      reference: '2026-10-28: six suites passed 147 tests and 33 subtests, including real API/on_commit/eager
+        Celery/FFmpeg export, video-list metadata reuse, and export-selection annotation preservation.
+        Global Pyright: 0 errors, 2 existing warnings.'
     - kind: command
-      reference: 'Release artifact: dist/endoreg_db-1.6.10-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl;
-        SHA256 56cd7c9225888afc0e88bb5f67617b218dee5bd6f710aecd6c85a814f14e2d81. All 1044 packaged Python
-        files match committed source. Isolated wheel import verifies four job routes, registered ffmpeg_media
-        task, migration 0113 after 0114 with no graph conflict/model drift, and bundled Rust adopt_published
-        with mismatch rejection.'
-    note: Verified backend release artifact for deployment. Install this wheel, apply migrations and restart
-      API plus ffmpeg_media workers. Live broker/host acceptance remains a rollout check; no deployment
-      was performed.
+      reference: Reviewed dist/endoreg_db-1.7.0-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl;
+        SHA256 db980888f2771407c374f7e6c7ca562fa993f5fe99aba7704b203a1a3b765e70. All 1051 packaged Python
+        files match source. Isolated packaged Rust bind_source/adopt_published and mismatched media identity
+        rejection passed.
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:15:28.919366Z'
+    assessed_at: '2026-10-28T18:45:10.735571Z'
 - id: contract_parity
   category: functionality
   title: Formular, YAML und Skript teilen einen Konfigurationsvertrag
@@ -98,10 +99,11 @@ definition_of_done:
     - kind: test
       reference: '2026-10-28: four export suites 136 passed, 29 subtests; strict payload/unknown fields/nulls
         and write-free validation checked. Shared config serves script, API and worker.'
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:27.508632Z'
+    assessed_at: '2026-10-28T18:45:13.956153Z'
 - id: center_scope_and_paths
   category: security
   title: Zentrumsumfang und Ausgabepfade sind serverseitig erzwungen
@@ -133,10 +135,11 @@ definition_of_done:
     - kind: test
       reference: '2026-10-28: four export suites 136 passed, 29 subtests; center/account revocation, cross-scope
         visibility, path/lock symlink attacks, reserved manifest and alias rejection covered.'
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:31.184282Z'
+    assessed_at: '2026-10-28T18:45:17.967294Z'
 - id: automated_tests
   category: testing
   title: Backend- und Frontend-Tests decken Vertrag und Ablauf ab
@@ -166,10 +169,15 @@ definition_of_done:
         in 65.10s. Includes actual eager Celery/FFmpeg artifact proof and 15 strict-failure/collision
         cases. Frontend 76 tests across 12 suites; source/test typing and ESLint passed. Global Pyright
         0 errors, 2 existing warnings.'
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    - kind: test
+      reference: '2026-10-28: enabled-video six-suite release review: 147 passed, 33 subtests, 1 existing
+        plugin warning in 59.63 seconds. Full Pyright 0 errors and 2 existing warnings after restoring
+        the verification environment.'
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:33.585357Z'
+    assessed_at: '2026-10-28T18:45:21.606563Z'
 - id: worker_failure_visibility
   category: operations
   title: Abgebrochene Worker hinterlassen keinen stillen Dauerstatus
@@ -197,10 +205,11 @@ definition_of_done:
       reference: '2026-10-28: tests/services/test_frame_annotation_export_jobs.py passed in the 136-test
         export lane: separate-process lock release, duplicate delivery, stale claim fencing, locked lost
         writer, dispatch failure and stale job recovery covered.'
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:35.802760Z'
+    assessed_at: '2026-10-28T18:45:24.892122Z'
 - id: operator_documentation
   category: documentation
   title: Bedienung ist im Exportleitfaden beschrieben
@@ -218,7 +227,8 @@ definition_of_done:
       reference: docs/annotation_export_guide.md and docs/api_route_test_matrix.md reviewed; packaged
         wheel resolves all four export job routes and registers endoreg_db.frame_annotation_export on
         ffmpeg_media.
-    note: Verified against current source and tests. Deployment must install the verified 1.6.10 wheel,
-      apply migrations and restart API/workers; live broker/host acceptance remains a rollout check.
+    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
+      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
+      checks.
     assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:10:37.793255Z'
+    assessed_at: '2026-10-28T18:45:27.855248Z'
