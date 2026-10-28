@@ -9,6 +9,8 @@ boundaries:
 files:
 - file: frame_annotation_export_jobs.py
   role: Dataset export job list, start, validate and detail endpoints (media/videos/export-annotated/jobs/) with explicit response serializers.
+- file: frame_annotation_export_downloads.py
+  role: File listing, single-file and ZIP download of completed dataset export jobs (media/videos/export-annotated/jobs/<id>/files/ and archive.zip) for saving to a user-chosen folder.
 - file: annotation_comparisons.py
   role: Authenticated paginated personal annotation comparisons with explicit response serializers.
 - file: video_media.py

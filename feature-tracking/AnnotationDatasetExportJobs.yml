@@ -152,13 +152,15 @@ definition_of_done:
   - Reservierte Manifestziele werden vor Schreibzugriffen abgewiesen; strikte Exporte schlagen bei fehlenden
     oder nicht kopierbaren angeforderten Medien fehl statt unvollständige Ausgaben als erfolgreich zu
     melden.
+  - Video timeline hydration, generation comparison and validation scale with distinct videos rather than
+    annotation or segment count; regression tests retain generation-change rejection and row locking.
   required: true
   verification:
     kind: manual
     instructions: Backend-pytest und lx-annotate Vitest für DatasetAnnotationExport ausführen.
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: test
       reference: '2026-10-28: backend job/API 51 passed,18 subtests; reserved lock namespace 4 passed,7
@@ -173,11 +175,15 @@ definition_of_done:
       reference: '2026-10-28: enabled-video six-suite release review: 147 passed, 33 subtests, 1 existing
         plugin warning in 59.63 seconds. Full Pyright 0 errors and 2 existing warnings after restoring
         the verification environment.'
-    note: Backend 1.7.0 source and packaged artifact reviewed. Deploy with a compatible LX-Annotate dependency
-      pin and restart API/workers. Successful live export and post-restart memory measurement remain rollout
-      checks.
-    assessed_by: codex-focused-commits-20261028
-    assessed_at: '2026-10-28T18:45:21.606563Z'
+    - kind: test
+      reference: '2026-10-28: Export snapshot, row building, frame copying and segment selection prefetch
+        each video once; generation comparison and timeline validation run per distinct video. tests/services/test_export_frames_contract.py
+        plus segment view suites: 125 passed. Focused Pyright: 0 errors.'
+    note: Bounded video hydration repair for export and segment validation paths is implemented and tested.
+      Live retry of the stalled video-60 export after deploying the repair and restarting API and workers
+      remains open; the stalled database read must be confirmed cancelled first.
+    assessed_by: claude-video-hydration-20261028
+    assessed_at: '2026-10-28T19:33:20.667717Z'
 - id: worker_failure_visibility
   category: operations
   title: Abgebrochene Worker hinterlassen keinen stillen Dauerstatus

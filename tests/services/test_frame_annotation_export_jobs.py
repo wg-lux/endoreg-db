@@ -23,7 +23,13 @@ from endoreg_db.export.frames.export_frames_with_labels import (
     AnnotationExporterClient,
     ExportJobFailedError,
 )
-from endoreg_db.models import Center, FrameAnnotationExportJob, PortalUserInfo
+from endoreg_db.models import (
+    Center,
+    FrameAnnotationExportJob,
+    PortalUserInfo,
+    VideoFile,
+    VideoState,
+)
 from endoreg_db.services.media import frame_annotation_export_jobs as jobs
 from endoreg_db.services.media.export_annotated import ExportConflictError
 from endoreg_db.utils.file_operations import advisory_file_lock
@@ -191,6 +197,69 @@ def test_center_staff_cannot_leave_their_centers(
     with pytest.raises(PermissionDenied):
         jobs.prepare_frame_annotation_export(
             _payload(run_name, **overrides), user=center_staff
+        )
+
+
+def _video(center: Center) -> VideoFile:
+    return VideoFile.objects.create(
+        center=center,
+        state=VideoState.objects.create(),
+        raw_video_hash=f"export-job-video-{uuid4().hex[:8]}",
+    )
+
+
+def test_prepare_accepts_video_of_the_export_center(
+    center: Center, center_staff: User, run_name: str
+) -> None:
+    video = _video(center)
+
+    prepared = jobs.prepare_frame_annotation_export(
+        _payload(run_name, center_key=center.center_key, video_id=video.pk),
+        user=center_staff,
+    )
+
+    assert prepared.payload.video_id == video.pk
+
+
+def test_prepare_rejects_unknown_video(
+    center: Center, center_staff: User, run_name: str
+) -> None:
+    with pytest.raises(ValidationError, match="Unknown video_id"):
+        jobs.prepare_frame_annotation_export(
+            _payload(run_name, center_key=center.center_key, video_id=999_999_999),
+            user=center_staff,
+        )
+
+
+def test_prepare_rejects_video_outside_the_export_center(
+    center: Center, foreign_center: Center, center_staff: User, run_name: str
+) -> None:
+    video = _video(foreign_center)
+
+    with pytest.raises(PermissionDenied, match="video_id"):
+        jobs.prepare_frame_annotation_export(
+            _payload(run_name, center_key=center.center_key, video_id=video.pk),
+            user=center_staff,
+        )
+
+
+def test_prepare_rejects_video_with_unfinalized_annotations(
+    center: Center,
+    center_staff: User,
+    run_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = _video(center)
+
+    def cleanup_running(_video: VideoFile) -> str:
+        return "cleanup_running"
+
+    monkeypatch.setattr(jobs, "resolve_segment_annotation_status", cleanup_running)
+
+    with pytest.raises(ValidationError, match="cleanup_required"):
+        jobs.prepare_frame_annotation_export(
+            _payload(run_name, center_key=center.center_key, video_id=video.pk),
+            user=center_staff,
         )
 
 

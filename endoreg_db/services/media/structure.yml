@@ -24,7 +24,9 @@ files:
 - file: export_annotated.py
   role: Exports ExportConflictError, ExportAnnotatedService and the shared confine_export_location path boundary.
 - file: frame_annotation_export_jobs.py
-  role: Center-scoped dataset export jobs over AnnotationExporterClient with single-segment run directories, run-lock exclusion and claim-token fencing.
+  role: Center-scoped dataset export jobs over AnnotationExporterClient with single-segment run directories, run-lock exclusion and claim-token fencing; video_id jobs also enforce video center and finalized segment annotations.
+- file: frame_annotation_export_downloads.py
+  role: Read-only listing, per-file and ZIP access to the latest completed export job of a run directory within the user's center scope; symbolic links fail loudly.
 - file: export_downloads.py
   role: Read-only browser exports of accepted processed media and annotations.
 - file: export_policy.py
@@ -75,6 +77,7 @@ tests:
     tests/services/test_hub_storage_rotation.py tests/views/media/test_video_export_downloads.py
     tests/services/test_export_frames_contract.py tests/views/misc/test_export_annotated_contract.py
     tests/services/test_export_file_names.py tests/services/test_frame_annotation_export_jobs.py
+    tests/services/test_frame_annotation_export_downloads.py
   files:
   - tests/services/test_hls_media.py
   - tests/services/test_media_integrity_reconciliation_plan.py
@@ -84,3 +87,4 @@ tests:
   - tests/views/misc/test_export_annotated_contract.py
   - tests/services/test_export_file_names.py
   - tests/services/test_frame_annotation_export_jobs.py
+  - tests/services/test_frame_annotation_export_downloads.py

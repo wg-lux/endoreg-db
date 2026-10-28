@@ -813,7 +813,11 @@ def video_segments_collection(request: Request) -> Response:
         except PydanticValidationError as exc:
             return _pydantic_error_response(exc, message="Invalid query parameters")
 
-        queryset = LabelVideoSegment.objects.select_related("video_file", "label").all()
+        # Prefetch shares one video per distinct id; joining it duplicates the
+        # complete timeline JSON for every segment.
+        queryset = LabelVideoSegment.objects.select_related("label").prefetch_related(
+            "video_file"
+        )
 
         if query.video_id is not None:
             try:
@@ -885,8 +889,10 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
         except PydanticValidationError as exc:
             return _pydantic_error_response(exc, message="Invalid query parameters")
 
-        queryset = LabelVideoSegment.objects.filter(video_file=video).select_related(
-            "video_file", "label"
+        queryset = (
+            LabelVideoSegment.objects.filter(video_file=video)
+            .select_related("label")
+            .prefetch_related("video_file")
         )
 
         if query.label:
@@ -1443,7 +1449,9 @@ def _bulk_validation_segments(
         LabelVideoSegment.objects.filter(
             pk__in=segment_ids,
             video_file=video,
-        ).select_related("state", "video_file")
+        )
+        .select_related("state")
+        .prefetch_related("video_file")
     )
 
 

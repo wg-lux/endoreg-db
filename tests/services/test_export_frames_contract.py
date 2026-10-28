@@ -12,11 +12,13 @@ from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Literal, cast
+from unittest.mock import patch
 
 import pytest
 from django.db import OperationalError, close_old_connections, connection, transaction
 from django.db.models import QuerySet
 from django.test.utils import override_settings
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonValue
 from lx_dtypes.models.contracts.video_provenance import (
     VideoFrameProvenancePayload,
     VideoFrameTimeline,
@@ -73,7 +75,7 @@ class _FakeFrameAnnotations:
     def __init__(self, annotation: "_AnnotationDouble") -> None:
         self._annotation = annotation
 
-    def iterator(self) -> Iterator["_AnnotationDouble"]:
+    def __iter__(self) -> Iterator["_AnnotationDouble"]:
         yield self._annotation
 
 
@@ -936,6 +938,107 @@ def test_file_and_browser_csv_use_same_text_encoding(
             ]
         )
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("count", [1, 8])
+def test_export_shares_video_metadata_and_validates_timeline_once(
+    count: int, tmp_path: Path
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="shared-export-center"),
+        raw_video_hash="shared-export-video",
+    )
+    label = Label.objects.create(name="shared-export-label")
+    source = InformationSource.objects.create(name="shared-export-source")
+    for index in range(count):
+        frame = Frame.objects.create(
+            video=video, frame_number=index, relative_path=f"frame_{index}.jpg"
+        )
+        ImageClassificationAnnotation.objects.create(
+            value=True, frame=frame, label=label, information_source=source
+        )
+        LabelVideoSegment.objects.create(
+            video_file=video,
+            label=label,
+            source=source,
+            start_frame_number=index,
+            end_frame_number=index + 1,
+        )
+
+    original_from_db = VideoFile.from_db
+    comparisons: list[bool] = []
+
+    class CountedMeta(dict[str, VideoFileMetaJsonValue]):
+        def __ne__(self, other: object) -> bool:
+            comparisons.append(True)
+            return super().__ne__(other)
+
+    def load_video(db: str, field_names: list[str], values: list[object]) -> VideoFile:
+        result = original_from_db(db, field_names, values)
+        result.meta = CountedMeta(result.meta or {})
+        return result
+
+    with patch.object(VideoFile, "from_db", side_effect=load_video) as loaded:
+        selected = export_module._snapshot_annotations(
+            ImageClassificationAnnotation.objects.select_related("frame__video")
+        )
+        assert loaded.call_count == 3
+    assert len(comparisons) == 1
+    assert len(selected) == count
+    assert all(item.frame.video is selected[0].frame.video for item in selected)
+    assert all(
+        item.frame.video.meta is selected[0].frame.video.meta for item in selected
+    )
+
+    with patch.object(VideoFile, "from_db", wraps=original_from_db) as loaded:
+        annotations = list(export_module._build_annotations_queryset())
+        assert loaded.call_count == 1
+    assert all(item.frame.video is annotations[0].frame.video for item in annotations)
+    with patch.object(
+        export_module,
+        "_video_timeline_evidence",
+        wraps=export_module._video_timeline_evidence,
+    ) as validated:
+        rows = export_module._build_annotation_rows(
+            annotations,
+            export_profile="legacy_table_v1",
+            use_frame_pk_paths=False,
+            frame_ext="jpg",
+        )
+        assert validated.call_count == 1
+    assert len(rows) == count
+    assert [row["frame_number"] for row in rows] == list(range(count))
+
+    with patch.object(VideoFile, "from_db", wraps=original_from_db) as loaded:
+        segments = export_module._selected_segments(
+            video_ids={video.pk}, segment_ids=None, use_export_flags=False
+        )
+        assert loaded.call_count == 1
+    assert len(segments) == count
+    assert all(item.video_file is segments[0].video_file for item in segments)
+
+    source_path = tmp_path / "source.jpg"
+    source_path.write_bytes(b"processed frame fixture")
+    with (
+        override_settings(ENDOREG_DEPLOYMENT_ROLE="standalone"),
+        patch.object(export_module, "assert_video_media_export_ready"),
+        patch.object(
+            export_module, "_resolve_frame_source_path", return_value=source_path
+        ),
+        patch.object(VideoFile, "from_db", wraps=original_from_db) as loaded,
+    ):
+        copied = export_module._export_frames_from_annotations(
+            export_module._build_annotations_queryset(),
+            output_dir=tmp_path / "frames",
+            use_frame_pk_paths=False,
+            frame_ext="jpg",
+        )
+        assert copied == count
+        assert loaded.call_count == 1
+    assert (
+        tmp_path / "frames" / f"video_{video.pk}" / "frame_0.jpg"
+    ).read_bytes() == source_path.read_bytes()
 
 
 @pytest.mark.django_db

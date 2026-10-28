@@ -58,10 +58,16 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.frame_annotation_export_job import (
     FrameAnnotationExportJob,
 )
+from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.frame_annotation_export_job import (
     FrameAnnotationExportJobResult,
     dump_frame_annotation_export_job_result,
     validate_frame_annotation_export_job_config,
+)
+from endoreg_db.services.annotations.segment_validation_workflow import (
+    SEGMENT_ANNOTATION_FINAL_STATUSES,
+    SegmentAnnotationStatus,
+    resolve_segment_annotation_status,
 )
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.services.jobs.heavy_jobs import (
@@ -120,6 +126,8 @@ def prepare_frame_annotation_export(
     run_name = _single_segment("output_dir", config.output_dir)
     _single_segment("output_path", config.output_path)
     center = _resolve_scope(config, user=user)
+    if config.video_id is not None:
+        _validate_video_export(config.video_id, center=center)
     _confine_run(run_name, config.output_path)
     return PreparedFrameAnnotationExport(
         payload=config, center=center, run_name=run_name
@@ -313,6 +321,23 @@ def _resolve_scope(
     if allowed_center_ids is not None and center.pk not in allowed_center_ids:
         raise PermissionDenied("center_key is outside your center scope.")
     return center
+
+
+def _validate_video_export(video_id: int, *, center: Center | None) -> None:
+    """Apply the per-video export rules of ``ExportAnnotatedService``."""
+    video = VideoFile.objects.filter(pk=video_id).first()
+    if video is None:
+        raise ValidationError(f"Unknown video_id: {video_id}")
+    if center is not None and video.center_id != center.pk:
+        raise PermissionDenied("video_id is outside the export center scope.")
+    status = resolve_segment_annotation_status(video)
+    if (
+        status != SegmentAnnotationStatus.NOT_STARTED.value
+        and status not in SEGMENT_ANNOTATION_FINAL_STATUSES
+    ):
+        raise ValidationError(
+            f"cleanup_required: segment annotations are not finalized ({status})"
+        )
 
 
 def _relative_to_export_root(path: Path) -> str:

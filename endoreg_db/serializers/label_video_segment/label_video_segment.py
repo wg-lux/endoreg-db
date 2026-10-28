@@ -643,13 +643,13 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         return obj.prediction_meta_id
 
     def _segment_frames(self, obj: LabelVideoSegmentLike) -> list[FrameLike]:
+        video = cast(VideoFile, obj.video_file)
         queryset = (
             Frame.objects.filter(
                 video_id=obj.video_file_id,
                 frame_number__gte=obj.start_frame_number,
                 frame_number__lt=obj.end_frame_number,
             )
-            .select_related("video")
             .order_by("frame_number")
             .prefetch_related(
                 Prefetch(
@@ -661,7 +661,12 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
                 )
             )
         )
-        return [cast(FrameLike, frame) for frame in queryset]
+        frames: list[FrameLike] = []
+        for frame in queryset:
+            # Joining the video duplicates its complete timeline JSON for every frame.
+            frame.video = video
+            frames.append(cast(FrameLike, frame))
+        return frames
 
     def _boundary_seconds(
         self, obj: LabelVideoSegmentLike

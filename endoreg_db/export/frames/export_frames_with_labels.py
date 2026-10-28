@@ -659,24 +659,21 @@ def export_frames_with_labels_to_json(
 def _snapshot_annotations(
     selection: QuerySet[ImageClassificationAnnotation],
 ) -> list[ImageClassificationAnnotation]:
-    annotations = list(
-        selection.select_related(
-            "frame", "frame__video", "label", "information_source", "model_meta"
-        )
-    )
+    annotations = list(_with_shared_annotation_videos(selection))
     # Publication and cleanup use these same rows. Keep their locks through
     # table generation and media copying, even when an export outlives a lease.
-    video_ids = {annotation.frame.video.pk for annotation in annotations}
+    previous_videos = {
+        annotation.frame.video.pk: annotation.frame.video for annotation in annotations
+    }
     videos = {
         video.pk: video
         for video in VideoFile.objects.select_for_update()
-        .filter(pk__in=video_ids)
+        .filter(pk__in=previous_videos)
         .order_by("pk")
     }
     for video in videos.values():
         create_video_stream_lease(video, file_type="processed")
-    for annotation in annotations:
-        previous = annotation.frame.video
+    for previous in previous_videos.values():
         current = videos[previous.pk]
         if (
             previous.processed_video_hash != current.processed_video_hash
@@ -684,7 +681,8 @@ def _snapshot_annotations(
             or previous.meta != current.meta
         ):
             raise ValueError("Video generation changed during annotation selection")
-        annotation.frame.video = current
+    for annotation in annotations:
+        annotation.frame.video = videos[annotation.frame.video.pk]
     return annotations
 
 
@@ -968,9 +966,7 @@ def _export_frames_from_annotations(
     copied_frames: set[tuple[int, str]] = set()
 
     checked_videos: set[int] = set()
-    for annotation in (
-        annotations if isinstance(annotations, list) else annotations.iterator()
-    ):
+    for annotation in annotations:
         annotation_export = cast(_AnnotationExportModel, annotation)
         frame = annotation_export.frame
         video = frame.video
@@ -1534,13 +1530,20 @@ def _annotation_row_to_csv_dict(
     return {name: encode_csv_cell(row[name]) for name in DEFAULT_FIELDNAMES}
 
 
+def _with_shared_annotation_videos(
+    queryset: QuerySet[ImageClassificationAnnotation],
+) -> QuerySet[ImageClassificationAnnotation]:
+    # Joining the video duplicates its complete timeline JSON for every annotation.
+    return (
+        queryset.select_related(None)
+        .select_related("frame", "label", "information_source", "model_meta")
+        .prefetch_related("frame__video")
+    )
+
+
 def _build_annotations_queryset() -> QuerySet[ImageClassificationAnnotation]:
-    return ImageClassificationAnnotation.objects.select_related(
-        "frame",
-        "frame__video",
-        "label",
-        "information_source",
-        "model_meta",
+    return _with_shared_annotation_videos(
+        ImageClassificationAnnotation.objects.all()
     ).order_by("frame__video_id", "frame__frame_number", "label_id", "id")
 
 
@@ -1623,11 +1626,8 @@ def _selected_segments(
 ) -> list[LabelVideoSegment]:
     """Segments chosen by explicit ids, export flags, or all of the given videos."""
     segments = LabelVideoSegment.objects.select_related(
-        "video_file",
-        "label",
-        "source",
-        "prediction_meta",
-    )
+        "label", "source", "prediction_meta"
+    ).prefetch_related("video_file")
     if video_ids is not None:
         segments = segments.filter(video_file_id__in=video_ids)
 
@@ -1694,6 +1694,7 @@ def _annotation_to_row(
     use_frame_pk_paths: bool,
     frame_ext: str,
     export_frame_index: int,
+    timeline: VideoSourceTimelineEvidence | None,
     export_profile: VideoFrameAnnotationExportProfile,
 ) -> AnnotationRow:
     annotation_export = cast(_AnnotationExportModel, annotation)
@@ -1713,7 +1714,6 @@ def _annotation_to_row(
     model_meta = annotation_export.model_meta
     date_created = annotation_export.date_created
     date_modified = annotation_export.date_modified
-    timeline = _video_timeline_evidence(video)
     presentation_timestamp = frame.presentation_timestamp
     presentation_time_seconds = frame.timestamp
     time_base_num = (
@@ -1790,14 +1790,14 @@ def _build_annotation_rows(
     use_frame_pk_paths: bool,
     frame_ext: str,
 ) -> list[AnnotationRow]:
-    annotation_rows = list(
-        annotations if isinstance(annotations, list) else annotations.iterator()
-    )
+    # Materialize once with shared parent prefetches, including read-only downloads.
+    annotation_rows = list(annotations)
     annotation_rows.sort(key=_annotation_export_sort_key)
     frame_indices: dict[tuple[int, int], int] = {}
     next_index_by_video: dict[int, int] = {}
     rows: list[AnnotationRow] = []
     checked_videos: set[int] = set()
+    timelines: dict[int, VideoSourceTimelineEvidence | None] = {}
     for annotation in annotation_rows:
         annotation_export = cast(_AnnotationExportModel, annotation)
         frame = annotation_export.frame
@@ -1805,6 +1805,10 @@ def _build_annotation_rows(
         if export_profile == "pts_dataset_v1" and video_id not in checked_videos:
             assert_video_media_export_ready(frame.video, verify_content=False)
             checked_videos.add(video_id)
+        if video_id not in timelines:
+            timelines[video_id] = _video_timeline_evidence(
+                cast(_VideoHashExportModel, frame.video)
+            )
         frame_key = (video_id, int(frame.pk))
         export_frame_index = frame_indices.get(frame_key)
         if export_frame_index is None:
@@ -1817,6 +1821,7 @@ def _build_annotation_rows(
                 use_frame_pk_paths=use_frame_pk_paths,
                 frame_ext=frame_ext,
                 export_frame_index=export_frame_index,
+                timeline=timelines[video_id],
                 export_profile=export_profile,
             )
         )

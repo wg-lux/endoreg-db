@@ -1057,6 +1057,9 @@ definition_of_done:
     Erweiterung darf den explizit getesteten Python-Fallback verwenden.
   - Ein Cross-Repository-Test deckt mindestens ein Video oberhalb von 50 FPS, die Zustände required/queued/running/ready/failed,
     authentifiziertes Processed-HLS-Playback und Segment-Zeit-/Frame-Roundtrips ab.
+  - Segmentlisten, Einzel- und Bulk-Validierung, Bulk-Mutation und Frame-Annotationspayloads laden die
+    Videozeile mit ihren vollständigen Timeline-Metadaten höchstens einmal pro Video und Anfrage, unabhängig
+    von Segment- und Frameanzahl.
   required: true
   verification:
     kind: manual
@@ -1146,6 +1149,13 @@ definition_of_done:
         Separate nullable-provenance regression run: 4 passed, 13 deselected. Focused Pyright: 0 errors,
         0 warnings; Ruff and git diff --check passed. Initial inherited PostgreSQL configuration lacked
         psycopg/psycopg2. No deployment performed; broader readiness blockers unchanged.'
+    - kind: test
+      reference: '2026-10-28: Segment list, bulk validation, bulk mutation and annotation-payload frame
+        serialization share one loaded video instead of joining the complete timeline metadata per segment
+        or frame. .devenv/state/venv/bin/pytest tests/views/video/test_segment_video_hydration.py
+        tests/views/video/test_segments_crud.py tests/views/video/test_segment_update.py
+        tests/views/video/test_segment_validation_status_view.py tests/services/test_export_frames_contract.py
+        -q: 125 passed; new hydration tests fail 7 of 8 without the repair. Focused Pyright: 0 errors.'
     note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
       FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
       Restart, SIGKILL und Host-Shutdown waren manuell ausgelöst. Der Read-Pfad ist nun strikt metadatenbasiert,

@@ -297,16 +297,7 @@ def _update_segments(
                 {"id": "Must be an integer."},
             )
 
-        segment = cast(
-            _BulkSegmentLike,
-            get_object_or_404(
-                LabelVideoSegment.objects.select_related(
-                    "video_file", "label", "source"
-                ),
-                id=segment_id,
-                video_file=video,
-            ),
-        )
+        segment = _bulk_segment_for_video(video, segment_id)
         old_snapshot = _segment_snapshot(segment)
 
         segment_payload: dict[str, object] = dict(item_map)
@@ -355,16 +346,7 @@ def _delete_segments(
 ) -> None:
     for index, item in enumerate(deletes):
         segment_id = _bulk_delete_segment_id(item, index)
-        segment = cast(
-            _BulkSegmentLike,
-            get_object_or_404(
-                LabelVideoSegment.objects.select_related(
-                    "video_file", "label", "source"
-                ),
-                id=segment_id,
-                video_file=video,
-            ),
-        )
+        segment = _bulk_segment_for_video(video, segment_id)
         if segment.label is not None:
             delete_model_meta = segment.get_model_meta()
             delete_frame_annotations_for_segment(
@@ -490,6 +472,17 @@ def _query_param_as_bool(value: object, *, default: bool = False) -> bool:
     if value is None:
         return default
     return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _bulk_segment_for_video(video: VideoFile, segment_id: int) -> _BulkSegmentLike:
+    segment = get_object_or_404(
+        LabelVideoSegment.objects.select_related("label", "source"),
+        id=segment_id,
+        video_file=video,
+    )
+    # Reuse the request video; joining it reloads its complete timeline JSON per item.
+    segment.video_file = video
+    return cast(_BulkSegmentLike, segment)
 
 
 def _segment_snapshot(segment: _BulkSegmentLike) -> _SegmentSnapshot:
