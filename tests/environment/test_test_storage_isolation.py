@@ -41,10 +41,7 @@ def test_test_run_namespace_rejects_invalid_process_id() -> None:
         build_test_run_namespace(None, 0)
 
 
-def test_video_and_pdf_storage_share_the_session_root(
-    request: pytest.FixtureRequest,
-) -> None:
-    assert "tmp_path" in request.fixturenames
+def test_video_and_pdf_storage_share_the_session_root() -> None:
     paths = EndoregPathsModel.from_environment()
     storage_root = Path(paths.storage).resolve()
 
@@ -60,8 +57,21 @@ def test_video_and_pdf_storage_share_the_session_root(
         media_path.resolve().relative_to(storage_root)
 
 
+def test_unit_video_test_replaces_real_anonymizer() -> None:
+    from endoreg_db.import_files import video_import_service
+
+    anonymizer = video_import_service.VideoAnonymizer
+    assert anonymizer is not None
+    assert anonymizer.__name__ == "DummyVideoAnonymizer"
+
+
 @pytest.mark.integration
-def test_video_integration_does_not_allocate_temporary_directory(
+def test_video_integration_keeps_real_anonymizer_without_temporary_directory(
     request: pytest.FixtureRequest,
 ) -> None:
+    from endoreg_db.import_files import video_import_service
+
+    # None means the real class is still loaded lazily on first use.
+    anonymizer = video_import_service.VideoAnonymizer
+    assert anonymizer is None or anonymizer.__name__ != "DummyVideoAnonymizer"
     assert "tmp_path" not in request.fixturenames

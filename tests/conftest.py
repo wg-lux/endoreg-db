@@ -389,7 +389,7 @@ def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
 # Base data loading - now using centralized caching
 
 
-def _load_base_db_data_impl(cache: CacheManager) -> bool:
+def ensure_base_db_data(cache: CacheManager) -> bool:
     """
     Load base data in the active test transaction, rechecking cached readiness
     against the database after rollback or flush.
@@ -566,7 +566,7 @@ def base_db_data(
     cache: CacheManager,
 ) -> bool:
     """Load seed data inside this test's database rollback boundary."""
-    return _load_base_db_data_impl(cache)
+    return ensure_base_db_data(cache)
 
 
 # ==========================================

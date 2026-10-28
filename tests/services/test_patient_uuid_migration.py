@@ -10,8 +10,9 @@ def test_uuid_backfill_preserves_existing_patient_examination_links() -> None:
     before = [("endoreg_db", "0102_patient_hash_alias")]
     after = [("endoreg_db", "0103_patient_examination_uuid")]
     executor = MigrationExecutor(connection)
-    executor.migrate(before)
+    latest = executor.loader.graph.leaf_nodes()
     try:
+        executor.migrate(before)
         old_apps = executor.loader.project_state(before).apps
         patients = old_apps.get_model("endoreg_db", "Patient")
         examinations = old_apps.get_model("endoreg_db", "PatientExamination")
@@ -40,4 +41,5 @@ def test_uuid_backfill_preserves_existing_patient_examination_links() -> None:
         MigrationExecutor(connection).migrate(after)
         assert migrated.objects.get(pk=first.pk).uuid == values[0]
     finally:
-        MigrationExecutor(connection).migrate(after)
+        MigrationExecutor(connection).migrate(latest)
+    assert not MigrationExecutor(connection).migration_plan(latest)
