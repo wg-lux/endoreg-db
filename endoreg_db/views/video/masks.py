@@ -40,7 +40,7 @@ class VideoMaskCatalogueSerializer(serializers.Serializer[dict[str, object]]):
 
 
 class VideoMasksView(OpenApiAPIView):
-    """List or create immutable device mask profiles."""
+    """list or create immutable device mask profiles."""
 
     permission_classes: Sequence[CompositePermissionClass] = (
         IsAuthenticated,

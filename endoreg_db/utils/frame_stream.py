@@ -5,7 +5,8 @@ import math
 import subprocess
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, TYPE_CHECKING, Iterator, TypedDict, cast
+from typing import IO, TYPE_CHECKING, TypedDict, cast
+from collections.abc import Iterator
 
 import numpy as np
 

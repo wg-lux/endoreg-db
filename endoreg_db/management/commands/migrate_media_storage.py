@@ -12,15 +12,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import (
     Any,
-    Callable,
     Final,
-    Iterable,
     Literal,
     Protocol,
     TypedDict,
     Unpack,
     cast,
 )
+from collections.abc import Callable, Iterable
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.core.exceptions import SuspiciousFileOperation

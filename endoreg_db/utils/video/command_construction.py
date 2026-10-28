@@ -2,7 +2,6 @@
 import logging
 from enum import Enum
 from pathlib import Path
-from typing import List
 
 logger = logging.getLogger("ffmpeg_wrapper")
 _COMMON_FFMPEG_ARGS = ("-nostdin", "-hide_banner")
@@ -31,7 +30,7 @@ _TIMESTAMP_REPAIR_SEQUENCE = (
 )
 
 
-def _timestamp_repair_input_args(mode: TimestampRepairMode) -> List[str]:
+def _timestamp_repair_input_args(mode: TimestampRepairMode) -> list[str]:
     mapping: dict[TimestampRepairMode, list[str]] = {
         TimestampRepairMode.NONE: [],
         TimestampRepairMode.GENERATE_PTS: ["-fflags", "+genpts"],
@@ -51,7 +50,7 @@ def _timestamp_repair_input_args(mode: TimestampRepairMode) -> List[str]:
     return mapping[mode]
 
 
-def _timestamp_repair_output_args(mode: TimestampRepairMode) -> List[str]:
+def _timestamp_repair_output_args(mode: TimestampRepairMode) -> list[str]:
     if mode == TimestampRepairMode.RESET_TO_ZERO:
         return ["-avoid_negative_ts", "make_zero", "-muxdelay", "0"]
     return []
@@ -62,12 +61,12 @@ def _build_transcode_command(
     ffmpeg_executable: str,
     input_path: Path,
     output_path: Path,
-    encoder_args: List[str],
+    encoder_args: list[str],
     audio_codec: str,
     audio_bitrate: str,
-    extra_args: List[str] | None,
+    extra_args: list[str] | None,
     timestamp_repair_mode: TimestampRepairMode,
-) -> List[str]:
+) -> list[str]:
     # Retain the legacy parameters at the API boundary while enforcing the
     # repository-wide invariant that generated media never contains audio.
     _ = audio_codec, audio_bitrate
@@ -99,9 +98,9 @@ def _build_filter_transcode_command(
     ffmpeg_executable: str,
     input_path: Path,
     output_path: Path,
-    encoder_args: List[str],
-    extra_args: List[str],
-) -> List[str]:
+    encoder_args: list[str],
+    extra_args: list[str],
+) -> list[str]:
     return [
         ffmpeg_executable,
         *_COMMON_FFMPEG_ARGS,
@@ -120,7 +119,7 @@ def _build_ffprobe_stream_info_command(
     ffprobe_executable: str,
     file_path: Path,
     input_policy: FFprobeInputPolicy = FFprobeInputPolicy.DEFAULT,
-) -> List[str]:
+) -> list[str]:
     input_args_by_policy = {
         FFprobeInputPolicy.DEFAULT: [],
         FFprobeInputPolicy.TRUSTED_LOCAL_HLS: ["-allowed_extensions", "ALL"],
@@ -149,7 +148,7 @@ def _build_extract_frames_command(
     quality: int,
     fps: float | None,
     ext: str,
-) -> List[str]:
+) -> list[str]:
     cmd = [
         ffmpeg_executable,
         *_COMMON_FFMPEG_ARGS,
@@ -179,7 +178,7 @@ def _build_extract_frame_range_command(
     end_frame: int,
     quality: int,
     ext: str,
-) -> List[str]:
+) -> list[str]:
     select_filter = f"select='between(n,{start_frame},{end_frame - 1})'"
     return [
         ffmpeg_executable,
@@ -199,7 +198,7 @@ def _build_extract_frame_range_command(
     ]
 
 
-def _update_or_append_ffmpeg_arg(args: List[str], key: str, value: str) -> None:
+def _update_or_append_ffmpeg_arg(args: list[str], key: str, value: str) -> None:
     """Set an FFmpeg key/value option without assuming the value already exists."""
     try:
         index = args.index(key)
@@ -209,7 +208,9 @@ def _update_or_append_ffmpeg_arg(args: List[str], key: str, value: str) -> None:
 
     value_index = index + 1
     if value_index >= len(args):
-        logger.error("Missing value for %s argument. Appending required value.", key)
+        logger.error(
+            "Missing value for %s argument. Appending required value.", key
+        )
         args.append(value)
         return
 

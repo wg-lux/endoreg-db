@@ -9,7 +9,8 @@ import json
 import random
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Tuple, TypedDict, cast
+from typing import Any, Optional, TypedDict, cast
+from collections.abc import Sequence
 
 import torch
 from lx_ai_core.training import ProcessedFrameReference
@@ -142,13 +143,13 @@ def filter_labels_by_labelset_version(
     label_vectors: Sequence[Sequence[Optional[int]]],
     label_masks: Sequence[Sequence[int]],
     target_version: int,
-) -> Tuple[
-    List[List[Optional[int]]],
-    List[List[int]],
-    List[Any],
-    List[int],
+) -> tuple[
+    list[list[Optional[int]]],
+    list[list[int]],
+    list[Any],
+    list[int],
 ]:
-    kept_indices: List[int] = []
+    kept_indices: list[int] = []
 
     for idx, lbl in enumerate(labels):
         if lbl.label_sets.filter(version=target_version).exists():
@@ -161,8 +162,8 @@ def filter_labels_by_labelset_version(
             "in config.py."
         )
 
-    filtered_vectors: List[List[Optional[int]]] = []
-    filtered_masks: List[List[int]] = []
+    filtered_vectors: list[list[Optional[int]]] = []
+    filtered_masks: list[list[int]] = []
 
     for vec, mask in zip(label_vectors, label_masks):
         new_vec = [vec[j] for j in kept_indices]
@@ -186,12 +187,12 @@ def groupwise_split_indices_by_video(
     val_split: float,
     test_split: float,
     seed: int = 42,
-) -> Tuple[List[int], List[int], List[int]]:
+) -> tuple[list[int], list[int], list[int]]:
     validate_training_split_ratios(val_split, test_split)
     if len(frame_ids) != len(video_ids):
         raise ValueError("frame_ids and video_ids must have the same length")
 
-    groups: Dict[object, List[int]] = {}
+    groups: dict[object, list[int]] = {}
     for idx, (fid, video_id) in enumerate(zip(frame_ids, video_ids)):
         group_key = video_id if video_id is not None else f"no_video_{fid}"
         groups.setdefault(group_key, []).append(idx)
@@ -210,9 +211,9 @@ def groupwise_split_indices_by_video(
     val_group_ids = group_ids[n_groups - n_val - n_test : n_groups - n_test]
     test_group_ids = group_ids[n_groups - n_test :]
 
-    train_indices: List[int] = []
-    val_indices: List[int] = []
-    test_indices: List[int] = []
+    train_indices: list[int] = []
+    val_indices: list[int] = []
+    test_indices: list[int] = []
 
     for gid in train_group_ids:
         train_indices.extend(groups[gid])

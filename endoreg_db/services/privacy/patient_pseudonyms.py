@@ -3,7 +3,6 @@ Service for generating patient pseudonyms using SensitiveMeta sensitive_meta_log
 """
 
 import logging
-from typing import Tuple
 from django.db import transaction
 
 from endoreg_db.models.administration.person.patient.patient import Patient
@@ -13,7 +12,7 @@ from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 logger = logging.getLogger(__name__)
 
 
-def generate_patient_pseudonym(patient: Patient) -> Tuple[str, bool]:
+def generate_patient_pseudonym(patient: Patient) -> tuple[str, bool]:
     """
     Generate a pseudonym hash for an existing Patient using SensitiveMeta sensitive_meta_logic.
 
@@ -86,7 +85,7 @@ def validate_patient_for_pseudonym(patient: Patient) -> list[str]:
         patient: The Patient instance to validate
 
     Returns:
-        List of missing required fields (empty if all fields present)
+        list of missing required fields (empty if all fields present)
     """
     missing_fields: list[str] = []
 

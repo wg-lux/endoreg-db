@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid as uuid_lib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
+from collections.abc import Callable
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Protocol, TypeVar, cast
+from typing import Any, Literal, Protocol, TypeVar, cast
+from collections.abc import Callable
 
 from django.db import models, transaction
 from django.db.models import QuerySet

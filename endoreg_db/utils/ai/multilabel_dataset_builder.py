@@ -20,7 +20,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, TypedDict, cast
+from typing import Any, Optional, TypedDict, cast
 
 from django.db import models
 
@@ -61,13 +61,13 @@ class ImageMultilabelDataset(TypedDict):
         label_masks[i]   -> list[int]       of length == len(labels)
     """
 
-    image_paths: List[str]
-    label_vectors: List[List[Optional[int]]]
-    label_masks: List[List[int]]
-    labels: List[Label]
+    image_paths: list[str]
+    label_vectors: list[list[Optional[int]]]
+    label_masks: list[list[int]]
+    labels: list[Label]
     labelset: LabelSet
-    frame_ids: List[int]
-    video_ids: List[int]
+    frame_ids: list[int]
+    video_ids: list[int]
 
 
 def _new_frame_label_values() -> dict[int, dict[int, set[bool]]]:
@@ -101,13 +101,13 @@ class _FrameLabelAccumulator:
 
 @dataclass(slots=True)
 class _ImageMultilabelRows:
-    image_paths: List[str] = field(default_factory=list[str])
-    label_vectors: List[List[Optional[int]]] = field(
-        default_factory=list[List[Optional[int]]]
+    image_paths: list[str] = field(default_factory=list[str])
+    label_vectors: list[list[Optional[int]]] = field(
+        default_factory=list[list[Optional[int]]]
     )
-    label_masks: List[List[int]] = field(default_factory=list[List[int]])
-    frame_ids: List[int] = field(default_factory=list[int])
-    video_ids: List[int] = field(default_factory=list[int])
+    label_masks: list[list[int]] = field(default_factory=list[list[int]])
+    frame_ids: list[int] = field(default_factory=list[int])
+    video_ids: list[int] = field(default_factory=list[int])
 
 
 def _ensure_annotations_exist(
@@ -139,14 +139,14 @@ def _resolve_labelset(
     )
 
 
-def _labels_and_index(labelset: LabelSet) -> tuple[List[Label], Dict[int, int]]:
-    labels_in_order: List[Label] = labelset.get_labels_in_order()
+def _labels_and_index(labelset: LabelSet) -> tuple[list[Label], dict[int, int]]:
+    labels_in_order: list[Label] = labelset.get_labels_in_order()
     if not labels_in_order:
         labelset_id = int(getattr(labelset, "id"))
         raise ValueError(
             f"LabelSet id={labelset_id}, name='{labelset.name}' has no labels."
         )
-    label_index: Dict[int, int] = {
+    label_index: dict[int, int] = {
         int(cast(Any, label).id): index
         for index, label in enumerate(labels_in_order)
         if cast(Any, label).id is not None
@@ -208,10 +208,10 @@ def _label_vector(
     accumulator: _FrameLabelAccumulator,
     *,
     frame_id: int,
-    labels_in_order: List[Label],
-    label_index: Dict[int, int],
-) -> List[Optional[int]]:
-    vector: List[Optional[int]] = [None] * len(labels_in_order)
+    labels_in_order: list[Label],
+    label_index: dict[int, int],
+) -> list[Optional[int]]:
+    vector: list[Optional[int]] = [None] * len(labels_in_order)
     for label_id, values in accumulator.values_by_frame_label[frame_id].items():
         if len(values) > 1:
             label_name = labels_in_order[label_index[label_id]].name
@@ -228,7 +228,7 @@ def _append_dataset_row(
     *,
     frame: Frame,
     frame_id: int,
-    vector: List[Optional[int]],
+    vector: list[Optional[int]],
 ) -> None:
     file_path: Path = frame.file_path
     rows.image_paths.append(str(file_path))
@@ -241,8 +241,8 @@ def _append_dataset_row(
 def _build_dataset_rows(
     accumulator: _FrameLabelAccumulator,
     *,
-    labels_in_order: List[Label],
-    label_index: Dict[int, int],
+    labels_in_order: list[Label],
+    label_index: dict[int, int],
 ) -> _ImageMultilabelRows:
     rows = _ImageMultilabelRows()
     for frame_id in accumulator.frame_order:

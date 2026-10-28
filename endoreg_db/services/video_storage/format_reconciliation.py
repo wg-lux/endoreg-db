@@ -8,7 +8,8 @@ import shutil
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable, cast
+from typing import Any, cast
+from collections.abc import Iterable
 from uuid import uuid4
 
 from endoreg_db.utils.file_operations import (

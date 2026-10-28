@@ -7,7 +7,9 @@ from contextlib import ExitStack
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, ContextManager, Iterable, cast
+from contextlib import AbstractContextManager
+from typing import Any, cast
+from collections.abc import Iterable
 
 from lx_anonymizer.anonymization.masking import MaskApplication
 from lx_anonymizer.video_processing import video_utils
@@ -58,11 +60,11 @@ def _probe_dimensions(path: Path) -> tuple[int, int]:
     return (_coerce_int(width), _coerce_int(height))
 
 
-def _local_raw_context(video: VideoFile) -> ContextManager[Path]:
+def _local_raw_context(video: VideoFile) -> AbstractContextManager[Path]:
     return ensure_local_raw_video_file(video)
 
 
-def _local_processed_context(video: VideoFile) -> ContextManager[Path]:
+def _local_processed_context(video: VideoFile) -> AbstractContextManager[Path]:
     return ensure_local_processed_video_file(video)
 
 

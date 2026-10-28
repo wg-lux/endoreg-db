@@ -1,6 +1,7 @@
 from pathlib import Path
 from datetime import date, datetime, time
-from typing import Iterable, Protocol, Sequence, TypedDict, cast
+from typing import Protocol, TypedDict, cast
+from collections.abc import Iterable, Sequence
 from uuid import NAMESPACE_URL, UUID, uuid5
 
 from django.core.exceptions import ObjectDoesNotExist

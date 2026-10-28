@@ -8,13 +8,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
-    Iterable,
-    Iterator,
     Protocol,
     TypeAlias,
     TypedDict,
     cast,
 )
+from collections.abc import Iterable, Iterator
 
 from django.db.models import Q, QuerySet
 

@@ -3,7 +3,8 @@ from __future__ import annotations
 import logging
 from importlib import import_module
 from pathlib import Path
-from typing import Callable, Literal, Protocol, Sequence, cast
+from typing import Literal, Protocol, cast
+from collections.abc import Callable, Sequence
 
 from endoreg_db.config.secret_keyring import configured_master_keys
 

@@ -11,11 +11,11 @@ from typing import (
     Any,
     TYPE_CHECKING,
     Protocol,
-    Sequence,
     TypedDict,
     Unpack,
     cast,
 )
+from collections.abc import Sequence
 
 import numpy as np
 from django.core.exceptions import ValidationError

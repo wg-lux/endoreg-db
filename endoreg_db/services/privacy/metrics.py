@@ -4,7 +4,8 @@ import importlib.metadata
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from difflib import SequenceMatcher
-from typing import Any, Iterable, Literal, Mapping, Sequence, cast
+from typing import Any, Literal, cast
+from collections.abc import Iterable, Mapping, Sequence
 
 from django.contrib.auth.models import AnonymousUser
 from django.db.models import (

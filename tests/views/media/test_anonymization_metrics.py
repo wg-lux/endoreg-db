@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from datetime import date, timedelta
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import patch
 from uuid import uuid4
 

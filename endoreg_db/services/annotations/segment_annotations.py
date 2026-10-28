@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from typing import Protocol, cast
-from typing import Sequence
+from collections.abc import Sequence
 from django.db.models import Q, QuerySet
 
 from endoreg_db.helpers.model_ids import model_fk

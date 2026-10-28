@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Sequence, cast
+from typing import TYPE_CHECKING, cast
+from collections.abc import Sequence
 
 from django.db.models import QuerySet
 from lx_dtypes.models.contracts.aidataset_export import (

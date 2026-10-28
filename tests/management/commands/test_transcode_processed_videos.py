@@ -6,7 +6,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
+from collections.abc import Callable
 
 import pytest
 from django.core.files.base import ContentFile

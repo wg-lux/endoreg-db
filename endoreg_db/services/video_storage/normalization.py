@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable
+from collections.abc import Callable
 from uuid import uuid4
 
 from endoreg_db.schemas.video_storage import (

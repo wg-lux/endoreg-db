@@ -13,15 +13,14 @@ import contextlib
 import logging
 from pathlib import Path
 from uuid import uuid4
+from contextlib import AbstractContextManager
 from typing import (
     Any,
     BinaryIO,
-    ContextManager,
-    Generator,
-    Optional,
     Protocol,
     cast,
 )
+from collections.abc import Generator
 
 from django.core.files import File
 from endoreg_db.helpers.typing import DjangoFile
@@ -47,9 +46,9 @@ _DEFAULT_CHUNK_SIZE = 1024 * 1024  # 1 MiB
 class _VideoMaterializable(Protocol):
     raw_video_hash: str
 
-    def ensure_local_raw_file(self) -> ContextManager[Path]: ...
+    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
 
-    def ensure_local_processed_file(self) -> ContextManager[Path]: ...
+    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
 
     raw_file: FieldFile | None
     processed_file: FieldFile | None
@@ -80,7 +79,7 @@ def _has_field_file(field_file: object | None) -> bool:
     return bool(field_file and getattr(field_file, "name", None))
 
 
-def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
+def _resolve_local_path(field_file: FieldFile) -> Path | None:
     storage = getattr(field_file, "storage", None)
     if storage is not None and (
         hasattr(storage, "iter_decrypted_range")
@@ -99,7 +98,7 @@ def _resolve_local_path(field_file: FieldFile) -> Optional[Path]:
     return path
 
 
-def file_exists(field_file: Optional[FieldFile]) -> bool:
+def file_exists(field_file: FieldFile | None) -> bool:
     if not _has_field_file(field_file):
         return False
     assert field_file is not None
@@ -112,7 +111,7 @@ def file_exists(field_file: Optional[FieldFile]) -> bool:
         return False
 
 
-def field_file_is_readable(field_file: Optional[FieldFile]) -> bool:
+def field_file_is_readable(field_file: FieldFile | None) -> bool:
     if not file_exists(field_file):
         return False
     assert field_file is not None
@@ -127,7 +126,7 @@ def field_file_is_readable(field_file: Optional[FieldFile]) -> bool:
 def materialize_video_file(
     video: _VideoMaterializable,
     file_type: str,
-) -> ContextManager[Path]:
+) -> AbstractContextManager[Path]:
     """
     Return a context manager yielding a local plaintext file for a VideoFile payload.
 
@@ -146,7 +145,7 @@ def materialize_video_file(
         field_file = getattr(video, "raw_file", None)
 
     if callable(ensure_method):
-        return cast(ContextManager[Path], ensure_method())
+        return cast(AbstractContextManager[Path], ensure_method())
 
     if field_file and getattr(field_file, "name", None):
         return ensure_local_file(field_file)
@@ -199,7 +198,7 @@ def ensure_local_file(
 
 
 def delete_field_file(
-    target: Optional[FieldFile] | object,
+    target: FieldFile | None | object,
     field_name: str | None = None,
     *,
     missing_ok: bool = True,
@@ -218,7 +217,7 @@ def delete_field_file(
 
 
 def _delete_field_file_contents(
-    target: Optional[FieldFile] | object,
+    target: FieldFile | None | object,
     field_name: str | None = None,
     *,
     missing_ok: bool = True,
@@ -259,7 +258,7 @@ def save_local_file(
     field_file: FieldFile,
     source_path: Path,
     *,
-    name: Optional[str] = None,
+    name: str | None = None,
     save: bool = False,
     overwrite: bool = False,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
@@ -284,7 +283,7 @@ def _save_local_file_contents(
     field_file: FieldFile,
     source_path: Path,
     *,
-    name: Optional[str] = None,
+    name: str | None = None,
     save: bool = False,
     overwrite: bool = False,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,

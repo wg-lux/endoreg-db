@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Protocol, cast
+from collections.abc import Callable
 
 from django.contrib.admin.views.decorators import staff_member_required  # pyright: ignore[reportUnknownVariableType]
 from django.http import HttpRequest, HttpResponse
@@ -236,7 +237,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):
 
     @action(detail=True, methods=["get"], url_path="medical-terminology")
     def medical_terminology(self, request: Request, pk: int | None = None) -> Response:
-        """List canonical medication, laboratory and unit definitions for entry."""
+        """list canonical medication, laboratory and unit definitions for entry."""
         self.get_object()
         from endoreg_db.services.interoperability.medical_ledger import (
             medical_ledger_terminology,

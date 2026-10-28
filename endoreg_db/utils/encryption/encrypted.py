@@ -6,7 +6,8 @@ import io
 import os
 import tempfile
 from pathlib import Path
-from typing import BinaryIO, Iterator, Protocol, TypeAlias, cast
+from typing import BinaryIO, Protocol, TypeAlias, cast
+from collections.abc import Iterator
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File

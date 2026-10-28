@@ -6,7 +6,8 @@ import json
 import os
 import struct
 from dataclasses import dataclass
-from typing import BinaryIO, Iterator
+from typing import BinaryIO
+from collections.abc import Iterator
 from collections.abc import Buffer
 from cryptography.exceptions import InvalidTag
 from endoreg_db.utils.rust_backend import parse_encrypted_header

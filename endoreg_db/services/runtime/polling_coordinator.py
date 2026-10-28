@@ -4,7 +4,7 @@ import logging
 import threading
 from datetime import datetime, timedelta
 from collections.abc import Callable
-from typing import Any, Dict, Literal, Optional, cast
+from typing import Any, Literal, Optional, cast
 
 from django.core.cache import cache
 from django.utils import timezone
@@ -191,7 +191,7 @@ class PollingCoordinator:
         cache.set(cache_key, timezone.now().isoformat(), cls.CHECK_COOLDOWN + 5)
 
     @classmethod
-    def get_processing_locks_info(cls) -> Dict[str, Any]:
+    def get_processing_locks_info(cls) -> dict[str, Any]:
         """
         Get information about all currently active processing locks.
         Useful for debugging and monitoring.

@@ -5,7 +5,7 @@ import logging
 
 # Removed hash utils, datetime, random, os, timezone, sha256 imports
 # Removed icecream import (was used in old save sensitive_meta_logic)
-from typing import TYPE_CHECKING, ClassVar, Protocol, Type, Unpack, cast, Any
+from typing import TYPE_CHECKING, ClassVar, Protocol, Unpack, cast, Any
 
 from django.db import models, transaction
 from lx_dtypes.models.meta.SensitiveMeta import SensitiveMeta as LxSensitiveMeta
@@ -216,7 +216,7 @@ class SensitiveMeta(models.Model):
 
     @classmethod
     def create_from_dict(
-        cls: Type["SensitiveMeta"], data: dict[str, Any]
+        cls: type["SensitiveMeta"], data: dict[str, Any]
     ) -> "SensitiveMeta":
         """Creates a SensitiveMeta instance from a dictionary using external sensitive_meta_logic."""
         # Delegate to sensitive_meta_logic function

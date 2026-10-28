@@ -11,7 +11,8 @@ import time
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, BinaryIO, Iterable
+from typing import TYPE_CHECKING, Any, BinaryIO
+from collections.abc import Iterable
 from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile

@@ -4,7 +4,8 @@ import math
 from datetime import UTC, datetime
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
+from collections.abc import Callable
 
 from django.db import transaction
 from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject

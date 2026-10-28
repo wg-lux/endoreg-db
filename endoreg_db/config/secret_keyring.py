@@ -9,7 +9,8 @@ import os
 import stat
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Literal, cast
+from typing import Literal, cast
+from collections.abc import Callable
 
 import yaml
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator

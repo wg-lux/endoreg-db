@@ -12,7 +12,8 @@ from pathlib import Path
 import re
 import sys
 import tempfile
-from typing import cast, Iterable, Literal, Protocol
+from typing import cast, Literal, Protocol
+from collections.abc import Iterable
 
 import django
 from django.apps import apps

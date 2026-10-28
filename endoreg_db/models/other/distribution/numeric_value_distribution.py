@@ -5,7 +5,8 @@ from __future__ import annotations
 import numpy as np
 from django.db import models
 from scipy.stats import skewnorm
-from typing import TYPE_CHECKING, Callable, cast, Any
+from typing import TYPE_CHECKING, cast, Any
+from collections.abc import Callable
 
 from .base_value_distribution import BaseValueDistribution
 from lx_dtypes.models.contracts.numeric_value_distribution import (

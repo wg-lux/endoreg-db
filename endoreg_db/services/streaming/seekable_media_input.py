@@ -7,7 +7,8 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from queue import SimpleQueue
-from typing import Generator, Protocol, cast
+from typing import Protocol, cast
+from collections.abc import Generator
 from urllib.parse import urlsplit
 
 from endoreg_db.utils.storage_streaming import (

@@ -6,12 +6,13 @@ from PIL import Image
 from torchvision import transforms  # pyright: ignore[reportMissingTypeStubs]
 from .preprocess import Cropper
 import torch
-from typing import Any, Dict, Sequence, cast
+from typing import Any, cast
+from collections.abc import Sequence
 
 
 class InferenceDataset(Dataset[torch.Tensor]):
     def __init__(
-        self, paths: Sequence[str], crops: Sequence[Any], config: Dict[str, Any]
+        self, paths: Sequence[str], crops: Sequence[Any], config: dict[str, Any]
     ) -> None:
         self.paths = paths
         self.crops = crops
@@ -41,7 +42,7 @@ class InferenceDataset(Dataset[torch.Tensor]):
             # Get the corresponding crop for the current image
             crop = self.crops[idx]
 
-            # FIXED: scale von List [x, y] zu Tuple (x, y) geändert + Typen abgesichert
+            # FIXED: scale von list [x, y] zu Tuple (x, y) geändert + Typen abgesichert
             # Gesamte Cropper-Logik in den Context-Manager gezogen, um Typ-Leakage zu vermeiden
             cropped = self.cropper(
                 np.array(pil_image),  # Convert PIL image to numpy array for cropping

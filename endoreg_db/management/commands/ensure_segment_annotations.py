@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 from typing import TypedDict, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser

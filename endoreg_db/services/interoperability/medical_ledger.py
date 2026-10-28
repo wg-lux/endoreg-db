@@ -10,7 +10,8 @@ from collections.abc import Generator
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Literal, Mapping, cast
+from typing import Literal, cast
+from collections.abc import Mapping
 
 from django.db import IntegrityError, OperationalError, transaction
 from django.db.models import Prefetch, Q

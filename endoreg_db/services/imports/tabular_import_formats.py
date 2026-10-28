@@ -4,7 +4,8 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Mapping, cast
+from typing import Any, cast
+from collections.abc import Mapping
 
 import yaml
 

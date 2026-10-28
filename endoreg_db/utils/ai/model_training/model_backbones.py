@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional, Dict, Any, cast, Tuple
+from typing import Optional, Any, cast
 
 import torch
 from torch import nn
@@ -43,7 +43,7 @@ class MultiLabelBackboneHead(nn.Module):
 def _build_resnet50_backbone(
     weights: Optional[str],
     checkpoint: Optional[Path],
-) -> Tuple[nn.Module, int]:
+) -> tuple[nn.Module, int]:
     """
     Helper that returns:
       - backbone: ResNet50 without the final fc
@@ -65,7 +65,7 @@ def _build_resnet50_backbone(
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
         # FIX: Cast output to Any to stop Pyright from complaining about load function properties
-        raw_state: Dict[str, Any] | None = cast(Any, torch).load(
+        raw_state: dict[str, Any] | None = cast(Any, torch).load(
             checkpoint, map_location=device
         )
 
@@ -75,9 +75,9 @@ def _build_resnet50_backbone(
             state = raw_state
 
         # FIX: Strongly type the working dictionary to fix all cascade "Unknown" loop errors
-        state_dict = cast(Dict[str, torch.Tensor], state)
+        state_dict = cast(dict[str, torch.Tensor], state)
 
-        cleaned_state: Dict[str, torch.Tensor] = {}
+        cleaned_state: dict[str, torch.Tensor] = {}
         for k, v in state_dict.items():
             new_k = str(k)
             for prefix in ("module.", "backbone.", "encoder.", "model."):
@@ -104,7 +104,7 @@ def _build_resnet50_backbone(
     return backbone, in_features
 
 
-def _build_efficientnet_b0_backbone() -> Tuple[nn.Module, int]:
+def _build_efficientnet_b0_backbone() -> tuple[nn.Module, int]:
     """
     Example EfficientNet-B0 backbone with ImageNet weights.
     """

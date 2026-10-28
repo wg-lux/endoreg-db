@@ -72,7 +72,7 @@ class Finding(models.Model):
                 classification_type (str, optional): If provided, only classifications with a matching type name are returned.
 
         Returns:
-                List[FindingClassification]: List of related classification objects, filtered by type if specified.
+                list[FindingClassification]: list of related classification objects, filtered by type if specified.
         """
         if classification_type:
             return self.finding_classifications.filter(

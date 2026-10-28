@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 import yaml
 from icecream import ic
 from pydantic import BaseModel
@@ -21,7 +21,7 @@ class DbConfig(BaseModel):
     # class options should allow for unused excess data
 
     @classmethod
-    def from_file(cls, path: Union[Path, str]) -> "DbConfig":
+    def from_file(cls, path: Path | str) -> "DbConfig":
         """Create a DbConfig instance from a YAML configuration file."""
         if isinstance(path, str):
             filepath = Path(path)

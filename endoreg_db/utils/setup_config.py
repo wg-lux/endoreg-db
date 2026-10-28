@@ -103,7 +103,7 @@ class SetupConfig:
         Find model weight files using configured search patterns and directories.
 
         Returns:
-            List of paths to found weight files
+            list of paths to found weight files
         """
         found_files: list[Path] = []
         search_dirs = self.get_weights_search_dirs()

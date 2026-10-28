@@ -8,7 +8,8 @@ import json
 import logging
 from datetime import date, datetime
 from functools import wraps
-from typing import TYPE_CHECKING, Callable, ParamSpec, TypeVar
+from typing import TYPE_CHECKING, ParamSpec, TypeVar
+from collections.abc import Callable
 
 from django.db import connection, transaction
 from django.db.models import Q

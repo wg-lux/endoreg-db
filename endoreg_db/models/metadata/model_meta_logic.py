@@ -5,7 +5,8 @@ from logging import getLogger
 from pathlib import Path
 from django.core.files.base import ContentFile
 from collections.abc import Iterable, Sequence
-from typing import TYPE_CHECKING, Generator, Protocol, Unpack, cast
+from typing import TYPE_CHECKING, Protocol, Unpack, cast
+from collections.abc import Generator
 from uuid import uuid4
 
 from django.db import transaction

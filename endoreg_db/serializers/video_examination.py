@@ -80,7 +80,7 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
             obj: PatientExamination instance
 
         Returns:
-            List of finding dictionaries with basic metadata
+            list of finding dictionaries with basic metadata
         """
         patient_findings = obj.get_findings().select_related("finding")
         return [

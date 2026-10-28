@@ -1,15 +1,14 @@
 """Create pydantic classes for ntx data."""
 
 from pydantic import BaseModel
-from typing import List, Optional
 
 
 # Patient data model
 class PatientData(BaseModel):
     patient_id_ntx: str
-    patient_ids_ukw: List[str] = []
-    case_ids_ukw: List[str] = []
-    transplant_ids: List[str] = []
+    patient_ids_ukw: list[str] = []
+    case_ids_ukw: list[str] = []
+    transplant_ids: list[str] = []
     patient_hash: str
     first_name: str
     last_name: str
@@ -21,194 +20,194 @@ class PatientData(BaseModel):
 
 # Lab data model
 class LabData(BaseModel):
-    patient_id_ntx: Optional[str]
+    patient_id_ntx: str | None
     patient_id_ukw: str
     case_id_ukw: str
     test_name: str
     test_value: str
     test_datetime: str  # ISO format date string
-    transplant_id: Optional[str] = None
+    transplant_id: str | None = None
 
 
 # Readout data model
 class ReadoutData(BaseModel):
     transplant_id: str
-    patient_id_ntx: Optional[str] = None
-    patient_id_ukw: Optional[str] = None
-    transplant_date: Optional[str] = None  # ISO format date string
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    dob: Optional[str] = None  # ISO format date string
-    patient_hash: Optional[str] = None
-    age_at_transplant: Optional[float] = None
-    transplant_number: Optional[int] = None
-    wait_time_esrd_to_transplant: Optional[float] = None
-    lsp_flag: Optional[bool] = None
-    aboi_flag: Optional[bool] = None
-    np_tx_flag: Optional[bool] = None
-    donor_age: Optional[int] = None
-    esp_flag: Optional[bool] = None
-    donor_gender: Optional[str] = None
-    donor_cause_of_death_category: Optional[str] = None
-    serum_creatinine_procurement: Optional[float] = None
-    cold_ischemia_time_hours: Optional[float] = None
-    delayed_graft_function: Optional[bool] = None
-    primary_disease: Optional[str] = None
-    primary_disease_category: Optional[str] = None
-    on_hemodialysis: Optional[bool] = None
-    on_peritoneal_dialysis: Optional[bool] = None
-    post_code: Optional[str] = None
-    distance_home_to_tx_center: Optional[float] = None
-    distance_category: Optional[str] = None
-    visits_tx_center_year1: Optional[float] = None
-    visits_tx_center_year2_plus: Optional[float] = None
-    follow_up_by: Optional[str] = None
-    graft_loss_date: Optional[str] = None
-    graft_loss_or_death_date: Optional[str] = None
-    date_of_death: Optional[str] = None
-    graft_loss: Optional[bool] = None
-    graft_survival_months: Optional[float] = None
-    is_deceased: Optional[bool] = None
-    patient_survival_months: Optional[float] = None
-    discontinued_graft_loss: Optional[bool] = None
-    discontinued_graft_survival_months: Optional[float] = None
-    graft_loss_cause: Optional[str] = None
-    cause_of_death: Optional[str] = None
-    maintenance_csa: Optional[bool] = None
-    maintenance_tac: Optional[bool] = None
-    maintenance_aza: Optional[bool] = None
-    maintenance_mmf: Optional[bool] = None
-    maintenance_rapamycin: Optional[bool] = None
-    maintenance_prednisone: Optional[bool] = None
-    acute_rejection_steroid_sensitive: Optional[bool] = None
-    acute_rejection_steroid_resistant: Optional[bool] = None
-    chronic_rejection: Optional[bool] = None
-    recurrent_urinary_tract_infections: Optional[bool] = None
-    cmv_infection: Optional[bool] = None
-    cmv_disease: Optional[bool] = None
-    malignancy: Optional[bool] = None
-    egfr_year_1: Optional[float] = None
-    egfr_year_3: Optional[float] = None
-    egfr_year_5: Optional[float] = None
-    egfr_year_10: Optional[float] = None
-    egfr_year_15: Optional[float] = None
-    egfr_year_20: Optional[float] = None
-    tpu_year_1: Optional[float] = None
-    tpu_year_3: Optional[float] = None
-    tpu_year_5: Optional[float] = None
-    tpu_year_10: Optional[float] = None
-    tpu_year_15: Optional[float] = None
-    tpu_year_20: Optional[float] = None
+    patient_id_ntx: str | None = None
+    patient_id_ukw: str | None = None
+    transplant_date: str | None = None  # ISO format date string
+    first_name: str | None = None
+    last_name: str | None = None
+    dob: str | None = None  # ISO format date string
+    patient_hash: str | None = None
+    age_at_transplant: float | None = None
+    transplant_number: int | None = None
+    wait_time_esrd_to_transplant: float | None = None
+    lsp_flag: bool | None = None
+    aboi_flag: bool | None = None
+    np_tx_flag: bool | None = None
+    donor_age: int | None = None
+    esp_flag: bool | None = None
+    donor_gender: str | None = None
+    donor_cause_of_death_category: str | None = None
+    serum_creatinine_procurement: float | None = None
+    cold_ischemia_time_hours: float | None = None
+    delayed_graft_function: bool | None = None
+    primary_disease: str | None = None
+    primary_disease_category: str | None = None
+    on_hemodialysis: bool | None = None
+    on_peritoneal_dialysis: bool | None = None
+    post_code: str | None = None
+    distance_home_to_tx_center: float | None = None
+    distance_category: str | None = None
+    visits_tx_center_year1: float | None = None
+    visits_tx_center_year2_plus: float | None = None
+    follow_up_by: str | None = None
+    graft_loss_date: str | None = None
+    graft_loss_or_death_date: str | None = None
+    date_of_death: str | None = None
+    graft_loss: bool | None = None
+    graft_survival_months: float | None = None
+    is_deceased: bool | None = None
+    patient_survival_months: float | None = None
+    discontinued_graft_loss: bool | None = None
+    discontinued_graft_survival_months: float | None = None
+    graft_loss_cause: str | None = None
+    cause_of_death: str | None = None
+    maintenance_csa: bool | None = None
+    maintenance_tac: bool | None = None
+    maintenance_aza: bool | None = None
+    maintenance_mmf: bool | None = None
+    maintenance_rapamycin: bool | None = None
+    maintenance_prednisone: bool | None = None
+    acute_rejection_steroid_sensitive: bool | None = None
+    acute_rejection_steroid_resistant: bool | None = None
+    chronic_rejection: bool | None = None
+    recurrent_urinary_tract_infections: bool | None = None
+    cmv_infection: bool | None = None
+    cmv_disease: bool | None = None
+    malignancy: bool | None = None
+    egfr_year_1: float | None = None
+    egfr_year_3: float | None = None
+    egfr_year_5: float | None = None
+    egfr_year_10: float | None = None
+    egfr_year_15: float | None = None
+    egfr_year_20: float | None = None
+    tpu_year_1: float | None = None
+    tpu_year_3: float | None = None
+    tpu_year_5: float | None = None
+    tpu_year_10: float | None = None
+    tpu_year_15: float | None = None
+    tpu_year_20: float | None = None
 
 
 # Transplant / registry data model
 class TransplantData(BaseModel):
     # identifiers
-    transplant_id: Optional[str] = None
-    patient_id_ntx: Optional[str] = None
-    patient_id_ukw: Optional[str] = None
+    transplant_id: str | None = None
+    patient_id_ntx: str | None = None
+    patient_id_ukw: str | None = None
 
     # demographics
-    first_name: Optional[str] = None
-    last_name: Optional[str] = None
-    dob: Optional[str] = None
-    post_code: Optional[str] = None
-    city: Optional[str] = None
-    street: Optional[str] = None
+    first_name: str | None = None
+    last_name: str | None = None
+    dob: str | None = None
+    post_code: str | None = None
+    city: str | None = None
+    street: str | None = None
 
     # transplant context
-    transplant_date: Optional[str] = None
-    age_at_transplant: Optional[float] = None
-    transplant_number: Optional[int] = None
-    wait_time_esrd_to_transplant: Optional[float] = None
-    total_transplant_duration: Optional[float] = None
-    lsp_flag: Optional[bool] = None
-    aboi_flag: Optional[bool] = None
-    np_tx_flag: Optional[bool] = None
-    living_donor: Optional[bool] = None
-    esp_flag: Optional[bool] = None
-    donor_age: Optional[int] = None
-    donor_gender: Optional[str] = None
-    donor_cause_of_death_category: Optional[str] = None
-    serum_creatinine_procurement: Optional[float] = None
-    cold_ischemia_time_hours: Optional[float] = None
-    delayed_graft_function: Optional[bool] = None
+    transplant_date: str | None = None
+    age_at_transplant: float | None = None
+    transplant_number: int | None = None
+    wait_time_esrd_to_transplant: float | None = None
+    total_transplant_duration: float | None = None
+    lsp_flag: bool | None = None
+    aboi_flag: bool | None = None
+    np_tx_flag: bool | None = None
+    living_donor: bool | None = None
+    esp_flag: bool | None = None
+    donor_age: int | None = None
+    donor_gender: str | None = None
+    donor_cause_of_death_category: str | None = None
+    serum_creatinine_procurement: float | None = None
+    cold_ischemia_time_hours: float | None = None
+    delayed_graft_function: bool | None = None
 
     # follow-up / outcomes
-    follow_up_by: Optional[str] = None
-    graft_loss: Optional[bool] = None
-    graft_loss_date: Optional[str] = None
-    graft_loss_or_death_date: Optional[str] = None
-    graft_loss_cause: Optional[str] = None
-    graft_survival_months: Optional[float] = None
-    discontinued_graft_loss: Optional[bool] = None
-    discontinued_graft_survival_months: Optional[float] = None
-    is_deceased: Optional[bool] = None
-    date_of_death: Optional[str] = None
-    patient_survival_months: Optional[float] = None
-    cause_of_death: Optional[str] = None
-    dialysis_restart_date: Optional[str] = None
-    lost_to_follow_up: Optional[bool] = None
+    follow_up_by: str | None = None
+    graft_loss: bool | None = None
+    graft_loss_date: str | None = None
+    graft_loss_or_death_date: str | None = None
+    graft_loss_cause: str | None = None
+    graft_survival_months: float | None = None
+    discontinued_graft_loss: bool | None = None
+    discontinued_graft_survival_months: float | None = None
+    is_deceased: bool | None = None
+    date_of_death: str | None = None
+    patient_survival_months: float | None = None
+    cause_of_death: str | None = None
+    dialysis_restart_date: str | None = None
+    lost_to_follow_up: bool | None = None
 
     # disease & comorbidities
-    primary_disease: Optional[str] = None
-    primary_disease_category: Optional[str] = None
-    diabetes: Optional[bool] = None
-    ptdm: Optional[bool] = None
-    malignancy: Optional[bool] = None
+    primary_disease: str | None = None
+    primary_disease_category: str | None = None
+    diabetes: bool | None = None
+    ptdm: bool | None = None
+    malignancy: bool | None = None
 
     # dialysis & follow-up logistics
-    on_hemodialysis: Optional[bool] = None
-    on_peritoneal_dialysis: Optional[bool] = None
-    dialysis_center: Optional[str] = None
-    distance_home_to_tx_center: Optional[float] = None
-    distance_category: Optional[str] = None
-    visits_tx_center_year1: Optional[float] = None
-    visits_tx_center_year2_plus: Optional[float] = None
+    on_hemodialysis: bool | None = None
+    on_peritoneal_dialysis: bool | None = None
+    dialysis_center: str | None = None
+    distance_home_to_tx_center: float | None = None
+    distance_category: str | None = None
+    visits_tx_center_year1: float | None = None
+    visits_tx_center_year2_plus: float | None = None
 
     # anthropometrics
-    height_cm: Optional[float] = None
-    weight_kg: Optional[float] = None
+    height_cm: float | None = None
+    weight_kg: float | None = None
 
     # infections / serology
-    cmv_igg_donor: Optional[str] = None
-    cmv_igg_recipient: Optional[str] = None
-    cmv_infection: Optional[bool] = None
-    cmv_disease: Optional[bool] = None
-    recurrent_urinary_tract_infections: Optional[bool] = None
+    cmv_igg_donor: str | None = None
+    cmv_igg_recipient: str | None = None
+    cmv_infection: bool | None = None
+    cmv_disease: bool | None = None
+    recurrent_urinary_tract_infections: bool | None = None
 
     # immunosuppression
-    okt_induction: Optional[bool] = None
-    atg_induction: Optional[bool] = None
-    simulect_induction: Optional[bool] = None
-    on_csa: Optional[bool] = None
-    on_tac: Optional[bool] = None
-    on_aza: Optional[bool] = None
-    on_mmf: Optional[bool] = None
-    on_steroids: Optional[bool] = None
-    maintenance_csa: Optional[bool] = None
-    maintenance_tac: Optional[bool] = None
-    maintenance_aza: Optional[bool] = None
-    maintenance_mmf: Optional[bool] = None
-    maintenance_rapamycin: Optional[bool] = None
-    maintenance_prednisone: Optional[bool] = None
-    acute_rejection_steroid_sensitive: Optional[bool] = None
-    acute_rejection_steroid_resistant: Optional[bool] = None
-    chronic_rejection: Optional[bool] = None
+    okt_induction: bool | None = None
+    atg_induction: bool | None = None
+    simulect_induction: bool | None = None
+    on_csa: bool | None = None
+    on_tac: bool | None = None
+    on_aza: bool | None = None
+    on_mmf: bool | None = None
+    on_steroids: bool | None = None
+    maintenance_csa: bool | None = None
+    maintenance_tac: bool | None = None
+    maintenance_aza: bool | None = None
+    maintenance_mmf: bool | None = None
+    maintenance_rapamycin: bool | None = None
+    maintenance_prednisone: bool | None = None
+    acute_rejection_steroid_sensitive: bool | None = None
+    acute_rejection_steroid_resistant: bool | None = None
+    chronic_rejection: bool | None = None
 
     # longitudinal kidney function
-    egfr_year_1: Optional[float] = None
-    egfr_year_3: Optional[float] = None
-    egfr_year_5: Optional[float] = None
-    egfr_year_10: Optional[float] = None
-    egfr_year_15: Optional[float] = None
-    egfr_year_20: Optional[float] = None
-    tpu_year_1: Optional[float] = None
-    tpu_year_3: Optional[float] = None
-    tpu_year_5: Optional[float] = None
-    tpu_year_10: Optional[float] = None
-    tpu_year_15: Optional[float] = None
-    tpu_year_20: Optional[float] = None
+    egfr_year_1: float | None = None
+    egfr_year_3: float | None = None
+    egfr_year_5: float | None = None
+    egfr_year_10: float | None = None
+    egfr_year_15: float | None = None
+    egfr_year_20: float | None = None
+    tpu_year_1: float | None = None
+    tpu_year_3: float | None = None
+    tpu_year_5: float | None = None
+    tpu_year_10: float | None = None
+    tpu_year_15: float | None = None
+    tpu_year_20: float | None = None
 
     # derived identifiers
-    patient_hash: Optional[str] = None
+    patient_hash: str | None = None

@@ -5,7 +5,8 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest

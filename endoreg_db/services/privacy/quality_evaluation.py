@@ -5,7 +5,8 @@ import re
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any, Iterable, Literal, Mapping, Protocol, cast
+from typing import Any, Literal, Protocol, cast
+from collections.abc import Iterable, Mapping
 
 from django.db import transaction
 from django.db.models import Q

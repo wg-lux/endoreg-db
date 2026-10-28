@@ -242,7 +242,6 @@ def test_check_report_media_integrity_reports_missing_hash() -> None:
 
 
 def test_expectation_for_upload_job_uses_upload_tier_and_variants() -> None:
-
     assert (
         media_integrity._expectation_for_upload_job(
             cast(

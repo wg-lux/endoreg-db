@@ -919,7 +919,7 @@ def sensitive_metadata_list(request: Request) -> Response:
     """
     GET /api/media/sensitive-metadata/
 
-    List all sensitive metadata (combined reports and Videos).
+    list all sensitive metadata (combined reports and Videos).
     Supports filtering by content_type, status, etc.
 
     Query parameters:
@@ -982,7 +982,7 @@ def pdf_sensitive_metadata_list(request: Request) -> Response:
     """
     GET /api/media/pdfs/sensitive-metadata/
 
-    List sensitive metadata for reports only.
+    list sensitive metadata for reports only.
     Replaces legacy /api/pdf/sensitivemeta/list/
     """
     # Get all reports with sensitive metadata

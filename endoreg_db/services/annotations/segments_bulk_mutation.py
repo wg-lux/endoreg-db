@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Callable, Protocol, TypedDict, cast
+from typing import Any, Protocol, TypedDict, cast
+from collections.abc import Callable
 
 from django.shortcuts import get_object_or_404
 from rest_framework import status

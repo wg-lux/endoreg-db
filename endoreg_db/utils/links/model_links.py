@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Protocol, Sequence, cast
+from typing import TYPE_CHECKING, Protocol, cast
+from collections.abc import Sequence
 
 from pydantic import BaseModel, Field, SkipValidation
 
@@ -166,16 +167,16 @@ class ModelLinks(BaseModel):
     A collection of linked domain models gathered from a clinical object graph.
 
     Attributes:
-        examinations (List[Examination]): A List of examinations.
-        examination_indications (List[ExaminationIndication]): A List of examination indications.
-        lab_values (List[LabValue]): A List of lab values.
-        diseases (List[Disease]): A List of diseases.
-        disease_classification_choices (List[DiseaseClassificationChoice]): A List of disease classification choices.
-        events (List[Event]): A List of events.
-        findings (List[Finding]): A List of findings.
-        finding_morphology_classification_choices (List[FindingMorphologyClassificationChoice]): A List of finding morphology classification choices.
-        finding_location_classification_choices (List[FindingLocationClassificationChoice]): A List of finding location classification choices.
-        finding_interventions (List[FindingIntervention]): A List of finding interventions.
+        examinations (list[Examination]): A list of examinations.
+        examination_indications (list[ExaminationIndication]): A list of examination indications.
+        lab_values (list[LabValue]): A list of lab values.
+        diseases (list[Disease]): A list of diseases.
+        disease_classification_choices (list[DiseaseClassificationChoice]): A list of disease classification choices.
+        events (list[Event]): A list of events.
+        findings (list[Finding]): A list of findings.
+        finding_morphology_classification_choices (list[FindingMorphologyClassificationChoice]): A list of finding morphology classification choices.
+        finding_location_classification_choices (list[FindingLocationClassificationChoice]): A list of finding location classification choices.
+        finding_interventions (list[FindingIntervention]): A list of finding interventions.
     """
 
     model_config = {"arbitrary_types_allowed": True}

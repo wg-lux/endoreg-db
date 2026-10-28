@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Literal, Mapping
+from typing import Any, Literal
+from collections.abc import Mapping
 
 from lx_dtypes.models.contracts.aidataset_export import AIDataSetExportSummary
 from pydantic import BaseModel, ConfigDict, Field, field_validator

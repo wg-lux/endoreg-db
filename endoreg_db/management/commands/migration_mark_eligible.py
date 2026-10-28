@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, Sequence, TypedDict, Unpack, cast
+from typing import Protocol, TypedDict, Unpack, cast
+from collections.abc import Sequence
 
 from django.core.management.base import BaseCommand, CommandParser
 from django.db.models import QuerySet

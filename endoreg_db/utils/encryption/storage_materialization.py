@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Generator, Protocol
+from typing import Protocol
+from collections.abc import Generator
 from uuid import uuid4
 
 from endoreg_db.utils.file_operations import atomic_create_file, safe_unlink_file

@@ -14,7 +14,8 @@ from collections import defaultdict
 from dataclasses import dataclass
 from functools import wraps
 from threading import RLock
-from typing import Any, Callable, Dict, Hashable, Iterator, Optional
+from typing import Any, Optional
+from collections.abc import Callable, Hashable, Iterator
 
 from _pytest.config import Config
 from _pytest.terminal import TerminalReporter
@@ -37,7 +38,7 @@ GLOBAL_CACHE_MANAGER: Optional["CacheManager"] = None
 class _NamespaceStore:
     """Simple container for a namespace store and lock."""
 
-    data: Dict[Hashable, Any]
+    data: dict[Hashable, Any]
     lock: RLock
 
 
@@ -45,7 +46,7 @@ class CacheManager:
     """Central cache manager with support for namespaced storage."""
 
     def __init__(self) -> None:
-        self._stores: Dict[str, _NamespaceStore] = defaultdict(
+        self._stores: dict[str, _NamespaceStore] = defaultdict(
             lambda: _NamespaceStore({}, RLock())
         )
         self._debug = os.environ.get("PYTEST_CACHE_DEBUG", "0") not in (
@@ -97,7 +98,7 @@ class CacheManager:
         for namespace in list(self._stores.keys()):
             self.invalidate(namespace)
 
-    def items(self, namespace: str) -> Dict[Hashable, Any]:
+    def items(self, namespace: str) -> dict[Hashable, Any]:
         store = self._stores.get(namespace)
         if store is None:
             return {}

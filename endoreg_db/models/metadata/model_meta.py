@@ -6,7 +6,8 @@ including versioning, configuration, and associated weights files.
 Logic is primarily handled in model_meta_logic.py.
 """
 
-from typing import TYPE_CHECKING, Callable, ClassVar, Unpack, cast, Any
+from typing import TYPE_CHECKING, ClassVar, Unpack, cast, Any
+from collections.abc import Callable
 
 from django.core.validators import FileExtensionValidator
 from django.db import models

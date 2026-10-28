@@ -7,7 +7,8 @@ import hashlib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterator, TypedDict, cast
+from typing import Any, TypedDict, cast
+from collections.abc import Iterator
 from unittest.mock import Mock
 
 import pytest

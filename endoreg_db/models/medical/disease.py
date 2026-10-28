@@ -79,7 +79,7 @@ class Disease(models.Model):
         Retrieves all classification systems associated with this disease.
 
         Returns:
-            List[DiseaseClassification]: A list of related disease classification objects.
+            list[DiseaseClassification]: A list of related disease classification objects.
         """
         classifications = [item for item in self.disease_classifications.all()]
         return classifications
@@ -134,7 +134,7 @@ class DiseaseClassification(models.Model):
         Retrieves all choices within this classification system.
 
         Returns:
-            List[DiseaseClassificationChoice]: A list of related disease classification choices.
+            list[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
         choices = [item for item in self.disease_classification_choices.all()]
         return choices

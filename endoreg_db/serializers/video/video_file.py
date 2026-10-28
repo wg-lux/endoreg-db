@@ -181,7 +181,7 @@ class VideoFileSerializer(serializers.ModelSerializer[VideoFile]):
             obj (Video): The video instance to extract label names from.
 
         Returns:
-            list[str]: List of label names, or an empty list if no sequences are found.
+            list[str]: list of label names, or an empty list if no sequences are found.
         """
         return list(obj.sequences.keys()) if obj.sequences else []
 

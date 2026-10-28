@@ -6,7 +6,8 @@ import math
 from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
+from collections.abc import Iterable
 from uuid import uuid4
 
 from endoreg_db.services.video_storage.canonical_timelines import (

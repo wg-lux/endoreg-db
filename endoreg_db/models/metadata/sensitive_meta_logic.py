@@ -5,7 +5,8 @@ import logging
 import random
 import re  # Neu hinzugefügt für Regex-Pattern
 from datetime import date, datetime, timedelta
-from typing import TYPE_CHECKING, Mapping, Optional, Protocol, Type, cast
+from typing import TYPE_CHECKING, Optional, Protocol, cast
+from collections.abc import Mapping
 
 from django.db import connection, transaction
 from django.db.models import Q
@@ -606,7 +607,7 @@ _EXAMINATION_DATE_FIELD_REFERENCES = frozenset(
 
 
 def _selected_model_data(
-    cls: Type["SensitiveMeta"],
+    cls: type["SensitiveMeta"],
     data: Mapping[str, object],
     *,
     excluded_fields: frozenset[str] = frozenset(),
@@ -615,7 +616,7 @@ def _selected_model_data(
     return _filter_selected_data(data, field_names, excluded_fields)
 
 
-def _model_data_field_names(cls: Type["SensitiveMeta"]) -> set[str]:
+def _model_data_field_names(cls: type["SensitiveMeta"]) -> set[str]:
     return {field.name for field in cls._meta.get_fields() if _is_data_field(field)}
 
 
@@ -898,7 +899,7 @@ def _set_create_anonymized_text(
 
 
 def create_sensitive_meta_from_dict(
-    cls: Type["SensitiveMeta"], data: Mapping[str, object]
+    cls: type["SensitiveMeta"], data: Mapping[str, object]
 ) -> "SensitiveMeta":
     """
     Create a SensitiveMeta instance from a dictionary.
@@ -1324,7 +1325,7 @@ def update_sensitive_meta_from_dict(
 
 
 def update_or_create_sensitive_meta_from_dict(
-    cls: Type["SensitiveMeta"],
+    cls: type["SensitiveMeta"],
     data: Mapping[str, object],
     instance: Optional["SensitiveMeta"] = None,
 ):

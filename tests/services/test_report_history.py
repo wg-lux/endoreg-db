@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from datetime import date, time
 from types import SimpleNamespace
-from typing import Callable, cast
+from typing import cast
+from collections.abc import Callable
 
 import pytest
 from django.test import TestCase
