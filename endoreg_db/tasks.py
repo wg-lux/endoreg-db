@@ -4,7 +4,20 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from celery import shared_task
+from celery import shared_task, current_app
+from celery.signals import worker_ready
+
+
+@worker_ready.connect
+def resume_import_stacks_on_worker_restart(**_kwargs: object) -> None:
+    """Existing maintenance routing rediscoveries also run after a worker restart."""
+    from endoreg_db.services.jobs.heavy_jobs import WorkloadQueue, queue_name
+
+    queue = queue_name(WorkloadQueue.MAINTENANCE)
+    current_app.send_task(
+        "endoreg_db.retry_due_upload_jobs", queue=queue, routing_key=queue
+    )
+
 
 if TYPE_CHECKING:
     from celery import Task

@@ -19,9 +19,9 @@ from endoreg_db.services.imports.lease import (
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
+    admit_upload_job_recovery,
     validate_upload_job_interrupted_retry,
     validate_upload_job_interruption,
-    validate_upload_job_status_transition,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event
 from endoreg_db.utils.storage import file_exists
@@ -450,16 +450,14 @@ def recover_interrupted_upload_jobs(*, limit: int = 100) -> int:
             job = eligible.select_for_update(of=("self",)).filter(pk=job_id).first()
             if job is None or not file_exists(job.file):
                 continue
-            validate_upload_job_status_transition(
-                current_status=job.status, target_status=UploadJob.Status.RETRYING.value
-            )
             # This coordinator owns the locked interruption, unlike ordinary
             # worker transitions which must continue rejecting that marker.
-            job.schedule_retry(
+            if not admit_upload_job_recovery(
+                job,
                 "Automatically retrying a fenced interrupted import from its retained source.",
-                error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
                 delay_seconds=retry_delay_seconds(job.retry_count),
-            )
+            ):
+                continue
             emit_structured_event(
                 logger,
                 "video_import.interrupted_retry_scheduled",

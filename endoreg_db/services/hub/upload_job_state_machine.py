@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 
-from django.db import transaction
+from django.db import transaction, IntegrityError
+from django.db.models import Field, UniqueConstraint
 
 from endoreg_db.models.hub.upload_job import UploadJob, UploadJobSensitiveMeta
 from endoreg_db.services.runtime.lifecycle_state_machine import (
@@ -163,6 +164,9 @@ def mark_upload_job_completed(
         target_status=UploadJob.Status.ANONYMIZED.value,
     )
     upload_job.mark_completed(sensitive_meta=sensitive_meta)
+    from endoreg_db.services.imports.processing import complete_import_processing_stack
+
+    complete_import_processing_stack(upload_job)
 
 
 @transaction.atomic
@@ -234,6 +238,76 @@ def validate_upload_job_interrupted_retry(*, current_status: str) -> None:
             "native UploadJob interrupted-retry reduction produced unexpected "
             f"state: {recovered_state.value}"
         )
+
+
+def recovery_identity_conflict(upload_job: UploadJob) -> bool:
+    """Query the model's authoritative conditional unique identities."""
+    for constraint in UploadJob._meta.constraints:
+        if not isinstance(constraint, UniqueConstraint) or constraint.condition is None:
+            continue
+        identity: dict[str, object] = {}
+        for field in constraint.fields:
+            model_field = UploadJob._meta.get_field(field)
+            if not isinstance(model_field, Field):
+                raise RuntimeError("Recovery identity must use concrete model fields")
+            identity[field] = getattr(upload_job, model_field.attname)
+        if constraint.nulls_distinct is not False and any(
+            value is None for value in identity.values()
+        ):
+            continue
+        if (
+            UploadJob.objects.filter(constraint.condition, **identity)
+            .exclude(pk=upload_job.pk)
+            .exists()
+        ):
+            return True
+    return False
+
+
+@transaction.atomic
+def admit_upload_job_recovery(
+    upload_job: UploadJob, error_detail: str, *, delay_seconds: int
+) -> bool:
+    """Admit an idle failed snapshot without expanding its retry budget."""
+    if delay_seconds < 1:
+        raise ValueError("delay_seconds must be positive")
+    _guard_interrupted_upload_job(upload_job, allow_interrupted=True)
+    upload_job.refresh_from_db()
+    if (
+        upload_job.status != UploadJob.Status.ERROR
+        or upload_job.error_code
+        not in {
+            UploadJob.ErrorCode.PROCESSING_FAILED,
+            UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+        }
+        or upload_job.processing_lease_owner
+        or upload_job.processing_lease_expires_at is not None
+        or upload_job.cancellation_requested_at is not None
+        or upload_job.cleanup_status
+        not in {UploadJob.CleanupStatus.PENDING, UploadJob.CleanupStatus.SKIPPED}
+        or upload_job.retry_count >= upload_job.max_retries
+    ):
+        return False
+    # Reuse the model's unique identities and predicates; recovery must not
+    # create a second active owner of content or an idempotency scope.
+    if recovery_identity_conflict(upload_job):
+        return False
+    validate_upload_job_status_transition(
+        current_status=upload_job.status,
+        target_status=UploadJob.Status.RETRYING.value,
+    )
+    try:
+        with transaction.atomic():
+            return upload_job.schedule_retry(
+                error_detail,
+                error_code=UploadJob.ErrorCode.PROCESSING_FAILED.value,
+                delay_seconds=delay_seconds,
+            )
+    except IntegrityError:
+        if not recovery_identity_conflict(upload_job):
+            raise
+        upload_job.refresh_from_db()
+        return False
 
 
 @transaction.atomic

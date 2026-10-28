@@ -399,6 +399,27 @@ inventory::submit! {
 
 define_stub_info_gatherer!(stub_info);
 
+inventory::submit! {
+    PyFunctionInfo {
+        name: "new_import_processing_stack",
+        args: &[ArgInfo { name: "reference", r#type: stub_type_str }, ArgInfo { name: "media_type", r#type: stub_type_str }],
+        r#return: stub_type_str, doc: "Create a durable import processing stack.", signature: Some("reference: str, media_type: str"), module: None,
+    }
+}
+fn stub_type_optional_str() -> TypeInfo {
+    TypeInfo::builtin("str | None")
+}
+fn stub_type_optional_int() -> TypeInfo {
+    TypeInfo::builtin("int | None")
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "transition_import_processing_stack",
+        args: &[ArgInfo { name: "payload", r#type: stub_type_str }, ArgInfo { name: "event", r#type: stub_type_str }, ArgInfo { name: "media_id", r#type: stub_type_optional_int }, ArgInfo { name: "source_sha256", r#type: stub_type_optional_str }],
+        r#return: stub_type_str, doc: "Validate and advance a durable import processing stack.", signature: Some("payload: str, event: str, media_id: int | None = None, source_sha256: str | None = None"), module: None,
+    }
+}
+
 fn stub_type_list_bytes() -> TypeInfo {
     TypeInfo::builtin("list[bytes]")
 }

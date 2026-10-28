@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # Direct private-method coverage is intentional in this focused unit suite.
 # pyright: reportPrivateUsage=false, reportMissingTypeStubs=false
-from collections.abc import Generator
+from collections.abc import Generator, Callable
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
 from typing import cast
@@ -38,6 +38,14 @@ def service(monkeypatch: pytest.MonkeyPatch) -> ReportImportService:
     """Construct the service without loading the external anonymizer runtime."""
     monkeypatch.setattr(report_import_module, "validate_directories", Mock())
     monkeypatch.setattr(report_import_module, "ReportAnonymizer", Mock())
+
+    def prepared(
+        ctx: ImportContext, prepare: Callable[[ImportContext], ImportContext]
+    ) -> nullcontext[ImportContext]:
+        return nullcontext(prepare(ctx))
+
+    monkeypatch.setattr(report_import_module, "prepared_import_artifact", prepared)
+    monkeypatch.setattr(report_import_module, "clear_import_checkpoint", Mock())
     instance = ReportImportService()
     monkeypatch.setattr(instance, "_validate_ocr_runtime", Mock())
     return instance
@@ -931,7 +939,8 @@ def test_invalid_runtime_or_superseded_import_cannot_create_or_reset_report(
     with pytest.raises(expected_error):
         service._process_import_pipeline(context, retry=True)
 
-    assert create.call_count == max(0, rejected_mutation - 1)
+    # Source binding is now fenced before any report-row creation.
+    assert create.call_count == 0
     reset.assert_not_called()
     anonymize.assert_not_called()
     assert context.execution_guard is None

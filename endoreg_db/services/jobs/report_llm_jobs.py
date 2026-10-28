@@ -297,6 +297,7 @@ def _reserve_report_llm_import_job(
     operation: str,
     queue: str,
     config: ReportLlmJobConfig,
+    resume_existing: bool = False,
 ) -> tuple[ReportLlmInferenceJob, Literal["created", "already_queued"]]:
     with transaction.atomic():
         locked_upload_job = UploadJob.objects.select_for_update().get(pk=upload_job.pk)
@@ -308,7 +309,9 @@ def _reserve_report_llm_import_job(
             .select_for_update()
             .first()
         )
-        if active_job is not None and not _recover_stale_report_llm_job(active_job):
+        if active_job is not None and (
+            resume_existing or not _recover_stale_report_llm_job(active_job)
+        ):
             return active_job, "already_queued"
 
         job = ReportLlmInferenceJob.objects.create(
@@ -543,6 +546,14 @@ class _ReportJobLifecycle:
                 mark_upload_job_processing(upload_job)
             self.job.pdf = report
             self.job.save(update_fields=["pdf", "updated_at"])
+            if reused:
+                from endoreg_db.services.imports.processing import (
+                    record_published_import,
+                )
+
+                record_published_import(
+                    upload_job.pk, media_id=int(pdf.pk), source_sha256=pdf.pdf_hash
+                )
             mark_upload_job_completed(upload_job, sensitive_meta=pdf.sensitive_meta)
             result["upload_job_id"] = str(upload_job.pk)
         self.job.mark_success(result=result)
@@ -798,6 +809,7 @@ def dispatch_report_llm_import(
     *,
     upload_job_id: str,
     payload: Any | None = None,
+    resume_existing: bool = False,
 ) -> ReportLlmDispatchResult:
     mode = get_report_llm_job_mode()
     task_id = str(uuid.uuid4())
@@ -811,9 +823,10 @@ def dispatch_report_llm_import(
         operation=operation,
         queue=queue,
         config=config,
+        resume_existing=resume_existing,
     )
 
-    if reservation_status == "already_queued":
+    if reservation_status == "already_queued" and not resume_existing:
         return _dispatch_result(
             task_id=job.task_id or "",
             mode=mode,
@@ -824,6 +837,10 @@ def dispatch_report_llm_import(
             job_id=job.job_key,
             message="Report LLM import is already queued or running.",
         )
+
+    if not job.task_id:
+        raise RuntimeError("Report import has no persisted task reference")
+    task_id = job.task_id
 
     if mode == "inline":
         try:
@@ -867,6 +884,7 @@ def dispatch_report_llm_import(
         ensure_secure_transport_for_job_kind(HeavyJobKind.REPORT_LLM_IMPORT)
         async_result = run_report_llm_import_task.apply_async(
             args=(job.job_key,),
+            task_id=task_id,
             queue=queue,
             routing_key=queue,
             countdown=get_report_llm_dispatch_delay_seconds(),

@@ -278,6 +278,9 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     sensitive_meta_id = serializers.IntegerField(read_only=True, allow_null=True)
     file_size = serializers.IntegerField(read_only=True, required=False)
     upload_job = serializers.DictField(read_only=True, allow_null=True, required=False)
+    import_checkpoint = serializers.DictField(
+        read_only=True, allow_null=True, required=False
+    )
     hls_materializations = serializers.ListField(read_only=True, required=False)
     document_type = serializers.CharField(
         read_only=True, allow_null=True, required=False
@@ -417,6 +420,30 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
                 upload_job=cast(UploadJob | None, self._overview_upload_job(instance)),
             )
 
+        from endoreg_db.services.imports.checkpoints import (
+            media_import_checkpoint,
+            checkpoint_retry_media,
+            has_pending_import_checkpoint,
+        )
+
+        checkpoint = media_import_checkpoint(instance)
+        upload_job = self._overview_upload_job(instance)
+        checkpoint_summary = None
+        if checkpoint is not None and has_pending_import_checkpoint(instance):
+            checkpoint_summary = {
+                "stage": checkpoint.stage,
+                "completed_at": checkpoint.completed_at.isoformat(),
+                "can_resume": isinstance(upload_job, UploadJob)
+                and checkpoint_retry_media(upload_job) is not None,
+                "can_prioritize": isinstance(upload_job, UploadJob)
+                and checkpoint_retry_media(upload_job, include_queued=True) is not None,
+                "prioritized": bool(
+                    isinstance(upload_job, UploadJob)
+                    and upload_job.processing_stack is not None
+                    and upload_job.processing_stack.get("priority") == 1
+                ),
+            }
+
         return {
             "id": instance.pk,
             "filename": filename,
@@ -428,6 +455,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             "sensitive_meta_id": sensitive_meta.pk if sensitive_meta else None,
             "file_size": file_size,
             "upload_job": self._upload_job_summary(instance),
+            "import_checkpoint": checkpoint_summary,
             "hls_materializations": self._hls_materializations(instance),
             "document_type": document_type,
             "pseudo_patient_id": (

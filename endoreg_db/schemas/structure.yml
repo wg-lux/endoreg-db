@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
 files:
+- file: import_processing.py
+  role: Typed database carrier validated by the native import processing stack contract.
 - file: patient_matching.py
   role: Strict immutable matching session, record-reference, aggregate-outcome and signature contracts.
 - file: report_llm.py
@@ -22,7 +24,7 @@ files:
 - file: frame_annotation_export.py
   role: Manifest of pts_dataset_v1 frame exports with inclusive segment timestamps and recording-timestamp identity.
 - file: import_file.py
-  role: Import source snapshot contract.
+  role: Import source snapshot and persisted preparation checkpoint contracts.
 - file: report_persistence.py
   role: Persisted report contract.
 - file: medical_ledger.py

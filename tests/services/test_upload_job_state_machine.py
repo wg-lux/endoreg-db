@@ -4,10 +4,52 @@ import pytest
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.upload_job_state_machine import (
+    admit_upload_job_recovery,
     validate_upload_job_interrupted_retry,
     validate_upload_job_interruption,
     validate_upload_job_status_transition,
 )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("exhausted", [False, True])
+@pytest.mark.parametrize(
+    "error_code",
+    [UploadJob.ErrorCode.IMPORT_INTERRUPTED, UploadJob.ErrorCode.PROCESSING_FAILED],
+)
+def test_recovery_admission_preserves_retry_cap(
+    exhausted: bool, error_code: UploadJob.ErrorCode
+) -> None:
+    job = UploadJob.objects.create(
+        status=UploadJob.Status.ERROR,
+        error_code=error_code,
+        retry_count=3 if exhausted else 0,
+        max_retries=3,
+    )
+    assert admit_upload_job_recovery(job, "recover", delay_seconds=1) is (not exhausted)
+    job.refresh_from_db()
+    assert job.max_retries == 3
+    assert job.retry_count == (3 if exhausted else 1)
+    assert job.status == (
+        UploadJob.Status.ERROR if exhausted else UploadJob.Status.RETRYING
+    )
+
+
+@pytest.mark.django_db
+def test_recovery_admission_rejects_a_superseded_snapshot() -> None:
+    from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLeaseLost
+
+    job = UploadJob.objects.create(
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+    )
+    UploadJob.objects.filter(pk=job.pk).update(processing_fencing_token=1)
+    with pytest.raises(UploadJobImportLeaseLost, match="superseded"):
+        admit_upload_job_recovery(job, "recover", delay_seconds=1)
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.ERROR
+    assert job.retry_count == 0
+    assert job.max_retries == 3
 
 
 @pytest.mark.parametrize(

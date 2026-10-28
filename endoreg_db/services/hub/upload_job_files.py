@@ -42,6 +42,11 @@ _current_job: ContextVar[UUID | None] = ContextVar(
 )
 
 
+def current_upload_job_id() -> UUID | None:
+    """The persisted upload reference bound to the current import execution."""
+    return _current_job.get()
+
+
 @dataclass(frozen=True)
 class UploadFileReference:
     path: Path

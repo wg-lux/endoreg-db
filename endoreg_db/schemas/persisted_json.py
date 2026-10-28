@@ -10,6 +10,7 @@ import math
 import json
 
 from lx_dtypes.models.contracts.report_anonymization import ReportExtractionReceipt
+from endoreg_db.schemas.import_file import ImportCheckpoint
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
@@ -297,6 +298,7 @@ class VideoFileMetaPayload(BaseModel):
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
     integrity_status: Literal["ok", "warning", "lost"] | None = None
+    import_checkpoint: ImportCheckpoint | None = None
     integrity_error: str | None = None
     integrity_checked_at: str | None = None
     origin: str | None = None
@@ -343,6 +345,7 @@ class RawPdfMetaPayload(BaseModel):
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
     finding_extraction: FindingExtractionEvidence | None = None
+    import_checkpoint: ImportCheckpoint | None = None
     report_extraction_receipt: ReportExtractionReceipt | None = None
 
     @field_validator("report_extraction_receipt", mode="before")

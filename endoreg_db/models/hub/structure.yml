@@ -14,7 +14,7 @@ files:
 - file: network_node.py
   role: Node role and request-authentication configuration.
 - file: upload_job.py
-  role: Upload lifecycle and provenance boundary.
+  role: Upload lifecycle, native-validated processing stack and provenance boundary.
 - file: transfer_job.py
   role: Transfer mode and provenance validation.
 - file: storage_placement.py

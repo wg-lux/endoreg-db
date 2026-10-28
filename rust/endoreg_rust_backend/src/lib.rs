@@ -8,6 +8,7 @@ mod file_identity;
 mod frame_ancestry;
 mod frames;
 mod hls_state;
+mod import_processing;
 mod import_state;
 mod lifecycle_state;
 mod pdf;
@@ -22,6 +23,14 @@ pub use stubs::stub_info;
 
 #[pymodule]
 fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(
+        import_processing::new_import_processing_stack,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        import_processing::transition_import_processing_stack,
+        module
+    )?)?;
     module.add_class::<file_identity::BatchProcessor>()?;
     module.add_class::<timeline_index::TimelineIndex>()?;
     module.add_function(wrap_pyfunction!(

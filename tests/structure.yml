@@ -10,6 +10,12 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: import_files/test_import_processing_stack.py
+  role: Native stack persistence, stable restart references, automatic recovery, priority ordering and missing-capability rejection.
+- file: import_files/test_import_checkpoints.py
+  role: Encrypted video/report checkpoint reuse, integrity and ownership rejection, cleanup, rollback and scoped retry.
+- file: import_files/test_import_checkpoint_duplicate_execution.py
+  role: Checkpointed preparation, receipt writes, resume admission and native lifecycle reject duplicate execution.
 - file: helpers/seed_fixtures.py
   role: Shared minimal gender, center and processor fixtures using canonical data loaders.
 - file: import_files/conftest.py

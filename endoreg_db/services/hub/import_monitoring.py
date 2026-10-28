@@ -262,6 +262,9 @@ def dispatch_due_upload_job_retries(
     )
 
     reconcile_expired_upload_job_import_leases(limit=limit)
+    from endoreg_db.services.imports.recovery import recover_persisted_import_stacks
+
+    recover_persisted_import_stacks(limit=limit)
     recover_interrupted_upload_jobs(limit=limit)
     due_jobs = UploadJob.objects.filter(
         status=UploadJob.Status.RETRYING,
@@ -276,9 +279,11 @@ def dispatch_due_upload_job_retries(
         )
     )
     due_ids = tuple(
-        due_jobs.order_by("next_retry_at", "created_at").values_list("pk", flat=True)[
-            :limit
-        ]
+        due_jobs.order_by(
+            F("processing_stack__priority").desc(nulls_last=True),
+            "next_retry_at",
+            "created_at",
+        ).values_list("pk", flat=True)[:limit]
     )
     dispatched_count = 0
     failed_count = 0

@@ -23,6 +23,12 @@ from endoreg_db.import_files.context import (
     file_lock,
 )
 from endoreg_db.services.imports.execution import ImportExecutionFence
+from endoreg_db.services.imports.processing import initialize_import_processing_stack
+from endoreg_db.services.imports.checkpoints import (
+    clear_import_checkpoint,
+    prepared_import_artifact,
+    has_pending_import_checkpoint,
+)
 from endoreg_db.import_files.context.import_context import (
     ImportContext,
     SourceStreamData,
@@ -268,6 +274,7 @@ class VideoImportService:
         ctx.bind_execution_fence(execution_fence)
         if not ctx.file_path.exists():
             raise FileNotFoundError(f"Video file not found: {file_path}")
+        initialize_import_processing_stack(ctx)
 
         ctx.original_path = ctx.file_path
         ctx.retry = retry
@@ -300,6 +307,7 @@ class VideoImportService:
         ctx.current_video = existing_video
         ctx.require_execution_ownership()
         self._ensure_duplicate_streaming(ctx, existing_video)
+        clear_import_checkpoint(ctx)
         if existing_video.raw_file:
             self._cleanup_duplicate_staging(ctx)
         _set_video_import_outcome(WorkloadOutcome.REUSED)
@@ -315,6 +323,9 @@ class VideoImportService:
 
         ctx.require_execution_ownership()
         ctx.current_video, _, needs_processing = create_or_retrieve_video_file(ctx)
+        needs_processing = needs_processing or has_pending_import_checkpoint(
+            ctx.current_video
+        )
         ctx.require_execution_ownership()
 
         with ctx.owned_mutation():
@@ -337,6 +348,7 @@ class VideoImportService:
         """Process the verified raw source, normalize, and publish; fence failure handling too."""
         assert ctx.current_video is not None
         current_video = cast(_LocalRawVideo, ctx.current_video)
+        published = False
         try:
             ctx.require_execution_ownership()
             mark_instance_processing_started(ctx.current_video, ctx)
@@ -344,16 +356,14 @@ class VideoImportService:
                 "Persisted video state as processing before anonymization: video=%s",
                 current_video.raw_video_hash,
             )
-            with self._verified_local_raw_source(ctx):
-                ctx = self.anonymizer.anonymize_video(ctx)
-                _normalize_reimport_video_quality(ctx)
-
-            ctx.require_execution_ownership()
-            logger.info(
-                "Video anonymization succeeded for content hash %s",
-                ctx.file_hash,
-            )
-            finalize_video_success(ctx)
+            with prepared_import_artifact(
+                ctx, self._prepare_video_artifact
+            ) as prepared:
+                ctx = prepared
+                ctx.require_execution_ownership()
+                finalize_video_success(ctx)
+                published = True
+                clear_import_checkpoint(ctx)
             return ctx.current_video
 
         except Exception as exc:
@@ -362,6 +372,9 @@ class VideoImportService:
                 ctx.file_hash,
                 exc,
             )
+            if published:
+                # Cleanup failure cannot revoke a committed generation.
+                raise
             try:
                 _finalize_video_failure_if_owned(ctx)
             except Exception as ownership_exc:
@@ -372,6 +385,12 @@ class VideoImportService:
                 )
                 raise ownership_exc from exc
             raise
+
+    def _prepare_video_artifact(self, ctx: ImportContext) -> ImportContext:
+        with self._verified_local_raw_source(ctx):
+            ctx = self.anonymizer.anonymize_video(ctx)
+            _normalize_reimport_video_quality(ctx)
+        return ctx
 
     @contextmanager
     def _verified_local_raw_source(
@@ -519,6 +538,10 @@ class VideoImportService:
             existing_video = get_video_by_content_hash(file_hash)
         except VideoFile.DoesNotExist:
             existing_video = None
+
+        if existing_video is not None and has_pending_import_checkpoint(existing_video):
+            ctx.current_video = existing_video
+            return None
 
         integrity_result = check_video_media_integrity(
             existing_video if isinstance(existing_video, VideoFile) else None,

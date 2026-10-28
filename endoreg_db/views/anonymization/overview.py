@@ -495,12 +495,53 @@ class UploadJobRetryView(APIView):
         ):
             raise PermissionDenied("Upload job is outside the assigned center scope.")
 
+        from endoreg_db.services.imports.checkpoints import checkpoint_retry_media
+        from endoreg_db.services.imports.processing import prioritize_checkpoint
+        from pydantic import (
+            BaseModel,
+            ConfigDict,
+            StrictBool,
+            ValidationError as PayloadValidationError,
+        )
+
+        class PriorityRequest(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            prioritize: StrictBool
+
+        if request.data:
+            try:
+                priority_request = PriorityRequest.model_validate(request.data)
+            except PayloadValidationError:
+                return Response({"detail": "Expected prioritize=true."}, status=400)
+            if not priority_request.prioritize or not prioritize_checkpoint(upload_job):
+                return Response(
+                    {"detail": "This import cannot currently be prioritized."},
+                    status=409,
+                )
+            return Response(
+                {"detail": "Import priority recorded.", "priority": True}, status=202
+            )
+
         if (
             upload_job.status == UploadJob.Status.RETRYING.value
             and upload_job.retryable
         ):
             upload_job.next_retry_at = timezone.now()
             upload_job.save(update_fields=["next_retry_at", "updated_at"])
+        elif checkpoint_retry_media(upload_job) is not None:
+            from endoreg_db.services.hub.upload_job_state_machine import (
+                admit_upload_job_recovery,
+            )
+
+            if not admit_upload_job_recovery(
+                upload_job,
+                "Operator requested recovery from a completed import checkpoint.",
+                delay_seconds=1,
+            ):
+                return Response(
+                    {"detail": "The retry limit has been exhausted."},
+                    status=status.HTTP_409_CONFLICT,
+                )
         elif is_retryable_storage_failure(upload_job):
             if not schedule_storage_retry(
                 upload_job,

@@ -2,6 +2,13 @@
 from __future__ import annotations
 
 from endoreg_db.services.imports.execution import ImportExecutionFence
+from django.db import transaction
+from endoreg_db.services.imports.processing import update_import_processing_stack
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
+from endoreg_db.services.imports.checkpoints import (
+    clear_import_checkpoint,
+    prepared_import_artifact,
+)
 
 import logging
 from html import escape
@@ -266,6 +273,24 @@ class ReportImportService:
                 )
                 raise
 
+    def _claim_import(self, ctx: ImportContext) -> ReportImportFence:
+        """Commit the normalized source binding together with its content lease."""
+        assert ctx.file_hash is not None
+        with transaction.atomic():
+            fence = acquire_report_import_fence(
+                ctx.file_hash,
+                before_claim=partial(self.lifecycle.validate_source, ctx.file_hash)
+                if self.lifecycle is not None
+                else None,
+            )
+            with report_import_mutation_guard(fence):
+                job_id = current_upload_job_id()
+                if job_id is not None:
+                    update_import_processing_stack(
+                        job_id, "bind_source", source_sha256=ctx.file_hash
+                    )
+            return fence
+
     def _reuse_completed_import(
         self,
         ctx: ImportContext,
@@ -275,10 +300,7 @@ class ReportImportService:
         assert ctx.file_hash is not None
         ctx.current_report = existing_completed
         if self.lifecycle is not None:
-            fence = acquire_report_import_fence(
-                ctx.file_hash,
-                before_claim=partial(self.lifecycle.validate_source, ctx.file_hash),
-            )
+            fence = self._claim_import(ctx)
             try:
                 with report_import_finalization_guard(fence):
                     # Re-read completion under cluster ownership.
@@ -299,13 +321,9 @@ class ReportImportService:
     def _run_owned_import(self, ctx: ImportContext, retry: bool) -> RawPdfFile | None:
         """Acquire report-content ownership, prepare the row, and apply retry policy."""
         assert ctx.file_hash is not None
+        ctx.force_reprocess = retry
         self._validate_ocr_runtime()
-        fence = acquire_report_import_fence(
-            ctx.file_hash,
-            before_claim=partial(self.lifecycle.validate_source, ctx.file_hash)
-            if self.lifecycle is not None
-            else None,
-        )
+        fence = self._claim_import(ctx)
         try:
             with ReportImportFenceHeartbeat(fence) as heartbeat:
                 ctx.bind_execution_fence(
@@ -375,20 +393,19 @@ class ReportImportService:
         with ctx.owned_mutation():
             mark_instance_processing_started(ctx.current_report, ctx)
 
-        ctx = self.anonymizer.anonymize_report(ctx)
-        self.logger.info(
-            "Report anonymization succeeded for content hash %s",
-            ctx.file_hash,
-        )
-
-        renew_report_import_fence(fence)
-        with report_import_finalization_guard(fence):
-            if ctx.current_report is None:
-                raise RuntimeError("Report anonymization returned no report")
-            record_report_finding_presence(ctx.current_report)
-            finalize_report_success(ctx)
-            if self.lifecycle is not None:
-                self.lifecycle.succeeded(ctx.current_report)
+        with prepared_import_artifact(
+            ctx, self.anonymizer.anonymize_report
+        ) as prepared:
+            ctx = prepared
+            renew_report_import_fence(fence)
+            with report_import_finalization_guard(fence):
+                if ctx.current_report is None:
+                    raise RuntimeError("Report anonymization returned no report")
+                record_report_finding_presence(ctx.current_report)
+                finalize_report_success(ctx)
+                clear_import_checkpoint(ctx)
+                if self.lifecycle is not None:
+                    self.lifecycle.succeeded(ctx.current_report)
 
         return ctx.current_report
 

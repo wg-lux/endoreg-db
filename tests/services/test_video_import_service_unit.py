@@ -55,6 +55,11 @@ def _patch_import_boundaries(
 ) -> None:
     """Replace every external import boundary with an in-process unit seam."""
     monkeypatch.setattr(
+        sut, "prepared_import_artifact", lambda ctx, prepare: nullcontext(prepare(ctx))
+    )
+    monkeypatch.setattr(sut, "clear_import_checkpoint", Mock())
+    monkeypatch.setattr(sut, "has_pending_import_checkpoint", Mock(return_value=False))
+    monkeypatch.setattr(
         sut.VideoImportService,
         "_verified_local_raw_source",
         lambda _service, _ctx: nullcontext(),

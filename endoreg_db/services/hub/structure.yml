@@ -90,7 +90,7 @@ files:
 - file: upload_job_import_lease.py
   role: Renewable fenced ownership, expired-attempt reconciliation and bounded retained-source recovery invoked by the retry dispatcher.
 - file: upload_job_state_machine.py
-  role: Exports validate_upload_job_status_transition, mark_upload_job_processing, mark_upload_job_completed.
+  role: Native-validated status transitions and shared fenced recovery admission without raising retry limits.
 - file: video_provenance.py
   role: Validate and lease privacy-limited ancestry exports through the shared resolver; explicit independent-clock joins.
 - file: watcher_handoff.py
@@ -197,7 +197,7 @@ modules:
   upload_job_cancellation.py:
     owns: Cancellation intent and owner acknowledgement
   upload_job_state_machine.py:
-    owns: Native-validated job-state transitions and expired-execution interruption paths
+    owns: Native-validated job-state transitions, expired-execution interruption and shared cap-preserving recovery admission
   upload_job_files.py:
     owns: Source and media artifact ledger registration
   cleanup.py:

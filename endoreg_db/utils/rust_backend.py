@@ -96,6 +96,39 @@ _normalize_frame_sampling_strategy_token: Callable[[str], str] | None
 _storage_profile_policy_rows: Callable[[], list[tuple[str, str, str]]] | None
 _rust_backend_available = False
 
+
+def import_processing_stack_transition(
+    payload: str,
+    event: str,
+    media_id: int | None = None,
+    source_sha256: str | None = None,
+) -> str:
+    if not has_native_capability(
+        "import_processing_stack", "import_processing_stack_v1"
+    ):
+        raise RuntimeError(
+            "Required Rust import_processing_stack_v1 capability is unavailable"
+        )
+    transition = cast(
+        Callable[[str, str, int | None, str | None], str],
+        getattr(rust_backend, "transition_import_processing_stack"),
+    )
+    return transition(payload, event, media_id, source_sha256)
+
+
+def new_import_processing_stack(reference: str, media_type: str) -> str:
+    if not has_native_capability(
+        "import_processing_stack", "import_processing_stack_v1"
+    ):
+        raise RuntimeError(
+            "Required Rust import_processing_stack_v1 capability is unavailable"
+        )
+    create = cast(
+        Callable[[str, str], str], getattr(rust_backend, "new_import_processing_stack")
+    )
+    return create(reference, media_type)
+
+
 try:
     rust_backend = import_module("endoreg_db.endoreg_rust_backend")
     _batch_processor_factory = cast(

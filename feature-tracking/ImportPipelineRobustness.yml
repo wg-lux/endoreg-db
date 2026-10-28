@@ -948,6 +948,22 @@ definition_of_done:
   category: operations
   title: Partielle Importe werden sicher erkannt und wiederaufgenommen
   acceptance:
+  - Remaining import stages, their ordered transitions, fixed workflow/checkpoint reference and priority
+    are owned by Rust and persisted on UploadJob. Worker restart rediscovery resumes the same stack
+    through fenced publication, respects retry limits and never duplicates a completed stage.
+  - Users prioritize eligible checkpoint recovery instead of restarting it manually. Priority is durable
+    and orders dispatcher handoffs; it never preempts active workers or expands retry budgets.
+  - Video and report imports persist typed completed-stage checkpoints with encrypted artifacts. A new
+    fenced attempt verifies source, artifact and metadata identity before resuming publication; stale
+    owners, missing artifacts, tampering and wrong keys fail closed. A checkpoint never implies approval
+    or successful import. Explicit reprocessing replaces preparation; ordinary retry reuses it.
+  - Checkpointed imports never execute a completed stage twice. Repeated resumes reuse one checkpoint
+    without rerunning preparation; a superseded owner, or ownership lost while the receipt is written,
+    leaves no checkpoint receipt or orphaned encrypted artifact; explicit reprocessing leaves exactly
+    one checkpoint artifact. A double-submitted resume consumes one retry; live leases and retired checkpoints
+    are refused admission. Resume transitions reduce through the native Rust operation lifecycle (lifecycle_state_v3);
+    Rust status rules stay authoritative, with no Python copy. Proven by tests/import_files/test_import_checkpoint_duplicate_execution.py
+    for video (RUN_VIDEO_TESTS=true) and report.
   - Video overview and status polling project a matching terminal import_interrupted upload as failed
     instead of stale in-progress media state. Newer attempts, newer media state, other centers/sources,
     and completed or validated media are not overridden. Read requests never manufacture completion, modify
@@ -1073,13 +1089,39 @@ definition_of_done:
       reference: '2026-10-27: 249 tests passed across import lease (including PostgreSQL multiprocess),
         ingestion, retry monitoring, state machine, source fallback, cancellation, overview and reimport
         suites; full Pyright 0 errors.'
-    note: 'Implemented bounded autonomous recovery of interrupted raw-video imports from retained verified
-      sources, with retry backoff, cancellation and cleanup exclusions, stale snapshot fencing, and rediscovery
-      of lost broker handoffs. Local validation: 249 targeted tests passed; full Pyright 0 errors (17
-      existing missing-stub warnings). No deployment performed; broader production readiness remains in
-      progress.'
-    assessed_by: codex-gc10-video60-20261027
-    assessed_at: '2026-10-27T10:52:06.099870Z'
+    - kind: code
+      reference: endoreg_db/services/imports/checkpoints.py; endoreg_db/schemas/import_file.py; endoreg_db/schemas/persisted_json.py;
+        both canonical import services; overview serializer and retry view; docs/hub_ingest_operations.md
+    - kind: test
+      reference: '2026-10-28: PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer:/home/admin/endoreg-db
+        LD_LIBRARY_PATH=/home/admin/endoreg-db/.devenv/profile/lib RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/import_files/test_import_checkpoints.py tests/import_files/test_import_checkpoint_duplicate_execution.py
+        tests/services/test_video_import_service_unit.py tests/services/test_report_import_service_unit.py
+        tests/views/anonymization/test_anonymization_overview.py tests/services/test_report_completion.py
+        tests/services/test_reimport_upload_job_overview.py -q --tb=short: 324 passed, 1 existing plugin
+        warning in 117.03s; existing temporary-directory cleanup warnings. Covers encrypted preparation
+        reuse, native phase/transition SSOT, superseded owners and artifact/receipt-write loss without
+        orphan copies, double admission, wrong-key/tamper rejection, scoped cleanup, rollback, report
+        extraction adoption, rejection of exhausted-budget recovery and preservation of completed/validated
+        state. No deployment or production approval.'
+    - kind: command
+      reference: '2026-10-28 final verification: full .devenv/state/venv/bin/pyright --pythonpath .devenv/state/venv/bin/python:
+        0 errors, 2 existing warnings (report reader settings private import and rapidocr missing stubs).
+        Focused checkpoint/import/overview/test typing: 0 errors, 0 warnings. Scoped Ruff, both structure
+        validators, both feature trackers and git diff --check passed. Frontend Vitest 110 passed; application
+        and component-test vue-tsc and scoped ESLint passed.'
+    - kind: test
+      reference: '2026-10-28 Rust stack extension: native import_processing tests 2 passed;
+        frontend priority Vitest 112 passed. Backend broader stack/checkpoint/duplicate-execution,
+        upload lease, state, monitoring, dispatch, report LLM, fencing and import unit group:
+        392 passed, 2 outdated unit seams failed, 2 skipped. After correcting both seams and
+        isolating the migration dependency: final focused dispatch/report-unit/stack/center group
+        103 passed, 2 video/report-specific skips, 2 existing plugin/cache warnings.
+        Scoped Pyright 0 errors/0 warnings; Ruff, both structure validators and trackers passed.
+        Pending export migration is ordered after the standalone stack migration; export source
+        remains outside this changeset. Deployment acceptance remains pending.'
+    assessed_by: codex-import-checkpoints-20261028
+    assessed_at: '2026-10-28T16:21:49.185900Z'
 - id: import_pipeline_operator_documentation
   category: documentation
   title: Der verbindliche Importvertrag und seine Recovery-Grenzen sind dokumentiert

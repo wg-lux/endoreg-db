@@ -6,6 +6,7 @@ summary: Shared import execution fencing, lease mechanics and tabular input form
 responsibilities:
 - Provide shared execution fencing and renewable import-lease mechanics.
 - Normalize tabular document templates at the input boundary.
+- Preserve completed preparation stages through encrypted, fenced checkpoints shared by both import services.
 boundaries:
 - Keep workflow ownership in services; preserve existing model compatibility wrappers.
 entrypoints:
@@ -16,6 +17,12 @@ entrypoints:
   file: lease.py
   purpose: Renew on a worker connection; surface failure before the next mutation.
 files:
+- file: processing.py
+  role: Persist Rust stack transitions and prioritize recoverable jobs through shared admission.
+- file: recovery.py
+  role: Recover expired report ownership and rediscover durable stacks for the existing retry dispatcher.
+- file: checkpoints.py
+  role: Encrypted preparation checkpoints, fenced reuse, report extraction adoption and operator retry admission.
 - file: __init__.py
   role: Gemeinsame Importausführung, Besitzprüfung und tabellarische Eingaben.
 - file: execution.py
@@ -27,12 +34,18 @@ files:
 dependencies:
   internal:
   - endoreg_db/data
+  - endoreg_db/import_files
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/utils
   - endoreg_db/services/jobs
   external:
   - django
   - yaml
 submodules: []
 contracts:
+- name: Import recovery authority
+  doc: feature-tracking/ImportPipelineRobustness.yml
 - name: Service ownership and compatibility
   doc: feature-tracking/CodeQuality.yml
 tests:

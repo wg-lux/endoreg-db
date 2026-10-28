@@ -146,6 +146,7 @@ class TestReportImportJobHandoff:
         dispatch.assert_called_once_with(
             upload_job_id=str(upload_job.pk),
             payload={"source": "upload_job"},
+            resume_existing=True,
         )
 
     @pytest.mark.django_db

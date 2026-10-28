@@ -8,6 +8,8 @@ responsibilities:
 boundaries:
 - Python service orchestration retains clinical workflow and publication ownership.
 files:
+- file: endoreg_rust_backend/src/import_processing.rs
+  role: Canonical durable import stack, fixed checkpoint reference, ordered stage transitions and priority.
 - file: endoreg_rust_backend/Cargo.toml
   role: Native crate build and dependencies
 - file: endoreg_rust_backend/src/lib.rs

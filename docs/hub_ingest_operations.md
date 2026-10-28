@@ -445,3 +445,58 @@ A database without corresponding media, or media lacking a consistent ledger, do
 * [`docs/wiki/hub_ingest_current_state.md`](https://www.google.com/search?q=wiki/hub_ingest_current_state.md)
 * [`docs/deployment_note_hub_contract.md`](https://www.google.com/search?q=deployment_note_hub_contract.md)
 * [`endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`](https://www.google.com/search?q=../endoreg_db/import_files/multi_centre_storage_hub_roadmap.md)
+## Completed-stage import checkpoints
+
+Video and report imports persist `import_checkpoint` in the owning media's
+validated metadata after artifact preparation. Video preparation includes
+anonymization and storage normalization; report preparation includes redaction,
+extraction evidence and sensitive metadata. The receipt references a separate
+immutable copy written through encrypted storage, its plaintext content digest,
+source identity, sensitive metadata identity and preparation evidence.
+
+An ordinary retry acquires the existing content/execution fence, validates the
+receipt against the current source and metadata, authenticates and materializes
+the checkpoint only for downstream publication, and skips preparation. Report
+extraction is explicitly adopted under the new fence while the original
+extraction receipt remains in the checkpoint until publication commits. Every
+normal publication, streaming and clinical approval gate still applies.
+
+After successful publication, receipt retirement schedules storage deletion only
+after the database transaction commits. Failed publication retains the encrypted
+checkpoint. A missing artifact, authentication failure or identity mismatch
+raises an error; it never implies completion or falls back to unverified bytes.
+Explicit reprocessing invalidates the old checkpoint before preparing again.
+Imports created before this change have no intermediate checkpoint and restart
+preparation through the existing path. Interrupted work inside preparation is
+also restarted; this is not frame-level video resumption.
+
+`UploadJob.processing_stack` stores the versioned Rust-owned remaining stages,
+priority, normalized source digest and a fixed checkpoint reference equal to the
+upload-job UUID. Rust alone defines and validates stage order. Python validates
+persisted JSON at the model boundary and persists native transitions under the
+existing execution fences. The checkpoint references the canonical media row;
+its encrypted receipt remains the authority for artifact identity. Completion
+advances the stack in the fenced upload completion transaction.
+
+Celery worker startup requests the existing maintenance retry task; periodic
+reconciliation also rediscovers retained stacks after broker or worker loss.
+Video recovery uses the upload lease. Report recovery uses the persisted
+normalized PDF identity, including text imports, and fences expired content
+owners. The normalized source binding and report lease commit together. Lost
+report handoffs are retried after the existing handoff grace period and reuse
+the persisted report job and Celery task reference. Live leases are preserved.
+
+The overview exposes stage, completion timestamp, `can_prioritize` and
+`prioritized`; Axios converts these keys to camelCase. Operators use
+**Priorisieren**, which posts `{"prioritize": true}` to the existing upload-job
+retry endpoint and prefers the job during the next maintenance dispatch. The
+button becomes disabled **Priorisiert** after acknowledgement. Running imports
+are not preempted. Automatic recovery requires no browser action.
+
+Admission rejects cancellation, active ownership, cleanup, missing sources,
+integrity/lost errors and exhausted retry budgets. Priority and automatic
+interruption recovery use the same fenced admission and never raise the
+configured retry limit; rejected priority requests return HTTP 409. Worker
+entry revalidates source bytes and ownership. No clinical approval is inferred
+from a checkpoint. Readiness belongs to `import_reconciliation_and_recovery`
+in `feature-tracking/ImportPipelineRobustness.yml`.
