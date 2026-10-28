@@ -212,6 +212,19 @@ devenv shell -- python manage.py export_frame_annot \
   --config /data/endoreg-training/gastronet_run_001/export.yaml
 ```
 
+The reusable example script runs the same YAML through the in-process exporter.
+Copy `scripts/examples/frame_annotation_export.yml`, adjust the selection, check
+it with `--validate-only`, then reuse it for several runs via `--output-dir`:
+
+```bash
+devenv shell -- python scripts/export_frame_annotations.py \
+  --config scripts/examples/frame_annotation_export.yml --validate-only
+
+devenv shell -- python scripts/export_frame_annotations.py \
+  --config scripts/examples/frame_annotation_export.yml \
+  --output-dir /data/endoreg-training/gastronet_run_002
+```
+
 `load_base_data: true` calls `load_base_db_data()` before export. Use it when the
 target environment may not already have the base labels and information sources.
 

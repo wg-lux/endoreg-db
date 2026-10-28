@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: scripts/test_export_frame_annotations_script.py
+  role: Shared YAML export contract validation, CLI overrides and delegation without duplicated workflow logic.
 - file: services/test_export_file_names.py
   role: Conservative export-name fallback, patient-name detection and persisted decisions after identity purge.
 - file: services/test_recording_time.py
