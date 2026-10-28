@@ -23,15 +23,18 @@ def _media_integrity_options() -> dict[str, object]:
         dry_run=True,
         json_output=True,
         video_id=[22, 34],
-        check_frames=True,
-        repair_frames=True,
-        repair_frame=[0, 17],
+        check_frames=False,
+        repair_frames=False,
+        repair_frame=[],
         check_ffmpeg_meta=True,
         repair_ffmpeg_meta=True,
         check_streamable_probe=True,
         cleanup_stale_artifacts=True,
     ).model_dump(mode="python")
     payload["json"] = payload.pop("json_output")
+    # Frame-cache options are retired from the command; the contract still has them.
+    for retired in ("check_frames", "repair_frames", "repair_frame"):
+        payload.pop(retired)
     return payload
 
 
@@ -71,9 +74,6 @@ def test_reconcile_media_integrity_command_passes_targeted_recovery_options(
     assert captured == {
         "dry_run": True,
         "video_ids": [22, 34],
-        "check_frames": True,
-        "repair_frames": True,
-        "repair_frame_numbers": [0, 17],
         "check_ffmpeg_meta": True,
         "repair_ffmpeg_meta": True,
         "check_streamable_probe": True,
@@ -82,3 +82,12 @@ def test_reconcile_media_integrity_command_passes_targeted_recovery_options(
     payload = _json_payload(output)
     assert payload["checked_videos"] == 2
     assert payload["dry_run"] is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("retired_flag", ["--check-frames", "--repair-frames"])
+def test_retired_frame_cache_flags_are_rejected(retired_flag: str) -> None:
+    from django.core.management.base import CommandError
+
+    with pytest.raises(CommandError, match="unrecognized arguments"):
+        call_command("reconcile_media_integrity", retired_flag, "--dry-run")

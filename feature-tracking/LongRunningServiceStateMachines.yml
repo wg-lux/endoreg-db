@@ -30,8 +30,8 @@ definition_of_done:
   category: requirements
   title: Alle langlaufenden Dienste und Operationen besitzen einen verantworteten Lebenszyklusvertrag
   acceptance:
-  - Das Prozessinventar umfasst den Gunicorn-Webdienst, die sechs getrennten Celery-Workerprofile pipeline,
-    ffmpeg_media, frame_extraction, inference samt llm_inference, model_training und maintenance sowie
+  - Das Prozessinventar umfasst den Gunicorn-Webdienst, die fünf getrennten Celery-Workerprofile pipeline,
+    ffmpeg_media, inference samt llm_inference, model_training und maintenance sowie
     Celery Beat; Prozessstart, Drain, Restart und Shutdown bleiben Eigentum des Deployments beziehungsweise
     Supervisors und werden nicht aus fachlichen Jobzuständen abgeleitet.
   - Das Operationsinventar umfasst alle 15 Shared Tasks in endoreg_db/tasks.py, Import und Reimport, Anonymisierung

@@ -32,7 +32,7 @@ files:
 - file: export_ready.py
   role: Exports mark_video_ready_for_export.
 - file: integrity.py
-  role: Exports mark_video_integrity_lost, classify_frame_cache, repair_frame_cache.
+  role: Exports mark_video_integrity_lost and reconcile_media_integrity for processed media, metadata and streamable artifacts.
 - file: operation_gate.py
   role: Exports acquire_media_operation_lease, acquire_video_transcode_lease, assert_video_transcode_lease.
 - file: source_deletion.py

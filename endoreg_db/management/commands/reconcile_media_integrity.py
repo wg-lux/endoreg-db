@@ -36,23 +36,6 @@ class Command(BaseCommand):
             help="Limit reconciliation to a video id. May be provided multiple times.",
         )
         parser.add_argument(
-            "--check-frames",
-            action="store_true",
-            help="Classify frame DB/cache integrity for each selected video.",
-        )
-        parser.add_argument(
-            "--repair-frames",
-            action="store_true",
-            help="Repair explicitly safe frame cache issues.",
-        )
-        parser.add_argument(
-            "--repair-frame",
-            action="append",
-            type=int,
-            default=[],
-            help="Explicitly repair one frame number, even when the cache is missing. May be provided multiple times.",
-        )
-        parser.add_argument(
             "--check-ffmpeg-meta",
             action="store_true",
             help="Probe and report ffmpeg metadata/FPS provenance.",
@@ -75,8 +58,17 @@ class Command(BaseCommand):
 
     def handle(self, *args: object, **options: object) -> None:
         try:
+            # Frame-cache checks are retired; the shared contract still requires
+            # their fields until lx-dtypes drops them.
             command_options = (
-                ReconcileMediaIntegrityCommandOptionsPayload.model_validate(options)
+                ReconcileMediaIntegrityCommandOptionsPayload.model_validate(
+                    {
+                        **options,
+                        "check_frames": False,
+                        "repair_frames": False,
+                        "repair_frame": [],
+                    }
+                )
             )
         except ValidationError as exc:
             raise CommandError(str(exc)) from exc
@@ -84,9 +76,6 @@ class Command(BaseCommand):
         summary = reconcile_media_integrity(
             dry_run=command_options.dry_run,
             video_ids=command_options.video_id,
-            check_frames=command_options.check_frames or command_options.repair_frames,
-            repair_frames=command_options.repair_frames,
-            repair_frame_numbers=command_options.repair_frame,
             check_ffmpeg_meta=command_options.check_ffmpeg_meta
             or command_options.repair_ffmpeg_meta,
             repair_ffmpeg_meta=command_options.repair_ffmpeg_meta,

@@ -298,7 +298,7 @@ def _write_test_file(
     return atomic_write_file(destination=path, content=[payload], file_mode=file_mode)
 
 
-def test_reconcile_frames_treats_missing_cache_as_cache_miss_not_corruption(
+def test_reconcile_does_not_touch_frame_rows_without_frame_files(
     tmp_path: Path,
 ):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
@@ -306,23 +306,17 @@ def test_reconcile_frames_treats_missing_cache_as_cache_miss_not_corruption(
     assert frame_dir is not None
     assert not frame_dir.exists()
 
-    summary = reconcile_media_integrity(
-        dry_run=True,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=False,
-    )
+    summary = reconcile_media_integrity(dry_run=True, video_ids=[video.pk])
 
     video.refresh_from_db()
     state = video.get_or_create_state()
     state.refresh_from_db()
 
-    # Missing frame directories are expected cache misses under the current
-    # storage policy. Reconciliation must not downgrade canonical DB state.
+    # Frame files are export-only; missing frame directories are never a
+    # reconciliation finding and canonical frame rows stay unchanged.
     assert summary.checked_videos == 1
-    assert summary.frame_cache_missing == 1
-    assert summary.frame_cache_corrupt == 0
     assert summary.lost_records == 0
+    assert "frame_cache" not in summary.as_dict()
     assert state.frames_extracted is True
     assert Frame.objects.filter(video=video, is_extracted=True).count() == 3
 

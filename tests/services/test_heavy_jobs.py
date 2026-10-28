@@ -15,7 +15,6 @@ def test_heavy_job_kind_queue_mapping_is_exhaustive(monkeypatch: MonkeyPatch) ->
     assert set(HEAVY_JOB_QUEUE_BY_KIND) == set(HeavyJobKind)
 
     monkeypatch.setenv("CELERY_FFMPEG_MEDIA_QUEUE", "ffmpeg_media")
-    monkeypatch.setenv("CELERY_FRAME_EXTRACTION_QUEUE", "frame_extraction")
     monkeypatch.setenv("CELERY_INFERENCE_QUEUE", "inference")
     monkeypatch.setenv("CELERY_TRAINING_QUEUE", "model_training")
     monkeypatch.setenv("CELERY_LLM_INFERENCE_QUEUE", "llm_inference")
@@ -24,7 +23,6 @@ def test_heavy_job_kind_queue_mapping_is_exhaustive(monkeypatch: MonkeyPatch) ->
 
     assert queue_for_job_kind(HeavyJobKind.VIDEO_UPLOAD_IMPORT) == "ffmpeg_media"
     assert queue_for_job_kind(HeavyJobKind.VIDEO_REIMPORT) == "ffmpeg_media"
-    assert queue_for_job_kind(HeavyJobKind.FRAME_EXTRACTION) == "frame_extraction"
     assert queue_for_job_kind(HeavyJobKind.VISION_INFERENCE) == "inference"
     assert queue_for_job_kind(HeavyJobKind.MODEL_TRAINING) == "model_training"
     assert queue_for_job_kind(HeavyJobKind.REPORT_LLM_REIMPORT) == "pipeline"
@@ -37,7 +35,6 @@ def test_workload_queue_values_are_stable_public_queue_names() -> None:
     assert {queue.value for queue in WorkloadQueue} == {
         "default",
         "pipeline",
-        "frame_extraction",
         "ffmpeg_media",
         "inference",
         "model_training",

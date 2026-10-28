@@ -34,7 +34,6 @@ def _current_task(task: object) -> _TaskLike:
 
 def test_job_tasks_are_configured_for_worker_loss_redelivery() -> None:
     celery_tasks = [
-        tasks.run_frame_extraction_request_task,
         tasks.run_video_post_validation_rebuild_task,
         tasks.video_hls_materialization,
         tasks.run_video_temporal_inference_task,
@@ -96,21 +95,9 @@ def test_task_module_defers_service_imports_until_execution() -> None:
     assert not any(module.startswith("services.") for module in imported_modules)
 
 
-def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
-    with patch(
-        "endoreg_db.services.jobs.frame_extraction_jobs.run_frame_extraction_request",
-        return_value=True,
-    ) as runner:
-        result = cast(Any, tasks.run_frame_extraction_request_task).run(
-            "11", "22", "33"
-        )
-
-    assert result is True
-    runner.assert_called_once_with(
-        request_id=11,
-        video_id=22,
-        frame_number=33,
-    )
+def test_retired_frame_extraction_task_is_not_registered() -> None:
+    # Frame files are export-only; no worker may consume a frame extraction queue.
+    assert not hasattr(tasks, "run_frame_extraction_request_task")
 
 
 def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> None:

@@ -74,7 +74,6 @@ DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE: JobExecutionMode = "celery"
 DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE: FrameSourceMode = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
-DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
 DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE = "ffmpeg_media"
 DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
 DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
@@ -463,13 +462,6 @@ def get_celery_pipeline_queue() -> str:
     return env_str("CELERY_PIPELINE_QUEUE", DEFAULT_CELERY_PIPELINE_QUEUE).strip()
 
 
-def get_celery_frame_extraction_queue() -> str:
-    return env_str(
-        "CELERY_FRAME_EXTRACTION_QUEUE",
-        DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE,
-    ).strip()
-
-
 def get_celery_ffmpeg_media_queue() -> str:
     return env_str(
         "CELERY_FFMPEG_MEDIA_QUEUE",
@@ -530,17 +522,10 @@ def celery_broker_transport_error(
     )
 
 
-def celery_frame_extraction_requires_secure_transport() -> bool:
-    return env_bool(
-        "CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT",
-        celery_requires_secure_transport(),
-    )
-
-
 def celery_ffmpeg_media_requires_secure_transport() -> bool:
     return env_bool(
         "CELERY_FFMPEG_MEDIA_REQUIRE_SECURE_TRANSPORT",
-        celery_frame_extraction_requires_secure_transport(),
+        celery_requires_secure_transport(),
     )
 
 

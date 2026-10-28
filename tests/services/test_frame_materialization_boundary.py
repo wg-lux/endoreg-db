@@ -11,7 +11,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.models import Center, Frame, FrameExtractionRequest, VideoFile
+from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.services.video_files import (
     extract_video_frames,
@@ -113,14 +113,12 @@ def test_annotation_stream_decodes_processed_without_frame_files(
         assert response.status_code == 409
         decode.assert_not_called()
         assert not (tmp_path / "absent").exists()
-        assert not FrameExtractionRequest.objects.exists()
         return
     assert response.status_code == 200
     assert response.content == b"jpeg"
     assert response["X-Frame-Timestamp"] == "0.237"
     assert response["X-Frame-File-Type"] == "processed"
     assert decode.call_args.kwargs == {"frame_number": 7, "file_type": "processed"}
-    assert not FrameExtractionRequest.objects.exists()
     frame.refresh_from_db()
     assert frame.timestamp == 0.237 and not frame.is_extracted
     assert not (tmp_path / "absent").exists()

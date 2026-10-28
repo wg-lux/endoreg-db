@@ -42,21 +42,3 @@ def test_anonymize_refuses_video_marked_integrity_lost(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="failed/lost"):
         video.anonymize(delete_original_raw=True)
-
-
-@pytest.mark.parametrize(
-    "numbers,complete", [([0, 1, 2], True), ([0, 2], False), ([1, 2, 3], False)]
-)
-def test_legacy_frame_manifest_is_read_only(
-    tmp_path: Path, numbers: list[int], complete: bool
-) -> None:
-    from endoreg_db.services.video_files._frames._extract_frames import (
-        build_frame_cache_manifest,
-    )
-
-    for number in numbers:
-        (tmp_path / f"frame_{number:07d}.jpg").write_bytes(b"legacy")
-    before = {path.name: path.read_bytes() for path in tmp_path.iterdir()}
-    manifest = build_frame_cache_manifest(tmp_path, expected_count=3, ext="jpg")
-    assert manifest.is_exact_complete is complete
-    assert {path.name: path.read_bytes() for path in tmp_path.iterdir()} == before

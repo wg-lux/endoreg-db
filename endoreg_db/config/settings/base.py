@@ -13,7 +13,6 @@ from endoreg_db.config.env import (
     get_celery_broker_url,
     get_celery_default_queue,
     get_celery_ffmpeg_media_queue,
-    get_celery_frame_extraction_queue,
     get_celery_inference_queue,
     get_celery_llm_inference_queue,
     get_celery_maintenance_queue,
@@ -104,7 +103,6 @@ CELERY_RESULT_BACKEND = None
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
 CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
-CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
 CELERY_FFMPEG_MEDIA_QUEUE = get_celery_ffmpeg_media_queue()
 CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
 CELERY_TRAINING_QUEUE = get_celery_training_queue()
@@ -127,11 +125,6 @@ CELERY_TASK_QUEUES = (
         CELERY_PIPELINE_QUEUE,
         Exchange(CELERY_PIPELINE_QUEUE),
         routing_key=CELERY_PIPELINE_QUEUE,
-    ),
-    Queue(
-        CELERY_FRAME_EXTRACTION_QUEUE,
-        Exchange(CELERY_FRAME_EXTRACTION_QUEUE),
-        routing_key=CELERY_FRAME_EXTRACTION_QUEUE,
     ),
     Queue(
         CELERY_FFMPEG_MEDIA_QUEUE,
@@ -167,10 +160,6 @@ CELERY_TASK_ROUTES = {
     "endoreg_db.video_reimport": {
         "queue": CELERY_FFMPEG_MEDIA_QUEUE,
         "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
-    },
-    "endoreg_db.frame_extraction_request": {
-        "queue": CELERY_FRAME_EXTRACTION_QUEUE,
-        "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
     },
     "endoreg_db.process_upload_job": {
         "queue": CELERY_PIPELINE_QUEUE,
@@ -400,7 +389,6 @@ __all__ = [
     "CELERY_TASK_IGNORE_RESULT",
     "CELERY_TASK_DEFAULT_QUEUE",
     "CELERY_PIPELINE_QUEUE",
-    "CELERY_FRAME_EXTRACTION_QUEUE",
     "CELERY_FFMPEG_MEDIA_QUEUE",
     "CELERY_INFERENCE_QUEUE",
     "CELERY_TRAINING_QUEUE",

@@ -2,9 +2,9 @@ version: 1
 tier: module
 path: endoreg_db/services/video_files/_frames
 parent: ../structure.yml
-summary: Internal frame extraction, initialization and cache ownership helpers.
+summary: Internal frame record initialization and retired frame-file entry points.
 responsibilities:
-- Extract and initialize video frame records with validated cache coverage.
+- Initialize video frame records; frame-file materialization is export-only.
 - Manage frame ranges and preserve dataset-backed frame files during deletion.
 boundaries:
 - Keep workflow ownership in services; preserve existing model compatibility wrappers.
@@ -12,9 +12,9 @@ boundaries:
 - Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
   masters.
 entrypoints:
-- name: validate_video_frame_cache
-  file: _extract_frames.py
-  purpose: Validate extracted-frame cache coverage against the expected video frame sequence.
+- name: _initialize_frames
+  file: _initialize_frames.py
+  purpose: Create frame records whose persisted presentation timestamps define frame identity.
 files:
 - file: __init__.py
   role: Compatibility exports for internal video frame operations.
@@ -25,7 +25,7 @@ files:
 - file: _delete_frames.py
   role: 'Internal helpers: _get_staged_deletion_path, _dataset_backed_frame_ids_with_files, _delete_non_dataset_frame_files.'
 - file: _extract_frames.py
-  role: Exports build_frame_cache_manifest, validate_video_frame_cache.
+  role: Retired frame extraction entry point that fails as export-only.
 - file: _get_frame.py
   role: 'Internal helpers: _get_frame.'
 - file: _get_frame_number.py

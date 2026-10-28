@@ -350,15 +350,6 @@ in
         .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-ffmpeg@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
-    "celery:worker:frames" = {
-      description = "Run a Celery worker for frame extraction jobs";
-      exec = ''
-        devenv tasks run celery:check
-        queue=''${CELERY_FRAME_EXTRACTION_QUEUE:-frame_extraction}
-        concurrency=''${CELERY_FRAME_EXTRACTION_CONCURRENCY:-2}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-frames@%h" --concurrency="$concurrency" --prefetch-multiplier=1
-      '';
-    };
     "celery:worker:inference" = {
       description = "Run a Celery worker for vision and LLM inference jobs";
       exec = ''

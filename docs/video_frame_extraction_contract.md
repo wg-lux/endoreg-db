@@ -53,25 +53,20 @@ a cache-repair workflow. Use an explicit export when image files are required.
 
 Existing `Frame.relative_path`, extraction flags and legacy files remain
 historical state. An image request or rebuild must not recreate or delete them
-as a side effect. Existing diagnostic cache validation does not enable extraction.
+as a side effect.
 
-## Legacy cache diagnostics
-
-`build_frame_cache_manifest` and `validate_video_frame_cache` in
-`endoreg_db/services/video_files/_frames/_extract_frames.py` remain available
-for inspection. A complete legacy set requires a known expected count, exactly
-`frame_0000000.jpg` through `frame_{count - 1:07d}.jpg`, matching database rows,
-matching relative paths, extraction flags and regular files. A nonempty directory
-or a lone `Frame.is_extracted=True` flag does not establish completeness.
-These checks describe cache consistency; they do not establish content ancestry,
-clinical approval or current generation identity.
+Frame identity is the persisted presentation timestamp of each frame row, not a
+file on disk. The former frame-cache diagnostics (`build_frame_cache_manifest`,
+`validate_video_frame_cache`, `classify_frame_cache` and the
+`reconcile_media_integrity --check-frames/--repair-frames` options) are removed;
+legacy frame directories are neither validated nor repaired.
 
 ## Verification references
 
 - `tests/utils/video/test_frame_stream.py`: shared decoder and seekable input.
 - `tests/views/media/test_frame_stream.py`: image routes and source selection.
-- `tests/models/video/test_frame_extraction_completeness.py`: cache diagnostics
-  and retired materialization behavior.
+- `tests/models/video/test_frame_extraction_completeness.py`: retired
+  materialization behavior.
 - `tests/services/test_video_post_validation_jobs.py`: processed-video validation.
 - `tests/services/test_post_validation_generation_cleanup.py`: retained state on
   rebuild failure.

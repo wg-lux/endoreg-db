@@ -15,16 +15,11 @@ entrypoints:
 - name: ensure_secure_transport_for_job_kind
   file: heavy_jobs.py
   purpose: Reject broker transport that violates the selected workload security requirement.
-- name: request_frame_extraction
-  file: frame_extraction_jobs.py
-  purpose: Reuse an available frame or reserve and dispatch its extraction request.
 files:
 - file: __init__.py
   role: Centralized service modules for background and heavy job orchestration.
 - file: error_handling.py
   role: Exports is_insufficient_storage, database_recovery_reason, retry_database_operation.
-- file: frame_extraction_jobs.py
-  role: Exports get_or_create_frame_record, is_frame_file_available, request_frame_extraction.
 - file: heavy_jobs.py
   role: Exports queue_name, queue_for_job_kind, ensure_secure_transport_for_job_kind.
 - file: model_training_jobs.py
