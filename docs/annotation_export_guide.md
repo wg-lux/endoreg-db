@@ -121,7 +121,7 @@ For an endoreg-db caller, prefer the in-process exporter instead of shelling out
 from pathlib import Path
 
 from endoreg_db.export.frames.export_frames_with_labels import (
-    annotation_exporter_client,
+    AnnotationExporterClient,
     export_config,
 )
 
@@ -140,7 +140,7 @@ config = export_config(
     only_validated=True,
 )
 
-result = annotation_exporter_client().run_export(config)
+result = AnnotationExporterClient().run_export(config)
 
 annotation_table = result.output_path
 frame_dir = result.frame_output_dir

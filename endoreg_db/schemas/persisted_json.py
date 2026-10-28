@@ -42,7 +42,9 @@ from .processed_video_cleanup import ProcessedGenerationCleanupReceipt
 from .video_storage import (
     CanonicalTimelineHistoryEntry,
     ClinicalFrameQualityEvidence,
+    VideoExportFileName,
     VideoFpsResamplingEvidence,
+    VideoRecordingTimeEvidence,
     VideoSourceTimelineEvidence,
     VideoStorageNormalizationEvidence,
 )
@@ -311,6 +313,8 @@ class VideoFileMetaPayload(BaseModel):
     source_timeline: VideoSourceTimelineEvidence | None = None
     clinical_frame_quality: ClinicalFrameQualityEvidence | None = None
     processed_generation_cleanup: list[ProcessedGenerationCleanupReceipt] | None = None
+    recording_time: VideoRecordingTimeEvidence | None = None
+    export_file_name: VideoExportFileName | None = None
 
     @model_validator(mode="before")
     @classmethod

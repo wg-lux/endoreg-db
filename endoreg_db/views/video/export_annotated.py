@@ -17,7 +17,7 @@ from endoreg_db.openapi import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from endoreg_db.export.frames.export_frames_with_labels import export_job_failed_error
+from endoreg_db.export.frames.export_frames_with_labels import ExportJobFailedError
 from endoreg_db.services.media.export_annotated import (
     ExportAnnotatedService,
     ExportConflictError,
@@ -89,7 +89,7 @@ def export_annotated(request: Request) -> Response:
             {"error": str(exc)},
             status=status.HTTP_400_BAD_REQUEST,
         )
-    except export_job_failed_error as exc:
+    except ExportJobFailedError as exc:
         original = getattr(exc, "original_error", None)
         return Response(
             {

@@ -4,6 +4,7 @@ from datetime import datetime
 from typing import Literal, Self
 
 from lx_dtypes.models.contracts.video_provenance import (
+    RecordingTimeRange,
     VideoFrameTimeline as CanonicalFrameTimeline,
 )
 
@@ -325,7 +326,49 @@ class ClinicalFrameQualityEvidence(BaseModel):
         return value
 
 
+class VideoRecordingTimeEvidence(BaseModel):
+    """Wall-clock recording time captured from the raw container before anonymization."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["1"] = "1"
+    recording_hash: str = Field(min_length=1)
+    source: Literal["container_creation_time"]
+    recording: RecordingTimeRange
+
+
+type VideoExportFileNameSource = Literal[
+    "original_file_name", "recording_started_at", "raw_video_hash"
+]
+
+
+class VideoExportFileName(BaseModel):
+    """Identifier-free file name used when exporting the anonymized video."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["1"] = "1"
+    file_name: str = Field(min_length=1)
+    source: VideoExportFileNameSource
+    recording_hash: str = Field(min_length=1)
+
+    @field_validator("file_name")
+    @classmethod
+    def validate_plain_file_name(cls, value: str) -> str:
+        if (
+            value != value.strip()
+            or value.startswith(".")
+            or "/" in value
+            or "\\" in value
+        ):
+            raise ValueError("Export file name must be a plain file name")
+        return value
+
+
 __all__ = [
+    "VideoExportFileName",
+    "VideoExportFileNameSource",
+    "VideoRecordingTimeEvidence",
     "FramePresentationTimestamp",
     "MeasuredAverageFrameRate",
     "NominalFrameRate",

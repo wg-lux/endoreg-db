@@ -790,25 +790,28 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(
     assert captured_kwargs[0]["stdin"] == subprocess.DEVNULL
 
 
-@pytest.mark.unit
-def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
+def _patch_presentation_timestamp_tools(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    input_path = tmp_path / "input.mp4"
-    output_dir = tmp_path / "frames"
-    input_path.write_bytes(b"video")
+    output_dir: Path,
+    *,
+    container_start: str,
+) -> list[list[str]]:
     captured_commands: list[list[str]] = []
-
     monkeypatch.setattr(
         "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
         _smart_ffmpeg_path,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.frame_extraction._resolve_ffprobe_executable",
+        lambda: "/usr/bin/ffprobe",
     )
 
     def fake_run(
         command: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        if command[0].endswith("ffprobe"):
+            return subprocess.CompletedProcess(command, 0, f"{container_start}\n", "")
         captured_commands.append(command)
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "frame_0000000.jpg").write_bytes(b"first")
@@ -816,6 +819,31 @@ def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    return captured_commands
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("container_start", "expected_seeks"),
+    [
+        ("0.000000", ("0.500000000", "1.602488889")),
+        ("0.250000", ("0.250000000", "1.352488889")),
+        # The seek is clamped at zero when the first frame is the container start.
+        ("0.500000", ("0.000000000", "1.102488889")),
+    ],
+)
+def test_extract_frames_by_presentation_timestamp_seeks_relative_to_container_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    container_start: str,
+    expected_seeks: tuple[str, str],
+) -> None:
+    input_path = tmp_path / "input.mp4"
+    output_dir = tmp_path / "frames"
+    input_path.write_bytes(b"video")
+    captured_commands = _patch_presentation_timestamp_tools(
+        monkeypatch, output_dir, container_start=container_start
+    )
 
     result = ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
         input_path,
@@ -830,14 +858,172 @@ def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
     assert len(captured_commands) == 2
     first_command = captured_commands[0]
     second_command = captured_commands[1]
-    assert first_command[first_command.index("-ss") + 1] == "0.500000000"
+    assert first_command[first_command.index("-ss") + 1] == expected_seeks[0]
+    assert second_command[second_command.index("-ss") + 1] == expected_seeks[1]
+    assert first_command.index("-noaccurate_seek") < first_command.index("-ss")
     assert first_command[first_command.index("-map") + 1] == "0:v:0"
     assert first_command[first_command.index("-vf") + 1] == ("select='eq(pts\\,45000)'")
-    assert second_command[second_command.index("-ss") + 1] == "1.602488889"
     assert second_command[second_command.index("-vf") + 1] == (
         "select='eq(pts\\,144224)'"
     )
     assert first_command[first_command.index("-fps_mode") + 1] == "passthrough"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("container_start", ["N/A", ""])
+def test_extract_frames_by_presentation_timestamp_rejects_unknown_container_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    container_start: str,
+) -> None:
+    input_path = tmp_path / "input.mp4"
+    input_path.write_bytes(b"video")
+    captured_commands = _patch_presentation_timestamp_tools(
+        monkeypatch, tmp_path / "frames", container_start=container_start
+    )
+
+    with pytest.raises(RuntimeError, match="start time"):
+        ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+            input_path,
+            tmp_path / "frames",
+            [45_000],
+            time_base_num=1,
+            time_base_den=90_000,
+            quality=2,
+        )
+    assert captured_commands == []
+
+
+def _rgb_frame_digests(executable: str, source: Path) -> list[str]:
+    completed = subprocess.run(
+        [
+            executable,
+            "-v",
+            "error",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-fps_mode",
+            "passthrough",
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "framemd5",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [
+        line.rsplit(",", 1)[-1].strip()
+        for line in completed.stdout.splitlines()
+        if line and not line.startswith("#")
+    ]
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.integration
+@pytest.mark.parametrize("container_offset_seconds", ["0", "7.3"])
+def test_real_presentation_timestamp_extraction_matches_decoded_frames(
+    tmp_path: Path,
+    container_offset_seconds: str,
+) -> None:
+    ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
+    ffprobe_executable = ffmpeg_wrapper.resolve_ffprobe_executable()
+    if ffmpeg_executable is None or ffprobe_executable is None:
+        pytest.skip("ffmpeg and ffprobe are not available")
+
+    # Concatenating 30 and 24 frames-per-second parts yields variable frame
+    # spacing; the copy with a container offset reproduces nonzero origins.
+    parts: list[Path] = []
+    for rate in (30, 24):
+        part = tmp_path / f"part_{rate}.mp4"
+        subprocess.run(
+            [
+                ffmpeg_executable,
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"testsrc2=size=96x64:rate={rate}",
+                "-frames:v",
+                "12",
+                "-c:v",
+                "libx264",
+                "-g",
+                "5",
+                "-video_track_timescale",
+                "90000",
+                "-y",
+                str(part),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        parts.append(part)
+    concat_list = tmp_path / "parts.txt"
+    concat_list.write_text("".join(f"file '{part}'\n" for part in parts))
+    source = tmp_path / "variable_frame_rate.mp4"
+    subprocess.run(
+        [
+            ffmpeg_executable,
+            "-v",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-c",
+            "copy",
+            "-output_ts_offset",
+            container_offset_seconds,
+            "-y",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    probed = subprocess.run(
+        [
+            ffprobe_executable,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=best_effort_timestamp",
+            "-of",
+            "csv=p=0",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    timestamps = [int(value.strip(",")) for value in probed.stdout.split()]
+    assert len(set(timestamps)) == 24
+    reference_digests = _rgb_frame_digests(ffmpeg_executable, source)
+
+    # Sparse selection across both frame-rate parts and both ends of the clip.
+    selected_indices = [0, 5, 11, 12, 17, 23]
+    extracted = ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+        source,
+        tmp_path / "frames",
+        [timestamps[index] for index in selected_indices],
+        time_base_num=1,
+        time_base_den=90_000,
+        quality=2,
+        ext="png",
+    )
+
+    assert [_rgb_frame_digests(ffmpeg_executable, path)[0] for path in extracted] == [
+        reference_digests[index] for index in selected_indices
+    ]
 
 
 @pytest.mark.unit

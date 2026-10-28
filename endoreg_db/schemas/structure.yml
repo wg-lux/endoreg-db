@@ -18,7 +18,9 @@ files:
 - file: hub_payloads.py
   role: Hub request and provenance shapes.
 - file: video_storage.py
-  role: Video profile, timeline and quality evidence.
+  role: Video profile, timeline, quality, recording-time and export file-name evidence.
+- file: frame_annotation_export.py
+  role: Manifest of pts_dataset_v1 frame exports with inclusive segment timestamps and recording-timestamp identity.
 - file: import_file.py
   role: Import source snapshot contract.
 - file: report_persistence.py

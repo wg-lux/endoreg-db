@@ -1,6 +1,8 @@
 import logging
 from collections.abc import Mapping
-from datetime import date as dt_date, datetime, time as dt_time
+from datetime import date as dt_date
+from datetime import datetime
+from datetime import time as dt_time
 from typing import Any, Protocol, TypedDict, cast
 
 from django.contrib.auth.models import AnonymousUser
@@ -11,57 +13,59 @@ from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 from rest_framework import status
 from rest_framework.decorators import permission_classes
-from endoreg_db.openapi import api_view
-from rest_framework.response import Response
 from rest_framework.request import Request
-from endoreg_db.openapi import OpenApiAPIView as APIView
+from rest_framework.response import Response
 
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.tag import Tag
+from endoreg_db.openapi import OpenApiAPIView as APIView
+from endoreg_db.openapi import api_view
+from endoreg_db.schemas.sensitive_meta_verification import (
+    SensitiveMetaVerificationCommand,
+)
 from endoreg_db.serializers.anonymization import (
     SensitiveMetaValidateSerializer,
+)
+from endoreg_db.services.cases.auto_resolution import AutoCaseResolutionResult
+from endoreg_db.services.media.export_file_names import (
+    persist_validated_export_file_name,
+)
+from endoreg_db.services.patient_identity.validated_media_identity import (
+    commit_validated_media_identity,
+)
+from endoreg_db.services.patient_identity.verification import (
+    update_sensitive_meta_verification,
 )
 from endoreg_db.services.privacy.metrics import (
     MediaType,
     capture_sensitive_meta_metric_values,
     record_validation_metrics,
 )
-from endoreg_db.services.cases.auto_resolution import AutoCaseResolutionResult
+from endoreg_db.services.raw_pdf_files import (
+    ProcessedReportIntegrityError,
+    validate_report_metadata_annotation,
+)
 from endoreg_db.services.reports.materialization import (
     DOCUMENT_TYPE_VALUES,
     build_report_context_from_validation,
     ensure_document_types,
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.services.raw_pdf_files import (
-    ProcessedReportIntegrityError,
-    validate_report_metadata_annotation,
-)
 from endoreg_db.services.video_files import (
     get_or_create_video_state,
 )
-from endoreg_db.services.patient_identity.validated_media_identity import (
-    commit_validated_media_identity,
-)
-from endoreg_db.schemas.sensitive_meta_verification import (
-    SensitiveMetaVerificationCommand,
-)
-from endoreg_db.services.patient_identity.verification import (
-    update_sensitive_meta_verification,
+from endoreg_db.utils.operation_log import (
+    ACTION_ANONYMIZATION_VALIDATED,
+    STATUS_ANONYMIZED,
+    STATUS_PROCESSING,
+    record_operation,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.views.access_control import assert_center_scope_allowed
-from endoreg_db.utils.operation_log import (
-    record_operation,
-    ACTION_ANONYMIZATION_VALIDATED,
-    STATUS_PROCESSING,
-    STATUS_ANONYMIZED,
-)
-
 
 logger = logging.getLogger(__name__)
 
@@ -609,6 +613,7 @@ def _finalize_video_validation(
         ),
     )
     state_obj.refresh_from_db()
+    persist_validated_export_file_name(video)
     resolution = commit_validated_media_identity(
         media_type="video",
         media_obj=video,
@@ -775,7 +780,7 @@ def _log_missing_pdf_validation_state(pdf: RawPdfFile) -> None:
         assert pdf.sensitive_meta is not None
         assert pdf.sensitive_meta.state is not None
     except AssertionError as error:
-        logger.error("%s", error)
+        logger.exception("%s", error)
 
 
 def _ensure_pdf_sensitive_meta(

@@ -1959,8 +1959,40 @@ definition_of_done:
         1 warning in 0.16s; Pyright des finalen Tests 0 errors, 0 warnings. Sämtliche Fehler aus dem eingefügten
         Bericht über fokussierte Läufe behoben (111-passed-Lauf, 68-passed-Nachlauf, finaler 2-passed-Lauf).
         Ruff und git diff --check bestanden.'
-    assessed_by: codex-frame-standardization-20260921
-    assessed_at: '2026-09-21T11:48:34.232997Z'
+    - kind: test
+      reference: tests/views/misc/test_export_annotated_contract.py::ExportAnnotatedPresentationTimestampEndToEndTests;
+        tests/utils/video/test_ffmpeg_wrapper.py::test_real_presentation_timestamp_extraction_matches_decoded_frames
+    - kind: command
+      reference: '2026-10-27: lx-annotate-Exportpayload (pts_dataset_v1) über die echte API, verschlüsselten
+        Speicher und FFmpeg mit variabler Bildrate und Containerversatz 7,3 s: Zeilen-PTS, Zeitbasis und
+        Artefakt-Hash korrekt, alle Exportbilder pixelidentisch zur Referenzdekodierung. Vorher scheiterte
+        jede PTS-Extraktion bei Containerstart ungleich null (Regressionstest schlägt auf altem Code fehl).
+        API-Exportpfade sind auf storage/frame_annotation_exports begrenzt; absolute Pfade, ''..'' und
+        Symlink-Ausbruch liefern HTTP 400. Fokussierte Regression: 298 passed; Pyright der geänderten
+        Dateien 0 Fehler. Keine Produktionsabnahme.'
+    - kind: test
+      reference: tests/services/test_export_file_names.py; tests/services/test_recording_time.py; tests/services/test_export_frames_contract.py
+        (Manifest, Segment-PTS-Abgleich, Zeitstempelidentität); tests/views/misc/test_export_annotated_contract.py::ExportAnnotatedPresentationTimestampEndToEndTests
+    - kind: command
+      reference: '2026-10-28: Exportnamen ohne Patientennamen (Importname, sonst Aufnahmezeit, sonst Rohhash;
+        Entscheidung bei Validierung persistiert). Aufnahmezeit aus Container-creation_time beim Import
+        typisiert gespeichert. export_manifest.json mit inklusiven Segment-PTS identisch zu Annotationszeilen
+        und recording_timestamp_identity; umgetaktete Medien brechen den Export ab. Breite Regression:
+        2328 passed, 1 failed (tests/environment/test_secret_resolution.py::test_injected_identity_never_opens_secret_files,
+        Identitätssalz-Keyring-Bindung, außerhalb der geänderten Dateien); Pyright geänderter Dateien
+        0 Fehler. Keine Produktionsabnahme.'
+    - kind: command
+      reference: '2026-10-28: Legacy-Frame-Cache-Diagnostik entfernt (build_frame_cache_manifest, validate_video_frame_cache,
+        classify_frame_cache/repair_frame_cache, reconcile_media_integrity --check-frames/--repair-frames);
+        Frame-Identität ist der persistierte PTS der Framezeile. Segment-abgeleitete PTS-Annotationen
+        und getrennt gespeicherte Frame-Annotationen für Task-Sampling bleiben. Transcode-Zeitstempelprüfung
+        hart nur für gespeicherte prozessierte PTS; Import und Anonymisierung scheitern nicht an Abweichungen
+        (protokolliert, in Provenienz). Export meldet umgetaktete Medien als changed. Fokussiert: 80 +
+        178 + 111 passed; breite Regression 2232 passed, 2 Fehler außerhalb dieser Änderung (test_secret_resolution
+        Keyring-Bindung; test_profiling durch parallele logger.exception-Änderung). Pyright geänderter
+        Dateien 0 Fehler.'
+    assessed_by: claude-pts-export-20261027
+    assessed_at: '2026-10-28T09:36:43.471417Z'
 - id: decoder_timestamp_authority
   category: data_integrity
   title: Every frame decoder exposes authoritative generation-bound presentation timestamps

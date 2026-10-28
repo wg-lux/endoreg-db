@@ -22,13 +22,15 @@ files:
 - file: __init__.py
   role: Medienintegrität, Operationsleases und Exportfreigabe.
 - file: export_annotated.py
-  role: Exports ExportConflictError, ExportAnnotatedService.
+  role: Exports ExportConflictError, ExportAnnotatedService and the shared confine_export_location path boundary.
 - file: export_downloads.py
   role: Read-only browser exports of accepted processed media and annotations.
 - file: export_policy.py
   role: Shared processed-media integrity and generation-bound approval checks for all export paths.
 - file: csv_export.py
   role: Shared spreadsheet-safe cell encoding for browser and file exports.
+- file: export_file_names.py
+  role: Identifier-free export video names decided at anonymization validation.
 - file: export_ready.py
   role: Exports mark_video_ready_for_export.
 - file: integrity.py
@@ -70,6 +72,7 @@ tests:
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/services/test_media_integrity_reconciliation_plan.py
     tests/services/test_hub_storage_rotation.py tests/views/media/test_video_export_downloads.py
     tests/services/test_export_frames_contract.py tests/views/misc/test_export_annotated_contract.py
+    tests/services/test_export_file_names.py
   files:
   - tests/services/test_hls_media.py
   - tests/services/test_media_integrity_reconciliation_plan.py
@@ -77,3 +80,4 @@ tests:
   - tests/views/media/test_video_export_downloads.py
   - tests/services/test_export_frames_contract.py
   - tests/views/misc/test_export_annotated_contract.py
+  - tests/services/test_export_file_names.py

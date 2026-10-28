@@ -487,6 +487,9 @@ use the existing validated generation-publication workflow with fresh content ke
 
 - **Joint Photographic Experts Group (JPEG):** the encoded image format used
   for in-memory annotation responses and explicit frame exports.
+- **Container start time:** the earliest presentation time across all streams
+  of a media container, as reported by ffprobe `format=start_time`. FFmpeg
+  offsets every input seek by this value; it is not the video stream origin.
 - **MP4 track timescale:** the number of ticks per second stored for an MP4
   track. It must equal the source time-base denominator for recorded
   presentation timestamps to survive transcoding unchanged.
@@ -848,6 +851,54 @@ extension at process start uses the byte-identical Python reference reader,
 while native key, authentication, geometry, or length failures stop the
 response instead of falling back.
 
+### Annotated Frame Export
+
+The lx-annotate export panel calls `POST media/videos/export-annotated/` with
+the `pts_dataset_v1` profile. Scope, contract, and readiness evidence are
+tracked in `feature-tracking/VideoStorageNormalization.yml`, criterion
+`frame_materialization_boundary`. Rows carry the persisted presentation
+timestamp, stream time base, and processed-artifact hash. Images are decoded
+from the processed generation and named by frame primary key.
+
+Browser-supplied `output_dir` and `output_path` must be relative and are
+resolved beneath `get_runtime_paths().frame_annotation_export`
+(`storage/frame_annotation_exports`). Absolute paths, `..` components, and
+symbolic links leaving that root are rejected with HTTP 400.
+
+Persisted presentation timestamps are absolute stream ticks, whereas FFmpeg
+interprets an input `-ss` relative to the container start time. Sparse
+extraction therefore probes the container start time, seeks to the keyframe
+before `timestamp × time_base − container_start` without an accurate-seek trim,
+and lets the exact `select=eq(pts,N)` filter choose the frame. An unavailable
+container start time fails the export instead of guessing.
+
+Each `pts_dataset_v1` export writes `export_manifest.json` beside the annotation
+file. Per video it records the exported file name, processed hash, stream time
+base, recording start and end, and `recording_timestamp_identity`:
+`identical_ticks` (exported ticks are the recorded ticks and can be matched to
+external clocks such as electrical measurements unchanged), `identical_instants`
+(equal rational times in the stated time base), `changed` (an earlier transcode
+re-timed frames; the ticks match the exported video but not the original
+recording clock) or `unverified` (no decoder ancestry). Re-timed media is
+reported, not rejected.
+Per segment it records the inclusive first and last frame with their persisted
+presentation timestamps, which are the same values as in the annotation rows;
+the export fails if a row lies outside its segment boundaries.
+
+Exported video files keep their import name unless it contains the patient's
+first or last name (compared ignoring case, accents, umlaut transliteration and
+separators). Such names are replaced at anonymization validation by the
+recording start (`YYYY-MM-DD_HH-MM-SS.mp4`); without a recording time the raw
+video hash is used. The decision is stored in `VideoFile.meta["export_file_name"]`.
+
+### Recording Time
+
+Masking removes all container metadata. Import therefore reads the raw
+container creation time once and stores it as `VideoFile.meta["recording_time"]`
+(start, end derived from the raw duration, and the recording hash). Missing
+times and unset device clocks before 1990 leave no record; malformed values are
+logged and never block import.
+
 ### Presentation Timestamp Identity During Transcoding
 
 Every canonical transcode with timestamp passthrough (`-copyts` and
@@ -875,7 +926,6 @@ audio timestamps without a host filter rewrite. Retained frames keep their
 recorded timestamps and removed spans remain as time gaps of unchanged total
 duration. The host execution hook still enforces the timestamp arguments and
 records decoder ancestry; real encoding-path tests verify the library boundary.
-
 
 ## Inventory and Migration
 

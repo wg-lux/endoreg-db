@@ -5,7 +5,7 @@ import io
 import json
 import logging
 import uuid
-from collections.abc import Iterable
+from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
 from pathlib import Path
@@ -14,16 +14,13 @@ from typing import Literal, Protocol, TypedDict, cast
 from django.db import transaction
 from django.db.models import Q, QuerySet
 from lx_dtypes.models.contracts import (
-    VideoFrameAnnotationExportConfigPayload,
     export_config,
     export_result,
-    load_video_frame_annotation_export_config,
 )
 from lx_dtypes.models.contracts.json_types import JsonScalar
 from lx_dtypes.models.contracts.video_frame_export import (
     VideoFrameAnnotationExportProfile,
 )
-from pydantic import ValidationError
 
 from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 from endoreg_db.models.administration.center.center import Center
@@ -33,15 +30,36 @@ from endoreg_db.models.label.annotation.image_classification import (
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.frame_annotation_export import (
+    FRAME_ANNOTATION_EXPORT_MANIFEST_NAME,
+    FrameAnnotationExportManifest,
+    FrameAnnotationExportSegment,
+    FrameAnnotationExportVideo,
+    RecordingTimestampIdentity,
+)
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 from endoreg_db.services.media.csv_export import encode_csv_cell
+from endoreg_db.services.media.export_file_names import (
+    resolve_export_file_name,
+)
 from endoreg_db.services.media.export_policy import (
-    assert_video_media_export_ready as assert_video_media_export_ready,
+    assert_video_media_export_ready,
     validated_export_video_filter,
 )
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
+from endoreg_db.services.video_files.segment_coordinates import (
+    SegmentCoordinateError,
+    bundle_frame_ancestry,
+)
+from endoreg_db.services.video_storage.frame_provenance import (
+    VideoProvenanceBundle,
+    presentation_timestamp_identity,
+    resolve_video_provenance,
+)
 from endoreg_db.services.streaming.seekable_media_input import (
     SeekableFieldFile,
     serve_seekable_media_input,
@@ -236,6 +254,13 @@ class _FrameValueRow(TypedDict):
     frame_id: int | None
 
 
+class _SegmentBoundaryFrameRow(TypedDict):
+    video_id: int
+    frame_number: int
+    presentation_timestamp: int | None
+    timestamp: float | None
+
+
 @dataclass(frozen=True)
 class _RequestedFrameCoordinates:
     requested_frame_pks: set[int]
@@ -294,7 +319,7 @@ def _resolve_processed_video_source_path(video: VideoFile) -> Path | None:
     )
 
 
-class export_job_failed_error(RuntimeError):
+class ExportJobFailedError(RuntimeError):
     def __init__(self, message: str, *, original_error: Exception | None = None):
         super().__init__(message)
         self.original_error = original_error
@@ -349,7 +374,7 @@ def _normalize_export_config(config: export_config) -> export_config:
     )
 
 
-class annotation_exporter_client:
+class AnnotationExporterClient:
     def __init__(self, *, logger: logging.Logger | None = None) -> None:
         self._logger = logger or logging.getLogger(__name__)
 
@@ -396,6 +421,17 @@ class annotation_exporter_client:
             exported_path = _write_annotation_rows(
                 output_path, rows, output_format=config.output_format
             )
+            video_file_names = _unique_export_file_names(
+                _annotation_videos(annotations)
+            )
+            if config.export_profile == "pts_dataset_v1":
+                _write_export_manifest(
+                    annotations,
+                    rows,
+                    annotation_file=Path(exported_path),
+                    config=config,
+                    video_file_names=video_file_names,
+                )
 
             exported_video_count = 0
             exported_frame_count = 0
@@ -415,6 +451,7 @@ class annotation_exporter_client:
                     transcode_overwrite=config.transcode_overwrite,
                     use_frame_pk_paths=config.use_frame_pk_paths,
                     strict_media_validation=True,
+                    video_file_names=video_file_names,
                 )
                 exported_video_count = export_result_data["exported_video_count"]
                 exported_frame_count = export_result_data["exported_frame_count"]
@@ -440,55 +477,18 @@ class annotation_exporter_client:
                 exc,
                 exc_info=True,
             )
-            raise export_job_failed_error(
+            raise ExportJobFailedError(
                 "annotation export failed", original_error=exc
             ) from exc
         except Exception as exc:
             self._logger.exception(
                 "Annotation export failed unexpectedly for %s", output_path
             )
-            raise export_job_failed_error(
+            raise ExportJobFailedError(
                 "annotation export failed", original_error=exc
             ) from exc
         finally:
             self._logger.info("Annotation export finished for %s", output_path)
-
-
-def load_export_config(
-    config_path: Path | str,
-) -> VideoFrameAnnotationExportConfigPayload:
-    try:
-        return load_video_frame_annotation_export_config(config_path)
-    except ValidationError as exc:
-        raise ValueError(f"invalid export config: {exc}") from exc
-
-
-def export_frames_with_labels_from_yaml(config_path: Path | str) -> Path:
-    config_data = load_export_config(config_path)
-
-    return export_frames_with_labels_to_csv(
-        output_path=config_data.output_path,
-        export_profile=config_data.export_profile,
-        video_id=config_data.video_id,
-        label_id=config_data.label_id,
-        information_source_name=config_data.information_source_name,
-        only_true=config_data.only_true,
-        limit=config_data.limit,
-        load_base_data=config_data.load_base_data,
-        export_videos=config_data.export_videos,
-        export_frames=config_data.export_frames,
-        use_export_flags=config_data.use_export_flags,
-        segment_ids=config_data.segment_ids,
-        center_key=config_data.center_key,
-        all_centers=config_data.all_centers,
-        only_validated=config_data.only_validated,
-        transcode_frames=config_data.transcode_frames,
-        transcode_fps=config_data.transcode_fps,
-        transcode_quality=config_data.transcode_quality,
-        transcode_ext=config_data.transcode_ext,
-        transcode_overwrite=config_data.transcode_overwrite,
-        use_frame_pk_paths=config_data.use_frame_pk_paths,
-    )
 
 
 @transaction.atomic
@@ -762,6 +762,7 @@ def _export_media_assets(
     transcode_overwrite: bool,
     use_frame_pk_paths: bool | None,
     strict_media_validation: bool,
+    video_file_names: Mapping[int, str] | None = None,
 ) -> ExportAssetResult:
     ensure_directory(output_dir)
     video_output_dir = output_dir / "videos" if export_videos else None
@@ -784,6 +785,7 @@ def _export_media_assets(
             annotations,
             output_dir=video_output_dir,
             strict_media_validation=strict_media_validation,
+            video_file_names=video_file_names,
         )
 
     if export_frames:
@@ -813,27 +815,59 @@ def _export_media_assets(
     }
 
 
+def _annotation_videos(
+    annotations: QuerySet[ImageClassificationAnnotation]
+    | list[ImageClassificationAnnotation],
+) -> list[VideoFile]:
+    if isinstance(annotations, list):
+        return sorted(
+            {item.frame.video.pk: item.frame.video for item in annotations}.values(),
+            key=lambda video: int(video.pk),
+        )
+    video_ids = (
+        annotations.values_list("frame__video_id", flat=True)
+        .distinct()
+        .order_by("frame__video_id")
+    )
+    return sorted(
+        VideoFile.objects.filter(pk__in=video_ids), key=lambda video: int(video.pk)
+    )
+
+
+def _unique_export_file_names(videos: Iterable[VideoFile]) -> dict[int, str]:
+    """Identifier-free export names; repeated names gain a video id suffix."""
+    names: dict[int, str] = {}
+    used: set[str] = set()
+    for video in sorted(videos, key=lambda item: int(item.pk)):
+        file_name = resolve_export_file_name(video).file_name
+        path = Path(file_name)
+        collision = 0
+        while file_name in used:
+            collision += 1
+            suffix = f"_video{video.pk}" + (f"_{collision}" if collision > 1 else "")
+            file_name = f"{path.stem}{suffix}{path.suffix}"
+        used.add(file_name)
+        names[int(video.pk)] = file_name
+    return names
+
+
 def _export_videos_from_annotations(
     annotations: QuerySet[ImageClassificationAnnotation]
     | list[ImageClassificationAnnotation],
     *,
     output_dir: Path | None,
     strict_media_validation: bool = True,
+    video_file_names: Mapping[int, str] | None = None,
 ) -> int:
     if output_dir is None:
         return 0
 
-    if isinstance(annotations, list):
-        videos = list(
-            {item.frame.video.pk: item.frame.video for item in annotations}.values()
-        )
-    else:
-        video_ids = (
-            annotations.values_list("frame__video_id", flat=True)
-            .distinct()
-            .order_by("frame__video_id")
-        )
-        videos = list(VideoFile.objects.filter(pk__in=video_ids))
+    videos = _annotation_videos(annotations)
+    file_names = (
+        video_file_names
+        if video_file_names is not None
+        else _unique_export_file_names(videos)
+    )
     exported_count = 0
 
     for video in videos:
@@ -846,12 +880,9 @@ def _export_videos_from_annotations(
                 logger.warning(str(exc))
                 continue
 
+            target_path = output_dir / file_names[int(video.pk)]
             source_path = _resolve_processed_video_source_path(video)
             if source_path is not None:
-                suffix = source_path.suffix or ".mp4"
-                video_export = cast(_VideoHashExportModel, video)
-                raw_video_hash = video_export.raw_video_hash or "unknown"
-                target_path = output_dir / f"{raw_video_hash}{suffix}"
                 try:
                     atomic_copy_file(source=source_path, destination=target_path)
                     exported_count += 1
@@ -872,10 +903,6 @@ def _export_videos_from_annotations(
 
             # Fallback: attempt to download processed media via Django storage backend.
             with ensure_local_file(processed_file) as source_path_fallback:
-                suffix = source_path_fallback.suffix or ".mp4"
-                video_export = cast(_VideoHashExportModel, video)
-                raw_video_hash = video_export.raw_video_hash or "unknown"
-                target_path = output_dir / f"{raw_video_hash}{suffix}"
                 try:
                     atomic_copy_file(
                         source=source_path_fallback,
@@ -1561,21 +1588,21 @@ def _apply_filters(
     return annotations
 
 
-def _filter_annotations_by_segments(
-    annotations: QuerySet[ImageClassificationAnnotation],
+def _selected_segments(
     *,
-    video_id: int | None,
+    video_ids: Collection[int] | None,
     segment_ids: list[int] | None,
     use_export_flags: bool,
-) -> QuerySet[ImageClassificationAnnotation]:
+) -> list[LabelVideoSegment]:
+    """Segments chosen by explicit ids, export flags, or all of the given videos."""
     segments = LabelVideoSegment.objects.select_related(
         "video_file",
         "label",
         "source",
         "prediction_meta",
     )
-    if video_id is not None:
-        segments = segments.filter(video_file_id=video_id)
+    if video_ids is not None:
+        segments = segments.filter(video_file_id__in=video_ids)
 
     if segment_ids:
         segments = segments.filter(pk__in=segment_ids)
@@ -1584,7 +1611,21 @@ def _filter_annotations_by_segments(
             Q(export_segment=True) | Q(video_file__export_segments_by_video=True)
         )
 
-    segment_list = list(segments)
+    return list(segments.order_by("video_file_id", "start_frame_number", "pk"))
+
+
+def _filter_annotations_by_segments(
+    annotations: QuerySet[ImageClassificationAnnotation],
+    *,
+    video_id: int | None,
+    segment_ids: list[int] | None,
+    use_export_flags: bool,
+) -> QuerySet[ImageClassificationAnnotation]:
+    segment_list = _selected_segments(
+        video_ids=None if video_id is None else {video_id},
+        segment_ids=segment_ids,
+        use_export_flags=use_export_flags,
+    )
     if not segment_list:
         return annotations.none()
 
@@ -1772,6 +1813,224 @@ def _annotation_export_sort_key(
         int(annotation_export.label.pk),
         int(annotation_export.pk),
     )
+
+
+def _segment_boundary_frames(
+    segments: list[_LabelVideoSegmentExportModel],
+) -> dict[tuple[int, int], _SegmentBoundaryFrameRow]:
+    """Persisted first and last included frame of every segment."""
+    wanted: dict[int, set[int]] = {}
+    for segment in segments:
+        wanted.setdefault(int(segment.video_file.pk), set()).update(
+            {segment.start_frame_number, segment.end_frame_number - 1}
+        )
+    boundaries: dict[tuple[int, int], _SegmentBoundaryFrameRow] = {}
+    for video_id, frame_numbers in wanted.items():
+        rows = cast(
+            Iterable[_SegmentBoundaryFrameRow],
+            Frame.objects.filter(
+                video_id=video_id, frame_number__in=frame_numbers
+            ).values("video_id", "frame_number", "presentation_timestamp", "timestamp"),
+        )
+        for row in rows:
+            boundaries[(video_id, row["frame_number"])] = row
+    return boundaries
+
+
+def _segment_boundary(
+    boundaries: dict[tuple[int, int], _SegmentBoundaryFrameRow],
+    *,
+    segment_id: int,
+    video_id: int,
+    frame_number: int,
+) -> tuple[int, float]:
+    row = boundaries.get((video_id, frame_number))
+    if row is None or row["presentation_timestamp"] is None or row["timestamp"] is None:
+        raise ValueError(
+            f"Segment {segment_id} boundary frame {frame_number} has no persisted "
+            "presentation timestamp"
+        )
+    return row["presentation_timestamp"], row["timestamp"]
+
+
+def _manifest_segments(
+    segments: list[_LabelVideoSegmentExportModel],
+) -> list[FrameAnnotationExportSegment]:
+    boundaries = _segment_boundary_frames(segments)
+    entries: list[FrameAnnotationExportSegment] = []
+    for segment in segments:
+        label = segment.label
+        if label is None:
+            continue
+        video = segment.video_file
+        video_id = int(video.pk)
+        time_base_num, time_base_den = _required_video_time_base(video)
+        start_pts, start_seconds = _segment_boundary(
+            boundaries,
+            segment_id=segment.pk,
+            video_id=video_id,
+            frame_number=segment.start_frame_number,
+        )
+        end_pts, end_seconds = _segment_boundary(
+            boundaries,
+            segment_id=segment.pk,
+            video_id=video_id,
+            frame_number=segment.end_frame_number - 1,
+        )
+        entries.append(
+            FrameAnnotationExportSegment(
+                segment_id=segment.pk,
+                video_id=video_id,
+                label_id=label.pk,
+                label_name=label.name,
+                information_source_id=segment.source_id,
+                start_frame_number=segment.start_frame_number,
+                end_frame_number=segment.end_frame_number - 1,
+                start_presentation_timestamp=start_pts,
+                end_presentation_timestamp=end_pts,
+                start_presentation_time_seconds=start_seconds,
+                end_presentation_time_seconds=end_seconds,
+                stream_time_base_num=time_base_num,
+                stream_time_base_den=time_base_den,
+            )
+        )
+    return entries
+
+
+def _row_in_segment(row: AnnotationRow, segment: FrameAnnotationExportSegment) -> bool:
+    return (
+        row["video_id"] == segment.video_id
+        and row["label_id"] == segment.label_id
+        and row["information_source_id"] == segment.information_source_id
+        and row["frame_number"] is not None
+        and segment.start_frame_number
+        <= row["frame_number"]
+        <= segment.end_frame_number
+    )
+
+
+def _assert_rows_line_up_with_segments(
+    rows: list[AnnotationRow],
+    segments: list[FrameAnnotationExportSegment],
+    *,
+    require_segment_membership: bool,
+) -> None:
+    """Every row inside a segment must lie within its boundary timestamps."""
+    for row in rows:
+        containing = [segment for segment in segments if _row_in_segment(row, segment)]
+        if require_segment_membership and not containing:
+            raise ValueError(
+                f"Annotation {row['annotation_id']} is outside every exported segment"
+            )
+        timestamp = row["presentation_timestamp"]
+        for segment in containing:
+            if timestamp is None or not (
+                segment.start_presentation_timestamp
+                <= timestamp
+                <= segment.end_presentation_timestamp
+            ):
+                raise ValueError(
+                    f"Annotation {row['annotation_id']} presentation timestamp "
+                    f"does not lie within segment {segment.segment_id}"
+                )
+
+
+def _recording_timestamp_identity(video: VideoFile) -> RecordingTimestampIdentity:
+    """Prove exported ticks against the recording; re-timed media is reported."""
+    try:
+        provenance = resolve_video_provenance(video)
+    except ValueError:
+        return "unverified"
+    if not isinstance(provenance, VideoProvenanceBundle):
+        return "unverified"
+    try:
+        ancestry = bundle_frame_ancestry(provenance)
+    except SegmentCoordinateError:
+        return "unverified"
+    return presentation_timestamp_identity(
+        provenance.transformations[0].source,
+        provenance.transformations[-1].output,
+        ancestry,
+    )
+
+
+def _manifest_videos(
+    videos: list[VideoFile],
+    *,
+    video_file_names: Mapping[int, str],
+    video_file_exported: bool,
+) -> list[FrameAnnotationExportVideo]:
+    entries: list[FrameAnnotationExportVideo] = []
+    for video in videos:
+        payload = VideoFileMetaPayload.model_validate(video.meta or {})
+        recording_time = payload.recording_time
+        recording = (
+            recording_time.recording
+            if recording_time is not None
+            and recording_time.recording_hash == video.raw_video_hash
+            else None
+        )
+        time_base_num, time_base_den = _required_video_time_base(video)
+        artifact_sha256 = video.processed_video_hash
+        if not artifact_sha256:
+            raise ValueError(f"Video {video.pk} has no processed-artifact identity")
+        entries.append(
+            FrameAnnotationExportVideo(
+                video_id=int(video.pk),
+                video_file_name=video_file_names[int(video.pk)],
+                video_file_name_source=resolve_export_file_name(video).source,
+                video_file_exported=video_file_exported,
+                artifact_sha256=artifact_sha256,
+                stream_time_base_num=time_base_num,
+                stream_time_base_den=time_base_den,
+                recording_timestamp_identity=_recording_timestamp_identity(video),
+                recording_started_at=(
+                    recording.recording_started_at if recording else None
+                ),
+                recording_ended_at=recording.recording_ended_at if recording else None,
+            )
+        )
+    return entries
+
+
+def _write_export_manifest(
+    annotations: list[ImageClassificationAnnotation],
+    rows: list[AnnotationRow],
+    *,
+    annotation_file: Path,
+    config: export_config,
+    video_file_names: Mapping[int, str],
+) -> Path:
+    videos = _annotation_videos(annotations)
+    segment_filtered = bool(config.segment_ids) or config.use_export_flags
+    segments = _manifest_segments(
+        cast(
+            list[_LabelVideoSegmentExportModel],
+            _selected_segments(
+                video_ids={int(video.pk) for video in videos},
+                segment_ids=config.segment_ids,
+                use_export_flags=config.use_export_flags,
+            ),
+        )
+    )
+    _assert_rows_line_up_with_segments(
+        rows, segments, require_segment_membership=segment_filtered
+    )
+    manifest = FrameAnnotationExportManifest(
+        annotation_file_name=annotation_file.name,
+        videos=_manifest_videos(
+            videos,
+            video_file_names=video_file_names,
+            video_file_exported=config.export_videos,
+        ),
+        segments=segments,
+    )
+    manifest_path = annotation_file.parent / FRAME_ANNOTATION_EXPORT_MANIFEST_NAME
+    atomic_write_file(
+        destination=manifest_path,
+        content=[manifest.model_dump_json(indent=2).encode("utf-8")],
+    )
+    return manifest_path
 
 
 """

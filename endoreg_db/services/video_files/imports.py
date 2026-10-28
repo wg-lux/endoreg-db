@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
+from typing import TYPE_CHECKING, Optional, TypedDict, Unpack
 
 from endoreg_db.services.streaming.streamable_media import (
     sync_video_streamable_artifacts,
@@ -33,7 +33,7 @@ def _video_file_model():
 
 
 def create_video_file_from_path(
-    file_path: Union[str, Path],
+    file_path: str | Path,
     center_name: str = "",
     *,
     model_cls: type["VideoFile"] | None = None,
@@ -65,7 +65,7 @@ def create_video_file_from_path(
 
 
 def create_initialized_video_file_from_path(
-    file_path: Union[str, Path],
+    file_path: str | Path,
     center_name: str,
     processor_name: Optional[str],
     raw_video_hash: str,
@@ -113,7 +113,7 @@ def initialize_video_file(
                 video.raw_video_hash,
             )
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Failed to initialize video specs for %s: %s", video.raw_video_hash, exc
         )
 
@@ -145,11 +145,16 @@ def initialize_video_file(
         )
 
     if local_raw_path is not None:
+        from endoreg_db.services.video_storage.recording_time import (
+            persist_video_recording_time,
+        )
         from endoreg_db.services.video_storage.workflow import (
             persist_video_source_timeline,
         )
 
         persist_video_source_timeline(video, Path(local_raw_path))
+        # Masking strips container metadata, so capture it from the raw import.
+        persist_video_recording_time(video, Path(local_raw_path))
     else:
         initialize_video_frames(video)
     return video

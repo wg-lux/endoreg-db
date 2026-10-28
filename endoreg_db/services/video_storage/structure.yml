@@ -47,6 +47,8 @@ files:
   role: Exports transcode_processed_video_for_storage_pressure, ensure_local_processed_video_file, summarize_processed_video_transcode_results.
 - file: provenance_cleaner.py
   role: Configure lx-anonymizer with host-owned timestamp-preserving execution and provenance persistence; frame-drop filters belong to the pinned library.
+- file: recording_time.py
+  role: Capture the raw container recording time at import before masking strips metadata.
 - file: timelines.py
   role: Exports timeline_from_video_metadata, segment_timeline_references, persist_video_source_timeline.
 - file: transcoding.py
@@ -86,6 +88,7 @@ tests:
     tests/services/test_processed_timelines.py
   files:
   - tests/services/test_frame_provenance.py
+  - tests/services/test_recording_time.py
   - tests/services/test_canonical_video_timelines.py
   - tests/services/test_processed_timelines.py
   - tests/services/test_video_transcoding.py
