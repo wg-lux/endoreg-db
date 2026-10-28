@@ -153,6 +153,8 @@ definition_of_done:
   - Vor dem Import gespeicherte Präsentationszeitstempel sind explizit auswählbar; fehlende historische
     Werte werden nicht aus der Bildrate rekonstruiert.
   - Downloads schreiben keine zusätzlichen unverschlüsselten Mediendateien auf dem Server.
+  - Medienantworten werden unter ASGI blockweise statt vollständig im Arbeitsspeicher konsumiert;
+    langsame Leser, Abbruch während eines Lesevorgangs, Fehler und WSGI bleiben getestet.
   - Browser- und Datei-Medienexport verwenden dieselbe Integritätsentscheidung; aktuelle Inhaltsidentität,
     vorhandener Freigabehash und gelesene Datei müssen übereinstimmen, auch außerhalb des Studienserver-Modus.
   - Annotationsmanifeste referenzieren den kanonischen Processed-Inhaltshash; veraltete Freigaben werden
@@ -168,6 +170,14 @@ definition_of_done:
   assessment:
     status: in_progress
     evidence:
+    - kind: test
+      reference: '2026-10-28 codex-gc10-unlock-20261028: targeted Pyright 0 errors/0 warnings;
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/utils/test_storage_streaming.py
+        tests/utils/test_encryption_range.py tests/views/report/test_report_stream.py
+        tests/views/media/test_video_export_downloads.py -q: 60 passed, no skips.
+        The 64-block ASGI regression reads only one block before first delivery; repeated cancellation,
+        ranges, reader failure, real ciphertext, wrong keys, tampering and WSGI are covered.
+        Source-only change; installed-wheel and gc-10 acceptance remain pending.'
     - kind: test
       reference: '2026-10-06: tests/views/media/test_video_export_downloads.py: 19 passed, 2 bestehende
         Warnungen. Reale verschlüsselte Dateien, falscher Schlüssel, manipuliertes Chiffrat, Rollen/Zentrum,

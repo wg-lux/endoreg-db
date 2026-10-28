@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import asyncio
 import re
-from collections.abc import Callable, Iterable, Iterator
+from collections.abc import AsyncGenerator, AsyncIterator, Callable, Iterable, Iterator
 from io import BufferedIOBase
 from pathlib import Path
 from typing import Protocol, TypeGuard, cast
 
+from asgiref.sync import sync_to_async
 from django.http import HttpResponse, StreamingHttpResponse
 
 from lx_dtypes.models.contracts.media_streaming import (
@@ -19,6 +21,47 @@ from endoreg_db.utils.paths import (
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 
 RANGE_RE = re.compile(r"bytes=(\d+)-(\d*)$")
+
+
+async def _stream_operation[T](operation: Callable[[], T]) -> T:
+    # A cancelled await cannot interrupt a blocking read. Drain that one read
+    # before closing its generator, including repeated disconnect cancellation.
+    task = asyncio.create_task(sync_to_async(operation, thread_sensitive=True)())
+    cancelled = False
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except asyncio.CancelledError:
+            cancelled = True
+    result = task.result()
+    if cancelled:
+        raise asyncio.CancelledError
+    return result
+
+
+class BoundedStreamingHttpResponse(StreamingHttpResponse):
+    """Keep synchronous protected readers incremental under ASGI and WSGI."""
+
+    _iterator: Iterator[bytes] | AsyncIterator[bytes]
+
+    async def __aiter__(self) -> AsyncGenerator[bytes, None]:
+        if self.is_async:
+            async for chunk in super().__aiter__():
+                yield chunk
+            return
+        content = iter(cast(Iterable[bytes], self.streaming_content))
+        # Django's public streaming_content wraps the reader in a map. Close
+        # the owned reader, including middleware wrappers, rather than that map.
+        close = getattr(self._iterator, "close", None)
+        try:
+            while True:
+                chunk = await _stream_operation(lambda: next(content, None))
+                if chunk is None:
+                    break
+                yield chunk
+        finally:
+            if callable(close):
+                await _stream_operation(cast(Callable[[], None], close))
 
 
 class _PlaintextSizeStorage(Protocol):
@@ -257,7 +300,7 @@ def build_partial_content_response(
 ) -> StreamingHttpResponse:
     if range_header:
         byte_range = parse_byte_range(range_header, file_size)
-        response = StreamingHttpResponse(
+        response = BoundedStreamingHttpResponse(
             iter_field_file_bytes(
                 field_file, start=byte_range.start, end=byte_range.end
             ),
@@ -269,7 +312,7 @@ def build_partial_content_response(
         )
         response["Content-Length"] = str(byte_range.length)
     else:
-        response = StreamingHttpResponse(
+        response = BoundedStreamingHttpResponse(
             iter_field_file_bytes(field_file, start=0, end=file_size - 1),
             status=200,
             content_type=content_type,
@@ -292,7 +335,7 @@ def build_partial_content_response_from_path(
 ) -> StreamingHttpResponse:
     if range_header:
         byte_range = parse_byte_range(range_header, file_size)
-        response = StreamingHttpResponse(
+        response = BoundedStreamingHttpResponse(
             iter_file_path_bytes(
                 file_path,
                 start=byte_range.start,
@@ -306,7 +349,7 @@ def build_partial_content_response_from_path(
         )
         response["Content-Length"] = str(byte_range.length)
     else:
-        response = StreamingHttpResponse(
+        response = BoundedStreamingHttpResponse(
             iter_file_path_bytes(file_path, start=0, end=file_size - 1),
             status=200,
             content_type=content_type,

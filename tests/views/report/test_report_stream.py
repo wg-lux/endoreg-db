@@ -1,6 +1,7 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+import asyncio
 import tempfile
 from collections.abc import Iterable, Iterator
 from pathlib import Path
@@ -132,11 +133,14 @@ def _patch_remote_report_manager(
     )
 
 
+@pytest.mark.parametrize("async_mode", [False, True])
 def test_remote_processed_report_lifetime_ends_after_stream_consumption(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    async_mode: bool,
 ) -> None:
     from endoreg_db.views.report import report_stream
+    from endoreg_db.utils.storage_streaming import BoundedStreamingHttpResponse
 
     path = tmp_path / "processed-report.pdf"
     payload = b"%PDF-1.4\nremote\n%%EOF\n"
@@ -153,7 +157,13 @@ def test_remote_processed_report_lifetime_ends_after_stream_consumption(
 
     assert manager.entered is True
     assert manager.exited is False
-    assert _sync_streaming_body(response) == payload
+    assert isinstance(response, BoundedStreamingHttpResponse)
+
+    async def consume() -> bytes:
+        return b"".join([chunk async for chunk in response])
+
+    result = asyncio.run(consume()) if async_mode else _sync_streaming_body(response)
+    assert result == payload
     assert manager.exited is True
 
 

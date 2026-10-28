@@ -5,6 +5,24 @@ This document is the operational and architecture runbook for the
 feature. The feature definition in YAML Ain't Markup Language (YAML) format is
 the only authoritative source for implementation and approval status.
 
+## Bounded media delivery under ASGI
+
+The shared protected-media response keeps synchronous storage readers incremental
+under the Asynchronous Server Gateway Interface (ASGI). It advances one block
+per consumer request on Django's thread-sensitive executor instead of letting
+Django collect the complete stream into a list. Web Server Gateway Interface
+(WSGI) iteration, byte ranges, encrypted-reader authentication, and download
+leases retain their existing behavior. Remote report materializations use the
+same response and close their context after consumption.
+
+Disconnect cancellation waits for the single in-flight read before closing its
+iterator; repeated cancellation cannot close a generator while it is executing.
+A blocked kernel read still needs to return before cleanup can finish. Reader
+errors propagate. No plaintext cache, key change or relaxed integrity check is
+introduced. Regression evidence belongs to `browser_video_annotation_downloads`
+in the feature definition linked above. Deploy a backend wheel containing this
+response before claiming that LX-Annotate's installed runtime has this fix.
+
 ## Recover usable media with unresolved frame mapping
 
 Use **Frame-Herkunft reparieren** in Hub Export or **Video für Transfer reparieren**
