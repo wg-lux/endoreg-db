@@ -426,9 +426,11 @@ class ReportImportService:
             snapshot = create_snapshot(txt_path, get_runtime_paths().sensitive_report)
         try:
             txt_content = self._read_txt_content(snapshot.path)
-            pdf_bytes = self._render_report_pdf(
-                f"txt_sha256:{snapshot.sha256}\n{txt_content}"
-            )
+            if not txt_content.strip():
+                raise InvalidReportDocumentError("TXT report is empty.")
+            # Render only the report text: a digest of the unanonymized source
+            # would otherwise survive into anonymized_text and hub transfers.
+            pdf_bytes = self._render_report_pdf(txt_content)
         finally:
             cleanup_staging_files((snapshot.path,), label="TXT conversion snapshot")
         destination = (

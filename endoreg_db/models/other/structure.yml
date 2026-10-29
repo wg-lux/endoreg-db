@@ -15,6 +15,8 @@ files:
   role: Study definition.
 - file: study_cohort.py
   role: Study cohort persistence.
+- file: study_report_text_extraction.py
+  role: Immutable cohort-definition-bound text rule matches against one linked anonymized report.
 - file: study_setup_import.py
   role: Canonically validated immutable study setup identities, digests and row mappings.
 - file: reference_catalog_import.py

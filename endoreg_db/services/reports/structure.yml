@@ -25,7 +25,9 @@ files:
 - file: __init__.py
   role: Berichtimport, klinischer Kontext, Persistenz und PDF-Ausgabe.
 - file: finding_extraction.py
-  role: YAML-configured finding mentions; no automatic clinical confirmation.
+  role: YAML- and study-configured finding and same-sentence classification mentions; no automatic clinical confirmation.
+- file: text_finding_approval.py
+  role: Persist an approved report-text finding with server-derived provenance and refresh the ledger.
 - file: finding_review.py
   role: Resolve reviewable evidence without creating clinical findings.
 - file: finding_sync.py

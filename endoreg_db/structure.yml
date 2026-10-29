@@ -12,6 +12,10 @@ files:
   role: Persist center-scoped browser export jobs, typed payloads and exclusive active run names.
 - file: migrations/0114_uploadjob_processing_stack.py
   role: Persist Rust-owned remaining import work and stable checkpoint references on upload jobs.
+- file: migrations/0115_patientfinding_source.py
+  role: Record server-derived patient finding provenance and the optional source report.
+- file: migrations/0116_studyreporttextextraction.py
+  role: Persist immutable cohort-definition-bound report text evidence for study review.
 - file: migrations/0111_delete_frameextractionrequest.py
   role: Retire the unused frame extraction request table; frame files are export-only.
 - file: migrations/0112_alter_center_center_key.py

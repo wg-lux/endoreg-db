@@ -5,6 +5,8 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 from lx_dtypes.models.contracts.finding_extraction import (
+    ClassificationMention,
+    ClassificationTextRule,
     FindingExtractionEvidence,
     FindingMention,
     FindingTextRule,
@@ -78,6 +80,80 @@ def extract_finding_mentions(
             mention.end,
             mention.finding,
             mention.presence,
+        ),
+    )
+
+
+def extract_classification_mentions(
+    text: str,
+    rules: Mapping[str, Sequence[ClassificationTextRule]],
+    mentions: Sequence[FindingMention],
+    *,
+    nlp: "Language | None" = None,
+) -> list[ClassificationMention]:
+    """Attach classification matches only to a present finding in the same sentence.
+
+    A choice mentioned elsewhere in the report never qualifies another finding,
+    and absent or uncertain finding mentions never receive classifications.
+    """
+    if len(text) > 1_000_000:
+        raise ValueError("Report text exceeds the finding-extraction limit")
+    if not any(rules.values()) or not mentions:
+        return []
+    from spacy.matcher import Matcher
+
+    if nlp is None:
+        from lx_anonymizer.ner.spacy_extractor import SpacyModelManager
+
+        nlp = SpacyModelManager.get_model()
+    matcher = Matcher(nlp.vocab, validate=True)
+    keyed: dict[int, tuple[str, ClassificationTextRule]] = {}
+    for finding, definitions in rules.items():
+        for definition in definitions:
+            rule = ClassificationTextRule.model_validate(definition.model_dump())
+            key = f"classification_rule_{len(keyed)}"
+            matcher.add(key, [rule.pattern])
+            keyed[nlp.vocab.strings[key]] = (finding, rule)
+    document = nlp(text)
+    sentences = [
+        (sentence.start_char, sentence.end_char) for sentence in document.sents
+    ]
+
+    def sentence_of(start: int) -> int:
+        for index, (begin, end) in enumerate(sentences):
+            if begin <= start < end:
+                return index
+        raise ValueError("Mention lies outside the parsed report text")
+
+    present_sentences: dict[str, set[int]] = {}
+    for mention in mentions:
+        if mention.presence == "present":
+            present_sentences.setdefault(mention.finding, set()).add(
+                sentence_of(mention.start)
+            )
+    result: list[ClassificationMention] = []
+    for match_id, start, end in matcher(document):
+        finding, rule = keyed[match_id]
+        span = document[start:end]
+        if sentence_of(span.start_char) not in present_sentences.get(finding, set()):
+            continue
+        candidate = ClassificationMention(
+            finding=finding,
+            classification=rule.classification,
+            choice=rule.choice,
+            start=span.start_char,
+            end=span.end_char,
+        )
+        if candidate not in result:
+            result.append(candidate)
+    return sorted(
+        result,
+        key=lambda item: (
+            item.start,
+            item.end,
+            item.finding,
+            item.classification,
+            item.choice,
         ),
     )
 

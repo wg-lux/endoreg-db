@@ -26,6 +26,7 @@ from .other.study_table_import import StudyTableImport
 from .other.study_collection_entry import StudyCollectionEntry
 from .other.study import Study
 from .other.study_cohort import StudyCohort
+from .other.study_report_text_extraction import StudyReportTextExtraction
 
 ####### Administration ########
 from .administration import (
@@ -427,6 +428,7 @@ __all__ = [
     "StudyCollectionEntry",
     "Study",
     "StudyCohort",
+    "StudyReportTextExtraction",
     "Material",
     "Resource",
     "TransportRoute",

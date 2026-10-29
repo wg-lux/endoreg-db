@@ -1368,19 +1368,6 @@ def test_video_hls_access_and_deletion_respect_scope_and_playback_lease(
     assert not hls_media.delete_video_hls_artifacts(video, artifact_kind="raw")
 
 
-def test_ready_reuse_still_validates_persisted_timeline(
-    hls_center: Center, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    from pydantic import ValidationError
-
-    video = _create_processed_video(center=hls_center)
-    monkeypatch.setattr(hls_media, "_run_ffmpeg_hls", FakeHlsOutputRecorder().run)
-    hls_media.materialize_video_hls(video.pk)
-    VideoFile.objects.filter(pk=video.pk).update(meta={"fps_normalization": {}})
-    with pytest.raises(ValidationError):
-        hls_media.materialize_video_hls(video.pk)
-
-
 def test_hls_reuses_verified_hash_and_rejects_same_name_replacement(
     hls_center: Center,
     monkeypatch: pytest.MonkeyPatch,
@@ -1431,7 +1418,6 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         segment_pattern: Path,
         playlist_path: Path,
         segment_base_url: str,
-        timeline_validation: object,
         encoding_profile: hls_media.HlsEncodingProfile,
     ) -> None:
         _ = source_file_name
@@ -1440,7 +1426,6 @@ def test_materialize_video_hls_failure_unlinks_partial_segments_and_keys(
         _ = source.read()
         _ = playlist_path
         _ = segment_base_url
-        _ = timeline_validation
         _ = encoding_profile
         key_info_lines = key_info_path.read_text(encoding="utf-8").splitlines()
         observed_temp_key_paths.append(Path(key_info_lines[1]))

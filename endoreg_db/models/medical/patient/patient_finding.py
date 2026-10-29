@@ -14,6 +14,11 @@ if TYPE_CHECKING:
 
 
 class PatientFinding(models.Model):
+    class Source(models.TextChoices):
+        MANUAL = "manual", "Manual entry"
+        REPORT_TEXT = "report_text", "Approved report text suggestion"
+        IMAGE_AI = "image_ai", "Approved image AI suggestion"
+
     instance_id: models.UUIDField[UUID, UUID] = models.UUIDField(
         default=uuid4, unique=True, editable=False
     )
@@ -28,6 +33,20 @@ class PatientFinding(models.Model):
         "Finding",
         on_delete=models.CASCADE,
         related_name="finding_patient_findings",
+    )
+
+    source: models.CharField[str, str] = models.CharField(
+        max_length=32,
+        choices=Source.choices,
+        default=Source.MANUAL,
+        help_text="Where the finding came from; set by the server, never by clients.",
+    )
+    source_report: models.ForeignKey[Any] = models.ForeignKey(
+        "RawPdfFile",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="derived_patient_findings",
     )
 
     created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)

@@ -1001,3 +1001,28 @@ def test_txt_conversion_rejects_unrenderable_content_without_deleting_source(
     with pytest.raises(InvalidReportDocumentError, match="complete report text"):
         service._create_temp_pdf_from_txt(source)
     assert source.read_bytes() == payload
+
+
+def test_txt_conversion_rejects_empty_text_and_omits_source_digest(
+    service: ReportImportService, tmp_path: Path
+) -> None:
+    empty = tmp_path / "empty.txt"
+    empty.write_text(" \n\t", encoding="utf-8")
+    with pytest.raises(InvalidReportDocumentError, match="empty"):
+        service._create_temp_pdf_from_txt(empty)
+
+    source = tmp_path / "report.txt"
+    source.write_text("Befund ohne Prüfsumme", encoding="utf-8")
+    converted = service._create_temp_pdf_from_txt(source)
+    try:
+        document = cast(PdfDocument, pymupdf.open(filename=str(converted)))
+        try:
+            extracted = "".join(
+                document[index].get_text() for index in range(document.page_count)
+            )
+        finally:
+            document.close()
+        assert "txt_sha256" not in extracted
+        assert " ".join(extracted.split()) == "Befund ohne Prüfsumme"
+    finally:
+        converted.unlink(missing_ok=True)

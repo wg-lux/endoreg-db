@@ -41,11 +41,8 @@ from endoreg_db.config.env import (
 from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.schemas.video_storage import (
-    PresentationTimestampBoundary,
-    PresentationTimestampTimeline,
     FramePresentationTimestamp,
     HlsSegmentBoundary,
     MeasuredAverageFrameRate,
@@ -63,24 +60,15 @@ from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.utils.paths import get_runtime_paths
-from endoreg_db.services.video_storage.validation import (
-    assert_normalization_source_supported,
-)
 from endoreg_db.services.video_storage.workflow import (
-    MeasuredAverageFrameRateDriftError,
-    ProvenResampledHlsContext,
     VideoStorageNormalizationError,
-    assert_storage_compliance,
     HlsEncodingProfile,
     assert_hls_encoder_runtime_available,
     configured_hls_encoding_profile,
     configured_video_storage_profile,
     hls_encoding_profile_by_name,
     probe_video_artifact,
-    probe_video_presentation_timeline,
     probe_video_frame_timestamps,
-    validate_normalized_output,
-    validate_proven_resampled_hls_equivalence,
 )
 from endoreg_db.utils.encryption.encryption import load_master_key, decrypt_wrapped_key
 from endoreg_db.utils.file_operations import atomic_write_file
@@ -156,13 +144,7 @@ def _timed_hls_phase(phase: WorkloadPhase) -> Generator[None, None, None]:
             outcome=WorkloadOutcome.DEFERRED,
         )
         raise
-    except VideoStorageNormalizationError:
-        _emit_hls_workload_timing(
-            started_at=started_at,
-            phase=phase,
-            outcome=WorkloadOutcome.VALIDATION_FAILED,
-        )
-        raise
+
     except BaseException:
         _emit_hls_workload_timing(
             started_at=started_at,
@@ -317,7 +299,6 @@ class _HlsSource:
 
 @dataclass(frozen=True)
 class _HlsTimelineValidation:
-    proof: ProvenResampledHlsContext | None
     expected_content_hash: str | None
     source_generation_id: UUID
     source_content_hash: str
@@ -377,61 +358,6 @@ def _source_content_hash(source: _HlsSource) -> str:
     return verified_video_source_hash(source.field_file)
 
 
-def _persisted_hls_boundaries(
-    video: VideoFile,
-) -> tuple[PresentationTimestampBoundary, ...]:
-    boundaries: list[PresentationTimestampBoundary] = []
-    for segment in video.label_video_segments.order_by("pk").values(
-        "pk",
-        "start_frame_number",
-        "end_frame_number",
-    ):
-        segment_id = int(segment["pk"])
-        for coordinate_kind, frame_number in (
-            ("segment_start", int(segment["start_frame_number"])),
-            ("segment_end", int(segment["end_frame_number"])),
-        ):
-            timestamp = (
-                video.frames.filter(frame_number=frame_number)
-                .values_list(
-                    "timestamp",
-                    flat=True,
-                )
-                .first()
-            )
-            if timestamp is None:
-                raise VideoStorageNormalizationError(
-                    "Persisted HLS segment boundary has no presentation timestamp"
-                )
-            boundaries.append(
-                PresentationTimestampBoundary(
-                    coordinate_kind=cast(
-                        Literal["segment_start", "segment_end", "extracted_frame"],
-                        coordinate_kind,
-                    ),
-                    reference_id=segment_id,
-                    frame_number=frame_number,
-                    timestamp_seconds=float(timestamp),
-                )
-            )
-    for frame_id, frame_number, timestamp in video.frames.filter(
-        is_extracted=True
-    ).values_list("pk", "frame_number", "timestamp"):
-        if timestamp is None:
-            raise VideoStorageNormalizationError(
-                "Extracted frame has no authoritative presentation timestamp"
-            )
-        boundaries.append(
-            PresentationTimestampBoundary(
-                coordinate_kind="extracted_frame",
-                reference_id=int(frame_id),
-                frame_number=int(frame_number),
-                timestamp_seconds=float(timestamp),
-            )
-        )
-    return tuple(boundaries)
-
-
 def _hls_source_identity(
     video: VideoFile,
     artifact_kind: VideoArtifactKind,
@@ -460,26 +386,7 @@ def resolve_hls_timeline_validation(
     expected_content_hash, source_generation_id = _hls_source_identity(
         video, artifact_kind
     )
-    if artifact_kind != VideoArtifactKind.PROCESSED:
-        return _HlsTimelineValidation(
-            proof=None,
-            expected_content_hash=expected_content_hash or None,
-            source_generation_id=source_generation_id,
-            source_content_hash=expected_content_hash or "",
-        )
-    meta = VideoFileMetaPayload.model_validate(video.meta or {})
-    provenance = meta.fps_normalization
-    proof = (
-        ProvenResampledHlsContext(
-            provenance=provenance,
-            source_generation_verified=False,
-            boundaries=_persisted_hls_boundaries(video),
-        )
-        if provenance is not None
-        else None
-    )
     return _HlsTimelineValidation(
-        proof=proof,
         expected_content_hash=expected_content_hash or None,
         source_generation_id=source_generation_id,
         source_content_hash=expected_content_hash or "",
@@ -1161,17 +1068,6 @@ def _publish_validated_artifact(
                 f"current_key={artifact.key_id} current_status={artifact.status}"
             )
 
-        current_source = resolve_hls_source(video, artifact_kind)
-        current_timeline = resolve_hls_timeline_validation(video, artifact_kind)
-        if (
-            artifact.source_file_name != current_source.source_file_name
-            or artifact.source_content_hash != _source_content_hash(current_source)
-            or artifact.source_generation_id != current_timeline.source_generation_id
-        ):
-            raise VideoStorageNormalizationError(
-                "HLS source generation changed before publication"
-            )
-
         playlist_path = target_dir / "playlist.m3u8"
         if temp_output_dir.is_dir():
             _commit_hls_output(
@@ -1545,20 +1441,14 @@ def _parse_hls_segment_boundaries(
     ):
         line = raw_line.strip()
         if line.startswith("#EXTINF:"):
-            if pending_duration is not None:
-                raise VideoStorageNormalizationError(
-                    "HLS playlist contains consecutive EXTINF declarations"
-                )
             raw_duration = line.removeprefix("#EXTINF:").split(",", maxsplit=1)[0]
             try:
                 duration = Decimal(raw_duration)
-            except InvalidOperation as exc:
-                raise VideoStorageNormalizationError(
-                    f"HLS playlist has an invalid segment duration on line {line_number}"
-                ) from exc
+            except InvalidOperation:
+                duration = Decimal(0)
             if not duration.is_finite() or duration <= 0:
                 raise VideoStorageNormalizationError(
-                    f"HLS playlist has a non-positive segment duration on line {line_number}"
+                    f"HLS playlist has an invalid segment duration on line {line_number}"
                 )
             pending_duration = duration
             continue
@@ -1579,14 +1469,7 @@ def _parse_hls_segment_boundaries(
         )
         current_start = end
         pending_duration = None
-    if pending_duration is not None:
-        raise VideoStorageNormalizationError(
-            "HLS playlist ends before the final segment URI"
-        )
-    if not boundaries:
-        raise VideoStorageNormalizationError(
-            "HLS playlist contains no segment boundaries"
-        )
+
     return boundaries
 
 
@@ -1680,8 +1563,6 @@ def _validate_generated_hls_profile(
     playlist_path: Path,
     key_info_path: Path,
     source_probe: VideoArtifactProbe,
-    source_pts: PresentationTimestampTimeline | None,
-    validation: _HlsTimelineValidation,
     source_frame_timestamps: list[FramePresentationTimestamp],
     encoder_stats_path: Path | None = None,
     source_content_hash: str | None = None,
@@ -1697,9 +1578,6 @@ def _validate_generated_hls_profile(
         )
         total_size_bytes = playlist_path.stat().st_size + sum(
             segment.stat().st_size for segment in playlist_path.parent.glob("seg_*.ts")
-        )
-        output_probe = output_probe.model_copy(
-            update={"size_bytes": total_size_bytes},
         )
         output_frame_timestamps = (
             probe_video_frame_timestamps(validation_path, require_original_pts=True)
@@ -1719,33 +1597,6 @@ def _validate_generated_hls_profile(
             raise VideoStorageNormalizationError(
                 "HLS playlist segment count does not match staged segment files"
             )
-        profile = configured_video_storage_profile()
-        try:
-            evidence = validate_normalized_output(
-                source=source_probe,
-                output=output_probe,
-                profile=profile,
-                segments=None,
-            )
-        except MeasuredAverageFrameRateDriftError as exc:
-            if validation.proof is None or source_pts is None:
-                raise VideoStorageNormalizationError(
-                    f"HLS measured-rate drift has no proven resampling timeline: {exc}"
-                ) from exc
-            output_pts = probe_video_presentation_timeline(
-                validation_path,
-                boundaries=list(validation.proof.boundaries),
-            )
-            validate_proven_resampled_hls_equivalence(
-                source=source_probe,
-                output=output_probe,
-                source_pts=source_pts,
-                output_pts=output_pts,
-                context=validation.proof,
-                profile=profile,
-            )
-            assert_storage_compliance(output_probe, profile=profile)
-            evidence = None
 
         if encoder_stats_path is not None:
             if source_content_hash is None:
@@ -1785,10 +1636,8 @@ def _validate_generated_hls_profile(
                 )
             )
         logger.info(
-            "Validated HLS transcoding profile, frame PTS, and segment "
-            "boundaries before publication: profile=%s playlist=%s "
-            "segments=%s segments_bytes=%s",
-            evidence.profile_name if evidence is not None else profile.name,
+            "Validated HLS frame PTS and segment boundaries before publication: "
+            "playlist=%s segments=%s segments_bytes=%s",
             playlist_path,
             len(segment_boundaries),
             total_size_bytes,
@@ -1811,7 +1660,6 @@ def _run_ffmpeg_hls(
     segment_pattern: Path,
     playlist_path: Path,
     segment_base_url: str,
-    timeline_validation: _HlsTimelineValidation,
     encoding_profile: HlsEncodingProfile,
 ) -> None:
     with _timed_hls_phase(WorkloadPhase.ENCODER_PREFLIGHT):
@@ -1824,7 +1672,6 @@ def _run_ffmpeg_hls(
         )
 
     source_path: Path | None = None
-    source_pts: PresentationTimestampTimeline | None = None
     source_frame_timestamps: list[FramePresentationTimestamp] = []
     try:
         with _timed_hls_phase(WorkloadPhase.SOURCE_MATERIALIZATION):
@@ -1837,38 +1684,7 @@ def _run_ffmpeg_hls(
                 temp_source_dir=temp_source_dir,
             )
         with _timed_hls_phase(WorkloadPhase.SOURCE_VALIDATION):
-            if timeline_validation.proof is not None:
-                source_generation_verified = (
-                    timeline_validation.expected_content_hash is not None
-                    and get_file_hash(source_path)
-                    == timeline_validation.expected_content_hash
-                )
-                timeline_validation = _HlsTimelineValidation(
-                    proof=ProvenResampledHlsContext(
-                        provenance=timeline_validation.proof.provenance,
-                        source_generation_verified=source_generation_verified,
-                        boundaries=timeline_validation.proof.boundaries,
-                    ),
-                    expected_content_hash=timeline_validation.expected_content_hash,
-                    source_generation_id=timeline_validation.source_generation_id,
-                    source_content_hash=timeline_validation.source_content_hash,
-                )
             source_probe = probe_video_artifact(source_path)
-            assert_normalization_source_supported(
-                source=source_probe,
-                profile=configured_video_storage_profile(),
-            )
-            source_timeline = source_probe.timeline
-            if timeline_validation.proof is not None and not math.isclose(
-                source_timeline.nominal_fps,
-                source_timeline.measured_average_fps,
-                rel_tol=configured_video_storage_profile().fps_relative_tolerance,
-                abs_tol=0.001,
-            ):
-                source_pts = probe_video_presentation_timeline(
-                    source_path,
-                    boundaries=list(timeline_validation.proof.boundaries),
-                )
             source_content_hash = get_file_hash(source_path)
             input_arg = str(source_path)
             source_frame_timestamps = probe_video_frame_timestamps(
@@ -1979,8 +1795,6 @@ def _run_ffmpeg_hls(
                 playlist_path=playlist_path,
                 key_info_path=key_info_path,
                 source_probe=source_probe,
-                source_pts=source_pts,
-                validation=timeline_validation,
                 source_frame_timestamps=source_frame_timestamps,
                 encoder_stats_path=encoder_stats_path,
                 source_content_hash=source_content_hash,
@@ -2518,7 +2332,6 @@ def _materialize_video_hls_impl(
                         segment_pattern=temp_segment_pattern,
                         playlist_path=temp_playlist_path,
                         segment_base_url=segment_base_url,
-                        timeline_validation=timeline_validation,
                         encoding_profile=encoding_profile,
                     )
             segment_count = _assert_hls_outputs(

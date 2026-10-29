@@ -54,7 +54,7 @@ files:
 - file: transcoding.py
   role: Directory transcoding preserving native timestamps without a numerical source FPS limit.
 - file: validation.py
-  role: Exports assert_temporal_equivalence, validate_proven_resampled_hls_equivalence, assert_storage_compliance.
+  role: Exports assert_temporal_equivalence and assert_storage_compliance.
 - file: workflow.py
   role: Backward-compatible facade for video storage normalization.
 dependencies:

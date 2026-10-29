@@ -46,13 +46,11 @@ class FakeHlsOutputRecorder:
         segment_pattern: Path,
         playlist_path: Path,
         segment_base_url: str,
-        timeline_validation: object,
         encoding_profile: HlsEncodingProfile,
     ) -> None:
         _ = source_file_name
         _ = source_size_bytes
         _ = temp_source_dir
-        _ = timeline_validation
         _ = encoding_profile
         record = _read_key_info_record(key_info_path)
         if not record.key_path.exists():

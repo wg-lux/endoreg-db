@@ -192,3 +192,32 @@ with 1–100 neighbors per vector. Vectors use portable JSON storage; an approxi
 vector index is not required for this initial corpus. The command validates all
 selected evidence before writing CSV. Exported files contain anonymized report
 fragments and remain subject to the report's access and retention policy.
+
+## Study cohort text extraction and approval
+
+Study cohorts can carry their own matcher rules (`StudyMetadata.text_extraction`
+and `classification_text_extraction` in lx-dtypes). The host study workflow
+(lx-annotate) owns when extraction runs, which reports it reads and how results
+are reviewed; endoreg-db provides the primitives:
+
+- `extract_finding_mentions` matches finding rules against anonymized text.
+- `extract_classification_mentions` matches classification-choice rules and keeps
+  a match only when it lies in the same sentence as a `present` mention of its
+  finding. Absent or uncertain mentions never receive classifications. The spaCy
+  pipeline must provide sentence boundaries.
+- `approve_text_finding` (`services/reports/text_finding_approval.py`) creates or
+  re-confirms one `PatientFinding` through `sync_report_findings(replace=False)`,
+  so finding and classification validation stay shared with report saves. It
+  requires the report to be linked to the target examination, records
+  `source=report_text` and `source_report`, refuses an instance that already
+  exists with other provenance, and refreshes the structured ledger.
+
+`PatientFinding.source` (`manual`, `report_text`, `image_ai`) is set by the
+server only; client payloads cannot choose it. The lx-dtypes ledger builder adds
+a `source:<value>` tag to non-manual findings, so study ledger capture, Excel and
+hub exports carry provenance. Manual findings stay untagged, which keeps existing
+ledgers unchanged. No PDF hash or report text is written to the ledger.
+
+TXT reports are converted to PDF from their text alone. Earlier versions
+prepended a `txt_sha256:` digest of the unanonymized source, which could reach
+`anonymized_text`; reports imported that way keep it until they are reimported.

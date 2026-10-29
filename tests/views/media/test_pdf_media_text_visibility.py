@@ -60,11 +60,12 @@ class PdfMediaTextVisibilityTests(TransactionTestCase):
                         document[index].get_text()
                         for index in range(document.page_count)
                     )
+                    # The rendered report carries no digest of the raw source.
                     self.assertEqual(
                         " ".join(rendered_text.split()),
-                        f"txt_sha256:{get_file_hash(txt_path)} "
-                        + " ".join(txt_content.split()),
+                        " ".join(txt_content.split()),
                     )
+                    self.assertNotIn(get_file_hash(txt_path), rendered_text)
                 finally:
                     document.close()
             finally:

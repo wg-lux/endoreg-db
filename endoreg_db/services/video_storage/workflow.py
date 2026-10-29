@@ -57,12 +57,10 @@ from endoreg_db.services.video_storage.timelines import (
 )
 from endoreg_db.services.video_storage.validation import (
     MeasuredAverageFrameRateDriftError,
-    ProvenResampledHlsContext,
     assert_storage_compliance,
     assert_temporal_equivalence,
     validate_annotation_fps_resample,
     validate_normalized_output,
-    validate_proven_resampled_hls_equivalence,
 )
 from endoreg_db.utils import ffmpeg_wrapper as ffmpeg_wrapper
 
@@ -152,7 +150,6 @@ __all__ = [
     "VideoStorageNormalizationError",
     "VideoStorageProfile",
     "MeasuredAverageFrameRateDriftError",
-    "ProvenResampledHlsContext",
     "assert_storage_compliance",
     "assert_temporal_equivalence",
     "assert_hls_encoder_runtime_available",
@@ -172,7 +169,6 @@ __all__ = [
     "timeline_from_video_metadata",
     "validate_annotation_fps_resample",
     "validate_normalized_output",
-    "validate_proven_resampled_hls_equivalence",
     "video_normalization_evidence",
     "video_storage_capacity",
 ]

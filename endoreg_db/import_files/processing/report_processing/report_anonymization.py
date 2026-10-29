@@ -186,23 +186,11 @@ def _validate_report_result(
 
 
 class ReportAnonymizer:
-    @staticmethod
-    def _is_txt_input(ctx: ImportContext) -> bool:
-        source_path = ctx.original_path if isinstance(ctx.original_path, Path) else None
-        if source_path is None:
-            source_path = ctx.file_path
-        return source_path.suffix.lower() == ".txt"
-
     def anonymize_report(self, ctx: ImportContext) -> ImportContext:
         if not isinstance(ctx.current_report, RawPdfFile):
             raise TypeError("Report anonymization requires a persisted RawPdfFile")
         report_model = ctx.current_report
         report = cast(_ReportStorageRecord, report_model)
-        if self._is_txt_input(ctx):
-            raise ValueError(
-                "Raw TXT report anonymization is disabled. Use a PDF or the "
-                "validated preanonymized import workflow."
-            )
 
         anonymized_dir = ensure_directory(_report_staging_dir())
         report_reader = self._instantiate_report_reader(report_model)

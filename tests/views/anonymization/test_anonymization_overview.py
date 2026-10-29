@@ -382,7 +382,6 @@ def test_overview_prefers_current_publication_over_replacement(
         raise AssertionError("Overview must not hash, decode, scan or dispatch media")
 
     monkeypatch.setattr(hls_media, "_source_content_hash", forbidden)
-    monkeypatch.setattr(hls_media, "_persisted_hls_boundaries", forbidden)
     monkeypatch.setattr(hls_media, "_ready_artifact_paths_exist", forbidden)
     monkeypatch.setattr(hls_media, "dispatch_video_hls_materialization", forbidden)
     video = VideoFile(

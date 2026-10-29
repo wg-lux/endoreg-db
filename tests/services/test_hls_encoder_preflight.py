@@ -4,7 +4,6 @@ from __future__ import annotations
 from io import BytesIO
 from pathlib import Path
 from unittest.mock import Mock
-from uuid import uuid4
 
 import pytest
 
@@ -88,12 +87,6 @@ def _run(*, source: BytesIO, directory: Path) -> None:
         segment_pattern=directory / "seg_%05d.ts",
         playlist_path=directory / "playlist.m3u8",
         segment_base_url="/segments/",
-        timeline_validation=hls_media._HlsTimelineValidation(
-            proof=None,
-            expected_content_hash=None,
-            source_generation_id=uuid4(),
-            source_content_hash="",
-        ),
         encoding_profile=hls_encoding_profile_by_name(
             HlsEncodingProfileName.CLINICAL_H264_NVENC_CQ_V1
         ),
