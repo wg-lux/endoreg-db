@@ -1,5 +1,6 @@
 from django.test import TestCase
 from logging import getLogger
+from typing import Protocol, cast
 
 from endoreg_db.models import (
     Label,
@@ -9,15 +10,26 @@ from endoreg_db.models.label import LabelType, LabelSet
 logger = getLogger(__name__)
 logger.debug("Starting test for Patient model")
 
-from ..helpers.data_loader import (
-    load_ai_model_label_data,
-)
-
-
 
 class LabelModelTest(TestCase):
-    def setUp(self):
-        load_ai_model_label_data()
+    label_type: LabelType
+    outside_label: Label
+    low_quality_label: Label
+
+    class _LabelLike(Protocol):
+        label_type: LabelType
+
+    @classmethod
+    def setUpTestData(cls):
+        cls.label_type = LabelType.objects.create(name="classification")
+        cls.outside_label = Label.objects.create(
+            name="outside",
+            label_type=cls.label_type,
+        )
+        cls.low_quality_label = Label.objects.create(
+            name="low_quality",
+            label_type=cls.label_type,
+        )
 
     def test_label_outside_exists(self):
         """
@@ -37,14 +49,29 @@ class LabelModelTest(TestCase):
         """
         Test if all labels have a label type.
         """
-        labels = Label.objects.all()
+        labels = Label.objects.filter(
+            name__in=[self.outside_label.name, self.low_quality_label.name]
+        ).order_by("name")
         for label in labels:
             self.assertIsInstance(label, Label)
-            self.assertIsInstance(label.label_type, LabelType)
+            typed_label = cast(LabelModelTest._LabelLike, label)
+            self.assertIsInstance(typed_label.label_type, LabelType)
+
 
 class LabelSetModelTest(TestCase):
-    def setUp(self):
-        load_ai_model_label_data()
+    @classmethod
+    def setUpTestData(cls):
+        cls.label_type = LabelType.objects.create(name="classification")
+        cls.outside_label = Label.objects.create(
+            name="outside",
+            label_type=cls.label_type,
+        )
+        cls.low_quality_label = Label.objects.create(
+            name="low_quality",
+            label_type=cls.label_type,
+        )
+        cls.label_set = LabelSet.objects.create(name="default", version=1)
+        cls.label_set.labels.set([cls.outside_label, cls.low_quality_label])
 
     def test_label_set_have_labels(self):
         """
@@ -53,4 +80,6 @@ class LabelSetModelTest(TestCase):
         label_sets = LabelSet.objects.all()
         for label_set in label_sets:
             self.assertIsInstance(label_set, LabelSet)
-            self.assertTrue(label_set.labels.exists(), f"Label set {label_set} has no labels.")
+            self.assertTrue(
+                label_set.labels.exists(), f"Label set {label_set} has no labels."
+            )

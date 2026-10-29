@@ -1,0 +1,97 @@
+schema_version: "1.0"
+scan:
+  paths:
+    - endoreg_db
+    - scripts
+  excluded_path_parts:
+    - migrations
+    - __pycache__
+broad_exception:
+  count: 354
+  fingerprint: ef59831268f87630bb32379900537a052d0577bb00a042d569a7792a7f65c938
+  owner: endoreg_db maintainers
+  reason: >-
+    Reviewed inventory after the exception-reduction cohort, the extraction of
+    typed workflow helpers, and removal of the unmounted NICE/PARIS
+    classification island. Three newer boundary handlers were reviewed
+    individually: per-video failure isolation in the migration command,
+    fail-closed role resolution at the lx-dtypes authorization boundary, and
+    atomic cleanup with structured error logging in the filesystem wrapper.
+    They replace three removed legacy findings, leave the total unchanged, and
+    do not permit broad handlers in inner domain logic.
+    The reproducible API route checker catches only specific file, Unicode,
+    JSON, and contract errors; its former broad command-line handler was
+    removed.
+    The name-gender adapter handles the library's regular `unknown` value as a
+    domain case while allowing unexpected detector or data failures to
+    propagate visibly instead of masking them as a valid unknown classification.
+    The central configuration boundary replaces two broad numeric parser
+    handlers with specific ValueError translation. Explicitly configured invalid
+    values and non-finite floating-point numbers raise a data-minimizing typed
+    error instead of silently activating the default.
+    Two removed legacy findings are replaced by two reviewed handlers at the
+    Hypertext Transfer Protocol (HTTP) integration boundary for remote processed
+    reports. They catch unknown failures from a configurable external provider
+    only at the view boundary, log only the report identifier and exception type,
+    and translate fail-closed into the existing non-disclosing HTTP 404 contract.
+    The materialization lifetime itself uses ExitStack and requires neither broad
+    cleanup handlers nor manual __exit__ calls.
+    Review 2026-09-23 gegen den Quellstand 4c84c423: 24 neue oder verschobene
+    Handler-Signaturen und 34 entfernte Signaturen geprüft. Die verbleibenden
+    Grenzen betreffen Import-Finalisierung, Transcode-/Storage-Cleanup, Lease-
+    Heartbeats, HTTP-Adapter und Fehlertelemetrie. Fehler werden weitergereicht,
+    als fehlgeschlagene Ergebnisse gemeldet oder an die besitzende Ausführung
+    übertragen; Post-Commit-Cleanup behält seinen Wiederholungsbeleg.
+    Zwei Report-HTTP-Handler wurden lediglich verschoben. Der Bestand bleibt
+    technische Schuld; insbesondere ältere best-effort Löschpfade und HLS-
+    Fehlertexte erhalten hierdurch keine Produktions- oder Sicherheitsfreigabe.
+    Review 2026-10-23 against source state 2a3a195b (last baseline edit, actual
+    count 387 there rather than the recorded 389): 63 added and 96 removed
+    handler signatures. Most are relocations of services into subpackages
+    (streaming, video_storage, video_files, media, privacy, annotations,
+    frames, runtime, reports, datasets, audit) with unchanged handler bodies.
+    Individually reviewed new boundaries: apply_deployment translates registry
+    activation failure into DeploymentActivationError without implying a
+    database rollback; VideoImportService._import_owned and
+    ReportImportService._run_owned_import re-raise database recovery and lease
+    ownership errors, record the failure and re-raise; the report import fence
+    handlers mark the outcome or fence as failed and re-raise;
+    run_with_optional_profile re-raises work failures and only logs profile
+    write failures after failed work; _run_report_job re-raises once a content
+    attempt exists. _run_prediction_refresh reports a post-commit dispatch
+    failure as an explicit failed payload; its exception text in that payload
+    remains technical debt. Removed handlers include the unused
+    frame_anonymization_utils helpers, setup_config, load_master_key and
+    secure_unlink_file. The total decreases; no handler is approved for inner
+    domain logic.
+    The reviewed Celery job-boundary handler in hub ingest is unchanged; its
+    function was renamed from _run_video_upload_import_job to the public
+    run_video_upload_import_job because endoreg_db.tasks imports it.
+  review_after: 2026-11-20
+type_suppression:
+  count: 107
+  fingerprint: 8872cde90727876f57c31acef7d7ef31e1cc94446dc1cc47fb6caa2af674f37b
+  owner: endoreg_db maintainers
+  reason: >-
+    Reviewed legacy inventory after removing four type suppressions from the
+    video-inference cohort and the private NinjaAPI registry suppression.
+    The typed Django manager declaration for the medical-ledger receipt uses
+    the same narrowly scoped framework suppression as comparable models; the
+    remaining inventory is not a general exemption.
+    A local, narrow gender_guesser stub replaces the former missing third-party
+    type suppression and keeps the adapter fully typed.
+    Review 2026-09-23: Die 109 aktuellen Unterdrückungen stimmen bereits mit
+    dem tatsächlichen Quellbestand von 4c84c423 überein; der damalige Zähler
+    140 war veraltet. Die Berichtsauswahl fügt keine Unterdrückung hinzu.
+    Review 2026-10-23 against 2a3a195b: two suppressions moved with their
+    modules (privacy/metrics, video_files/temporal_inference). Four were
+    removed (missing stubs in video anonymization, video correction jobs and
+    the correction view; an unused-function marker in streamable_media). Two
+    were added and reviewed: a missing lx_anonymizer stub at the lazy report
+    reader import, and the DRF field declaration `label` in
+    VideoMaskProfileSerializer that intentionally shadows Serializer.label.
+    The two new
+    suppressions from the clinical lifecycle commit were replaced by explicit
+    casts after the existing isinstance checks in clinical_lifecycle/facts.py
+    and audit_clinical_lifecycle.py, so the total decreases from 109 to 107.
+  review_after: 2026-11-20

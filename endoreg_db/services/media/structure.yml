@@ -1,0 +1,90 @@
+version: 1
+tier: service
+path: endoreg_db/services/media
+parent: ../structure.yml
+summary: Media integrity, operation leases and approved processed-media exports.
+responsibilities:
+- Verify current media integrity and coordinate operation leases.
+- Authorize approved processed-media exports and explicit source deletion.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: acquire_media_operation_lease
+  file: operation_gate.py
+  purpose: Acquire a lease through the VideoFile row used by cleanup authorization.
+- name: mark_video_ready_for_export
+  file: export_ready.py
+  purpose: Approve the current processed generation after center, state, clinical lifecycle, hash and audit checks.
+files:
+- file: __init__.py
+  role: Medienintegrität, Operationsleases und Exportfreigabe.
+- file: export_annotated.py
+  role: Exports ExportConflictError, ExportAnnotatedService and the shared confine_export_location path boundary.
+- file: frame_annotation_export_jobs.py
+  role: Center-scoped dataset export jobs over AnnotationExporterClient with single-segment run directories, run-lock exclusion and claim-token fencing; video_id jobs also enforce video center and finalized segment annotations.
+- file: frame_annotation_export_downloads.py
+  role: Read-only listing, per-file and ZIP access to the latest completed export job of a run directory within the user's center scope; symbolic links fail loudly.
+- file: export_downloads.py
+  role: Read-only browser exports of accepted processed media and annotations.
+- file: export_policy.py
+  role: Shared processed-media integrity and generation-bound approval checks for all export paths.
+- file: csv_export.py
+  role: Shared spreadsheet-safe cell encoding for browser and file exports.
+- file: export_file_names.py
+  role: Identifier-free export video names decided at anonymization validation.
+- file: export_ready.py
+  role: Exports mark_video_ready_for_export.
+- file: integrity.py
+  role: Exports mark_video_integrity_lost and reconcile_media_integrity for processed media, metadata and streamable artifacts.
+- file: operation_gate.py
+  role: Exports acquire_media_operation_lease, acquire_video_transcode_lease, assert_video_transcode_lease.
+- file: source_deletion.py
+  role: Shared ownership checks for explicit deletion of recorded import sources.
+dependencies:
+  internal:
+  - endoreg_db
+  - endoreg_db/config
+  - endoreg_db/export/frames
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/annotations
+  - endoreg_db/services/centers
+  - endoreg_db/services/clinical_lifecycle
+  - endoreg_db/services/hub
+  - endoreg_db/services/runtime
+  - endoreg_db/services/streaming
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_files/_frames
+  - endoreg_db/services/video_storage
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hls_media.py tests/services/test_media_integrity_reconciliation_plan.py
+    tests/services/test_hub_storage_rotation.py tests/views/media/test_video_export_downloads.py
+    tests/services/test_export_frames_contract.py tests/views/misc/test_export_annotated_contract.py
+    tests/services/test_export_file_names.py tests/services/test_frame_annotation_export_jobs.py
+    tests/services/test_frame_annotation_export_downloads.py
+  files:
+  - tests/services/test_hls_media.py
+  - tests/services/test_media_integrity_reconciliation_plan.py
+  - tests/services/test_hub_storage_rotation.py
+  - tests/views/media/test_video_export_downloads.py
+  - tests/services/test_export_frames_contract.py
+  - tests/views/misc/test_export_annotated_contract.py
+  - tests/services/test_export_file_names.py
+  - tests/services/test_frame_annotation_export_jobs.py
+  - tests/services/test_frame_annotation_export_downloads.py

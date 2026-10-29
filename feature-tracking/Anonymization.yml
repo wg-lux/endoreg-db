@@ -1,0 +1,1029 @@
+schema_version: '1.0'
+id: anonymization
+name: Anonymization
+description: Fail-closed anonymization and quality approval of clinical videos, frames, and reports.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/anonymization_contract.md
+  disposition: reference
+  note: Protection scope, quality limits, state model, and role-separated workflows.
+- path: docs/configurable_ai_setup.md
+  disposition: reference
+  note: Configuration of the artificial intelligence components in use.
+- path: feature-tracking/reports/sensitive_meta_hash_security.md
+  disposition: reference
+  note: Lokale Identitätspolicy und aktuelle HMAC-Einordnung; datierte historische Befunde zu Legacy-Kollisionen.
+definition_of_done:
+- id: incremental_reidentification_experiment
+  category: security
+  title: Isolated synthetic measurement of incremental identity disclosure after key compromise
+  acceptance:
+  - Freeze independent candidates and bounded search before hidden generation; separate attacker input
+    from private scoring truth.
+  - Compare equal auxiliary knowledge with and without keys, preserving baseline disclosures, tuple ambiguity
+    and membership abstentions.
+  - Differentially validate the offline evaluator against production helpers and publish measured work,
+    isolation checks and limitations.
+  - Measure current deterministic local and hub UUIDv8 mappings with exposed, absent and wrong keys, independent
+    centre keys and already-labelled controls; retain historical evidence separately.
+  - Evaluate all active and historical keys exposed for every centre, separately for register-only data
+    and complete source/mapping/backup access. Compare demographic recomputation against stored random
+    mappings, preserving within-case linkage and demonstrating identification after mapping disclosure.
+    Finite negative results must not be described as anonymity or legal approval.
+  required: false
+  verification:
+    kind: manual
+    instructions: Run scripts/reidentification/README.md commands; inspect public results and private
+      reproduction separately.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: scripts/reidentification/REPORT.md
+    - kind: demonstration
+      reference: scripts/reidentification/evidence/verification.json
+    - kind: demonstration
+      reference: scripts/reidentification/evidence/uuid_mapping/verification.json
+      note: '23 October 2026: 45 current UUID/hash-control cases replayed and independently rescored;
+        18 harness tests passed. Shared-key exposure yields 192 matches, 144 new correct and 12 false
+        assignments for both local and hub UUIDs; no-key and wrong-key controls yield zero.'
+    - kind: document
+      reference: docs/patient_matching_threat_model.md
+    - kind: test
+      reference: tests/services/test_hub_pseudonyms.py
+    - kind: command
+      reference: '2026-10-26: .venv/bin/pyright --pythonpath .venv/bin/python: 0 errors, 17 missing-stub
+        warnings; prescribed .devenv/state/venv absent. PYTHONPATH=.:../lx-data-models .venv/bin/pytest
+        tests/services/test_hub_pseudonyms.py tests/services/test_patient_uuid_generation.py -q: 35 passed,
+        0 failed, 0 skipped, 1 warning, 37.79s; later temporary-directory cleanup warnings. lx-data-models
+        39f0386b2088e7be51f857b4b033e2bbbaf67993 with preexisting pyproject.toml change. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+        .venv/bin/pytest -c scripts/reidentification/pytest.ini --confcutdir=scripts/reidentification
+        scripts/reidentification/test_harness.py -q: 18 passed, 0 failed, 0 skipped, 1.34s. Ruff passed;
+        structure lint 67 manifests; tracker validate 38 definitions.'
+    note: 'Bounded synthetic experiment executed: 48 case pairs, three independent subject seeds; complete
+      replay and independent rescoring agree. No production-readiness or clinical-population probability
+      claim. Missing external hashs.py attachment and encrypted-file integration coverage are documented
+      limitations.
+
+      2026-10-26: Beide vom Auftraggeber bestätigten Komplettschlüsselverlust-Szenarien gegen den aktuellen
+      DOCX-Vertrag bewertet. Zufällige lokale Studien-/Fallzuordnung nur als Alternative getestet; keine
+      Änderung produktiver Kennungen, keine Migration, Deployment- oder Rechtsfreigabe. Vollständiger
+      Quelldatenzugriff bleibt identifizierend. Installiertes lx_dtypes blockiert Django-Start wegen fehlendem
+      ReportExtractionReceipt; kompatibler lokaler Quellcheckout separat geprüft.'
+    assessed_by: codex-endoreg-openbao-20261026
+    assessed_at: '2026-10-26T15:14:28.831053Z'
+- id: identity_hash_response_boundary
+  category: security
+  title: Identity hashes never leave through browser or export responses
+  acceptance:
+  - Patient and examination browser routes accept center-scoped local patient IDs, return no identity
+    hashes, and use resource IDs for displayed filenames; cohort grouping retains server-side hash matching.
+  - Both applications reject JSON and browser responses carrying patient, examination or case hashes,
+    shortened displays or identity fingerprints; error responses contain no rejected values.
+  - FHIR and research spreadsheet exports reject their hash-bearing contracts before publication; renamed
+    patient pseudonyms do not bypass the restriction.
+  - File-integrity checksums and approved binary media streaming remain available; blocked responses never
+    consume a deferred metadata stream.
+  - Explicit JSON artifact downloads validate identity fields before streaming; rejecting deferred responses
+    preserves normal request completion, resource cleanup and subsequent database access.
+  required: true
+  verification:
+    kind: manual
+    instructions: Verify HTTP middleware, actual serializer payloads, FHIR and spreadsheet entrypoints,
+      and unchanged media streaming.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: 'Final backend response/transfer/keyring suite: 94 passed in 1.73s. Real patient/examination
+        serializer output, FHIR rejection, prepared workbook refusal, redacted errors, malformed/deep
+        JSON, non-consuming metadata streams, binary video streaming and file checksums tested. Focused
+        Pyright and Ruff passed.'
+    - kind: test
+      reference: tests/views/case/test_case_viewset.py
+    - kind: test
+      reference: tests/services/test_identity_response_boundary.py
+    - kind: test
+      reference: tests/services/test_fhir_r4_export.py
+    - kind: test
+      reference: '2026-10-20: Datenschutz- und vollständige Anwendungseinstellungs-Suite im abschließenden
+        222-bestanden-Lauf erfolgreich; sichere JSON-Dateiausgabe, blockierte Identitätsfelder, einmaliger
+        Request-Abschluss und weitere Datenbankabfragen geprüft. Geänderte Python-Dateien: Pyright 0 Fehler/0
+        Warnungen.'
+    assessed_by: codex-test-review-20261020
+    assessed_at: '2026-10-20T11:24:13.076308Z'
+- id: central_identity_salts_disabled
+  category: security
+  title: Keine zentrale Bereitstellung von Identitätssalts
+  acceptance:
+  - Zentrale Salt-Bereitstellung bleibt deaktiviert; lokale Identitäten und historische Schlüssel werden
+    nicht automatisch ersetzt.
+  - Injizierte zentrale Identitätsbundles werden vor Dateizugriff und Hashberechnung abgewiesen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused boundary regression tests and type checks before coordinated deployment.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: '99 backend boundary/keyring tests and 22 local import identity tests passed; LuxNix
+        central-launcher, local-preservation and enrollment suite: 44 passed.'
+    note: Central bundle injection is rejected; established local keyrings and identities are preserved.
+      No host activation or previously distributed secret revocation.
+    assessed_by: codex-hash-boundary-20261019
+    assessed_at: '2026-10-19T13:12:15.618854Z'
+- id: strict_legacy_hmac_inventory
+  category: security
+  title: Atomare HMAC-Migration des vollständigen Identitätsbestands
+  acceptance:
+  - migrate_legacy_hashes validiert alle Zentren, Quellen, Beziehungen und Zielkollisionen vor der ersten
+    Datenbankmutation; fehlende Originale benötigen geprüfte Zuordnungen. Keine automatische Zusammenführung.
+  - Eine PostgreSQL-Transaktion mit Advisory-Lock (20260921, 2), Schreibsperren und festem Schlüssel-Snapshot
+    erhält Primärschlüssel und historische Patientenhash-Aliase. Jeder Fehler rollt alle Änderungen zurück.
+  - Patient, PatientExamination, SensitiveMeta und Examiner verwenden die bestehenden domänenseparierten
+    UTF-8-HMAC-Helfer mit ensure_ascii=False. Wiederholungen verändern passende aktive Fingerprints nicht.
+  - Der aktive Schlüssel erfüllt die bestehende 256-Bit-Schlüsselvalidierung. Gebundene Zentrumsgrenzen
+    bleiben erhalten; unvollständige oder fremde Inventare werden nicht still übersprungen.
+  - Dry-run zeigt ausschließlich Hash-Differenzen und Zähler ohne Datenbankmutation. Nachprüfung verifiziert
+    sämtliche Zielwerte und Beziehungen vor Commit; strukturierte Commit-Logs enthalten nur Zähler.
+  - Wiederkehrende Importe erhalten nach Migration auch bei gelöschten Originalen ihre klinischen Verknüpfungen.
+    Metadaten-Schreiber und Bericht-Pseudonymauflösung verwenden denselben direkten HMAC; historische
+    SHA-256-von-HMAC-Zwischenstände werden ausschließlich aus Originalquellen verifiziert und migriert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor tests/services/test_migrate_legacy_hashes.py ausführen; PostgreSQL-Rollback,
+      Schreibsperren, Unicode, Kollisionsvorprüfung, Alias-Erhalt und Wiederholungen prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: tests/services/test_migrate_legacy_hashes.py
+    - kind: command
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_migrate_legacy_hashes.py
+        tests/services/test_patient_hash_aliases.py tests/services/test_historical_identity_resolution.py::test_returning_source_matches_erased_patient_without_restoring_identifiers
+        -q --tb=short --show-capture=no --disable-warnings: 37 passed, 133 warnings, 110.07s; PostgreSQL.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors,24 warnings; focused changed-module Pyright: 0 errors,0 warnings;
+        Ruff passed; 65 structure manifests and37 feature definitions valid.'
+    note: 'Isolierte PostgreSQL-Prüfung bestätigt vollständigen Rollback, Vorprüfung, Aliase, Wiederholbarkeit,
+      Unicode, Quellenreview, Schreibsperren und wiederkehrende Importe. Breiter Integrationslauf: 76
+      bestanden,2 alte Untersuchungsrotationsfehler; beide nach Korrektur im frischen 37-Test-Lauf bestanden.
+      Separater koordinierter Hash-/Report-Regressionslauf: 220 bestanden. Keine Produktionsmigration
+      oder Secret-Änderung.'
+    assessed_by: codex-identity-migration-20261019
+    assessed_at: '2026-10-19T08:05:52.488997Z'
+- id: compromised_identity_salt_migration
+  category: security
+  title: Geprüfte Migration kompromittierter Identitätssalze erhält klinische Beziehungen
+  acceptance:
+  - LuxNix secrets-management.yml bleibt die einzige repositoryübergreifende Koordinationsquelle. Zentrale
+    Identitätssalt-Auslieferung bleibt gemäß central_identity_salts_disabled deaktiviert; ältere Delivery-Kriterien
+    autorisieren keine Aktivierung. Verschlüsselte lokale Secret-Persistenz gehört zu wg-lux/luxnix feature-tracking/luxnix_secret_lifecycle_readiness.yml,
+    Kriterium encrypted_local_secret_persistence. Der Backendservice übernimmt weder Provisionierung noch
+    Secret-Verteilung.
+  - Ein typisierter Service verwendet die vorhandene Gruppenmigration und einen festen Schlüssel-Snapshot
+    über Preview und Apply; kompatible PostgreSQL-Schreiber werden koordiniert. Preview und Wiederholung
+    verändern keine Identitäten; unvollständige Kompromittierungs-Migration rollt vollständig zurück.
+  - Ein explizit autorisierter lokaler Rotationsablauf bindet das neue aktive Salz an die erwartete Generation
+    und erhält etablierte lokale Lesegenerationen. Keine zentrale Bundle-Injektion, automatische Zufallsgenerierung
+    bei fehlendem Material, Default-Salze, stille Fallbacks oder Verwendung kompromittierter Salze für
+    neue Identitäten. Lokale Identitätsschreiber verwenden denselben validierten Schlüssel-Snapshot; dieser
+    Vertrag erlaubt keine zentrale Verteilung an Clients.
+  - Fehlende oder gelöschte Originalidentitäten benötigen unabhängig geprüfte autorisierte Quellen. Übereinstimmung
+    mit einem kompromittierten Hash allein bestätigt keine Person. Reviewdateien und Recoverydaten unterliegen
+    dem LuxNix-Vertrag für verschlüsselte Persistenz; keine Originaldaten in Logs.
+  - Vollständige Inventarisierung und Prüfung umfassen Patientengruppen, Metadaten, verknüpfte Untersuchungen,
+    Untersucher, fehlende Quellen und widersprüchliche Beziehungen. Primärschlüssel bleiben stabil; Konflikte
+    führen niemals zu automatischer Zusammenführung oder neu erfundenen Identitäten.
+  - Historische Identitätssalze bleiben am Quellzentrum für die Wiedererkennung bestehender Patienten
+    und historischer Hashreferenzen verfügbar, auch nach Löschung direkter Identifikatoren. Neue Patienten
+    verwenden ausschließlich die aktive Generation. Alte Salze sind weder Dateientschlüsselungsschlüssel
+    noch Authentifizierungs- oder Auslieferungsfallbacks. Unbekannte Generationen, fehlende Fingerprint-Evidenz
+    und mehrdeutige Treffer erfordern Review; klinische Beziehungen werden niemals blind zusammengeführt.
+    Abgeschlossene Hashmigration allein erlaubt kein Retirement der Quellgenerationen.
+  - Historische Patientenhash-Aliase bleiben lokal, zentrumsgebunden und transaktional mit der Migration
+    erhalten. Historische Untersuchungsreferenzen und bereits exportierte Altbestände benötigen eine eigene
+    geprüfte Kompatibilitätsstrategie ohne erneute Hashübertragung. Hub-Reimport mit Identitätshashes
+    wird gemäß HubTransfer.yml/local_identity_hash_boundary vor Registrierung abgewiesen, auch bei Wiederholungen.
+  - Lokale interne Auflösung verwendet die gemeinsame zentrumsgebundene Aliasauflösung. Browser- und Exportverträge
+    verwenden autorisierte lokale IDs gemäß identity_hash_response_boundary; keine Hashannahme oder Hashausgabe
+    als Kompatibilitätsfallback. Serializer-Validierung schreibt keine Patienten und akzeptiert nur eindeutig
+    aufgelöste Patienten aus autorisierten Zentren; unbekannte oder mehrdeutige Referenzen werden abgewiesen.
+    Allgemeine Untersuchungs-APIs behalten ihre Unterstützung realer Patienten.
+  - Automatische Medienzuordnung und die Untersuchungs-Modellfassade prüfen den kanonischen Patienten,
+    das Zentrum und vorhandene Pseudonymbeziehungen vor jeder Mutation. Historische Patientenaliase verwenden
+    dieselben Primärschlüssel; widersprüchliche Untersuchungs- oder Metadatenbeziehungen sowie fehlender
+    Zentrumskontext erzeugen keine neuen Identitäten oder Verknüpfungen. Regressionstests prüfen Wiederholung,
+    Alias-Konflikte, Zentrumsgrenzen und unveränderte Daten bei Ablehnung.
+  - Autorisierte Metadatenkorrekturen bei Video und PDF prüfen bestehende automatische Verknüpfungen vor
+    der Änderung und lösen sie nach erfolgreicher Korrektur atomar erneut auf. Bereits widersprüchliche
+    Verknüpfungen werden abgewiesen; explizite oder zurückgestellte Fallzuordnungen werden nicht überschrieben.
+  - Strukturierte Ergebnisse unterscheiden Preview, Commit, Rollback und verbleibende Blocker ohne Geheimnisse
+    offenzulegen. Anhängende Audit-Historie bleibt unverändert; Replikate, Hub-Referenzen, Exporte und
+    Backups brauchen koordinierte Abnahme vor Retirement. Rotation schützt keine bereits gestohlenen Hash-/Schlüsselkopien
+    rückwirkend.
+  required: true
+  verification:
+    kind: manual
+    instructions: Vor pytest Pyright ausführen. tests/services/test_identity_salt_rotation.py um Gesamt-Snapshot,
+      vollständigen Rollback, falsche Zielgeneration, fehlende Reviewquellen, Idempotenz und PostgreSQL-Parallelität
+      erweitern; anschließend Import-/Identitätsregression und Restore auf isolierter produktionsnaher
+      Umgebung.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_patient_hash_aliases.py
+    - kind: test
+      reference: tests/services/test_patient_examination_hash_resolution.py
+    - kind: test
+      reference: tests/serializers/test_patient_examination_identity.py
+    - kind: test
+      reference: tests/services/test_hub_transfer_unit_decisions.py
+    - kind: test
+      reference: tests/views/anonymization/test_sensitive_metadata_view.py
+    - kind: command
+      reference: 'Coordinated codex-anon-status-20261019: pytest tests/services/test_sensitive_meta_verification.py
+        tests/services/test_sensitive_meta_update.py tests/views/anonymization/test_validate_view.py tests/views/anonymization/test_sensitive_metadata_view.py
+        tests/services/test_anonymization_quality_evaluation.py tests/import_files/test_sensitive_metadata_concurrency_postgresql.py
+        -q --tb=short --show-capture=no: 102 passed,133 warnings,233.73s,exit0; PostgreSQL.'
+    - kind: command
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_video_metadata_validation.py
+        tests/services/test_sensitive_meta_external_id_validation.py tests/services/test_report_artifact_integrity.py
+        tests/models/video/test_validation_deletion.py tests/services/test_media_security_lifecycle.py
+        -q --tb=short --show-capture=no --disable-warnings --maxfail=5: 27 passed,133 warnings,383.24s,exit0;
+        PostgreSQL. Pytest temporary-directory cleanup warnings remain outside changed paths.'
+    note: 'Typisierte Gesamtmigration und historische Quellwiedererkennung bleiben erhalten. Vier Hashauflösungsbefunde
+      geschlossen: zentrumsgebundener Hub-Reimport, schreibfreie autorisierte Serializer-Auflösung, konsistente
+      automatische Fallzuordnung und zentrumsgebundene Untersuchungsfassade. Opaque aktuelle Kennungen
+      bleiben explizit unterstützt; historische Aliase bleiben streng validiert. Autorisierte PDF-/Video-Metadatenkorrekturen
+      prüfen alte Verknüpfungen und binden nach erfolgreicher Änderung atomar neu; Identitätsfence vor
+      Zeilensperren. Initialer kombinierter Lauf: 147 bestanden, 3 Fehler; zwei Metadaten-Defaultassertionen
+      und ein realer PDF-Korrekturfehler behoben. Gesamter betroffener Endpunktlauf anschließend im koordinierten
+      102-Test-Lauf bestanden; zusätzliche 27 Validierungs-/Speicherintegrationstests bestanden. Vollständiger
+      Pyright 0 Fehler/24 bestehende Warnungen, fokussiert 0/0, Ruff sauber. Historische Untersuchungsexporte
+      sowie produktionsnahe Restore-/Flottenabnahme und koordinierte Secret-Freigaben bleiben offen. Keine
+      Produktionsmigration oder Secret-Änderung.'
+    assessed_by: codex-hash-audit-20261019
+    assessed_at: '2026-10-19T08:33:28.030324Z'
+- id: legacy_key_read_only_recovery
+  category: security
+  title: Alte verschlüsselte Dateien bleiben über explizite Leseschlüssel wiederherstellbar
+  acceptance:
+  - Dieses Kriterium besitzt nur die Backend-Lese-/Migrationsverträge. Secret-Kustodie und verschlüsselte
+    Schlüsselablage gehören zu LuxNix, Prozessintegration zu wg-lux/lx-annotate feature-tracking/LuxNixPressingIssues.yml
+    Kriterium managed_secret_consumer_acceptance.
+  - Alle unterstützten historischen verschlüsselten Dateiformate und tatsächlichen Schlüsselgenerationen
+    werden inventarisiert, einschließlich Backups und bisher unregistrierter Artefakte. Schlüssel- oder
+    Versionsgrenzen wie maximal acht retiring-Einträge dürfen vorhandene Dateien nicht still unlesbar
+    machen; explizite sichere Migration oder Generationauflösung ist erforderlich.
+  - Ausschließlich neue aktive Schlüssel erzeugen neue Ciphertexte. Alte Schlüssel dienen nur authentifizierten
+    Reads oder expliziter Re-Verschlüsselung; unbekannte Schlüssel, manipulierte Tags, unvollständige
+    Dateien und widersprüchliche Provenienz scheitern geschlossen ohne Klartext- oder Default-Key-Fallback.
+  - Python-, Rust-, Streaming- und Hashleser verwenden denselben validierten Schlüssel-Snapshot und identische
+    Fehlersemantik. Prüfsummen über authentifizierten Klartext und klinische Referenzen bleiben bei Migration
+    erhalten; der letzte gültige Bestand wird niemals vor vollständiger Verifikation entfernt.
+  - Reconcile signing-key retirement in config/secret_keyring.py with LuxNix criterion legacy_decryption_only_compatibility;
+    legacy encrypted-file readability never authorizes obsolete request credentials, signing-key fallbacks
+    or weakened TLS. Keep media master keys local and separate from center identity salts and NetworkNode.shared_secret.
+  required: true
+  verification:
+    kind: manual
+    instructions: Vor pytest Pyright ausführen; tests/services/test_secret_rotation.py, tests/environment/test_secret_resolution.py
+      und native Reader-Verträge um mehrere reale Formatgenerationen, falsche/fehlende Schlüssel, Retirement
+      nach Restore und Unterbrechung ergänzen. Keine produktiven Schlüssel in Testfixtures übernehmen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+    note: Nur TODO-Erfassung am 16.10.2026. config/secret_keyring.py unterstützt aktive und begrenzt viele
+      retiring-Generationen; frühere Reader-Tests sind unter online_secret_rotation und StorageSecurity.yml
+      dokumentiert. Die neue vollständige Bestands- und Retirement-Anforderung wurde nicht ausgeführt
+      oder verifiziert.
+- id: bounded_video_reimport
+  category: functionality
+  title: Video re-import has bounded workload budgets and actionable timeout failures
+  acceptance:
+  - Frame-count budgets include throughput margin, finalization time and cleanup grace; invalid or oversized
+    requests are rejected before dispatch.
+  - Direct and wrapped Celery soft timeouts persist processing_timeout without automatic retry or publication.
+  - Stale recovery cannot reclaim a re-import within its maximum runtime.
+  - OCR telemetry and atomic metadata validation preserve exhaustive coverage and omit clinical values.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused budget, reimport, observability and paired anonymizer tests; benchmark a
+      representative long video before deployment.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.postgresql SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py
+        tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py
+        -q: 71 passed'
+    - kind: test
+      reference: 2026-09-28 focused backend regression 71 passed and paired anonymizer regression 111
+        passed
+    note: 'Backend regression 71 passed; paired anonymizer regression 111 passed. Benchmark and frame
+      observation capacity above 100000 remain deployment blockers.
+
+      2026-10-15 documentation migration: verification and deployment follow-up moved from docs/video_reimport_budget.yml
+      to this criterion. Retained historical verification text follows (not a new test run):
+
+      ## Validation
+
+
+      - Run Pyright and focused budget, dispatch, timeout, metadata, OCR and exhaustive-coverage tests.
+
+      - Benchmark representative long videos in an isolated encrypted test runtime before deployment;
+      measure whole-task throughput and finalization overhead.
+
+      - Verify frame observation capacity separately; increasing a time budget does not increase that
+      independent bound.
+
+      - Publish compatible endoreg-db and lx-anonymizer releases and deploy through the normal reviewed
+      workflow.
+
+
+      ## Historical verification commands
+
+
+      These results were retained from the original YAML document; current assessment
+
+      and outstanding deployment work are maintained in the feature tracker.
+
+
+      ### Backend tests
+
+
+      | Field | Value |
+
+      | --- | --- |
+
+      | `command` | RUN_VIDEO_TESTS=true TEST_DB_ENGINE=django.db.backends.postgresql SKIP_EXPENSIVE_TESTS=false
+      .devenv/state/venv/bin/pytest tests/services/test_video_reimport_budget.py tests/services/test_video_reimport_jobs.py
+      tests/test_celery_observability.py tests/services/test_reimport_upload_job_overview.py tests/views/media/test_reimport_async_view.py
+      -q |
+
+      | `result` | 71 passed |
+
+
+      ### Anonymizer tests
+
+
+      | Field | Value |
+
+      | --- | --- |
+
+      | `command` | devenv shell -- .devenv/state/venv/bin/pytest tests/test_frame_metadata_extractor_dates.py
+      tests/test_sensitive_meta_interface.py tests/test_ocr_frame_rapidocr.py tests/test_exhaustive_video_metadata.py
+      tests/test_frame_report_helper_logic.py -q |
+
+      | `result` | 111 passed |
+
+
+      ### Static checks
+
+
+      - Full Pyright passed with zero errors in both repositories (6 backend warnings and 8 anonymizer
+      warnings); focused changed-file checks had zero warnings.
+
+      - Backend focused Ruff passed; anonymizer touched-file Ruff has 91 findings compared with 101 in
+      HEAD, with no increased rule counts.
+
+      - Backend feature definitions validate; anonymization readiness remains nonzero (6 of 12 criteria
+      verified).
+
+      - Anonymizer YAML and added criteria validate; full backend tracker validation is not compatible
+      with that repository''s existing feature format and missing policy.yml.'
+    assessed_by: codex-docs-20261015-a
+    assessed_at: '2026-10-15T08:12:45.332889Z'
+- id: typed_media_deletion
+  category: data_integrity
+  title: Explicit media identity controls individual deletion
+  acceptance:
+  - Individual deletion requires video or pdf in the route and rejects untyped or invalid requests.
+  - Equal numeric IDs never select the other media type, including when the requested type is missing.
+  - Existing model storage cleanup and upload-job provenance retention remain authoritative.
+  - Missing or multiple upload jobs do not cause a post-deletion lookup failure.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused media-management endpoint tests and Pyright; verify frontend typed callers.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence: []
+    assessed_by: codex-video16-20260925
+    assessed_at: '2026-09-25T08:19:02Z'
+- id: approved_report_artifact_retention
+  category: functionality
+  title: Explicit report approval retains the verified processed PDF
+  acceptance:
+  - Approval verifies the existing processed PDF and its persisted digest before marking the report validated
+    or scheduling raw cleanup.
+  - Manual correction PDFs are retained byte-for-byte after explicit acceptance; no rendering from text
+    or raw-document export fallback is permitted.
+  - Missing, unreadable or mismatched processed PDFs reject approval with an actionable conflict response
+    and preserve the source and validation state.
+  required: true
+  verification:
+    kind: command
+    command:
+    - env
+    - TEST_DB_ENGINE=django.db.backends.postgresql
+    - SKIP_EXPENSIVE_TESTS=false
+    - .devenv/state/venv/bin/pytest
+    - tests/views/anonymization/test_validate_view.py
+    - tests/services/test_report_artifact_integrity.py
+    - tests/views/report/test_pdf_redaction.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-09-25: focused Pyright zero errors/warnings; SQLite with SKIP_EXPENSIVE_TESTS=false:
+        validation view, artifact integrity and redaction suites 33 passed, 12 video tests skipped. Ruff
+        passed. lx-annotate hub integration confirms correction bytes and filename retained, raw-only
+        cleanup, and hub eligibility; 28 hub tests passed against source backend.'
+    note: All three acceptance bullets reviewed. Approval verifies before state mutation; accepted bytes
+      are retained; unusable artifacts return 409 and preserve raw/validation state. Source change not
+      packaged or deployed.
+    assessed_by: codex-patient-kanban-20260925
+    assessed_at: '2026-09-25T07:33:05.647296Z'
+- id: documented_scope
+  category: requirements
+  title: Protection scope and approval boundaries are clearly defined
+  acceptance:
+  - Sensitive attributes, supported media types, and quality limits are documented.
+  - Incomplete or inconsistent states do not result in approval.
+  required: true
+  verification:
+    kind: manual
+    instructions: Review the threat model, quality metrics, and state machine together.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: docs/configurable_ai_setup.md
+    - kind: review
+      reference: docs/anonymization_contract.md
+    note: Protection scope, supported media types, fail-closed approval boundaries, quality limits, and
+      the state machine were reviewed against services, state logic, and security boundaries.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:43:47.535094Z'
+- id: media_workflow
+  category: functionality
+  title: Video, frame, and report anonymization follow an explicit workflow
+  acceptance:
+  - Processing is idempotent, and every transition is validated server-side.
+  - Correction and reprocessing do not overwrite unreviewed history.
+  - Report and video adapters use the installed lx-anonymizer directly, propagate dependency failures,
+    and create a fresh reader or cleaner for each attempt without import-path fallbacks.
+  - After validation, all extracted frames from validated outside segments are completely blacked out
+    atomically and verified before approval.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_video_anonymization.py
+    - tests/views/anonymization/test_validate_view.py
+    - tests/services/test_video_post_validation_jobs.py
+    - tests/views/video/test_segments_crud.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/import_files/test_video_anonymization.py tests/views/anonymization/test_validate_view.py
+        tests/services/test_video_post_validation_jobs.py tests/views/video/test_segments_crud.py -q
+      note: Exit code 0
+    - kind: command
+      reference: '2026-10-02: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/import_files/test_video_anonymization.py tests/import_files/test_report_anonymization_contract.py
+        tests/services/test_center_employees.py tests/services/test_report_import_service_unit.py tests/services/test_video_import_service_unit.py
+        tests/views/media/test_pdf_media_text_visibility.py -q: 189 passed, 2 warnings in 263.38s; .devenv/state/venv/bin/pyright:
+        0 errors, 9 warnings.'
+    note: 'lx-anonymizer wird direkt aus dem installierten Paket geladen; Importpfad-Fallback und redundante
+      Verfügbarkeitsflags entfernt. Strenger Gesamt-Pyright: 0 Fehler, 9 bestehende Warnungen außerhalb
+      der Änderungen. Fokussierte Regression: 189 bestanden, 2 Warnungen; Ruff, Format- und Diff-Prüfung
+      bestanden. Bestehende Workflow-Evidenz bleibt erhalten; umfassende Produktionsabnahme wurde nicht
+      erneut durchgeführt.'
+    assessed_by: codex-anonymizer-20261002
+    assessed_at: '2026-10-02T11:06:56.472461Z'
+- id: automated_tests
+  category: testing
+  title: Anonymization, validation, and quality metrics are regression-tested
+  acceptance:
+  - Positive, negative, and boundary cases for video and reports run reproducibly.
+  - Empty external identifier pairs are ignored during video and report validation; complete pairs are
+    resolved or created as a typed PatientExternalID relation and assigned atomically.
+  - The model retraining integration with lx-anonymizer follows Arrange-Act-Assert and verifies option
+    forwarding, worker and management-command boundaries, result persistence, and fail-closed input, result,
+    and training errors.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_anonymization_quality_evaluation.py
+    - tests/services/test_sensitive_meta_external_id_validation.py
+    - tests/views/anonymization
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
+        tests/services/test_sensitive_meta_external_id_validation.py tests/views/anonymization -q
+      note: Exit-Code 0
+    - kind: code
+      reference: endoreg_db/services/sensitive_meta_external_ids.py; endoreg_db/services/raw_pdf_files/validation.py;
+        endoreg_db/services/video_files/_metadata/text_meta.py
+    - kind: code
+      reference: endoreg_db/services/sensitive_meta_verification.py; endoreg_db/schemas/sensitive_meta_verification.py
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139 passed)
+    - kind: code
+      reference: endoreg_db/schemas/sensitive_meta_update.py; endoreg_db/services/sensitive_meta_update.py;
+        shared video/PDF PATCH boundary in endoreg_db/views/media/sensitive_metadata.py
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest integrated boundary cohort (90 passed)
+    - kind: code
+      reference: endoreg_db/management/commands/train_phi_region_detector.py; tests/management/commands/test_train_phi_region_detector.py;
+        tests/services/test_model_training_jobs.py
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright endoreg_db/management/commands/train_phi_region_detector.py
+        tests/management/commands/test_train_phi_region_detector.py tests/services/test_model_training_jobs.py
+        (0 errors, 0 warnings, 0 informations)
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/management/commands/test_train_phi_region_detector.py
+        tests/services/test_model_training_jobs.py tests/views/misc/test_application_settings_endpoints.py::ApplicationSettingsEndpointTests::test_phi_region_detector_training_run_endpoints_create_run
+        -q (12 passed)
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 1 pre-existing lx_anonymizer missing-stub
+        warning)
+    - kind: command
+      reference: //lx-anonymizer/.devenv/state/venv/bin/python -m pytest tests/test_phi_region_detector_training.py
+        -q (2 passed)
+    note: The shared video/report validation separates external identifier values before the generic SensitiveMeta
+      update. Empty pairs remain without a relation; complete, trimmed pairs are idempotently resolved
+      or created as PatientExternalID records and assigned with a typed relation. Positive, negative,
+      and boundary cases in the existing anonymization suite and four video/report regressions pass. In
+      addition, the lx-anonymizer retraining boundary is explicitly tested using Arrange-Act-Assert. The
+      test revealed a genuine call_command path type error; the management-command boundary now normalizes
+      programmatically supplied string paths before strict shared validation. Success cases, invalid option/result
+      cases, trainer error cases, worker persistence, API forwarding, and the native lx-anonymizer artifact
+      contract all pass.
+    assessed_by: codex-anonymizer-retraining-aaa
+    assessed_at: '2026-08-28T09:25:17.083799Z'
+- id: privacy_controls
+  category: security
+  title: Unapproved raw data cannot leave the local protection boundary
+  acceptance:
+  - Export is possible only for anonymized, validated media.
+  - The master key and direct identifiers enter neither payloads nor configuration.
+  - Empty anonymizer metadata or metadata consisting only of placeholders does not overwrite already persisted
+    direct identifiers during repeated processing.
+  - Center assignment and local file paths originate exclusively from the trusted import context; anonymizer
+    metadata must not change these ownership and storage boundaries, and routine logs contain no sensitive
+    source paths.
+  required: true
+  verification:
+    kind: command
+    command:
+    - devenv
+    - shell
+    - --
+    - .devenv/state/venv/bin/pytest
+    - tests/import_files/test_sensitive_meta_storage.py
+    - tests/services/test_export_frames_contract.py
+    - tests/services/test_transfer_job_contract.py
+    - tests/views/media/test_hub_transfer_endpoints.py
+    - tests/utils/test_structured_logging.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/import_files/test_sensitive_meta_storage.py
+        tests/services/test_export_frames_contract.py tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
+        tests/utils/test_structured_logging.py -q
+      note: Exit code 0
+    note: 'Code review and focused verification confirm: export remains conditional on validation; transfer
+      paths reject raw data and direct identifiers; empty or placeholder metadata preserves known identifiers;
+      center and file path are not writable anonymizer fields; the import services do not log sensitive
+      source or staging paths.'
+    assessed_by: codex-sensitive-meta-20260820
+    assessed_at: '2026-08-20T09:10:33.293358Z'
+- id: sensitive_metadata_resolution
+  category: testing
+  title: Anonymizer metadata resolves consistently through persistence, identity hashing, and review
+  acceptance:
+  - scripts/benchmark_sha256.py misst begrenzte Kandidatensuche mit bekanntem Salt für HMAC-SHA-256 und
+    SHA-256-Varianten; Zeichenvorrat, Längen, UTF-8-Präfix/Suffix, Zeit- und Versuchslimit sind konfigurierbar.
+    Tests prüfen Treffer, Erschöpfung, Abbruchgrenzen und ungültige Eingaben ohne Datenbank.
+  - Reproduzierbare synthetische Hashversuche unterscheiden Eingabemehrdeutigkeit, demografische Gleichheit
+    und kryptografische Kollisionen; Wörterbuchabgleich mit bekanntem Salt und Grenzen der Kollisionswahrscheinlichkeitsrechnung
+    sind dokumentiert, ohne Produktionsdaten zu verwenden.
+  - Normal validation and privacy-policy application share complete idempotent direct-identifier erasure;
+    committed hashes, collision fingerprints and clinical links survive, and later saves do not recreate
+    erased examiner relations.
+  - Video and report imports use the shared lx-dtypes SensitiveMeta normalization contract, including
+    supported legacy aliases and date formats.
+  - Repeated extraction preserves the media-to-metadata relation, persisted patient and examination hashes,
+    and pseudonymous links for equivalent input; empty extraction does not erase known identifiers.
+  - Authenticated video and report metadata reads resolve the persisted relation after import; missing
+    relations remain explicit errors and are not manufactured by reads.
+  - Legacy hash encoding remains compatible. Patient dates retain their clinical calendar day after UTC
+    database persistence; incomplete extraction does not invent patient or examination identities.
+  - Preanonymized imports with a source-scoped external patient identifier may create a pseudonymous patient
+    without demographic data. Repeated imports reuse the mapping, different source scopes remain distinct,
+    cross-center mappings fail, and transactional creation leaves no orphan patient on failure.
+  - Aktive Identitätssalze und explizite Hashparameter durchlaufen die gemeinsame Salt-Validierung; wiederholte
+    Validierung erhält die exakten UTF-8-Schlüsselbytes. Nur explizit registrierte historische Lesegenerationen
+    dürfen schwaches Altmaterial zur Wiedererkennung verwenden.
+  - Identity hashing reads the typed Django setting at call time. Production requires a private DJANGO_SALT_FILE,
+    rejects default or invalid salts, and never generates a replacement.
+  - Test settings honor configured DJANGO_SALT_FILE or DJANGO_SALT before generating isolated test material;
+    equivalent identities with the same salt and stable center key hash identically across processes.
+    Local test intake uses environment-backed center defaults, preserving explicit center scope and name
+    normalization.
+  - Additive keyed identity fingerprints reject ambiguous legacy concatenation and incompatible salt reuse,
+    including after identifier erasure. Erased legacy rows without enrollment evidence require explicit
+    review.
+  - PostgreSQL concurrent writes keep one metadata relation per media and reuse one patient and examination
+    for equivalent input. Rollback leaves no dangling relation.
+  - Coordinated package rollout, established-salt enrollment, legacy-data collision review, and clinical
+    approval are required before production acceptance.
+  required: true
+  verification:
+    kind: command
+    command:
+    - env
+    - TEST_DB_ENGINE=django.db.backends.postgresql
+    - RUN_VIDEO_TESTS=true
+    - SKIP_EXPENSIVE_TESTS=false
+    - .devenv/state/venv/bin/pytest
+    - --ds=endoreg_db.config.settings.test
+    - tests/import_files/test_sensitive_metadata_resolution.py
+    - tests/import_files/test_sensitive_identity_guards.py
+    - tests/import_files/test_sensitive_meta_storage.py
+    - tests/views/anonymization/test_sensitive_metadata_view.py
+    - tests/environment/test_identity_hashing.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/import_files/processing/video_processing/video_anonymization.py
+    - kind: code
+      reference: tests/import_files/test_sensitive_metadata_resolution.py
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.postgresql RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_sensitive_metadata_resolution.py
+        tests/import_files/test_sensitive_meta_storage.py tests/import_files/test_video_anonymization.py
+        tests/import_files/test_report_anonymization_contract.py tests/views/anonymization/test_sensitive_metadata_view.py
+        tests/views/anonymization/test_validate_view.py -q --tb=short -rs (112 passed, 0 skipped, 2 warnings;
+        exit 0)
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 5 existing warnings; exit 0); focused Pyright
+        on changed implementation and new tests (0 errors, 0 warnings; exit 0)
+    - kind: code
+      reference: endoreg_db/config/identity_hashing.py
+    - kind: code
+      reference: endoreg_db/import_files/file_storage/sensitive_meta_storage.py
+    - kind: code
+      reference: endoreg_db/migrations/0081_sensitive_meta_identity_fingerprint.py
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.postgresql TEST_DB_NAME=sensitive_meta_contract TEST_DB_USER=admin
+        TEST_DB_HOST=/home/admin/endoreg-db/.devenv/state/sensitive-meta-postgres TEST_DB_PORT=55439 TEST_DB_PASSWORD=
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test
+        tests/import_files/test_sensitive_metadata_concurrency_postgresql.py tests/import_files/test_sensitive_identity_guards.py
+        -q --tb=short -rs --maxfail=2 (13 passed, 0 skipped, 2 warnings; exit 0)
+      note: PostgreSQL 16 isolated cluster, Unix socket only, no TCP. Same-media baseline reproduced 4
+        SensitiveMeta rows for 4 writers for both video and PDF (2 failed, 3 passed). Fresh relation read
+        after the row lock fixes the stale joined snapshot. Added advisory serialization for shared identities
+        and initial salt enrollment.
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.postgresql .devenv/state/venv/bin/python -m django
+        makemigrations --check --dry-run --settings=endoreg_db.config.settings.test (No changes detected;
+        exit 0)
+    - kind: command
+      reference: PYTHONPATH=/home/admin/endoreg-db TEST_DB_ENGINE=django.db.backends.postgresql .devenv/state/venv/bin/pytest
+        tests/system/test_secretspec_environment_contract.py tests/system/test_focused_coverage.py::test_settings_prod_import_uses_static_vite_manifest
+        tests/system/test_focused_coverage.py::test_settings_prod_import_reads_luxnix_style_service_environment
+        -q --tb=short (6 passed; exit 0)
+      note: Executed in /home/admin/dev/lx-annotate against updated backend source. Installed endoreg-db
+        1.3.0 lacks config.identity_hashing; a coordinated package update is required. No silent import
+        fallback was added.
+    - kind: command
+      reference: nix-instantiate --parse nix/runtime-environment.nix; nix-instantiate --parse devenv.nix
+        (both exit 0 in /home/admin/dev/lx-annotate; syntax checks only)
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.postgresql RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/import_files/test_sensitive_identity_guards.py
+        tests/import_files/test_sensitive_metadata_resolution.py tests/import_files/test_video_anonymization.py
+        tests/import_files/test_report_anonymization_contract.py tests/views/anonymization/test_sensitive_metadata_view.py
+        tests/views/anonymization/test_validate_view.py tests/services/test_sensitive_meta_update.py tests/services/test_sensitive_meta_verification.py
+        tests/administration/person/test_pseudonym_resolution.py tests/services/test_anonymization_quality_evaluation.py
+        -q --tb=short -rs (131 passed, 0 skipped, 2 warnings; exit 0)
+    - kind: command
+      reference: TEST_DB_ENGINE=django.db.backends.postgresql RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest --ds=endoreg_db.config.settings.test tests/environment/test_identity_hashing.py
+        tests/import_files/test_sensitive_identity_guards.py tests/import_files/test_sensitive_metadata_resolution.py
+        tests/import_files/test_sensitive_meta_storage.py tests/deployment/test_prod_settings_contract.py
+        -q --tb=short -rs --maxfail=3 (53 passed, 0 skipped; exit 0)
+      note: Initial focused run, before adding three legacy enrollment cases. The final integration and
+        PostgreSQL runs include those additional cases. A later settings-only run with inherited SKIP_EXPENSIVE_TESTS=true
+        produced 23 passed and 10 skipped; it does not replace this unskipped evidence.
+    - kind: command
+      reference: .devenv/state/venv/bin/pyright (0 errors, 5 existing warnings); subsequent focused Pyright
+        on final identity logic, validation tests, and settings (0 errors, 0 warnings); Ruff checks pass;
+        backend tracker validate passes (36 definitions)
+    - kind: review
+      reference: /home/admin/dev/lx-annotate/feature-tracking/DeploymentSourceHygiene.yml
+      note: 'No deployment evaluation or activation. Source references: endoreg-db /home/admin/endoreg-db
+        at a93d65a9e32e202e2cc59689447dd017305ab1c0; lx-annotate /home/admin/dev/lx-annotate at 95f33c33f29ffced96c34091ecbaef643bc23f1a,
+        version 1.3.0, flake.lock SHA256 3f755aa25b0b9aacdfb3f261a41ad94ae97e95df892541e53dc1619c4aea345d;
+        LuxNix /home/admin/luxnix at e3d16ae91658534bf58dd12b57839a7e6ea0a591, flake.lock SHA256 e0239d3ccb3aa793716a5d7be4f04117952735af97be902e9eb1e8773dab852d.
+        Source trees contain pre-existing unrelated edits and are not release artifacts. Target named
+        by user: gc-10; no candidate wheel or artifact digest was produced. lx-annotate tracker validate
+        and check deployment_source_hygiene exit 2 on the pre-existing top-level lx-annotate-downtime-triggers.yml
+        report schema. This remains a release evidence blocker; it was not bypassed. Isolated PostgreSQL
+        cluster stopped after verification.'
+    - kind: command
+      reference: 'Pyright: 0 Fehler, 5 bestehende Warnungen; gezielte Typprüfung des neuen Identitätstests:
+        0 Fehler, 0 Warnungen. Ruff und Formatprüfung: bestanden.'
+    - kind: command
+      reference: 'SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_report_materialization_contracts.py
+        tests/services/test_report_import_service.py tests/app/test_imports.py tests/deployment/test_prod_settings_contract.py
+        tests/environment/test_identity_hashing.py tests/import_files/test_sensitive_identity_guards.py
+        -q: 49 bestanden, 852 Untertests bestanden.'
+    - kind: command
+      reference: 'SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/management/commands/test_import_sap_ish_txt.py
+        tests/services/test_preanonymized_external_identity.py tests/services/test_preanonymized_watcher_ingest.py
+        tests/services/test_sap_ish_import.py tests/import_files/test_sensitive_identity_guards.py -q:
+        29 bestanden, 4 Untertests bestanden; anschließend ergänzte Persistenzprüfungen separat verifizieren.'
+    - kind: command
+      reference: 'Finaler Stand: SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_preanonymized_external_identity.py
+        tests/management/commands/test_import_sap_ish_txt.py tests/services/test_report_materialization_contracts.py
+        tests/services/test_report_import_service.py tests/import_files/test_sensitive_identity_guards.py
+        tests/import_files/test_sensitive_meta_storage.py -q: 33 bestanden, 2 Warnungen, Exit 0. Ausführung
+        in devenv nach agent:sync. PostgreSQL-Parallelität und vollständige Testsuite nicht erneut ausgeführt.'
+    - kind: test
+      reference: tests/import_files/test_sensitive_identity_guards.py
+    - kind: document
+      reference: feature-tracking/reports/sensitive_meta_hash_security.md
+    - kind: test
+      reference: '2026-10-16: tests/utils/test_sensitive_meta_hash_security.py: 11 passed, 1 pytest plugin
+        warning; full Pyright 0 errors/24 warnings; Ruff passed; 65 structure manifests valid. Synthetic
+        no_db characterization only; database concurrency, production keys and clinical homonym rates
+        not assessed.'
+    - kind: command
+      reference: '2026-10-20: pytest tests/environment/test_identity_hashing.py tests/services/test_center_defaults.py
+        tests/services/test_patient_identity_input_variations.py tests/media/report/test_sensitive_meta_logic.py
+        -q --tb=short --show-capture=no --disable-warnings: 90 passed, 1 warning in 44.00s. Test settings
+        retain the base profile configured salt and generate only when absent. Independent-process tests
+        cover inline salt, private file precedence, and isolated generation; center fixtures use environment-backed
+        local resolution. Focused Pyright: 0 errors, 1 existing unused-function warning. Ruff and git
+        diff --check passed. Repository Pyright: 13 unrelated patient-matching test errors, 24 warnings;
+        structure lint blocked by six references to previously deleted patient-matching artifacts.'
+    - kind: command
+      reference: '2026-10-20: pytest tests/import_files/test_sensitive_identity_guards.py tests/import_files/test_sensitive_metadata_resolution.py
+        tests/environment/test_secret_resolution.py -q --tb=short --show-capture=no --disable-warnings:
+        80 passed, 133 existing warnings in 142.01s. Import identity preservation, salt enrollment and
+        drift rejection, metadata resolution, and private secret configuration remain covered. Total 170
+        passing tests across both focused runs.'
+    note: 'Shared metadata erasure serves normal validation and policy application, retaining hashes,
+      fingerprints and clinical links. Focused Pyright passed with zero errors/warnings. Initial identity/rotation/privacy/validation
+      suite: 60 passed. Final stale-identity/resurrection guard recheck: 18 passed, 133 existing terminology/plugin
+      warnings. Sender integration: 26 passed, then final 2 focused tests passed using sibling backend
+      and lx-data-models sources. No production migration or deployment; legacy/hub reconciliation and
+      coordinated package rollout remain required.'
+    assessed_by: codex-env-defaults-20261020
+    assessed_at: '2026-10-20T10:11:24.288575Z'
+- id: quality_evidence
+  category: data_integrity
+  title: Approval is based on persisted, traceable quality evidence
+  acceptance:
+  - Quality metrics, model version, and human validation remain auditable.
+  - Missing evidence prevents approval.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_anonymization_quality_evaluation.py
+    - tests/views/media/test_anonymization_metrics.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_anonymization_quality_evaluation.py
+        tests/views/media/test_anonymization_metrics.py -q
+      note: Exit code 0
+    assessed_by: Max
+    assessed_at: '2026-07-17T12:51:01.915535Z'
+- id: operational_readiness
+  category: operations
+  title: Failure, correction, restart, and monitoring are operationally safe
+  acceptance:
+  - Operators can identify stalled or failed processing without ad hoc database access.
+  - Restart is idempotent and preserves audit and quality data.
+  - Overview upload jobs match document content hashes within the same center and media workflow; shared
+    patient metadata never overrides a conflicting document hash or media type.
+  - TXT and CSV report imports retain report workflow identity; unsupported content types are unknown.
+  - Start and status honor explicit media identity; ambiguous untyped identifiers and conflicting identities
+    are rejected, and lost media remains blocked.
+  required: true
+  verification:
+    kind: manual
+    instructions: Perform a failure and correction scenario in a production-like profile.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/local_study_server_deployment.md
+    - kind: command
+      reference: devenv shell -- .devenv/state/venv/bin/pytest tests/management/commands/test_check_system_health.py
+        tests/services/test_export_frames_contract.py tests/services/test_anonymization_quality_evaluation.py
+        -q
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_anonymization_operational_recovery.py
+        tests/management/commands/test_check_system_health.py -q (7 passed, 1 warning in 61.70s)
+    - kind: command
+      reference: '2026-10-02: SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true .devenv/state/venv/bin/pytest
+        tests/views/anonymization/test_anonymization_overview.py tests/services/test_anonymization_operational_recovery.py
+        tests/services/test_reimport_upload_job_overview.py -q --tb=short: 90 passed, 2 warnings; isoliertes
+        PostgreSQL 18, Exit 0.'
+    - kind: command
+      reference: '2026-10-02: Vollständiger Pyright: 0 Fehler/9 bestehende Warnungen; fokussierter Pyright:
+        0 Fehler/0 Warnungen; Ruff und git diff --check bestanden.'
+    - kind: test
+      reference: '2026-10-02: lx-annotate Frontend: 62 Tests bestanden (Medienidentität, kollidierende
+        Kennungen, Wiederholung, Quarantäne, Übersicht); vue-tsc --build --force und gezielter ESLint
+        bestanden.'
+    note: Übersicht und Wiederholungsablauf korrigiert und lokal geprüft. Allgemeine Verarbeitungsfehler
+      werden nicht mehr als Integritätsverlust ausgegeben; Wiederholung nutzt vorhandene typisierte Reimport-Endpunkte.
+      Expliziter Integritätsverlust bleibt gesperrt. Kein Deployment und keine Zustandsänderung auf gc-02;
+      HAR enthält keine ausreichende Evidenz zur Ursache des konkreten Integritätszustands.
+    assessed_by: codex-overview-diagnosis-20261002
+    assessed_at: '2026-10-02T10:02:50.113113Z'
+- id: operator_documentation
+  category: documentation
+  title: Protection model, quality thresholds, and operating procedures are current
+  acceptance:
+  - Developers, reviewers, and operators have separate, consistent instructions.
+  required: true
+  verification:
+    kind: manual
+    instructions: Obtain documentation approval from security, operations, and a clinical reviewer.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: docs/local_study_server_deployment.md
+    - kind: review
+      reference: docs/anonymization_contract.md
+    note: Role-separated instructions for developers, clinical reviewers, and operators have been consolidated.
+      Joint formal approval by security, operations, and a clinical reviewer remains outstanding.
+    assessed_by: Codex
+    assessed_at: '2026-07-17T12:43:49.189799Z'
+- id: online_secret_rotation
+  category: security
+  title: Online secret rotation preserves readable media and stable clinical links
+  acceptance:
+  - Central identity injection is prohibited; preserve established local keyrings and reject SecretSpec
+    bundles before file access.
+  - Repository rotation guidance links to the canonical LuxNix secrets-management.yml coordination catalog
+    and matches the installed command's explicit partial-commit contract; no duplicate readiness record
+    is created.
+  - Der Identitätsmigrationsbefehl rollt einen unvollständigen Apply-Lauf standardmäßig vollständig zurück;
+    nur --apply --allow-partial erlaubt bewusstes Speichern unabhängig geprüfter Gruppen. Regressionstests
+    prüfen Patienten-, Untersuchungs- und Metadatenhashes sowie applied/rolled_back im Ergebnis.
+  - Native Einzel- und Batch-Hashleser erhalten denselben validierten Schlüssel-Snapshot wie Python; aktive
+    und auslaufende 16-, 24- und 32-Byte-Schlüssel sind getestet. Ein explizit leerer Salt-Snapshot bleibt
+    innerhalb einer Operation stabil; Produktionssettings erzeugen keinen Ersatz-Signaturschlüssel.
+  - Einzeldateien und Keyrings verwenden dieselbe private Dateiprüfung und dieselben Validatoren für Master-Key-Material,
+    Identitätssalz und Django-Signaturschlüssel; der Health-Check bewertet den tatsächlich geladenen Django-Schlüssel,
+    nicht eine möglicherweise ersetzte Quelldatei.
+  - A private versioned keyring selects one active master key for new writes and explicitly retiring keys
+    for reads; running storage instances observe atomic keyring changes.
+  - Resumable media rotation generates fresh data keys, authenticates every chunk and verifies unchanged
+    plaintext before atomic publication; active media leases defer replacement and failures retain the
+    original.
+  - HTTP Live Streaming content keys remain readable during overlap and compromised-key recovery regenerates
+    content keys and segments through the existing generation workflow.
+  - Identity salt rotation explicitly supports enrolled legacy default_salt for reviewed migration and
+    source recognition only, retains patient and examination links, and refuses incomplete or ambiguous
+    source identities rather than inventing replacements.
+  - Django signing-key rotation is distinguished from media encryption; previous signing keys are never
+    verification fallbacks, including planned rotation. Consumer reload invalidates old signatures.
+  - Focused type, integrity, failure, streaming and identity tests pass; deployment requires staged reader
+    rollout and reviewed retirement evidence.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused rotation and import/streaming integration tests, then rehearse overlapping
+      key generations and key retirement on an isolated production-like deployment.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/secret_rotation.md
+    - kind: test
+      reference: tests/services/test_secret_rotation.py; tests/services/test_identity_salt_rotation.py;
+        tests/services/test_hls_media.py (PostgreSQL, echte FFmpeg-Ausführung)
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/services/test_secret_rotation.py tests/services/test_identity_salt_rotation.py
+        tests/environment/test_identity_hashing.py tests/import_files/test_sensitive_identity_guards.py
+        tests/import_files/test_sensitive_metadata_concurrency_postgresql.py tests/import_files/test_import_encryption.py
+        tests/utils/test_encryption_range.py tests/utils/test_encryption_streaming.py tests/services/test_media_operation_gate.py
+        tests/services/test_hls_media.py tests/views/video/test_hls_stream.py tests/deployment/test_prod_settings_contract.py
+        tests/migrations/test_canonical_graph.py -q --tb=short (isoliertes PostgreSQL 16; RUN_VIDEO_TESTS=true,
+        SKIP_EXPENSIVE_TESTS=false; 189 bestanden vor finaler Gruppenintegritätsverschärfung; danach 20
+        fokussierte Identitäts-/Import-/Parallelitätstests bestanden)
+    - kind: test
+      reference: tests/environment/test_secret_resolution.py; tests/rust_backend/test_encryption_status.py;
+        rust/endoreg_rust_backend/src/encryption_state.rs
+    - kind: test
+      reference: tests/rust_backend/test_encrypted_contract.py; tests/environment/test_secret_resolution.py
+        (zweite Secret-Runde, gemeinsame native Header- und Schlüsselverträge)
+    - kind: command
+      reference: 'gc-02 installed lx-annotate 1.3.5/endoreg-db 1.3.8; preflight 4 migratable groups,16
+        blocked,5 pending examiners; applied independently verified groups and one uniquely hash-authenticated
+        examiner. Snapshot: recovery/identity-salvage-eb19f30c64214603b4532c5738cf6d3c.json in encrypted
+        application storage.'
+    - kind: document
+      reference: docs/key_rotation.md
+    - kind: command
+      reference: 'gc-02 Recovery-Nachprüfung: vollständiger Pyright 0 Fehler/6 Warnungen; fokussierter
+        Pyright 0/0. pytest tests/services/test_identity_salt_rotation.py tests/services/test_secret_rotation.py
+        tests/import_files/test_sensitive_identity_guards.py tests/environment/test_identity_hashing.py
+        -q --tb=short: 53 passed, 2 skipped, 1 warning. Default-Rollback, explizite Teilmigration, Preview
+        und ausstehende Untersucher geprüft. Radon: Command.handle A/5, _migrate D/21.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors/6 existing warnings; focused final Pyright: 0 errors/0 warnings;
+        Ruff passed. Wheel dist/endoreg_db-1.3.9-cp312-cp312-linux_x86_64.whl, SHA256 d755ca4a0a4a65c4bdd4a74f5879a4a827570290e65ff484ad471eb8c685cc08;
+        packaged source verified.'
+    - kind: test
+      reference: 'Hotfix integration: 103 passed,1 skipped and one obsolete error-message assertion; corrected
+        assertion rerun: all 11 sensitive identity guard tests passed. Total 104 distinct passing tests,1
+        skipped across identity guards, rotation, report anonymization and report import service. No production
+        migration performed by hotfix.'
+    - kind: command
+      reference: '2026-10-19: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_secret_rotation.py
+        tests/services/test_identity_salt_rotation.py tests/services/test_historical_identity_resolution.py
+        tests/environment/test_secret_resolution.py tests/environment/test_identity_hashing.py tests/utils/test_encryption_range.py
+        tests/import_files/test_sensitive_identity_guards.py -q --tb=short --show-capture=no --disable-warnings:
+        136 passed, 1 stale active-salt fixture failed, 133 warnings, 252.47s. Full Pyright 0 errors/24
+        existing warnings; changed-file Pyright 0/0; Ruff and 65 structure manifests passed. LX-Annotate
+        tests/system/test_config_unit.py: 49 passed with PYTHONPATH=/home/admin/endoreg-db:/home/admin/lx-data-models;
+        installed lx_dtypes alone lacks ReportExtractionReceipt. Backend now exports empty signing fallbacks,
+        matching the canonical LuxNix catalog; required media/identity historical readers unchanged. No
+        live rotation; fleet activation, installed dependency alignment, restore and retirement acceptance
+        remain outstanding.'
+    - kind: command
+      reference: '2026-10-19 final regression: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_secret_rotation.py::test_default_salt_is_only_explicit_retiring_material
+        tests/services/test_secret_rotation.py::test_signing_rotation_rejects_previous_signatures -q --tb=short
+        --show-capture=no --disable-warnings: 3 passed, 1 warning, 50.74s. Replaced only the obsolete
+        active-salt test fixture; enrollment rejection and active-only signing assertions preserved. Final
+        focused Pyright 0 errors/0 warnings; Ruff and structure validation passed. Broader run plus targeted
+        repair verifies all 137 selected backend cases across runs; pytest temporary-directory cleanup
+        warnings remain.'
+    - kind: command
+      reference: '2026-10-19: Full backend Pyright 0 errors (24 existing warnings); focused final Pyright
+        0 errors. Configuration/secret-resolution lane 88 passed. Identity rotation suite 22 passed, 1
+        fixture center mismatch rejected as intended; after binding injected fixture to its actual center,
+        both repeat-import delivery variants passed. Real SecretSpec integration in LX-Annotate 59 passed;
+        LuxNix launcher/Nix/catalog 38 passed. All three structure maps valid. No live rotation or plaintext-file
+        absence certification; fleet migration and recovery acceptance outstanding.'
+    assessed_by: codex-secret-rotation-01a15374
+    assessed_at: '2026-10-19T10:47:42.859875Z'

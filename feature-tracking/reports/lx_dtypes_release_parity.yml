@@ -1,0 +1,1381 @@
+schema_version: '1.0'
+feature: lx_dtypes_model_standardization
+criterion: canonical_boundary_validation
+assessor: codex-dtypes-parity-20261013
+date: '2026-10-13'
+purpose: Candidate 0.5.0 contract/import and validation/persistence parity audit. Feature assessments remain authoritative
+  in LxDtypesModelStandardization.yml.
+scope:
+  candidate_version: 0.5.0
+  production_trees:
+    endoreg-db: endoreg_db
+    lx-annotate: lx_annotate
+    lx-anonymizer: lx_anonymizer
+  method: AST ImportFrom inventory, including type-checking branches; resolve every distinct import against candidate
+    source with isolated dtypes Django test settings. Map contracts package lazy exports to their defining module.
+    Attach lx-data-models tests that directly import each contract.
+  limits:
+  - This is source compatibility evidence; candidate wheels and a coherent installed consumer stack were not verified.
+  - Dynamic import strings, frontend handwritten types and transitive adoption are reviewed separately, not claimed
+    complete by AST coverage.
+  - No direct import is not proof of obsolete code. Private _frame_cache and __init__ are excluded from public-module
+    totals.
+  - Contract test references identify direct imports, not executed coverage of every field. All repositories contained
+    pre-existing edits; evidence describes the working trees.
+  dependency_declarations:
+    endoreg-db: lx-dtypes==0.5.0
+    lx-annotate: lx-dtypes==0.4.4
+    lx-anonymizer: lx-dtypes>=0.4.5; lock selects 0.4.5
+  edits:
+  - 'lx-data-models: lx_dtypes/models/meta/SensitiveMeta.py'
+  - 'lx-data-models: lx_dtypes/models/meta/ReportMeta.py'
+  - 'lx-data-models: tests/test_sensitive_meta_anonymizer_contract.py'
+  - 'endoreg-db: this report, feature-tracking/structure.yml, canonical_boundary_validation assessment evidence'
+inventory_summary:
+  public_contract_modules: 130
+  without_direct_production_imports: 19
+  repositories:
+    endoreg-db:
+      source_files_importing_lx_dtypes: 279
+      distinct_imported_symbols: 519
+      contract_modules_consumed: 101
+      parse_failures: []
+      import_resolution_failures: []
+    lx-annotate:
+      source_files_importing_lx_dtypes: 22
+      distinct_imported_symbols: 60
+      contract_modules_consumed: 14
+      parse_failures: []
+      import_resolution_failures: []
+    lx-anonymizer:
+      source_files_importing_lx_dtypes: 26
+      distinct_imported_symbols: 70
+      contract_modules_consumed: 9
+      parse_failures: []
+      import_resolution_failures: []
+findings:
+- id: metadata_nested_state
+  priority: high
+  owner: lx_dtypes maintainers
+  resolution: fixed_in_candidate
+  evidence:
+  - 'lx-data-models: lx_dtypes/models/meta/SensitiveMeta.py:344'
+  - 'lx-anonymizer: lx_anonymizer/sensitive_meta_interface.py:123'
+  finding: safe_update dumped the validated merged model before assigning fields, flattening SensitiveMetaState
+    into an untyped dict.
+  change: Assign validated attributes directly; retain fill-only behavior and existing invalid-update no-op compatibility.
+  verification: Regression checks typed nested state, verified flag retention, and JSON roundtrip.
+- id: report_empty_crops
+  priority: high
+  owner: lx_dtypes maintainers
+  resolution: fixed_in_candidate
+  evidence:
+  - 'lx-data-models: lx_dtypes/models/meta/ReportMeta.py:30'
+  - 'lx-data-models: lx_dtypes/models/meta/SensitiveMeta.py:216'
+  - 'lx-anonymizer: lx_anonymizer/report_reader/reader.py:257'
+  finding: 'ReportMeta() rejected its own default: inherited normalization replaced empty cropped_regions with None.'
+  change: Preserve the empty mapping using the existing VideoMeta empty-container policy. Consumer workaround remains
+    untouched.
+  verification: Parameterized omitted, empty and null crop mapping JSON roundtrips pass.
+- id: annotate_dependency_window
+  priority: high
+  owner: lx-annotate maintainers
+  evidence:
+  - 'lx-annotate: pyproject.toml:63'
+  - 'lx-annotate: lx_annotate/views/study_setup_import.py:9'
+  - 'lx-annotate: lx_annotate/services/study_setup_import.py:18'
+  finding: Pinned published 0.4.4 wheel lacks StudySetupImportRequest/Receipt/Result and content_sha256 used by
+    current study import. Local distribution metadata says 0.4.4 while imports resolve editable candidate source,
+    masking clean-install failure.
+  required_action: Update the tested release pin and lock together after the candidate artifact exists; verify study-import
+    routes from installed wheels.
+- id: annotate_endoreg_stack
+  priority: high
+  owner: lx-annotate and endoreg_db maintainers
+  evidence:
+  - 'lx-annotate: lx_annotate/services/study_setup_import.py:15'
+  - 'lx-annotate: lx_annotate/api_urls.py:58'
+  finding: Installed EndoReg 1.5.2 lacks models.other.study_setup_import. Eager route registration breaks unrelated
+    URL resolution.
+  required_action: Test a coherent candidate EndoReg/dtypes/annotate stack before publication; retain endpoint import
+    smoke tests.
+- id: persisted_owner_identity
+  priority: high
+  owner: endoreg_db maintainers
+  evidence:
+  - 'endoreg-db: endoreg_db/models/medical/patient/patient_examination.py:149'
+  - 'endoreg-db: endoreg_db/models/report/patient_examination_report.py:145'
+  - 'endoreg-db: endoreg_db/models/medical/patient/examination_revision.py:49'
+  - 'endoreg-db: endoreg_db/services/reports/structured_records.py:80'
+  - 'endoreg-db: endoreg_db/services/cases/examination_revisions.py:59'
+  finding: Real model clean() calls accept examination/report JSON belonging to another patient, examination and
+    KB pair. Revision clean checks patient/examination but permits a different KB pair. Services impose stronger
+    checks, so direct model saves do not offer parity.
+  verification: Reproduced using real model clean() with DATABASES={} and generic AppConfigs; no save or database
+    mutation. PatientExamination.save invokes clean, which validates shape without owner comparisons.
+  required_action: Centralize host owner/provenance checks used by model and service boundaries; define historical
+    revision semantics explicitly; add direct create/save, API, transaction rollback and roundtrip tests.
+- id: falsy_knowledge_base_identity
+  priority: medium
+  owner: endoreg_db maintainers
+  evidence:
+  - 'endoreg-db: endoreg_db/services/reports/structured_records.py:70'
+  finding: Host coercion converts False and 0 KB identifiers to None. The canonical parser rejects the same payload
+    with string_type errors, while the host accepts it.
+  required_action: Normalize only documented legacy empty strings; retain invalid types for canonical rejection.
+    Test false, zero, partial pairs and valid identities.
+- id: startup_registry_ownership
+  priority: medium
+  owner: lx-annotate maintainers
+  evidence:
+  - 'lx-annotate: lx_annotate/apps.py:93'
+  - 'lx-data-models: docs/guides/django-host-integration.md'
+  finding: Django startup still calls service.provision(), contrary to the candidate bootstrap-before-startup contract.
+  required_action: Move provisioning to explicit package CLI bootstrap; make startup validate installed identities
+    without repair.
+- id: explicit_host_adapter_fallback
+  priority: medium
+  owner: lx-annotate maintainers
+  evidence:
+  - 'lx-annotate: lx_annotate/settings/settings_base.py:98'
+  finding: An unavailable explicitly configured host model module is replaced with a default, hiding integration
+    configuration errors.
+  required_action: Reject invalid explicit adapter configuration and cover the failure path with settings/startup
+    tests.
+- id: frontend_generated_contracts
+  priority: medium
+  owner: lx-annotate maintainers
+  evidence:
+  - 'lx-annotate: lx_annotate/api_urls.py:61'
+  - 'lx-annotate: lx_annotate/api_urls.py:84'
+  - 'lx-annotate: openapi/endoreg-api.json'
+  - 'lx-annotate: frontend/openapi/endoreg-api.json'
+  finding: Registered setup-import and saved-cohort routes are absent from committed OpenAPI and generated frontend
+    types; handwritten types do not provide generated parity.
+  required_action: Generate specs/types from the coherent candidate stack and run frontend transport normalization
+    tests.
+- id: malformed_report_dates
+  priority: medium
+  owner: lx_dtypes and lx-anonymizer maintainers
+  evidence:
+  - 'lx-data-models: lx_dtypes/models/meta/ReportMeta.py:516'
+  finding: ReportMeta and ReportPatientInfo normalize malformed nonblank DOB to None, whereas SensitiveMeta rejects
+    it. Existing extraction policy remains permissive.
+  required_action: Define extraction-versus-persistence policy; require strict validation before host persistence
+    rather than silently treating malformed input as missing.
+- id: anonymizer_candidate_window
+  priority: medium
+  owner: lx-anonymizer maintainers
+  evidence:
+  - 'lx-anonymizer: pyproject.toml:66'
+  - 'lx-anonymizer: uv.lock:1742'
+  finding: Locked CI selects 0.4.5, so ordinary CI does not certify 0.5.0; unconstrained upper versions also permit
+    unreviewed future minor contracts.
+  required_action: Choose a tested compatibility window, refresh the lock, and run producer and host roundtrips
+    against installed candidate wheels.
+- id: host_guide_version_window
+  priority: medium
+  owner: lx_dtypes maintainers
+  evidence:
+  - 'lx-data-models: docs/guides/django-host-integration.md'
+  finding: Host guide still instructs strict consumers to require >=0.2.1,<0.3 although candidate source is 0.5.0.
+  required_action: Document the current tested minor window and release coordination/backfill requirements.
+positive_evidence:
+- All inventoried imported symbols resolve against candidate source.
+- EndoReg hub provenance and medical-ledger receipts validate persisted JSON; the inspected receipt backfill validates
+  before QuerySet.update.
+- EndoReg revision service uses transactions, row locks and optimistic versions.
+- Annotate reuses cohort contracts and validates typed study-import receipts on replay.
+- Anonymizer remains compute-only; durable persistence, publication and retry authority stay with EndoReg.
+verification:
+- repository: lx-data-models
+  command: uv run pyright
+  result: 0 errors, 0 warnings, 0 informations after fixes
+- repository: lx-data-models
+  command: uv run pytest tests/unit/lx_dtypes/models/contracts tests/unit/lx_dtypes/models/ledger/medical tests/test_structure.py
+    -q
+  result: 558 passed, 132 warnings before metadata fixes; taxonomy and pytest temporary-directory cleanup warnings
+    observed
+- repository: lx-data-models
+  command: uv run pytest tests/test_sensitive_meta_anonymizer_contract.py tests/unit/lx_dtypes/test_lazy_exports.py
+    -q --disable-warnings
+  result: 18 passed after fixes
+- repository: lx-anonymizer
+  command: PYTHONPATH=/home/admin/lx-data-models:/home/admin/lx-anonymizer .devenv/state/venv/bin/python -m pytest
+    tests/test_sensitive_meta_interface.py tests/test_report_reader_contract.py tests/test_processing_strands.py
+    tests/test_llm_provider_contracts.py -q --disable-warnings
+  result: 85 passed after fixes; pytest cleanup warnings for pre-existing temporary directories
+- repository: lx-annotate
+  command: tests/system/test_installed_video_segments_contract.py and tests/contracts/test_frontend_backend_api_contract.py
+    with existing interpreter
+  result: '12 passed, 3 failed: missing node executable and two URL imports failing on absent installed EndoReg
+    study_setup_import module'
+- repository: all
+  command: repository scripts/lint_structure.py with available Python environment
+  result: Passed in all four repositories; EndoReg 65 manifests
+- repository: endoreg-db
+  command: full host pytest lane
+  result: 'Not run: prescribed interpreter absent; an unrelated EndoReg pytest process already running. Database/migration
+    parity remains unverified.'
+publication_requirements:
+- Resolve host identity/coercion gaps with negative direct-model and service tests.
+- Install the candidate wheel together with matching EndoReg and annotate wheels in a clean environment; run imports,
+  startup, API/OpenAPI and producer/consumer roundtrips.
+- Run host PostgreSQL validation, transaction, concurrency, migration and backfill checks on synthetic fixtures.
+- Review permissive extraction policies and document the current dependency compatibility window.
+contract_inventory:
+  adapters:
+    consumers: {}
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_core_concepts_adapters.py
+    source_sha256: 448bf66611fff094ad76c0714cfba6c4283f7644f80c62bcacd51ec1e09d70b5
+  ai_dataset:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/select_active_learning_candidates.py:13
+      - endoreg_db/models/aidataset/aidataset.py:72
+      - endoreg_db/services/datasets/active_learning.py:10
+      - endoreg_db/services/datasets/active_learning_shortlist.py:11
+      - endoreg_db/views/misc/application_settings_ai_datasets.py:10
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_ai_dataset.py
+    - tests/unit/lx_dtypes/models/contracts/test_contract_reuse.py
+    - tests/unit/lx_dtypes/models/contracts/test_dataset_lifecycle.py
+    source_sha256: 4f687d9dacccc9252a2008246b4048e14719ccf0b646b643146b2abcddb9ca00
+  ai_model:
+    consumers: {}
+    tests: []
+    source_sha256: 3c8099962b131221bc12a5a36898ec73f45c94885cadf15e958c3bab71c853bc
+  ai_prediction:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/video_files/_ai.py:30
+      - endoreg_db/utils/ai/predict.py:16
+    tests: []
+    source_sha256: ea18e30cc90e45d9f82298b335907854eac1eced03ac205b14cfe56e00663d45
+  aidataset_export:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/aidataset/aidataset.py:12
+      - endoreg_db/schemas/aidataset_export.py:5
+      - endoreg_db/services/datasets/exports.py:6
+    tests: []
+    source_sha256: d2da7b1c775f59287e9d34d0c69c6b3596231baef5e263ee66687da62cc01340
+  aidataset_frame_buckets:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/aidataset/aidataset.py:18
+      - endoreg_db/services/datasets/frame_buckets.py:6
+    tests: []
+    source_sha256: 73529dffbe1b933d3ece1cc25fd562f24eb58c85ad14eb2e99fe247d33cea1e4
+  anonymization:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/privacy/workflow.py:8
+    tests: []
+    source_sha256: a0cb19537af3f5e6618c7794c62ed80fbb629bd4216581edf8a9f8e9ba2dcbe4
+  anonymization_metrics:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/privacy/metrics.py:26
+    tests: []
+    source_sha256: bef5782181ef033b644d9f16ad01feb5c17ff425590d72c2e0192fb2f7602af1
+  anonymization_overview:
+    consumers:
+      endoreg-db:
+      - endoreg_db/serializers/misc/file_overview.py:11
+      - endoreg_db/views/anonymization/overview.py:63
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_anonymization_overview.py
+    source_sha256: 0373d6f049f67693b7f1e04b68575c9f0f7acb0cca9a0535ffd03aee5e6108f5
+  anonymization_quality:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/anonymization.py:7
+      - endoreg_db/services/privacy/evaluation_manifest.py:26
+      - endoreg_db/services/privacy/quality_evaluation.py:14
+    tests: []
+    source_sha256: dec419183f33fa3af1aec874cf0ab3e46aceaba429dcfc9891660aebde51616f
+  application_settings:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/hub/deployment.py:6
+      - endoreg_db/views/misc/application_settings.py:13
+      - endoreg_db/views/misc/application_settings_ai_datasets.py:17
+      - endoreg_db/views/misc/application_settings_backup.py:8
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_application_settings.py
+    source_sha256: 11b4f776f2b5d2765a2659aa6f98eeb5ee4a7c70e062862b6e9a29b1cdbb4130
+  assessment:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/asessment.py:17
+    tests: []
+    source_sha256: ea97ce4b0fe4893594cddd76be5aaefa63e9671b6ffff6de226aee9c00ce23f8
+  audit_ledger:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/state/audit_ledger.py:14
+    tests: []
+    source_sha256: cd6a0f49f2058eceaadeabd15141ea162108c5997082cfdccfee14dc499e26fd
+  authz:
+    consumers:
+      endoreg-db:
+      - endoreg_db/authz/auth.py:17
+      - endoreg_db/authz/backends.py:37
+      - endoreg_db/authz/policy.py:35
+      - endoreg_db/authz/views_auth.py:14
+      - endoreg_db/views/auth/keycloak.py:11
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_authz.py
+    source_sha256: 729632e404b2ac810944c9c616d3a9bfe602a4ffe6c1f1a657b3c7d89cc9180b
+  case_resolution:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/case_resolution.py:1
+      - endoreg_db/schemas/persisted_json.py:13
+      - endoreg_db/services/cases/resolution_state.py:6
+      - endoreg_db/views/media/sensitive_metadata.py:22
+      - endoreg_db/views/pdf/pdf_redaction.py:14
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_case_resolution.py
+    - tests/unit/lx_dtypes/models/contracts/test_patient_finding_classification.py
+    - tests/unit/lx_dtypes/models/contracts/test_pdf_redaction.py
+    - tests/unit/lx_dtypes/models/contracts/test_video_correction.py
+    - tests/unit/lx_dtypes/models/contracts/test_video_examination.py
+    - tests/unit/lx_dtypes/models/contracts/test_video_segments.py
+    source_sha256: 7962076b8f54f55facb87e6d82f587e4ea32c2ea9248d42162bdbd9395c83e2e
+  codemod_rename:
+    consumers:
+      endoreg-db:
+      - endoreg_db/codemods/rename_datetime_fields.py:13
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_codemod_rename.py
+    source_sha256: 6bc9b4cc6e3ab01557f51e228ffd5778f370b7a49f27d115b78c00ae54892149
+  cohort_definition:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/other/study_cohort.py:76
+      lx-annotate:
+      - lx_annotate/schemas/study_cohorts.py:5
+      - lx_annotate/views/study_cohorts.py:17
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_study_setup.py
+    source_sha256: 6d21ae46b8411bfbdcaf22f85fa66fd804c0ca14031cacaafa58993972904c97
+  contraindication:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/contraindication/__init__.py:8
+    tests: []
+    source_sha256: 0b7cc690ae8b1b9d901d15725c7cbd042f4bf8c86a03dbbefd3cc32bc08857d2
+  core_concepts:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/reference_data/clinical_projection.py:7
+    tests:
+    - tests/unit/lx_dtypes/django/api/test_knowledge_base_graph_api.py
+    - tests/unit/lx_dtypes/models/contracts/test_core_concepts_adapters.py
+    - tests/unit/lx_dtypes/test_lazy_exports.py
+    source_sha256: e402ab9de7a92584039245c15d1da95b493cc165ae351847e7ea2415fe7b722a
+  dataset_lifecycle:
+    consumers:
+      lx-annotate:
+      - lx_annotate/services/dataset_lifecycle.py:30
+      - lx_annotate/views/dataset_lifecycle.py:13
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_dataset_lifecycle.py
+    source_sha256: 369fa1d97648dac0fdfb49da1829ce37679550c06370b68ec1828785d0f3f585
+  deployment_setup:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/setup_deployment.py:12
+      - endoreg_db/services/runtime/deployment_setup.py:9
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_deployment_setup.py
+    source_sha256: 90edcef23eb60378b66914d0ac4bb036edaca316c4cb7f276452f912c22e63d0
+  dicom_export:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/dicom_export.py:11
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_dicom_export.py
+    source_sha256: e8b833a7470b912fa6801917a50fe131132160322561c9e7da0c63c6b013d865
+  django_settings:
+    consumers:
+      endoreg-db:
+      - endoreg_db/config/settings/base.py:53
+    tests: []
+    source_sha256: e8bbd2405dbee2b677c7e5581304b4312ecdab10e725bef6b9a1cb20d40bbc3d
+  document_type:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/persisted_json.py:13
+      - endoreg_db/serializers/misc/file_overview.py:10
+      - endoreg_db/services/reports/materialization.py:6
+      - endoreg_db/views/anonymization/validate.py:9
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_report_context.py
+    source_sha256: 4e3c5b538e43423dd27b1352a6fa87171b5aa96bb29678145e4e5c4659791fb8
+  dtypes_record_persistence:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/other/study_table_import.py:14
+      - endoreg_db/schemas/persisted_json.py:14
+      - endoreg_db/services/reports/runtime_validation.py:6
+      - endoreg_db/services/reports/structured_records.py:10
+      - endoreg_db/services/studies/table_import.py:14
+      - endoreg_db/services/studies/table_parser.py:17
+      lx-annotate:
+      - lx_annotate/services/dataset_lifecycle.py:36
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_dtypes_record_persistence.py
+    - tests/unit/lx_dtypes/models/knowledge_base/classification_choice_descriptor/test_descriptor_value_normalization.py
+    source_sha256: 63c066f5899d967379fc83d2cb33485842d1e83146e9bb045f158f5aa6958719
+  endoscopy_processor:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/evaluate_lx_anonymizer_performance.py:34
+      - endoreg_db/models/media/video/video_file.py:33
+      - endoreg_db/models/medical/hardware/endoscopy_processor.py:5
+      - endoreg_db/services/video_files/_ai.py:49
+      - endoreg_db/services/video_files/_anonymization.py:9
+      - endoreg_db/services/video_files/_metadata/get_crop_template.py:7
+      - endoreg_db/services/video_files/_metadata/get_endo_roi.py:6
+      - endoreg_db/services/video_files/metadata.py:11
+      - endoreg_db/utils/validate_endo_roi.py:6
+      - endoreg_db/utils/video/masking_filters.py:10
+    tests: []
+    source_sha256: 7efac79c7c55308a235c70a8f311e02bd2c32f3d925e215d29098cba5e4ad00a
+  event:
+    consumers: {}
+    tests: []
+    source_sha256: e859dfea93df6cd1f334b3594c81325c11a41bc669dac193d999eef70b6b4791
+  examination_indication:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/examination/examination_indication.py:223
+    tests: []
+    source_sha256: 0f2260ed9cc7c5999bd27c102f2f1ce9e0aec796749b9869ea5b4cbf6efe0d90
+  examination_revision:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/patient/examination_revision.py:10
+      - endoreg_db/services/cases/examination_revisions.py:8
+      - endoreg_db/services/cases/examination_revisions.py:147
+      - endoreg_db/services/studies/revision_export.py:9
+      - endoreg_db/views/case.py:133
+      - endoreg_db/views/case.py:197
+      - endoreg_db/views/examination_revision.py:9
+      lx-annotate:
+      - lx_annotate/openapi.py:15
+      - lx_annotate/openapi.py:53
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_examination_revision.py
+    source_sha256: f4c8125b7173965c20754e2996e620bf8fae5b04d751c7abc1bfea34ff06c569
+  examination_time:
+    consumers: {}
+    tests: []
+    source_sha256: 87cea6b18a3154a1df50fbe4303b5aa28bf891c6478ee98b2a907131c8543355
+  examination_type:
+    consumers: {}
+    tests: []
+    source_sha256: d4fb0db10745e5cb8ea3a40a129e7111cc1b08671c97abef206db3027acf4bb3
+  export_annotated:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/media/export_annotated.py:12
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_export_annotated.py
+    source_sha256: 23eb2d805b6853381b26158debf0c93380ec6fc59412110d0f69ad912de2edbd
+  export_ready:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/media/export_ready.py:25
+      - endoreg_db/views/media/export_ready.py:6
+    tests: []
+    source_sha256: 0f2abaaa427113aac3eff629f7d4d9586a05c76d626c0344e2b1375ab5995c9d
+  ffmpeg_metadata:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/metadata/video_meta.py:17
+      - endoreg_db/services/media/integrity.py:16
+    tests: []
+    source_sha256: fc37471bc73e77fb9ece92f4dd7dbfea2ff86d74b079f5771545f1df8ee72a8f
+  fhir_clinical:
+    consumers: {}
+    tests:
+    - tests/test_fhir_clinical.py
+    source_sha256: a6237c0d7dca3bc8823bc6ff4ef9dd2d7f7fcecd52b1c08211a38a8f853dab12
+  finding_classification:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/patient/patient_finding_classification.py:31
+    tests: []
+    source_sha256: 770fab7645bc118f5a7f84435fdfe27f19e712e0d67ea3dd1193341a56690749
+  finding_extraction:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/persisted_json.py:22
+      - endoreg_db/services/reports/finding_extraction.py:7
+      - endoreg_db/services/reports/finding_review.py:6
+    tests: []
+    source_sha256: 5383041d61719aaf9d6dab481d272d9436c7d8c383d9aba251ece2e6308f37b6
+  finding_intervention:
+    consumers: {}
+    tests: []
+    source_sha256: 707c3f5540b80abfc7e1cb35ce426698df636bc7e7179bbf52abc92bf4456211
+  finding_review:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/reports/finding_review.py:7
+    tests: []
+    source_sha256: 5b978d9f1d81aec4bfdd6ed75173429bf4fa6bca994445f05b344209a570eeac
+  frame_annotation:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/state/frame_annotation.py:36
+      - endoreg_db/services/queue/frame_annotation_queue.py:8
+      - endoreg_db/views/video/ai/frame_annotations.py:10
+    tests: []
+    source_sha256: 64cae8cb82c4a3d71532bae181821e481d288f2ca391ab9cb651e504bace1d99
+  frame_anonymization:
+    consumers:
+      endoreg-db:
+      - endoreg_db/utils/maintenance/validate_video_detailed.py:33
+    tests: []
+    source_sha256: 395cc4bf344085ec4e371b4f43dc17b738a325a5d33cd318f25efb3786ecec65
+  hub_active_learning:
+    consumers: {}
+    tests: []
+    source_sha256: 86ea5f376309402ef151d01a9284ce16216fa334b589999d2ddaa984a605bf77
+  hub_ingest:
+    consumers: {}
+    tests: []
+    source_sha256: 4bb05c99f220111317401b50c4efa23a2e9c9ffcf2557da43ddbdfd5bceb203a
+  hub_media_envelope:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/hub/outbound_hub_transfer_job.py:278
+      - endoreg_db/schemas/hub_payloads.py:17
+      - endoreg_db/services/hub/transfer_envelope.py:26
+      - endoreg_db/services/hub/transfers.py:28
+      lx-annotate:
+      - lx_annotate/hub/hub_export_cleanup.py:16
+      - lx_annotate/hub/hub_export_contracts.py:7
+      - lx_annotate/hub/hub_export_envelope.py:28
+      - lx_annotate/hub/hub_export_worker.py:18
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_hub_media_envelope.py
+    source_sha256: bbd7069247557d773e55d404b494a48b863e0c498716f30de5e59746a8fb2033
+  hub_transfer:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/persisted_json.py:17
+      lx-annotate:
+      - lx_annotate/hub/hub_export_payloads.py:21
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_hub_transfer.py
+    source_sha256: 41b5151b03e840cb27e7acc507df65d4131d16dbcada5575d88fd08957d81a3b
+  huggingface_model_meta:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/create_model_meta_from_huggingface.py:11
+      - endoreg_db/services/ai/model_meta_from_hf.py:16
+    tests: []
+    source_sha256: 902dd725b7417ffcfeabf36e31bbd958ecd45cd29c6ac660334c5b49828d3673
+  image_processing:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/image_processing/image_processor.py:8
+      - lx_anonymizer/main_with_reassembly.py:10
+      - lx_anonymizer/processing_contracts.py:8
+    tests: []
+    source_sha256: 76e8f76919fa477ffbee19b0b90068d8a5a1e6da53d975f2be8c77c8d22b1b96
+  information_source:
+    consumers: {}
+    tests: []
+    source_sha256: 7212882e49f25ace8fea91d916c076bbe32053814a893cc6a4981f5ce275287c
+  json_types:
+    consumers:
+      endoreg-db:
+      - endoreg_db/authz/auth.py:22
+      - endoreg_db/authz/backends.py:38
+      - endoreg_db/codemods/rename_datetime_fields.py:14
+      - endoreg_db/export/frames/export_frames_with_labels.py:21
+      - endoreg_db/import_files/processing/video_processing/video_anonymization.py:26
+      - endoreg_db/integrations/lx_dtypes_host_models.py:12
+      - endoreg_db/management/commands/ensure_segment_annotations.py:8
+      - endoreg_db/management/commands/migrate_media_storage.py:30
+      - endoreg_db/management/commands/model_input.py:10
+      - endoreg_db/management/commands/reap_quarantine.py:20
+      - endoreg_db/management/commands/refresh_audit_ledger_integrity.py:7
+      - endoreg_db/management/commands/train_image_multilabel_model.py:19
+      - endoreg_db/management/commands/train_phi_region_detector.py:12
+      - endoreg_db/models/aidataset/ai_dataset_split_plan.py:9
+      - endoreg_db/models/hub/outbound_hub_transfer_job.py:11
+      - endoreg_db/models/media/pdf/report_llm_job.py:9
+      - endoreg_db/models/media/video/frame_provenance.py:9
+      - endoreg_db/models/media/video/video_processing.py:19
+      - endoreg_db/models/medical/patient/examination_revision.py:11
+      - endoreg_db/models/medical/patient/patient_disease.py:6
+      - endoreg_db/models/medical/patient/patient_event.py:8
+      - endoreg_db/models/other/clinical_reference_import.py:10
+      - endoreg_db/models/other/reference_catalog_import.py:10
+      - endoreg_db/models/other/study_cohort.py:18
+      - endoreg_db/models/other/study_setup_import.py:11
+      - endoreg_db/models/other/study_table_import.py:12
+      - endoreg_db/models/state/audit_ledger.py:15
+      - endoreg_db/models/state/signals.py:7
+      - endoreg_db/schemas/clinical_reference.py:7
+      - endoreg_db/schemas/persisted_json.py:21
+      - endoreg_db/schemas/temporal_inference.py:5
+      - endoreg_db/schemas/video_processing_history.py:5
+      - endoreg_db/serializers/label_video_segment/label_video_segment.py:39
+      - endoreg_db/serializers/misc/file_overview.py:17
+      - endoreg_db/services/cases/examination_revisions.py:16
+      - endoreg_db/services/centers/access.py:14
+      - endoreg_db/services/datasets/exports.py:12
+      - endoreg_db/services/hub/ingest.py:140
+      - endoreg_db/services/hub/ingest_provenance.py:12
+      - endoreg_db/services/hub/quarantine.py:11
+      - endoreg_db/services/hub/transfer_envelope.py:27
+      - endoreg_db/services/hub/transfer_logging.py:11
+      - endoreg_db/services/hub/transfers.py:27
+      - endoreg_db/services/jobs/report_llm_jobs.py:16
+      - endoreg_db/services/jobs/video_post_validation_jobs.py:15
+      - endoreg_db/services/jobs/video_reimport_jobs.py:22
+      - endoreg_db/services/media/export_annotated.py:13
+      - endoreg_db/services/patient_identity/validated_media_identity.py:20
+      - endoreg_db/services/privacy/k_pseudonymity.py:11
+      - endoreg_db/services/privacy/k_pseudonymity_predicate.py:10
+      - endoreg_db/services/privacy/metrics.py:35
+      - endoreg_db/services/reference_data/clinical_projection.py:8
+      - endoreg_db/services/reports/materialization.py:8
+      - endoreg_db/services/reports/persistence.py:22
+      - endoreg_db/services/reports/structured_records.py:13
+      - endoreg_db/services/studies/revision_export.py:10
+      - endoreg_db/services/video_files/segment_blackening.py:12
+      - endoreg_db/services/video_files/temporal_inference.py:17
+      - endoreg_db/utils/operation_log.py:6
+      - endoreg_db/utils/setup_config.py:13
+      - endoreg_db/utils/structured_logging.py:15
+      - endoreg_db/utils/transcode_execution.py:14
+      - endoreg_db/utils/validate_endo_roi.py:10
+      - endoreg_db/utils/validation/subcategory_dict.py:6
+      - endoreg_db/utils/video/masking_filters.py:14
+      - endoreg_db/views/media/hub/quarantine.py:7
+      - endoreg_db/views/media/hub/transfers.py:13
+      - endoreg_db/views/media/pdf_media.py:19
+      - endoreg_db/views/media/sensitive_metadata.py:21
+      - endoreg_db/views/media/video_media.py:19
+      - endoreg_db/views/misc/upload_views.py:22
+      - endoreg_db/views/patient_examination/patient_examination.py:10
+      - endoreg_db/views/patient_examination/patient_examination_create.py:6
+      - endoreg_db/views/patient_examination/patient_examination_detail.py:7
+      - endoreg_db/views/patient_examination/patient_examination_list.py:8
+      - endoreg_db/views/patient_report/patient_examination_report.py:15
+      - endoreg_db/views/video/ai/frame_box_annotations.py:18
+      - endoreg_db/views/video/ai/label.py:25
+      - endoreg_db/views/video/export_annotated.py:27
+      - endoreg_db/views/video/video_examination_viewset.py:34
+      lx-annotate:
+      - lx_annotate/services/dataset_lifecycle.py:39
+      - lx_annotate/services/report_llm.py:15
+      - lx_annotate/services/study_setup_import.py:17
+    tests:
+    - tests/unit/lx_dtypes/django/api/test_reporting_shell_graph_aaa.py
+    - tests/unit/lx_dtypes/models/contracts/test_codemod_rename.py
+    - tests/unit/lx_dtypes/models/contracts/test_contract_reuse.py
+    - tests/unit/lx_dtypes/models/contracts/test_dtypes_record_persistence.py
+    - tests/unit/lx_dtypes/models/contracts/test_upload.py
+    source_sha256: d6b3fa9ebf5bf0d25e3f278a585aec6860e6948dd4b58f88c6bcc669ab2d3416
+  knowledge_base:
+    consumers:
+      endoreg-db:
+      - endoreg_db/serializers/patient_examination/patient_examination.py:13
+      - endoreg_db/services/reference_data/catalog.py:9
+      - endoreg_db/services/reference_data/clinical_projection.py:9
+      - endoreg_db/services/reports/persistence.py:21
+      lx-annotate:
+      - lx_annotate/services/report_llm.py:16
+    tests:
+    - tests/unit/lx_dtypes/django/api/test_knowledge_base_graph_api.py
+    - tests/unit/lx_dtypes/models/contracts/test_knowledge_base.py
+    - tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py
+    - tests/unit/lx_dtypes/models/interface/test_classification_versioning.py
+    - tests/unit/lx_dtypes/test_lazy_exports.py
+    source_sha256: 540e6e8352b53d6cad7ec8d2e41d725c506cb4c310dc3c4d46ecfa8cf1745d5e
+  knowledge_base_graph:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/clinical_reference.py:6
+      - endoreg_db/services/reference_data/clinical_projection.py:10
+      lx-annotate:
+      - lx_annotate/services/report_llm.py:17
+    tests:
+    - tests/unit/lx_dtypes/django/api/test_knowledge_base_graph_api.py
+    source_sha256: e4389bc86c0317f9fada9585241fee84ca1a90f10e7308ef0405e9a983e1472d
+  lab_value:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/laboratory/lab_value.py:10
+      - endoreg_db/models/medical/patient/patient_lab_value.py:8
+      - endoreg_db/schemas/persisted_json.py:23
+    tests: []
+    source_sha256: 5e7dadd3163e03c1f01efe2768c18cc69f6fc4f909dd0c8d756873ab78ad1dbf
+  label_video_segment_serializer:
+    consumers:
+      endoreg-db:
+      - endoreg_db/serializers/label_video_segment/label_video_segment.py:35
+    tests: []
+    source_sha256: 4d729bfcfdd87f185a12ab0193862cf6f5378a1b1a69c6c16ae36aaf3a16aaf9
+  legacy_data_import:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/load_legacy_data.py:16
+    tests: []
+    source_sha256: 60c0fad997f4640ff00d1e420dd42c4aa31aac3053525d4f3a3b720e7dd3ed90
+  llm_extractor:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/frame_cleaner/cleaner.py:19
+      - lx_anonymizer/llm/llm_extractor.py:20
+    tests: []
+    source_sha256: 5347f52ba24614c4a62fc37bfa08a4bd7cdf14d227b674ed5d6f641e72fa873e
+  llm_service:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/llm/llm_extractor.py:30
+      - lx_anonymizer/llm/llm_service.py:7
+      - lx_anonymizer/llm/responses.py:7
+    tests: []
+    source_sha256: c50b4ab25a192f18b135fea3a4648b410743f22e1a4ba3795cd5a2ccd8aae60e
+  lx_anonymizer_performance:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/evaluate_lx_anonymizer_performance.py:25
+      - endoreg_db/services/privacy/evaluation_manifest.py:22
+    tests: []
+    source_sha256: a320b3e8cf71f3e7a513ac628b1d0c5b3d341401675b54e544a762f7ac720087
+  maintenance_repair:
+    consumers: {}
+    tests: []
+    source_sha256: 33479be5f92ef698bc12141527a6db482e0741e3e85510e201d98ccf6a780c07
+  management_command:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/load_user_groups.py:6
+      - endoreg_db/management/commands/migrate_media_storage.py:31
+      - endoreg_db/management/commands/migrate_video_streamable_storage.py:8
+      - endoreg_db/management/commands/migration_mark_eligible.py:11
+      - endoreg_db/management/commands/model_input.py:11
+      - endoreg_db/management/commands/reap_quarantine.py:21
+      - endoreg_db/management/commands/reconcile_frame_segment_annotations.py:18
+      - endoreg_db/management/commands/reconcile_media_integrity.py:9
+      - endoreg_db/management/commands/reconcile_segment_validation_state.py:13
+      - endoreg_db/management/commands/reconcile_video_formats.py:6
+      - endoreg_db/management/commands/refresh_audit_ledger_integrity.py:8
+      - endoreg_db/management/commands/register_ai_model.py:17
+      - endoreg_db/management/commands/setup_endoreg_db.py:15
+      - endoreg_db/management/commands/show_urls.py:6
+      - endoreg_db/management/commands/storage_management.py:23
+      - endoreg_db/management/commands/train_image_multilabel_model.py:20
+      - endoreg_db/management/commands/train_phi_region_detector.py:13
+      - endoreg_db/management/commands/transcode_video.py:10
+    tests: []
+    source_sha256: 1e93ce616b17378b56211804f0e3cf3d617a9e108427c6786b50383242714aaa
+  media_management:
+    consumers:
+      endoreg-db:
+      - endoreg_db/views/anonymization/media_management.py:24
+    tests: []
+    source_sha256: 20bb493f1390713184b558bbbb9be9217e61d4e94b7483ad28c4762fba6dc9ca
+  media_streaming:
+    consumers:
+      endoreg-db:
+      - endoreg_db/import_files/file_storage/state_management.py:13
+      - endoreg_db/import_files/processing/video_processing/video_anonymization.py:27
+      - endoreg_db/services/media/operation_gate.py:27
+      - endoreg_db/services/video_files/_metadata/get_fps.py:14
+      - endoreg_db/utils/storage_streaming.py:11
+      - endoreg_db/utils/transcode_execution.py:10
+      - endoreg_db/views/report/report_stream.py:33
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_media_streaming.py
+    source_sha256: 83c8f0b47aff657f9fb3ce1fd068339f13698b040894dc338cfda454770483aa
+  medication:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/patient/patient_medication.py:10
+      - endoreg_db/services/interoperability/medical_ledger.py:40
+    tests: []
+    source_sha256: d951a0f65e1813788a1d01460c6db5a1fe0c0dfda4266e721aecf7357567fb39
+  migrate_data_dir:
+    consumers: {}
+    tests: []
+    source_sha256: 05792511e39399004ba87f3782bd63dd4c00893026be99d91f4879bfbb7bea3e
+  migrate_media_storage:
+    consumers: {}
+    tests: []
+    source_sha256: 7830b73d51661bd00ca8849e015ec316bccca610a770e107c032131ef49ed036
+  model_meta:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/metadata/model_meta.py:15
+    tests: []
+    source_sha256: 910f6ea06d749ca72258bf5bd060eddfdf737d58784bdc364226f143a041b215
+  model_meta_logic:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/metadata/model_meta.py:19
+      - endoreg_db/models/metadata/model_meta_logic.py:24
+    tests: []
+    source_sha256: 4f8fbe77708a167ae09e5d13691c979b35d4fdfe9ba0241219b2913c41a4f4f8
+  multilabel_classification:
+    consumers:
+      endoreg-db:
+      - endoreg_db/utils/ai/multilabel_classification_net.py:18
+    tests: []
+    source_sha256: 65f01fef5f9cdd25c36a872e72b3ab025fa191b425470c3af62b21831e83bef8
+  name_fixtures:
+    consumers:
+      endoreg-db:
+      - endoreg_db/utils/parse_and_generate_yaml.py:8
+    tests: []
+    source_sha256: 5b4a30fc99696969d401f289c4e09fc25ce4fa8d30425275d7b44c3a3467050d
+  nginx_accel:
+    consumers:
+      endoreg-db:
+      - endoreg_db/utils/nginx_accel.py:10
+    tests: []
+    source_sha256: d56ee7a5cbecb860e30eb7f572dfe3dcf050afaa5fcd5ca1f2eedb7a230548cb
+  numeric_classification:
+    consumers: {}
+    tests:
+    - tests/unit/lx_dtypes/models/interface/test_classification_versioning.py
+    source_sha256: b04033132014b747cb3307e3d2021bfe6ca16a5bac1fcca1defbeed69341a188
+  numeric_value_distribution:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/patient/patient_lab_value.py:9
+      - endoreg_db/models/other/distribution/numeric_value_distribution.py:11
+    tests: []
+    source_sha256: fd9f9d08cf601eeb66979520083b164670aa2d2fd7bc68d9e4510f16d9859638
+  patient_examination:
+    consumers:
+      endoreg-db:
+      - endoreg_db/serializers/patient_examination/patient_examination.py:14
+    tests: []
+    source_sha256: 9b73f90950af60a896a9244c024e47cfe42d17b599bc59c8a5b290598f3739ce
+  patient_examination_report:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/report/patient_examination_report.py:8
+      - endoreg_db/schemas/report_llm.py:6
+      - endoreg_db/schemas/report_persistence.py:5
+      - endoreg_db/serializers/report/patient_examination_report.py:8
+      - endoreg_db/services/reports/finding_sync.py:28
+      - endoreg_db/services/reports/frame_selection.py:9
+      - endoreg_db/services/reports/history.py:18
+      - endoreg_db/services/reports/persistence.py:54
+      - endoreg_db/services/reports/runtime_validation.py:9
+      - endoreg_db/services/studies/cohort.py:10
+      - endoreg_db/views/patient_report/patient_examination_report.py:16
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_patient_examination_report.py
+    - tests/unit/lx_dtypes/models/contracts/test_patient_finding_identity.py
+    - tests/unit/lx_dtypes/models/contracts/test_reporting_shell_persistence_aaa.py
+    source_sha256: f10074622308333574c9033b2a8cffd416bfb65c7d1e5d6556c59cfdf08b83f3
+  patient_finding:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/reports/finding_sync.py:32
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_patient_finding_identity.py
+    source_sha256: dd0f1b16fbdc0a9270286d03ef2b35d021d33a5db2d13f747dfe9e1ea49ff8ca
+  patient_finding_classification:
+    consumers: {}
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_patient_finding_classification.py
+    source_sha256: 612237c357d936e490046484a9269d404bf073e5fcc44cd15a7eddc073895cd9
+  patient_finding_classification_runtime:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/patient/patient_finding_classification.py:9
+      - endoreg_db/models/medical/patient/patient_finding_classification.py:27
+      - endoreg_db/schemas/classification_choice.py:8
+      - endoreg_db/schemas/patient_clinical.py:6
+      - endoreg_db/services/reports/finding_sync.py:33
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_patient_finding_classification_runtime.py
+    source_sha256: fde684bd2193736a67b66d12775cf03edd956a90688883cd7385ae4a94548278
+  patient_finding_intervention:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/medical/patient/patient_finding_intervention.py:7
+    tests: []
+    source_sha256: 9c78775d1e687fde1f979ed558075613b48050fe7345df2d614efeed20d0ea16
+  patient_view:
+    consumers:
+      endoreg-db:
+      - endoreg_db/views/patient/patient.py:22
+    tests: []
+    source_sha256: 8d404d2c30077e564d69f231bf1dea9e35d966e19af6ceee8ec5fcc6f6564698
+  pdf_file:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/media/pdf/raw_pdf.py:11
+      - endoreg_db/services/raw_pdf_files/metadata.py:9
+      - endoreg_db/services/raw_pdf_files/validation.py:7
+      - endoreg_db/services/reports/persistence.py:23
+      - endoreg_db/views/anonymization/validate.py:10
+    tests: []
+    source_sha256: d788d9a7b19b7b919e439cce121cb967ab02173609637ab9a0a26e2b009f1e25
+  pdf_meta:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/metadata/pdf_meta.py:7
+    tests: []
+    source_sha256: 011ba0dc6bc2c4008682f9642f901281841cf2a687c21c3b38b91dddbbb92494
+  pdf_redaction:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/media/pdf/pdf_processing_history.py:9
+      - endoreg_db/views/pdf/pdf_redaction.py:14
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_pdf_redaction.py
+    source_sha256: faae8d43ecd946f3337c5d228eb8a9db1dd9ab8f0cc2830450c43d2da93722c7
+  permission_runtime:
+    consumers:
+      endoreg-db:
+      - endoreg_db/utils/permissions.py:21
+    tests: []
+    source_sha256: 9a5e60683b72f0d1034909ac007af606d52b552a584e88bc63541c526564b0b5
+  pseudonymization:
+    consumers:
+      endoreg-db:
+      - endoreg_db/import_files/pseudonymization/k_anonymity.py:8
+      - endoreg_db/import_files/pseudonymization/k_pseudonymity.py:3
+    tests: []
+    source_sha256: 33d470ab67ceca9949c3713b37e732490ee87a6113bde9e762c72d4c011d300a
+  reference_catalog:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/import_reference_catalog.py:8
+      - endoreg_db/management/commands/load_ai_model_data.py:4
+      - endoreg_db/management/commands/load_ai_model_label_data.py:4
+      - endoreg_db/management/commands/load_center_data.py:4
+      - endoreg_db/management/commands/load_contraindication_data.py:4
+      - endoreg_db/management/commands/load_disease_classification_choices_data.py:4
+      - endoreg_db/management/commands/load_disease_classification_data.py:4
+      - endoreg_db/management/commands/load_disease_data.py:4
+      - endoreg_db/management/commands/load_distribution_data.py:4
+      - endoreg_db/management/commands/load_endoscope_data.py:4
+      - endoreg_db/management/commands/load_event_data.py:4
+      - endoreg_db/management/commands/load_examination_data.py:4
+      - endoreg_db/management/commands/load_examination_indication_data.py:4
+      - endoreg_db/management/commands/load_finding_data.py:4
+      - endoreg_db/management/commands/load_gender_data.py:4
+      - endoreg_db/management/commands/load_green_endoscopy_wuerzburg_data.py:4
+      - endoreg_db/management/commands/load_information_source.py:4
+      - endoreg_db/management/commands/load_lab_value_data.py:4
+      - endoreg_db/management/commands/load_medication_data.py:4
+      - endoreg_db/management/commands/load_organ_data.py:4
+      - endoreg_db/management/commands/load_pdf_type_data.py:4
+      - endoreg_db/management/commands/load_profession_data.py:4
+      - endoreg_db/management/commands/load_qualification_data.py:4
+      - endoreg_db/management/commands/load_report_reader_flag_data.py:4
+      - endoreg_db/management/commands/load_risk_data.py:4
+      - endoreg_db/management/commands/load_shift_data.py:4
+      - endoreg_db/management/commands/load_tag_data.py:4
+      - endoreg_db/management/commands/load_unit_data.py:4
+      - endoreg_db/management/reference_catalog_command.py:7
+      - endoreg_db/schemas/reference_catalog_migration.py:7
+      - endoreg_db/services/interoperability/medical_ledger.py:36
+      - endoreg_db/services/reference_data/catalog.py:10
+      - endoreg_db/services/reference_data/catalog_export.py:7
+      - endoreg_db/services/reference_data/catalog_migration.py:10
+      - endoreg_db/services/reference_data/catalog_models.py:4
+      - endoreg_db/services/runtime/deployment_setup.py:10
+      lx-annotate:
+      - lx_annotate/openapi.py:57
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py
+    source_sha256: 339bcd6b143ac645224bf40b3bebdce620372f0c6755570f6c58fffc5bea34cf
+  reference_catalog_snapshot:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/other/reference_catalog_import.py:14
+      - endoreg_db/services/reference_data/catalog.py:16
+      - endoreg_db/services/reference_data/catalog_migration.py:14
+      - endoreg_db/services/runtime/deployment_setup.py:14
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py
+    source_sha256: 8795d6d7748cadd329745342dba718853bcb7efc332a2f101014de0c5f65f574
+  reference_metadata:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/classification_choice.py:20
+    tests: []
+    source_sha256: cab70c752ff55e0c0b67b4589b74733075a76930209f03a290d4da5198a2a309
+  report:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/media/pdf/report_file.py:7
+    tests: []
+    source_sha256: 735c40150d27169d886b49f56bd80dd903b7042dc2bf180d408f0c37bbec2403
+  report_anonymization:
+    consumers:
+      endoreg-db:
+      - endoreg_db/import_files/processing/report_processing/report_anonymization.py:14
+      lx-anonymizer:
+      - lx_anonymizer/report_contracts.py:3
+      - lx_anonymizer/report_reader/__init__.py:3
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_report_anonymization.py
+    source_sha256: 857afc79f9e920bfb5e85b4854419a09c6bc2562ed8d705f071ed317df2def70
+  report_context:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/reports/materialization.py:7
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_report_context.py
+    source_sha256: 3d477204e622179095bc3698bffd222469348f0de92602d5fb2d197ee3d7af62
+  report_draft:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/report_draft.py:3
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_report_draft.py
+    - tests/unit/lx_dtypes/models/contracts/test_reporting_shell_persistence_aaa.py
+    - tests/unit/lx_dtypes/test_lazy_exports.py
+    source_sha256: 4fd69898e9a36d6f88e180d0e7bee35b28ee90b82d570414d0f7f85064dd6190
+  sap_ish_import:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/interoperability/sap_ish_import.py:30
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_sap_ish_import.py
+    source_sha256: 4e156f8f6e9b59894169c7bcae51462a7675b896c2887c96b97c7dd83f625997
+  sensitive_meta_update:
+    consumers: {}
+    tests: []
+    source_sha256: 14bd51b7ad5644759142ad290d2da675a5aafa0b9e9159cfd1dcb01ffd9e68a3
+  sensitive_patient_data:
+    consumers:
+      endoreg-db:
+      - endoreg_db/serializers/misc/sensitive_patient_data.py:11
+    tests: []
+    source_sha256: 8c602efc8f0a90a7dc0a98e48e511681c55f781639ac2a101670ac952ac80d3c
+  setup_config:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/setup_endoreg_db.py:18
+      - endoreg_db/utils/setup_config.py:16
+    tests: []
+    source_sha256: 549f78f8434460007fc504f1bd676f64b830986a83a88c1ccebd080baabb8a26
+  study:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/other/study.py:12
+      - endoreg_db/views/media/studies.py:5
+    tests: []
+    source_sha256: 0ea06c43d1fc9f67e94536e93a29d199c3b8207264be7b367317a65a3db80bf2
+  study_cohort:
+    consumers: {}
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_study_cohort.py
+    source_sha256: 9540aae6624a8322dcb7190ba858c0413a409932ae2d55c152c116205a097d0a
+  study_metadata:
+    consumers:
+      lx-annotate:
+      - lx_annotate/services/study_eligibility.py:20
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_study_metadata.py
+    source_sha256: f3f697e0a05a900c5e6a8911c79f2c4993ec18a0321319553f9d2cabf768d1ca
+  study_setup:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/other/study_cohort.py:73
+      - endoreg_db/models/other/study_setup_import.py:12
+      lx-annotate:
+      - lx_annotate/services/study_definitions.py:12
+      - lx_annotate/services/study_setup_import.py:18
+      - lx_annotate/views/study_setup_import.py:9
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_study_setup.py
+    source_sha256: 580be95ef1ac8a472b84b09a7ec87be1257d913b1a68e3aee9cc2a6b084d69f6
+  subcategory_validation:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/patient_clinical.py:11
+      - endoreg_db/utils/validation/subcategory_dict.py:7
+    tests: []
+    source_sha256: f765fee338beb8d470c8d8632d18b99d55bdf1a2d27de39a77c54503c2ea2f29
+  table_import:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/other/study_table_import.py:13
+      - endoreg_db/services/studies/table_import.py:17
+      - endoreg_db/services/studies/table_mappings.py:9
+      - endoreg_db/services/studies/table_parser.py:23
+      lx-annotate:
+      - lx_annotate/services/dataset_lifecycle.py:40
+      - lx_annotate/views/study_table_import.py:26
+    tests: []
+    source_sha256: ca1916a2067ae1042e8d625be55d353e0133841817bf609d2de9d453660c9291
+  terminology_catalog:
+    consumers: {}
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_terminology_catalog.py
+    source_sha256: 86029b17725bb25ce767de78cf80f2c6642e166291254b96a976eb356e1acdcf
+  text_anonymization:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/anonymization/text_anonymizer.py:8
+      - lx_anonymizer/llm/llm_extractor.py:37
+      - lx_anonymizer/pseudonymization/names_generator.py:8
+    tests: []
+    source_sha256: 1a64548e87016d2b4405c05d09ecf2911d5c8b3bfcac0c680bff2baa9d1c4d9a
+  text_detection:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/anonymization/sensitive_region_cropper.py:8
+      - lx_anonymizer/text_detection/east_text_detection.py:18
+      - lx_anonymizer/text_detection/tesseract_text_detection.py:9
+    tests: []
+    source_sha256: 04e3caef73b28161b2a5cf02881cd7bd4465df09b5f216c6d058e1ceba306b24
+  transfer_validation:
+    consumers:
+      endoreg-db:
+      - endoreg_db/views/media/hub/transfers.py:14
+    tests: []
+    source_sha256: 9f34b37d2566a021bd9d5089a8f64185729e2724d7a0c067ebb07f47c530aee4
+  translation:
+    consumers:
+      endoreg-db:
+      - endoreg_db/utils/translation.py:6
+    tests: []
+    source_sha256: 6080fe7974172474f0e1cb7e41462710710ae24539cadcf5774537427a47041a
+  upload:
+    consumers:
+      endoreg-db:
+      - endoreg_db/views/misc/upload_views.py:42
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_upload.py
+    source_sha256: f8211935bd4bafd7ff1b24564139bfdbdba2e84cb03532660b74f95450083c34
+  validated_identity:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/patient_identity/validated_media_identity.py:16
+    tests: []
+    source_sha256: 299e2f86e2ea7f4e99ace13ac26ba97459dd944b23572f28e92328a0533e1c74
+  validation:
+    consumers: {}
+    tests: []
+    source_sha256: eae2666640e842bbdc41631e09bb7424e87a7b996e47fadf6b526257c4479e83
+  video_ai_labels:
+    consumers:
+      endoreg-db:
+      - endoreg_db/views/video/ai/label.py:9
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_ai_labels.py
+    source_sha256: 2cf2aa70c076402831b119b30db2805eb40174db7dde768c77150f43575ea6ca
+  video_correction:
+    consumers:
+      endoreg-db:
+      - endoreg_db/views/video/correction.py:26
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_correction.py
+    source_sha256: fcf7dde9dbac6ece053d6015060d71e2590f9cbfd57f2cac5c04eaeb5d44507b
+  video_examination:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/__init__.py:1
+      - endoreg_db/serializers/video_examination.py:14
+      - endoreg_db/views/video/video_examination_viewset.py:29
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_examination.py
+    source_sha256: 40ead51437f4a1123ff473ac98ae2f47a7b3fb85d6a113c4ed0954233982b7fd
+  video_export:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/export_frame_annot.py:8
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_export.py
+    source_sha256: 22fb53a04270ce06e912b9ad09b82fe59fa5c763f2bfb183814c911354b9bc5f
+  video_file:
+    consumers:
+      endoreg-db:
+      - endoreg_db/config/env.py:30
+      - endoreg_db/import_files/processing/video_processing/video_anonymization.py:32
+      - endoreg_db/models/media/video/video_file.py:24
+      - endoreg_db/services/video_files/_ai.py:31
+      - endoreg_db/services/video_files/ai.py:6
+      - endoreg_db/services/video_files/temporal_inference.py:18
+      - endoreg_db/services/video_storage/canonical_timelines.py:8
+      - endoreg_db/services/video_storage/timelines.py:10
+      - endoreg_db/views/media/video_media.py:20
+    tests: []
+    source_sha256: d35868dcebca34ec3cc8710bee84699f01b08df345aa552f4dc390987c79dfa2
+  video_format:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/video_processing/video_utils.py:12
+    tests: []
+    source_sha256: 90fc67ddc6a52783def4dc6108fa63361da6f171b0963241d5dfbb108e5adb37
+  video_frame:
+    consumers:
+      endoreg-db:
+      - endoreg_db/import_files/processing/video_processing/video_anonymization.py:31
+    tests: []
+    source_sha256: ecee8b8edca4911d960e1db1729b50142c32b91972dc253491a44be1de182240
+  video_frame_annotations:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/frame_annotation_ingress.py:6
+      - endoreg_db/serializers/label_video_segment/frame_annotation_bulk.py:10
+      - endoreg_db/views/video/ai/frame_annotations.py:15
+      - endoreg_db/views/video/ai/frame_box_annotations.py:15
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_frame_annotations.py
+    source_sha256: 1aa707977f02c2285268b5e133075c1ac952e71c3875b44b1769020881db6da8
+  video_frame_box_annotations:
+    consumers:
+      endoreg-db:
+      - endoreg_db/import_files/processing/video_processing/video_anonymization.py:33
+      - endoreg_db/views/video/ai/frame_box_annotations.py:9
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_frame_box_annotations.py
+    source_sha256: 966e6104602e52d9c0c446eb6042cbd603b9e745bb793034a01d48e1c0163a81
+  video_frame_cache:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/video_files/_frames/_extract_frames.py:7
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_contract_reuse.py
+    source_sha256: 11734bd6a6072641b3e4a23835b081ee4d0bd211fc1dc2cd89066a0ef55ac9ff
+  video_frame_export:
+    consumers:
+      endoreg-db:
+      - endoreg_db/export/frames/export_frames_with_labels.py:15
+      - endoreg_db/export/frames/export_frames_with_labels.py:22
+      - endoreg_db/management/commands/create_multilabel_model_meta.py:1
+      - endoreg_db/management/commands/export_frame_annot.py:12
+      - endoreg_db/services/media/export_annotated.py:14
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_frame_export.py
+    source_sha256: 9cb95866902a56311b22f29e8617b7bbcbe9d00d9f4fa797a03bc029442f5871
+  video_masks:
+    consumers:
+      endoreg-db:
+      - endoreg_db/schemas/video_jobs.py:6
+      - endoreg_db/services/video_files/video_masks.py:5
+      - endoreg_db/views/video/masks.py:5
+    tests:
+    - tests/unit/lx_dtypes/models/interface/test_video_masks.py
+    source_sha256: 42dcd68bb29279647d0f4dfdb92a85e124a7c9b65679052647e156eee004de24
+  video_prediction_logic:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/metadata/video_prediction_logic.py:14
+    tests: []
+    source_sha256: e1907046543273c6889eb441ab26ff3fbc4d3b2d733424323fa4158c3e8039d9
+  video_processing:
+    consumers:
+      lx-anonymizer:
+      - lx_anonymizer/anonymization/masking.py:10
+      - lx_anonymizer/frame_cleaner/cleaner.py:20
+      - lx_anonymizer/frame_cleaner/video.py:11
+      - lx_anonymizer/video_processing/video_processing_service.py:6
+      - lx_anonymizer/video_processing/video_processor.py:7
+    tests: []
+    source_sha256: 9ca454949eedb90c0bb07e4c54f191214d7ebdc46ddff6dcdccb90252042a5ad
+  video_processing_history:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/media/video/video_processing.py:23
+    tests: []
+    source_sha256: bafb83796434dc09e1c38340f906ce3035c0e983ae41b51eda2aec47359ed9f3
+  video_provenance:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/media/video/frame_provenance.py:10
+      - endoreg_db/schemas/hub_payloads.py:5
+      - endoreg_db/schemas/persisted_json.py:3
+      - endoreg_db/schemas/video_storage.py:6
+      - endoreg_db/services/hub/video_provenance.py:10
+      - endoreg_db/services/streaming/hls_media.py:3
+      - endoreg_db/services/video_storage/frame_provenance.py:9
+      - endoreg_db/services/video_storage/provenance_cleaner.py:13
+    tests: []
+    source_sha256: 2664dfb5dcfb0437b01de30916f27cb4c4c6d011d43bbd7b1a40f59f0309dbf8
+  video_reimport:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/jobs/video_reimport_jobs.py:13
+      - endoreg_db/services/video_files/reimport_orchestrator.py:8
+      - endoreg_db/views/auth/keycloak.py:10
+      - endoreg_db/views/examination/examination_manifest_cache.py:6
+      - endoreg_db/views/video/reimport.py:7
+      lx-annotate:
+      - lx_annotate/hub/hub_export_payloads.py:21
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_reimport.py
+    source_sha256: b5064ce563b47d91346a7a05c3b88c33295ef685c7aa42b49a7add1d8da03edf
+  video_segment_validation:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/state/video_segment_validation.py:7
+      - endoreg_db/serializers/video/video_file_list.py:26
+      - endoreg_db/services/annotations/segment_validation_workflow.py:22
+      - endoreg_db/services/video_files/segment_blackening.py:13
+    tests: []
+    source_sha256: f84d7e69501187c2babfd65e786ec89c94a309ff6bf93337ea2bd5834fa8bce0
+  video_segments:
+    consumers:
+      endoreg-db:
+      - endoreg_db/management/commands/ensure_segment_annotations.py:7
+      - endoreg_db/models/media/video/video_file.py:28
+      - endoreg_db/serializers/label_video_segment/label_video_segment.py:40
+      - endoreg_db/services/annotations/segment_sync.py:29
+      - endoreg_db/services/video_files/temporal_inference.py:19
+      - endoreg_db/views/video/segments_crud.py:30
+    tests:
+    - tests/unit/lx_dtypes/models/contracts/test_video_segments.py
+    source_sha256: a51a13308e2dd92a0763a05340a4910675b69e027e26fa8f9f83fbca9d447a35
+  video_state:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/video_files/_frames/_extract_frames.py:12
+    tests: []
+    source_sha256: 97f75e2a4626d780b0531644b066844e61bca508ea2b222da50adf492e30e17d
+  video_temporal_inference:
+    consumers:
+      endoreg-db:
+      - endoreg_db/services/video_files/temporal_inference.py:22
+    tests: []
+    source_sha256: 8be28fe24676b351d2b20161acedb8f14641a5ddfe811f31f0bde9741d4eff06
+  video_text_metadata:
+    consumers:
+      endoreg-db:
+      - endoreg_db/models/media/video/video_file.py:32
+      - endoreg_db/models/media/video/video_file.py:419
+      - endoreg_db/services/video_files/_metadata/text_meta.py:8
+      - endoreg_db/services/video_files/metadata.py:8
+      - endoreg_db/views/anonymization/validate.py:11
+    tests: []
+    source_sha256: 57c8f76b6601a3ab720722cba789b26e8a85613d6bbaa021570c1879fd3d461c
+source_snapshots:
+  lx-data-models:
+    head: b3f1e5e6fa4416964e4cb9762d98f21966237f39
+    dirty: true
+  endoreg-db:
+    head: fd95ba86ccc56782fc2f5a41cbf64c5c08741616
+    dirty: true
+  lx-annotate:
+    head: f46b5de0ebe1f6824c84cf16bcb1f4b384cb3d36
+    dirty: true
+  lx-anonymizer:
+    head: 991cfbdc374dce5a412b5c342586151b949d031d
+    dirty: true

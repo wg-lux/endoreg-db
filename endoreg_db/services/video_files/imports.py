@@ -1,0 +1,160 @@
+# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
+from __future__ import annotations
+
+import logging
+from pathlib import Path
+from typing import TYPE_CHECKING, Optional, TypedDict, Unpack
+
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
+
+from .frames import initialize_video_frames
+from .io import set_video_frame_dir
+from .metadata import initialize_video_specs, update_video_meta
+from .state import get_or_create_video_state
+
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
+
+logger = logging.getLogger(__name__)
+
+
+class _CreateVideoFileFromPathKwargs(TypedDict, total=False):
+    processor_name: str | None
+    raw_video_hash: str | None
+    save: bool
+
+
+def _video_file_model():
+    from endoreg_db.models.media.video.video_file import VideoFile
+
+    return VideoFile
+
+
+def create_video_file_from_path(
+    file_path: str | Path,
+    center_name: str = "",
+    *,
+    model_cls: type["VideoFile"] | None = None,
+    center_key: str | None = None,
+    **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
+) -> Optional["VideoFile"]:
+    from endoreg_db.utils.file_operations import get_file_hash
+
+    from ._imports import _create_from_file
+
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
+
+    processor_name = kwargs.pop("processor_name", None)
+    raw_video_hash = kwargs.pop("raw_video_hash", None)
+    save = kwargs.pop("save", True)
+    if not raw_video_hash:
+        raw_video_hash = str(get_file_hash(file_path))
+
+    return _create_from_file(
+        model_cls or _video_file_model(),
+        file_path,
+        center_name=center_name,
+        center_key=center_key,
+        processor_name=processor_name,
+        raw_video_hash=raw_video_hash,
+        save=save,
+    )
+
+
+def create_initialized_video_file_from_path(
+    file_path: str | Path,
+    center_name: str,
+    processor_name: Optional[str],
+    raw_video_hash: str,
+    *,
+    save_video_file: bool = True,
+    initialize: bool = True,
+    model_cls: type["VideoFile"] | None = None,
+    center_key: str | None = None,
+) -> "VideoFile":
+    from ._imports import _create_from_file
+
+    if isinstance(file_path, str):
+        file_path = Path(file_path)
+
+    video_file = _create_from_file(
+        model_cls or _video_file_model(),
+        file_path,
+        center_name=center_name,
+        center_key=center_key,
+        processor_name=processor_name,
+        raw_video_hash=raw_video_hash,
+        save=save_video_file,
+    )
+    if not initialize:
+        return video_file
+    return initialize_video_file(video_file)
+
+
+def initialize_video_file(
+    video: "VideoFile", *, local_raw_path: Path | None = None
+) -> "VideoFile":
+    update_video_meta(video, save_instance=False, raw_video_path=local_raw_path)
+    try:
+        if video.has_raw and (
+            video.fps is None
+            or video.width is None
+            or video.height is None
+            or video.frame_count is None
+            or video.duration is None
+        ):
+            initialize_video_specs(video, use_raw=True, local_video_path=local_raw_path)
+        else:
+            logger.debug(
+                "Skipping OpenCV video spec init for %s; specs already available or raw file missing.",
+                video.raw_video_hash,
+            )
+    except Exception as exc:
+        logger.exception(
+            "Failed to initialize video specs for %s: %s", video.raw_video_hash, exc
+        )
+
+    set_video_frame_dir(video)
+    video.state = get_or_create_video_state(video)
+    video.save(
+        update_fields=[
+            "video_meta",
+            "fps",
+            "duration",
+            "frame_count",
+            "width",
+            "height",
+            "state",
+        ]
+    )
+    try:
+        sync_video_streamable_artifacts(
+            video,
+            include_raw=True,
+            include_processed=False,
+            save=True,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Could not synchronize initial streamable artifact state for video %s: %s",
+            video.pk,
+            exc,
+        )
+
+    if local_raw_path is not None:
+        from endoreg_db.services.video_storage.recording_time import (
+            persist_video_recording_time,
+        )
+        from endoreg_db.services.video_storage.workflow import (
+            persist_video_source_timeline,
+        )
+
+        persist_video_source_timeline(video, Path(local_raw_path))
+        # Masking strips container metadata, so capture it from the raw import.
+        persist_video_recording_time(video, Path(local_raw_path))
+    else:
+        initialize_video_frames(video)
+    return video

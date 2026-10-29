@@ -1,8 +1,10 @@
 from pathlib import Path
-from typing import Optional, Union
+from typing import Optional
 import yaml
 from icecream import ic
 from pydantic import BaseModel
+
+from endoreg_db.utils.file_operations import atomic_write_file
 
 
 class DbConfig(BaseModel):
@@ -19,7 +21,7 @@ class DbConfig(BaseModel):
     # class options should allow for unused excess data
 
     @classmethod
-    def from_file(cls, path: Union[Path, str]) -> "DbConfig":
+    def from_file(cls, path: Path | str) -> "DbConfig":
         """Create a DbConfig instance from a YAML configuration file."""
         if isinstance(path, str):
             filepath = Path(path)
@@ -50,8 +52,14 @@ class DbConfig(BaseModel):
         assert self.name, "Missing Database"
 
     def to_file(self, target: str = "./conf/db.yml", ask_override: bool = True):
-        """Export the configuration to a YAML file."""
+        """Export the non-secret configuration to a YAML file."""
         ic(target)
 
-        with open(target, "w") as f:
-            yaml.safe_dump(self.model_dump(), f)
+        payload = yaml.safe_dump(
+            self.model_dump(exclude={"password"}),
+            sort_keys=False,
+        )
+        atomic_write_file(
+            destination=Path(target),
+            content=[payload.encode("utf-8")],
+        )

@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Endoreg local study server health check daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=check_system_health.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,25 @@
+version: 1
+tier: module
+path: endoreg_db/views/patient
+summary: Patient administration and medical-ledger HTTP boundary.
+responsibilities:
+- Handle scoped patient requests and ledger payload integration.
+boundaries:
+- Validate clinical payloads through the canonical shared contracts and preserve center access restrictions.
+files:
+- file: patient.py
+  role: Patient viewset and medical-ledger adapters.
+dependencies:
+  internal:
+  - endoreg_db/authz
+  - endoreg_db/services
+  - endoreg_db/serializers
+  external:
+  - django
+  - rest_framework
+  - lx_dtypes
+tests:
+  directory: tests/views
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/views
+parent: ../structure.yml
+submodules: []

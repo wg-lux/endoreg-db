@@ -1,0 +1,38 @@
+version: 1
+tier: module
+path: endoreg_db/serializers
+summary: REST framework representation and typed request adapters.
+responsibilities:
+- Represent clinical, media and administrative resources for HTTP consumers.
+boundaries:
+- No service workflow ownership or duplicate clinical payload schema; keep public fields snake_case.
+files:
+- file: patient_examination/patient_examination.py
+  role: Hash-free examination representation and local patient ID validation within authorized centers.
+- file: __init__.py
+  role: Serializer exports.
+- file: hub/transfer_job.py
+  role: Transfer request representation and raw-mode rejection.
+- file: video/video_file_detail.py
+  role: Video detail representation.
+- file: video/video_file_list.py
+  role: Video listing representation.
+- file: patient/__init__.py
+  role: Patient representation package.
+- file: report/__init__.py
+  role: Report representation package.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/hub
+  - endoreg_db/services/centers
+  - endoreg_db/services/patient_identity
+  external:
+  - rest_framework
+  - lx_dtypes
+tests:
+  directory: tests/serializers
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/serializers
+parent: ../structure.yml
+submodules: []

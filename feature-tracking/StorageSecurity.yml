@@ -1,0 +1,284 @@
+schema_version: '1.0'
+id: storage_security
+name: Geschützte Medien und Storage
+description: Einheitlicher fail-closed Schutz für klinische Medien bei Speicherung, Streaming, Migration
+  und Transfer.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/storage_lifecycle.md
+  disposition: reference
+  note: General current-state map of application storage ownership, protection, lifecycle, and cleanup.
+- path: docs/repo_alignment_todo.md
+  disposition: migrated
+  note: Cross-Repository-Divergenzen, Phasen und Erfolgskriterien sind Teil dieser DoD.
+- path: docs/video_hls_permissions_and_streaming.md
+  disposition: reference
+  note: Streaming- und Berechtigungsvertrag.
+definition_of_done:
+- id: storage_contract
+  category: requirements
+  title: Schutz- und Storagevertrag ist über endoreg_db, lx-annotate und LuxNix einheitlich
+  acceptance:
+  - Python-, native Range- und native Hashleser verwenden denselben strikten Headervertrag; ungültige
+    Typen, Längen, Nonces sowie abgeschnittene und inkonsistente Chunks werden abgewiesen.
+  - Dateiformat-Probes verwenden ausschließlich den Rust-Magic-Header-Probe über einen typisierten Python-Adapter;
+    fehlendes Backend und Lesefehler werden nicht als Klartext oder Python-Fallback behandelt.
+  - Video, Bericht, Sidecar, Manifest und temporäres Artefakt haben einen eindeutigen Schutzmodus.
+  - Operatorseitiges encryption-off ist kein unterstützter Produktionszustand.
+  - storage_mode verwendet ausschließlich typisierte, exhaustive Routingentscheidungen.
+  - Der kanonische Dateioperations-Wrapper ist endoreg_db.utils.filesystem.file_operations; abweichende
+    Importpfade sind nur als inventarisierte, getestete und befristete Kompatibilität zulässig.
+  required: true
+  verification:
+    kind: manual
+    instructions: Cross-Repository-Vertrag gegen Settings, Storage-Backends und Deploymentprofile prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/environment/test_secret_resolution.py; tests/rust_backend/test_encryption_status.py;
+        rust/endoreg_rust_backend/src/encryption_state.rs
+    - kind: test
+      reference: tests/rust_backend/test_encrypted_contract.py; tests/environment/test_secret_resolution.py
+        (zweite Secret-Runde, gemeinsame native Header- und Schlüsselverträge)
+    note: '2026-09-24: Einheitlicher Rust-Magic-Header-Probe ohne Python-Fallback; gemeinsame private
+      Dateileser und Validatoren für Salz, Master-Keys und Django-Signaturschlüssel. Health-Fingerprint
+      verwendet den geladenen Schlüssel. Radon load_keyring 22 -> 10, load_identity_salt 11 -> 7. Vollständiger
+      Pyright-Lauf: 0 Fehler, 6 bestehende Warnungen. Integrationslane: 133 bestanden; abschließende Native-/Import-/Range-Lane:
+      39 bestanden; jeweils 3 Warnungen. Zwei Rust-Unit-Tests bestanden mit explizitem libpython-Link.
+      Ruff, cargo fmt und git diff --check bestanden. Native Keyring-/24-Byte-Schlüssel-Divergenz und
+      Headerparser-Unterschiede bleiben in docs/secret_rotation.md dokumentiert. Keine Produktionsfreigabe.
+
+      2026-09-24, zweite Secret-Runde: Gemeinsamer Rust-Headervertrag für Python-, Range- und Hashleser;
+      native Einzel-/Batch-Hashleser erhalten einen validierten aktiven/auslaufenden Schlüssel-Snapshot
+      und laden keine Secrets selbst. 16/24/32-Byte-Schlüssel, Header-Typen und Größen, abgeschnittene
+      Chunk-Längen, kurze Reads sowie leere verschlüsselte Dateien geprüft. Leere Salt-Snapshots bleiben
+      stabil; mehrdeutige YAML-Felder und coercierte Kontrollwerte werden abgewiesen; kein Ersatz-Signaturschlüssel
+      in Produktionssettings unter pytest. Master-Key-Auflösung Radon B/6 -> A/1, gemeinsamer Resolver
+      A/5; Chunk-Index A/5 -> A/4. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen. Cargo: 19
+      Tests bestanden mit explizitem libpython-Link. Python-Integration über 17 Dateien: 228 bestanden,
+      1 übersprungen, 3 Warnungen in 82.63 Sekunden. Der PostgreSQL-Advisory-Lock-Test wurde unter SQLite
+      übersprungen; daraus folgt kein PostgreSQL-Parallelitätsnachweis. Ruff, cargo fmt, git diff --check
+      und Tracker-Validierung bestanden. Keine Produktionsdaten oder Deployments geändert. LXENC01 benötigt
+      gegen den Verlust vollständiger letzter Chunks weiterhin einen unabhängigen Soll-Hash; Details in
+      docs/secret_rotation.md. Produktionsabnahme und PostgreSQL-Nachweis bleiben erforderlich.'
+    assessed_by: codex-secret-reliability-20260924
+    assessed_at: '2026-09-24T09:26:04.932090Z'
+- id: encrypted_at_rest
+  category: security
+  title: Physischer Datenträgerzugriff ermöglicht keinen Klartextzugriff
+  acceptance:
+  - Managed Non-Video-Payloads nutzen anwendungsseitig verschlüsselten Storage.
+  - Videos liegen innerhalb der freigegebenen verschlüsselten, streambaren Grenze.
+  - Start schlägt fehl, wenn erforderliche Schlüssel- oder Storageinvarianten fehlen.
+  - Entschlüsselte Arbeitsdateien entstehen ausschließlich im geschützten Transcoding-Verzeichnis, mit
+    Dateimodus 0600 und Bereinigung auch bei Verarbeitungs- oder Lesefehlern.
+  - Validierung und explizite Medienlöschung unterdrücken keine Speicher-Löschfehler; bei fehlgeschlagener
+    expliziter Löschung bleibt der Datensatz für einen erneuten Versuch erhalten.
+  - Explizite Berichtlöschung bereinigt protokollierte Importquellen nach Eigentums- und Hashprüfung;
+    aktive oder wiederholbare Importe blockieren die Löschung.
+  - Die Transferannahme verlangt echte boolesche Freigaben aller Anonymisierungsstufen, einschließlich
+    Schwärzung außerhalb freigegebener Videosegmente.
+  - Metadatenabfragen materialisieren keine Videos; fehlende Dauer bleibt explizit unbekannt.
+  - Temporäre Schreiber verwenden exklusive, unabhängige Dateien mit Zugriffsrechten bereits bei Erstellung;
+    Kollisionen beschädigen und löschen keine fremden Dateien.
+  - Bereinigung überschreibt keine symbolischen oder harten Linkziele und behauptet keine physische Datenlöschung
+    auf Solid-State-Laufwerken oder Copy-on-Write-Dateisystemen.
+  - SAP-ZIP-Importe extrahieren ausschließlich in private geschützte Arbeitsverzeichnisse; unsichere Archivpfade
+    und Links werden abgewiesen, Arbeitskopien auch bei Fehlern entfernt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Datenträger-, Settings- und Startfehlerprüfung im Produktionsprofil durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'tests/services/test_media_security_lifecycle.py: 2 passed, 2 warnings in 61.72s; unabhängige
+        Prüfung durch codex-cleanup-20261005'
+    - kind: command
+      reference: '2026-10-06: vollständiger Pyright 0 errors, 10 warnings; finale gezielte Nachprüfung
+        0 errors, 0 warnings. Integration über 16 Testdateien: 361 passed, 1 failed, 40 subtests passed,
+        2 warnings in 113.30s; einzig veraltetes Mock-Ziel nach secure_unlink_file-Umstellung korrigiert,
+        Nachprüfung 1 passed, 1 warning in 33.63s. Ruff und git diff --check bestanden.'
+    - kind: command
+      reference: '2026-10-07: pytest tests/utils/test_file_operations.py tests/utils/test_storage_files.py
+        tests/utils/test_storage_materialization.py tests/serializers/video/test_video_file_serializer.py
+        tests/services/test_sap_ish_import.py -q: 68 passed; pytest Quellstream-Schließfehler, media_security_lifecycle,
+        video_processed_transcode_encryption, report_artifact_integrity, encryption_streaming, video_stream,
+        report_stream, sap_ish_import: 59 passed. Vollständiger Pyright 0 errors, 10 warnings; gezielte
+        Nachprüfung 0 errors, 0 warnings; Ruff und git diff --check bestanden.'
+    note: '2026-10-06: Atomare Klartextmaterialisierung ausschließlich unter geschütztem Transcoding-Storage,
+      Modus 0600 und Bereinigung auch bei Lesefehlern oder Consumer-Abbruch. Speicher-Löschfehler werden
+      bei Validierung und expliziter Video-Löschung nicht mehr unterdrückt. Gemeinsame Eigentums-/Hash-/Aktivitätsprüfungen
+      bereinigen explizit gelöschte Video- und Berichtquellen; der Reaper berücksichtigt protokollierte
+      Berichtkopien. Transferannahme verlangt echte boolesche Freigaben für Anonymisierung, Metadatenverarbeitung,
+      Validierung und bei Videos abgeschlossene Schwärzung außerhalb freigegebener Segmente (outside_segments_removed).
+      362 unterschiedliche Regressionstests und 40 Untertests bestanden über Integrationslauf und korrigierten
+      Einzel-Nachlauf. Zusätzlich unabhängiger Bericht-Lifecycle-Test: 2 passed; echte verschlüsselte
+      Bytes, authentifizierte Materialisierung, Raw-Löschung nach Validierung und Force-Removal samt Upload-/Importkopien.
+      Import-, Streaming-, Transcode-, Envelope- und Readiness-Regressionsprüfungen enthalten. Aktive
+      Importe/Leases und unklare Eigentumsverhältnisse blockieren destruktive Löschung weiterhin. Produktive
+      Datenträgerverschlüsselung, harte Prozessabbrüche und vollständige klinische Anonymisierungsqualität
+      sind nicht nachgewiesen; keine Produktionsfreigabe.
+
+
+      2026-10-07: Materialisierungszeitpunkt und Aufrufer recherchiert; Video-Metadatenabfragen entschlüsseln
+      keine Medien mehr. Exklusive, unabhängige temporäre Schreiber setzen private Rechte bereits bei
+      Erstellung; Kollisionen erhalten fremde Dateien. Materialisierung und Berichtstaging weisen Root-Flucht
+      ab. Bereinigung überschreibt keine Linkziele; auch Fehler beim Schließen des Quellstreams entfernen
+      eigene Klartextkopien. SAP-ZIP-Extraktion verwendet private geschützte Arbeitsverzeichnisse und
+      atomare Dateien, weist unsichere Pfade, symbolische Links und doppelte Dateien ab und bereinigt
+      Erfolg sowie Fehler. Vollständiger Pyright: 0 Fehler, 10 bestehende Warnungen; gezielte Nachprüfungen:
+      0 Fehler, 0 Warnungen. Fokussierte Lane: 68 passed, 2 warnings in 63.85s; anschließende Integration
+      inklusive Quellstream-Schließfehler: 59 passed, 2 warnings in 185.14s. Ruff und beide Diff-Prüfungen
+      bestanden. Keine zweite vollständige Suite gestartet, da fremde pytest-Suite PID 1687645 aktiv.
+      Produktive Verschlüsselung einschließlich Snapshots, Backups und Swap sowie Bereinigung nach hartem
+      Prozessabbruch bleiben unbewiesen; keine Produktionsfreigabe.'
+    assessed_by: codex-storage-20261006-a1
+    assessed_at: '2026-10-07T07:15:09.827094Z'
+- id: protected_delivery
+  category: functionality
+  title: Geschützte Medien werden nur autorisiert und proxygeeignet ausgeliefert
+  acceptance:
+  - Produktionsrouten mounten geschützte Medien nie direkt unter public media.
+  - Streaming nutzt authentifizierte API-Prüfung und optional X-Accel-Redirect.
+  - Range-, Chunk- und Fehlerverhalten funktionieren mit verschlüsseltem Storage.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_environment_readiness.py
+    - tests/views/video/test_video_stream.py
+    - tests/views/report/test_report_stream.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/services/test_environment_readiness.py
+        tests/views/video/test_video_stream.py tests/views/report/test_report_stream.py -q (19 passed,
+        2 warnings in 93.36s)
+    note: Die fokussierte Verifikationslane bestätigt fail-closed Produktions-Readiness, authentifizierte
+      Video- und Berichtsauslieferung, Proxy-Offload sowie verschlüsseltes Range-, Chunk- und Fehlerverhalten.
+    assessed_by: codex-root-feature-c7f4a9
+    assessed_at: '2026-09-02T11:41:27.078817Z'
+- id: filesystem_integrity
+  category: data_integrity
+  title: Alle Mutationen sind atomar, typisiert und strukturiert protokolliert
+  acceptance:
+  - Produktionscode umgeht endoreg_db.utils.filesystem.file_operations nicht; Cross-Repository-Aufrufer
+    verwenden denselben kanonischen Importpfad oder einen explizit dokumentierten Kompatibilitätswrapper.
+  - Teilwrites werden nicht als gültige Artefakte sichtbar und Integrität ist hashbar.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/utils/test_file_operations.py
+    - tests/services/test_report_artifact_integrity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
+    - kind: review
+      reference: endoreg_db/utils/filesystem/file_operations.py; endoreg_db/services/video_storage/normalization.py
+    note: Der Video-Normalisierer verwendet den kanonischen Filesystem-Facade; Teiloutputs werden nicht
+      veröffentlicht und Mutationen/Lifecycle sind strukturiert protokolliert. Die repository-weite Migration
+      verbleibender Legacy-Imports ist noch offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:53.499645Z'
+- id: migration_and_repair
+  category: operations
+  title: Bestandsmigration, Rotation, Reparatur und Rollback sind sicher
+  acceptance:
+  - Migration arbeitet idempotent, prüft freien Speicher und verifiziert Quelle sowie Ziel.
+  - Fehler markieren Artefakte nachvollziehbar und führen nicht zu unsafe Auto-Recovery.
+  - Key-Rotation und Backup-Restore sind dokumentiert und geprobt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Produktionsnahe Migrations-, Abbruch-, Restore- und Rotationsübung durchführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
+    note: ENOSPC, Unterbrechung, Validierungsfehler und Publikationsfehler sind fail-closed regressionsgetestet.
+      Produktionsnahe Restore-, Key-Rotations- und harte Prozessabbruchübung fehlen weiterhin.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:54.487849Z'
+- id: automated_tests
+  category: testing
+  title: Produktionssettings, Storage, Streaming und Migration sind regressionsgetestet
+  acceptance:
+  - Öffentliche Mounts, falsche Roots, fehlende Schlüssel und Integritätsfehler haben negative Tests.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/deployment/test_prod_settings_contract.py
+    - tests/services/test_environment_readiness.py
+    - tests/utils/test_file_operations.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: devenv shell bash -lc 'exec .devenv/state/venv/bin/pytest tests/deployment/test_prod_settings_contract.py
+        tests/services/test_environment_readiness.py tests/utils/test_file_operations.py tests/services/test_report_artifact_integrity.py
+        tests/services/test_video_storage_atomic_migration.py -q' (37 passed)
+    note: Produktionssettings, öffentliche/falsche Storage-Konfigurationen, Dateioperationsintegrität,
+      Report-Artefaktintegrität sowie fail-closed Video-Migrationsfehler sind regressionsgetestet.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:39:39.103438Z'
+- id: readiness_observability
+  category: observability
+  title: Schutzverletzungen und Storagezustand sind vor und während des Betriebs sichtbar
+  acceptance:
+  - Startup- und Health-Checks melden öffentliche Mounts, Root-Flucht und ungeschützte Modi laut.
+  - Dateioperationen erzeugen strukturierte, korrelierbare JSON-Ereignisse.
+  required: true
+  verification:
+    kind: manual
+    instructions: Fehlkonfigurationen injizieren und Health- sowie Alarmverhalten prüfen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: review
+      reference: endoreg_db/services/video_storage/normalization.py
+    - kind: test
+      reference: tests/services/test_video_storage_atomic_migration.py (strukturierte Fehler- und Unlink-Ereignisse)
+    note: Korrelierbare Normalisierungs- und Dateioperationsereignisse sind nachgewiesen. Startup-/Health-Alarmierung
+      für Fehlkonfigurationen bleibt offen.
+    assessed_by: Codex
+    assessed_at: '2026-07-20T10:37:56.329335Z'
+- id: operator_documentation
+  category: documentation
+  title: Storage-, Streaming-, Schlüssel- und Incident-Runbooks sind konsistent
+  acceptance:
+  - Dokumentation enthält unterstützte Profile, Invarianten, Migration, Recovery und Cross-Repo-Abhängigkeiten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Runbooks mit Betrieb und Security in produktionsnaher Umgebung abnehmen.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

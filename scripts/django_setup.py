@@ -8,11 +8,13 @@ import django
 
 def setup_django():
     try:
-        settings_module = os.environ['DJANGO_SETTINGS_MODULE']
+        settings_module = os.environ["DJANGO_SETTINGS_MODULE"]
     except KeyError:
         # Default to dev settings if not set, adjust if necessary
         settings_module = "dev.dev_settings"
-        print(f"Warning: DJANGO_SETTINGS_MODULE not set, defaulting to {settings_module}")
+        print(
+            f"Warning: DJANGO_SETTINGS_MODULE not set, defaulting to {settings_module}"
+        )
         os.environ.setdefault("DJANGO_SETTINGS_MODULE", settings_module)
 
     print(f"Using Django settings: {settings_module}")

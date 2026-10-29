@@ -1,0 +1,28 @@
+# Example frame annotation export for scripts/export_frame_annotations.py
+# and `manage.py export_frame_annot --config`.
+# Schema: lx_dtypes VideoFrameAnnotationExportConfigPayload (unknown keys fail).
+# Guide: docs/annotation_export_guide.md
+
+# Table path; relative paths resolve inside output_dir.
+output_dir: data/export/frame_annotations
+output_path: annotations.csv
+output_format: csv
+# pts_dataset_v1 keeps presentation timestamp identity for every frame row.
+export_profile: pts_dataset_v1
+
+# Selection.
+information_source_name: manual_annotation
+use_export_flags: true
+only_validated: true
+# local_study_server deployments require exactly one scope:
+# set center_key to one center, or all_centers to true.
+all_centers: false
+
+# Media. pts_dataset_v1 always regenerates frames from the processed artifact
+# and names them by frame primary key, so the exporter enforces these values.
+export_frames: true
+export_videos: false
+transcode_frames: true
+use_frame_pk_paths: true
+
+load_base_data: false

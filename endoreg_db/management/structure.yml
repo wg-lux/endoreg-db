@@ -1,0 +1,55 @@
+version: 1
+tier: module
+path: endoreg_db/management
+summary: Django management commands and shared command adapters.
+responsibilities:
+- Expose data loading, deployment setup, reconciliation and operator workflows.
+boundaries:
+- Commands use domain services and protected storage; destructive media migration needs tracked approvals.
+files:
+- file: commands/report_concept_embeddings.py
+  role: Center-scoped source hashes, local embedding capture and similarity CSV on standard output.
+- file: commands/collect_study_examination.py
+  role: Explicit authorized stdin ledger collection with server-computed package evaluation.
+- file: commands/terminology_packages.py
+  role: Import, build or export immutable terminology packages under configured runtime storage.
+- file: commands/import_clinical_reference_data.py
+  role: Validate an exact local or registered package and transactionally project its clinical references.
+- file: commands/migrate_legacy_hashes.py
+  role: Strict atomic identity HMAC migration with write-free dry-run diffs and private reviewed-source input.
+- file: commands/rotate_identity_salt.py
+  role: Private review-file parsing and command adapter for whole-run identity salt migration.
+- file: commands/load_base_db_data.py
+  role: Canonical base reference-data command; reuses an unchanged catalogue receipt unless --verify is given.
+- file: commands/setup_endoreg_db.py
+  role: Application setup command.
+- file: commands/materialize_video_hls.py
+  role: HTTP Live Streaming (HLS) derivative backfill.
+- file: commands/normalize_video_storage.py
+  role: Canonical video storage normalization.
+- file: commands/audit_clinical_lifecycle.py
+  role: Read-only projection of all videos and reports onto the clinical lifecycle with invariant violations.
+- file: commands/exempt_legacy_identity_verification.py
+  role: Dry-run-first recording of the legacy identity exemption for validated videos before a cutoff.
+- file: reference_catalog_command.py
+  role: Shared reference catalog command adapter.
+- file: command_errors.py
+  role: Typed command error translation.
+dependencies:
+  internal:
+  - endoreg_db/services
+  - endoreg_db/import_files
+  - endoreg_db/utils
+  - endoreg_db/data
+  external:
+  - django
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/management/commands
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/management/commands
+parent: ../structure.yml
+submodules: []

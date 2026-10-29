@@ -1,0 +1,90 @@
+schema_version: '1.0'
+feature: case_persistence
+criterion: patient_identity_export_grouping
+assessor: codex-patient-hash-20260923
+date: '2026-09-23'
+purpose: >-
+  Bestandsprüfung der Patientenwiedererkennung bei abweichenden Eingaben.
+  Die Feature-Definition in feature-tracking/CasePersistence.yml bleibt die
+  einzige Quelle für Anforderungen und Bereitschaftsbewertungen.
+scope:
+  frontend_component: /home/admin/dev/lx-annotate/frontend/src/components/Anonymizer/AnonymizationValidationComponent.vue
+  frontend_test: /home/admin/dev/lx-annotate/frontend/src/components/Anonymizer/__tests__/AnonymizationValidationComponent.test.ts
+  backend_test: tests/services/test_patient_identity_input_variations.py
+  backend_boundary: endoreg_db/serializers/anonymization.py
+  identity_calculation: endoreg_db/models/metadata/sensitive_meta_logic.py
+  hash_helper: endoreg_db/utils/hashs.py
+  changes: Ausschließlich AAA-Tests und dieser Prüfbericht; keine Änderung der Produktlogik oder vorhandener Identitäten.
+findings:
+  - variation: Führende und abschließende Leerzeichen in Namen
+    result: >-
+      Das Formular sendet die Eingabe unverändert. Der Validierungsserializer
+      entfernt äußere Leerzeichen einschließlich Tabulator, Zeilenumbruch und
+      geschütztem Leerzeichen. Danach entsteht derselbe Patientenhash.
+    limitation: >-
+      Die Hashberechnung selbst entfernt keine Leerzeichen. Direkte Aufrufer
+      außerhalb dieses Serializerpfads können deshalb andere Hashes erzeugen.
+  - variation: Groß- und Kleinschreibung
+    result: Unterschiedliche Schreibweisen erzeugen unterschiedliche Patienten- und Untersuchungshashes.
+  - variation: Zusätzliche oder andere Leerzeichen innerhalb eines Namens
+    result: >-
+      Doppeltes Leerzeichen, Tabulator und geschütztes Leerzeichen werden nicht
+      vereinheitlicht und erzeugen andere Patienten- und Untersuchungshashes.
+  - variation: Tippfehler, Umlautersetzung und Unicode-Schreibweise
+    result: >-
+      Ana statt Anna, Muller oder Mueller statt Müller sowie ein zusammengesetztes
+      ü gegenüber u mit kombinierendem Umlaut erzeugen unterschiedliche Hashes.
+      Eine unscharfe Namenssuche findet in diesem Hashabgleich nicht statt.
+  - variation: Unterschiedliche Formate desselben Geburtsdatums
+    result: >-
+      10.12.1980 und 1980-12-10 sowie äußere Leerzeichen werden im
+      Validierungspfad auf denselben Kalendertag abgebildet und ergeben denselben Patientenhash.
+  - variation: Gültiges, aber sachlich falsches Geburtsdatum
+    result: >-
+      Vertauschte Tages- und Monatswerte, ein anderer Tag oder ein anderes Jahr
+      werden akzeptiert, sofern das Datum gültig ist. Der Patientenhash ändert
+      sich; eine sachliche Korrektur erfolgt nicht automatisch.
+  - variation: Ungültiges Geburtsdatum
+    result: >-
+      Das Formular blockiert die Bestätigung. Der Backendserializer lehnt
+      ungültige Kalendertage und leere Werte ebenfalls ab.
+  - variation: Geändertes gültiges Untersuchungsdatum
+    result: Der Patientenhash bleibt gleich; der Untersuchungshash ändert sich.
+  - variation: Ungültiges Untersuchungsdatum im Formular
+    result: >-
+      Die Komponente erlaubt das Absenden und übermittelt einen leeren Wert.
+      Der Backendserializer lehnt diesen ab. Diese Inkonsistenz ist durch einen
+      Component-Test und einen separaten Serializer-Test reproduziert.
+verification:
+  backend:
+    command: >-
+      .devenv/state/venv/bin/pytest tests/services/test_patient_identity_input_variations.py
+      tests/services/test_study_cohort_identity.py tests/import_files/test_sensitive_identity_guards.py -q
+    result: 48 bestanden, 1 bestehende Pytest-Warnung; davon 33 neue parametrisierte AAA-Testfälle.
+  frontend:
+    working_directory: /home/admin/dev/lx-annotate/frontend
+    command: >-
+      nix develop --command node_modules/.bin/vitest run
+      src/components/Anonymizer/__tests__/AnonymizationValidationComponent.test.ts
+      src/utils/dateHelpers.test.ts
+    result: 60 bestanden; davon 16 neue AAA-Testfälle am Component.
+  typing:
+    backend: Vollständiger Pyright-Lauf mit 0 Fehlern und 6 bestehenden Warnungen außerhalb der Änderung.
+    frontend: vue-tsc --noEmit -p tsconfig.component-tests.json erfolgreich.
+  lint: Ruff für den neuen Backendtest und ESLint für den Component-Test erfolgreich.
+limitations:
+  - >-
+    Die Tests verwenden synthetische Eingaben und prüfen die bestehende
+    Formular-, Serializer-, Hash- und Gruppierungslogik. Sie messen keine
+    Fehlerhäufigkeit in produktiven Patientendaten.
+  - >-
+    Hashgleichheit gruppiert geeignete Untersuchungen in der Kohortenansicht;
+    sie führt gespeicherte klinische Case-Datensätze nicht automatisch zusammen.
+  - >-
+    Die bestehenden Tests zur Abwehr mehrdeutiger historischer Namensverkettungen
+    wurden mit ausgeführt. Identische Hashes dürfen solche Identitätskonflikte
+    nicht stillschweigend übergehen.
+  - >-
+    Eine tolerantere Normalisierung benötigt einen ausdrücklichen Vertrag für
+    bestehende Hashes. Tippfehler sollten ohne Identitätsprüfung keine automatische
+    Zusammenführung unterschiedlicher Patienten auslösen.

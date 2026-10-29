@@ -1,0 +1,65 @@
+version: 1
+tier: service
+path: endoreg_db/services/clinical_lifecycle
+parent: ../structure.yml
+summary: End-to-end clinical record lifecycle as a derived finite state machine over persisted media, identity and release facts.
+responsibilities:
+- Declare privacy, annotation and release tracks, their events and declarative transition tables.
+- Project persisted video and report facts onto exactly one lifecycle state and reject impossible fact combinations.
+- Gate service transitions (currently export approval) and audit stored records read-only.
+boundaries:
+- state_machine.py, facts.py and audit.py are pure or read-only; legacy_exemption.py only appends audit-ledger rows; they never write the database or filesystem.
+- persistence.py alone stores reducer results (compare-and-swap, idempotency, transition rows); it is owned by
+  media_workflow_state_machine/persistence_and_api and never decides a transition itself.
+- Side effects stay in the owning services after the transition was accepted.
+- Python reducer is the reference until the native Rust reducer is registered; then Python becomes a thin adapter.
+entrypoints:
+- name: require_clinical_transition
+  file: state_machine.py
+  purpose: Derive the current state from typed facts, evaluate evidence guards and return the target or raise.
+- name: video_record_facts / report_record_facts
+  file: facts.py
+  purpose: Single read-only ORM boundary that builds typed lifecycle facts.
+- name: legacy_identity_candidates / record_legacy_identity_exemptions
+  file: legacy_exemption.py
+  purpose: Named, ledger-recorded identity exemption for videos validated before verification was required.
+- name: audit_clinical_records
+  file: audit.py
+  purpose: Read-only conformance audit without patient identifiers.
+files:
+- file: __init__.py
+  role: Public lifecycle types and reducer functions.
+- file: state_machine.py
+  role: Stages, events, transition tables, invariants, projection and reducer.
+- file: facts.py
+  role: Typed fact adapters for VideoFile and RawPdfFile.
+- file: audit.py
+  role: Stage counts, legacy exemption count and invariant violations for stored records.
+- file: legacy_exemption.py
+  role: Typed audit-ledger exemption payload, candidate selection and idempotent recording.
+- file: persistence.py
+  role: CAS writes, idempotency and transition rows (owner media_workflow_state_machine/persistence_and_api).
+- file: worklist.py
+  role: Read model for lx-annotate (allowed events with guard reasons, blocked stages, worklist counts); never decides a transition.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/services/annotations
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Human validation transition contract
+  doc: docs/human_validation_workflow.md
+- name: Feature readiness
+  doc: feature-tracking/ProductionWorkflow.yml
+tests:
+  directory: tests/services
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_clinical_lifecycle_state_machine.py tests/services/test_clinical_lifecycle_facts.py
+    tests/services/test_clinical_lifecycle_legacy_exemption.py
+  files:
+  - tests/services/test_clinical_lifecycle_state_machine.py
+  - tests/services/test_clinical_lifecycle_facts.py
+  - tests/services/test_clinical_lifecycle_legacy_exemption.py

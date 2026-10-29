@@ -1,0 +1,83 @@
+version: 1
+tier: service
+path: endoreg_db/services/jobs
+parent: ../structure.yml
+summary: Background-work admission, dispatch, execution ownership and recovery.
+responsibilities:
+- Admit and dispatch background workloads with ownership, budgets and transport checks.
+- Recover stale work and clean recorded task artifacts.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: ensure_secure_transport_for_job_kind
+  file: heavy_jobs.py
+  purpose: Reject broker transport that violates the selected workload security requirement.
+files:
+- file: __init__.py
+  role: Centralized service modules for background and heavy job orchestration.
+- file: error_handling.py
+  role: Exports is_insufficient_storage, database_recovery_reason, retry_database_operation.
+- file: heavy_jobs.py
+  role: Exports queue_name, queue_for_job_kind, ensure_secure_transport_for_job_kind.
+- file: model_training_jobs.py
+  role: Exports prepare_model_training_inputs, dispatch_due_model_training_retries, reconcile_model_training_artifacts.
+- file: report_llm_jobs.py
+  role: Report job orchestration and API payloads with canonical attempt completion evidence.
+- file: stale_recovery.py
+  role: Exports recover_stale_video_processing_history.
+- file: timeouts.py
+  role: Classify cancellation without parsing third-party error messages.
+- file: video_correction_jobs.py
+  role: Exports update_processed_file, apply_video_anonymization_strategy, dispatch_video_anonymization_correction.
+- file: video_fps_normalization_jobs.py
+  role: Exports normalization_status, dispatch_video_fps_normalization.
+- file: video_post_validation_jobs.py
+  role: Exports dispatch_video_post_validation_rebuild.
+- file: video_reimport_budget.py
+  role: Bounded admission budgets for exhaustive video re-import.
+- file: video_reimport_jobs.py
+  role: Exports get_video_reimport_job_mode, get_video_reimport_dispatch_delay_seconds, dispatch_video_reimport.
+- file: video_task_cleanup.py
+  role: Exports cleanup_staged_frame_artifacts, rollback_video_frame_artifacts.
+dependencies:
+  internal:
+  - endoreg_db
+  - endoreg_db/config
+  - endoreg_db/import_files
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/annotations
+  - endoreg_db/services/datasets
+  - endoreg_db/services/frames
+  - endoreg_db/services/hub
+  - endoreg_db/services/media
+  - endoreg_db/services/raw_pdf_files
+  - endoreg_db/services/reports
+  - endoreg_db/services/runtime
+  - endoreg_db/services/streaming
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/utils
+  external:
+  - cv2
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_reimport_jobs.py tests/services/test_report_llm_jobs.py
+    tests/services/test_video_reimport_budget.py
+  files:
+  - tests/services/test_video_reimport_jobs.py
+  - tests/services/test_report_llm_jobs.py
+  - tests/services/test_video_reimport_budget.py

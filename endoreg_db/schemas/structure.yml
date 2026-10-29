@@ -1,0 +1,48 @@
+version: 1
+tier: module
+path: endoreg_db/schemas
+summary: Validated local API, workflow and persisted-payload contracts.
+responsibilities:
+- Normalize external input once and validate persisted JSON (JavaScript Object Notation) at owning boundaries.
+boundaries:
+- Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
+files:
+- file: import_processing.py
+  role: Typed database carrier validated by the native import processing stack contract.
+- file: patient_matching.py
+  role: Strict immutable matching session, record-reference, aggregate-outcome and signature contracts.
+- file: report_llm.py
+  role: Report job contracts, immutable attempt references and read-only completion projections.
+- file: annotation_comparisons.py
+  role: Typed annotation and clinical finding comparison results shared by service and API.
+- file: persisted_json.py
+  role: Persistence-specific payload validators, shared hub UUID identity validation and owner-bound report extraction receipts.
+- file: hub_payloads.py
+  role: Hub request and provenance shapes.
+- file: video_storage.py
+  role: Video profile, timeline, quality, recording-time and export file-name evidence.
+- file: frame_annotation_export.py
+  role: Manifest of pts_dataset_v1 frame exports with inclusive segment timestamps and recording-timestamp identity.
+- file: frame_annotation_export_job.py
+  role: Persisted config (lx_dtypes YAML export contract) and result of browser-started frame annotation export jobs.
+- file: import_file.py
+  role: Import source snapshot and persisted preparation checkpoint contracts.
+- file: report_persistence.py
+  role: Persisted report contract.
+- file: medical_ledger.py
+  role: Clinical ledger payload adapters.
+dependencies:
+  internal:
+  - endoreg_db/integrations
+  - endoreg_db/utils
+  external:
+  - pydantic
+  - lx_dtypes
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/schemas
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/schemas
+parent: ../structure.yml
+submodules: []

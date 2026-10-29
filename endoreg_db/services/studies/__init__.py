@@ -1,0 +1,1 @@
+"""Studienvorgaben und Kohortenabfragen."""

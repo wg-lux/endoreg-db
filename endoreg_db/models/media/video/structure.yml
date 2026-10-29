@@ -1,0 +1,40 @@
+version: 1
+tier: module
+path: endoreg_db/models/media/video
+summary: Canonical video, streaming derivative and frame provenance models.
+responsibilities:
+- Persist video identities, processing histories and HTTP Live Streaming (HLS) derivative states.
+boundaries:
+- HLS is a derivative, not a canonical generation; preserve authoritative presentation timestamps and
+  leases.
+files:
+- file: video_file.py
+  role: Video fields and thin lifecycle wrappers.
+- file: hls_artifact.py
+  role: Source-bound HLS artifact persistence.
+- file: storage_mode.py
+  role: Typed storage routing mode.
+- file: frame_provenance.py
+  role: Frame source provenance.
+- file: video_processing.py
+  role: Video processing-history persistence.
+- file: frame_annotation_export_job.py
+  role: Persistence-only state of browser-started frame annotation dataset export jobs; config and result validated at save.
+dependencies:
+  internal:
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/schemas
+  external:
+  - django
+  - lx_dtypes
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/models/video
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models/video
+parent: ../structure.yml
+submodules: []

@@ -8,11 +8,17 @@ future disk-backed cache can slot in without rewriting callers.
 
 from __future__ import annotations
 
+# pyright: reportConstantRedefinition=false
+
 from collections import defaultdict
 from dataclasses import dataclass
 from functools import wraps
 from threading import RLock
-from typing import Any, Callable, Dict, Hashable, Iterator, Optional
+from typing import Any, Optional
+from collections.abc import Callable, Hashable, Iterator
+
+from _pytest.config import Config
+from _pytest.terminal import TerminalReporter
 
 import logging
 import os
@@ -32,7 +38,7 @@ GLOBAL_CACHE_MANAGER: Optional["CacheManager"] = None
 class _NamespaceStore:
     """Simple container for a namespace store and lock."""
 
-    data: Dict[Hashable, Any]
+    data: dict[Hashable, Any]
     lock: RLock
 
 
@@ -40,8 +46,14 @@ class CacheManager:
     """Central cache manager with support for namespaced storage."""
 
     def __init__(self) -> None:
-        self._stores: Dict[str, _NamespaceStore] = defaultdict(lambda: _NamespaceStore({}, RLock()))
-        self._debug = os.environ.get("PYTEST_CACHE_DEBUG", "0") not in ("0", "false", "False")
+        self._stores: dict[str, _NamespaceStore] = defaultdict(
+            lambda: _NamespaceStore({}, RLock())
+        )
+        self._debug = os.environ.get("PYTEST_CACHE_DEBUG", "0") not in (
+            "0",
+            "false",
+            "False",
+        )
 
     # ------------------------------------------------------------------
     # Core operations
@@ -86,7 +98,7 @@ class CacheManager:
         for namespace in list(self._stores.keys()):
             self.invalidate(namespace)
 
-    def items(self, namespace: str) -> Dict[Hashable, Any]:
+    def items(self, namespace: str) -> dict[Hashable, Any]:
         store = self._stores.get(namespace)
         if store is None:
             return {}
@@ -140,7 +152,9 @@ class CacheNamespace:
     def invalidate(self, key: Optional[Hashable] = None) -> None:
         self._manager.invalidate(self._name, key)
 
-    def memoize(self, key_builder: Optional[Callable[..., Hashable]] = None) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
+    def memoize(
+        self, key_builder: Optional[Callable[..., Hashable]] = None
+    ) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
         return self._manager.memoize(self._name, key_builder=key_builder)
 
 
@@ -164,7 +178,11 @@ def get_global_cache_manager() -> Optional[CacheManager]:
     return GLOBAL_CACHE_MANAGER
 
 
-def pytest_terminal_summary(terminalreporter, exitstatus, config):
+def pytest_terminal_summary(
+    terminalreporter: TerminalReporter,
+    exitstatus: int,
+    config: Config,
+) -> None:
     manager = GLOBAL_CACHE_MANAGER
     if manager is None:
         return

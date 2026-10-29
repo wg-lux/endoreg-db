@@ -1,0 +1,436 @@
+from __future__ import annotations
+
+from typing import Any, cast
+
+# pyright: reportUnknownMemberType=false
+
+import pytest
+from django.utils import timezone
+
+from endoreg_db.models import (
+    Examination,
+    ExaminationIndication,
+    ExaminationIndicationClassification,
+    ExaminationIndicationClassificationChoice,
+    Patient,
+    PatientExamination,
+    PatientExaminationIndication,
+    PatientExaminationReport,
+)
+from endoreg_db.services.reports.persistence import (
+    ReportPersistenceValidationError,
+    delete_report_draft,
+    save_report_submission,
+)
+from endoreg_db.services.reports.pdf_renderer import build_report_template_pdf_payload
+from endoreg_db.services.reports.runtime_validation import ReportRuntimeValidationError
+
+
+from tests.helpers.report_validation import (
+    successful_runtime_validation as _successful_runtime_validation,
+)
+
+
+@pytest.mark.django_db
+def test_reports_keep_independent_snapshots_after_terminology_change() -> None:
+    patient = Patient.objects.create(patient_hash="independent-report-snapshots")
+    examination = PatientExamination.objects.create(
+        patient=patient,
+        knowledge_base_module="original_module",
+        knowledge_base_version="1.0",
+        dtypes_record={
+            "patient": str(patient.pk),
+            "examination": "colonoscopy",
+            "knowledge_base_module": "original_module",
+            "knowledge_base_version": "1.0",
+        },
+    )
+    first = save_report_submission(
+        patient_examination_id=examination.pk,
+        template_name="first",
+        editor_payload={"sections": [{"name": "old_terminology"}]},
+    ).report
+    examination.knowledge_base_module = "migrated_module"
+    examination.knowledge_base_version = "2.0"
+    examination.dtypes_record["knowledge_base_module"] = "migrated_module"
+    examination.dtypes_record["knowledge_base_version"] = "2.0"
+    examination.dtypes_record_updated_at = timezone.now()
+    examination.save()
+    second = save_report_submission(
+        patient_examination_id=examination.pk,
+        template_name="second",
+        editor_payload={"sections": [{"name": "new_terminology"}]},
+    ).report
+    first.refresh_from_db()
+    second.refresh_from_db()
+    assert first.pk != second.pk
+    assert (
+        PatientExaminationReport.objects.filter(patient_examination=examination).count()
+        == 2
+    )
+    assert first.knowledge_base_module == "original_module"
+    assert second.knowledge_base_module == "migrated_module"
+    assert first.dtypes_record_updated_at is None
+    assert second.dtypes_record_updated_at == examination.dtypes_record_updated_at
+    assert first.editor_payload["sections"] == [{"name": "old_terminology"}]
+    assert first.dtypes_record is not None
+    assert second.dtypes_record is not None
+    assert first.dtypes_record["knowledge_base_module"] == "original_module"
+    assert second.dtypes_record["knowledge_base_module"] == "migrated_module"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("target_is_active", [True, False])
+def test_delete_draft_preserves_siblings_and_fences_autosave(
+    target_is_active: bool,
+) -> None:
+    patient = Patient.objects.create(patient_hash="delete-report-draft")
+    examination = PatientExamination.objects.create(patient=patient)
+    target = PatientExaminationReport.objects.create(
+        patient_examination=examination, template_name="target"
+    )
+    sibling = PatientExaminationReport.objects.create(
+        patient_examination=examination, template_name="sibling"
+    )
+    examination.report_draft = {
+        "active_report_id": target.pk if target_is_active else sibling.pk,
+        "revision": 7,
+    }
+    examination.save()
+    previous = examination.report_draft
+    delete_report_draft(
+        patient_examination_id=examination.pk, report_id=target.pk, expected_version=1
+    )
+    examination.refresh_from_db()
+    assert not PatientExaminationReport.objects.filter(pk=target.pk).exists()
+    assert PatientExaminationReport.objects.filter(pk=sibling.pk).exists()
+    if target_is_active:
+        assert examination.report_draft["revision"] == 8
+        assert "active_report_id" not in examination.report_draft
+        assert examination.report_draft["payload"] == {}
+    else:
+        assert examination.report_draft == previous
+
+
+@pytest.mark.django_db
+def test_finalization_preserves_draft_for_another_report(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = Patient.objects.create(patient_hash="finalize-other-report")
+    examination = PatientExamination.objects.create(patient=patient)
+    sibling = PatientExaminationReport.objects.create(
+        patient_examination=examination, template_name="sibling"
+    )
+    examination.report_draft = {
+        "active_report_id": sibling.pk,
+        "revision": 5,
+        "rendered_text": "Keep me",
+    }
+    examination.save()
+    previous = examination.report_draft
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
+        _successful_runtime_validation,
+    )
+
+    def persist_test_artifacts(*_args: object, **_kwargs: object) -> tuple[None, None]:
+        return None, None
+
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
+        persist_test_artifacts,
+    )
+    save_report_submission(
+        patient_examination_id=examination.pk, template_name="final", status="final"
+    )
+    examination.refresh_from_db()
+    assert examination.report_draft == previous
+
+
+@pytest.mark.django_db
+def test_save_report_submission_final_purges_patient_examination_draft(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash="report-purge-patient",
+        first_name="Report",
+        last_name="Purge",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    patient_examination.report_draft = {
+        "module_name": "report_template_examples",
+        "template_name": "star_upper_gi_main",
+        "payload": {"sections": [{"id": "findings"}]},
+    }
+    patient_examination.draft_updated_at = timezone.now()
+    patient_examination.save(update_fields=["report_draft", "draft_updated_at"])
+
+    def successful_materialization(
+        *_args: object,
+        **_kwargs: object,
+    ) -> tuple[int, int]:
+        return 41, 42
+
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
+        successful_materialization,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
+        _successful_runtime_validation,
+    )
+
+    result = save_report_submission(
+        patient_examination_id=patient_examination.pk,
+        template_name="star_upper_gi_main",
+        editor_payload={"sections": [{"id": "findings"}]},
+        rendered_text="Final report text",
+        status=PatientExaminationReport.Status.FINAL,
+    )
+
+    assert result.report.status == PatientExaminationReport.Status.FINAL
+    assert result.report.editor_payload == {
+        "sections": [{"id": "findings"}],
+        "report_language": "de",
+    }
+    assert result.persisted_report_artifact_id == 41
+    assert result.persisted_pdf_artifact_id == 42
+
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft == {}
+    assert patient_examination.draft_updated_at is None
+
+
+@pytest.mark.django_db
+def test_final_submission_rolls_back_when_pdf_materialization_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash="report-materialization-rollback",
+        first_name="Report",
+        last_name="Rollback",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    patient_examination.report_draft = {
+        "module_name": "report_template_examples",
+        "template_name": "star_upper_gi_main",
+    }
+    patient_examination.save(update_fields=["report_draft"])
+
+    def fail_materialization(*_args: object, **_kwargs: object) -> tuple[int, int]:
+        raise RuntimeError("renderer unavailable")
+
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
+        fail_materialization,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
+        _successful_runtime_validation,
+    )
+
+    with pytest.raises(RuntimeError, match="renderer unavailable"):
+        save_report_submission(
+            patient_examination_id=patient_examination.pk,
+            template_name="star_upper_gi_main",
+            rendered_text="Deutscher Befundtext",
+            status=PatientExaminationReport.Status.FINAL,
+        )
+
+    assert PatientExaminationReport.objects.count() == 0
+    patient_examination.refresh_from_db()
+    assert patient_examination.report_draft["template_name"] == "star_upper_gi_main"
+
+
+@pytest.mark.django_db
+def test_final_submission_rolls_back_when_template_requirements_fail(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    patient = Patient.objects.create(
+        patient_hash="report-runtime-rollback",
+        first_name="Before",
+        last_name="Validation",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+
+    def fail_runtime_validation(*_args: object, **_kwargs: object) -> dict[str, object]:
+        raise ReportRuntimeValidationError(
+            {
+                "ok": False,
+                "issues": [
+                    {"code": "required_finding_missing", "message": "Befund fehlt."}
+                ],
+            }
+        )
+
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
+        fail_runtime_validation,
+    )
+
+    with pytest.raises(ReportRuntimeValidationError):
+        save_report_submission(
+            patient_examination_id=patient_examination.pk,
+            template_name="star_upper_gi_main",
+            status=PatientExaminationReport.Status.FINAL,
+            patient_data={"first_name": "Must Roll Back"},
+        )
+
+    patient.refresh_from_db()
+    assert patient.first_name == "Before"
+    assert PatientExaminationReport.objects.count() == 0
+
+
+def _create_indication_graph() -> tuple[
+    PatientExamination,
+    ExaminationIndication,
+    ExaminationIndicationClassificationChoice,
+]:
+    patient = Patient.objects.create(
+        patient_hash="report-indication-patient",
+        first_name="Report",
+        last_name="Indication",
+    )
+    examination = Examination.objects.create(name="report-indication-examination")
+    indication = ExaminationIndication.objects.create(name="report-indication")
+    classification = ExaminationIndicationClassification.objects.create(
+        name="report-indication-classification"
+    )
+    choice = ExaminationIndicationClassificationChoice.objects.create(
+        name="report-indication-choice"
+    )
+    classification.choices.add(choice)
+    indication.classifications.add(classification)
+    examination.indications.add(indication)
+    patient_examination = PatientExamination.objects.create(
+        patient=patient,
+        examination=examination,
+    )
+    return patient_examination, indication, choice
+
+
+@pytest.mark.django_db
+def test_report_submission_validates_indications_before_replacing_rows() -> None:
+    patient_examination, indication, choice = _create_indication_graph()
+    existing = PatientExaminationIndication.objects.create(
+        patient_examination=patient_examination,
+        examination_indication=indication,
+        indication_choice=choice,
+    )
+
+    with pytest.raises(
+        ReportPersistenceValidationError,
+        match="Unknown examination indication",
+    ):
+        save_report_submission(
+            patient_examination_id=patient_examination.pk,
+            template_name="indication-report",
+            indications=[{"examination_indication_id": 999999}],
+        )
+
+    assert PatientExaminationIndication.objects.get().pk == existing.pk
+    assert PatientExaminationReport.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_report_submission_rejects_choice_from_another_indication() -> None:
+    patient_examination, _indication, choice = _create_indication_graph()
+    other_indication = ExaminationIndication.objects.create(
+        name="report-other-indication"
+    )
+    examination = patient_examination.examination
+    assert examination is not None
+    examination.indications.add(other_indication)
+
+    with pytest.raises(
+        ReportPersistenceValidationError,
+        match="not allowed for this examination indication",
+    ):
+        save_report_submission(
+            patient_examination_id=patient_examination.pk,
+            template_name="indication-report",
+            indications=[
+                {
+                    "examination_indication_id": other_indication.pk,
+                    "indication_choice_id": choice.pk,
+                }
+            ],
+        )
+
+    assert PatientExaminationIndication.objects.count() == 0
+    assert PatientExaminationReport.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_report_submission_persists_valid_indication_selection() -> None:
+    patient_examination, indication, choice = _create_indication_graph()
+
+    result = save_report_submission(
+        patient_examination_id=patient_examination.pk,
+        template_name="indication-report",
+        indications=[
+            {
+                "examination_indication_id": indication.pk,
+                "indication_choice_id": choice.pk,
+            }
+        ],
+    )
+
+    persisted = PatientExaminationIndication.objects.get()
+    assert cast(Any, persisted).examination_indication_id == indication.pk
+    assert cast(Any, persisted).indication_choice_id == choice.pk
+    assert result.report.editor_payload == {"report_language": "de"}
+
+
+@pytest.mark.django_db
+def test_pdf_payload_uses_german_fallback_copy_from_persisted_language() -> None:
+    patient = Patient.objects.create(
+        patient_hash="report-german-pdf",
+        first_name="Erika",
+        last_name="Muster",
+    )
+    patient_examination = PatientExamination.objects.create(patient=patient)
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination,
+        template_name="gastroskopie",
+        editor_payload={"report_language": "de"},
+    )
+
+    payload = build_report_template_pdf_payload(
+        report=report,
+        patient_examination=patient_examination,
+        frame_image_paths=["/encrypted-storage/frame-1.jpg"],
+    )
+
+    assert payload["title"] == "gastroskopie Befundbericht"
+    assert payload["blocks"][0]["section_title"] == "Befund"
+    assert payload["blocks"][0]["sentences"][0]["variables"]["text"] == (
+        "Kein Befundtext verfügbar."
+    )
+    assert payload["blocks"][1]["title"] == "Bilddokumentation"
+    assert payload["blocks"][1]["captions"] == ["Bild 1"]
+
+
+@pytest.mark.django_db
+def test_report_submission_persists_first_class_language_and_kb_provenance() -> None:
+    patient = Patient.objects.create(
+        patient_hash="report-first-class-provenance",
+        first_name="Erika",
+        last_name="Muster",
+    )
+    patient_examination = PatientExamination.objects.create(
+        patient=patient,
+        knowledge_base_module="report_template_examples",
+        knowledge_base_version="0.1.0",
+    )
+
+    result = save_report_submission(
+        patient_examination_id=patient_examination.pk,
+        template_name="star_upper_gi_main",
+        editor_payload={"reportLanguage": "de"},
+    )
+
+    assert result.report.language == "de"
+    assert result.report.knowledge_base_module == "report_template_examples"
+    assert result.report.knowledge_base_version == "0.1.0"
+    assert result.report.editor_payload == {"report_language": "de"}

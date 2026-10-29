@@ -1,0 +1,70 @@
+version: 1
+tier: module
+path: endoreg_db/services/video_files/_frames
+parent: ../structure.yml
+summary: Internal frame record initialization and retired frame-file entry points.
+responsibilities:
+- Initialize video frame records; frame-file materialization is export-only.
+- Manage frame ranges and preserve dataset-backed frame files during deletion.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: _initialize_frames
+  file: _initialize_frames.py
+  purpose: Create frame records whose persisted presentation timestamps define frame identity.
+files:
+- file: __init__.py
+  role: Compatibility exports for internal video frame operations.
+- file: _bulk_create_frames.py
+  role: 'Internal helpers: _bulk_create_frames.'
+- file: _create_frame_object.py
+  role: 'Internal helpers: _create_frame_object.'
+- file: _delete_frames.py
+  role: 'Internal helpers: _get_staged_deletion_path, _dataset_backed_frame_ids_with_files, _delete_non_dataset_frame_files.'
+- file: _extract_frames.py
+  role: Retired frame extraction entry point that fails as export-only.
+- file: _get_frame.py
+  role: 'Internal helpers: _get_frame.'
+- file: _get_frame_number.py
+  role: 'Internal helpers: _get_frame_number.'
+- file: _get_frame_path.py
+  role: 'Internal helpers: _get_frame_path.'
+- file: _get_frame_paths.py
+  role: 'Internal helpers: _get_frame_paths.'
+- file: _get_frame_range.py
+  role: 'Internal helpers: _get_frame_range.'
+- file: _get_frames.py
+  role: 'Internal helpers: _get_frames.'
+- file: _initialize_frames.py
+  role: 'Internal helpers: _FrameInitializationPlan, _provided_frame_records, _expected_frame_records.'
+- file: _manage_frame_range.py
+  role: 'Internal helpers: _delete_frame_range, _extract_frame_range.'
+- file: _mark_frames_extracted_status.py
+  role: 'Internal helpers: _mark_frames_extracted_status.'
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/services/video_files
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Presentation timestamp call sites
+  doc: docs/video_pts_fps_callsite_inventory.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_file_services_contract.py tests/models/video/test_frame_extraction_completeness.py
+  files:
+  - tests/services/test_video_file_services_contract.py
+  - tests/models/video/test_frame_extraction_completeness.py

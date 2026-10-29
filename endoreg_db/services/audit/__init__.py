@@ -1,0 +1,1 @@
+"""Integritätsprüfung des Audit-Ledgers."""

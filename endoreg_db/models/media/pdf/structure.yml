@@ -1,0 +1,34 @@
+version: 1
+tier: module
+path: endoreg_db/models/media/pdf
+summary: Imported document and report processing persistence.
+responsibilities:
+- Persist document identities, parsing history and report inference jobs.
+boundaries:
+- Check content identity before sensitive identity; report workflows belong in services/raw_pdf_files
+  and services/reports.
+files:
+- file: raw_pdf.py
+  role: RawPdfFile fields, integrity and retained service wrappers.
+- file: report_file.py
+  role: Parsed report document models.
+- file: pdf_processing_history.py
+  role: Report processing history.
+- file: report_llm_job.py
+  role: Report language-model job state.
+dependencies:
+  internal:
+  - endoreg_db/services/raw_pdf_files
+  - endoreg_db/services/reports
+  - endoreg_db/schemas
+  external:
+  - django
+  - lx_dtypes
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/media/report
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/media/report
+parent: ../structure.yml
+submodules: []

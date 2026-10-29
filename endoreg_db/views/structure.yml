@@ -1,0 +1,48 @@
+version: 1
+tier: domain
+path: endoreg_db/views
+summary: HTTP request adaptation, authorization and domain-service delegation.
+responsibilities:
+- Expose scoped clinical and operational endpoints through DRF and retained Django Ninja routes.
+boundaries:
+- Use snake_case API fields; parse requests at the boundary and delegate workflows to services.
+files:
+- file: patient_examination/patient_examination_detail.py
+  role: Examination detail and update adapter passing request authorization context to identity validation.
+- file: access_control.py
+  role: Center-scoped access helpers.
+- file: case.py
+  role: Clinical case endpoints.
+- file: examination_revision.py
+  role: Examination revision endpoints.
+- file: report/reimport.py
+  role: Report reimport and inference-job endpoints.
+- file: patient_report/patient_examination_report.py
+  role: Django Ninja examination-report router.
+dependencies:
+  internal:
+  - endoreg_db/authz
+  - endoreg_db/serializers
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+  - rest_framework
+  - ninja
+tests:
+  directory: tests/views
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/views
+parent: ../structure.yml
+submodules:
+- name: media
+  path: media
+  manifest: media/structure.yml
+  summary: Unified media, upload, hub and study HTTP endpoints.
+- name: video
+  path: video
+  manifest: video/structure.yml
+  summary: Protected video streaming, segment editing and reimport endpoints.
+- name: patient
+  path: patient
+  manifest: patient/structure.yml
+  summary: Patient administration and medical-ledger HTTP boundary.

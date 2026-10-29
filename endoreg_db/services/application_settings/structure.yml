@@ -1,0 +1,40 @@
+version: 1
+tier: service
+path: endoreg_db/services/application_settings
+parent: ../structure.yml
+summary: Application dataset-export settings and download responses.
+responsibilities:
+- Manage dataset-export requests, artifact status and eligible downloads.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: ai_dataset_export_payload
+  file: ai_dataset_export.py
+  purpose: Serialize export status, artifact identity and the eligible download URL.
+files:
+- file: __init__.py
+  role: Application settings service helpers.
+- file: ai_dataset_export.py
+  role: Exports sanitize_export_token, ai_dataset_export_download_url, ai_dataset_export_payload.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/centers
+  - endoreg_db/services/datasets
+  - endoreg_db/services/hub
+  - endoreg_db/utils
+  external:
+  - django
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/application_settings/test_ai_dataset_export.py
+    tests/views/misc/test_application_settings_endpoints.py
+  files:
+  - tests/services/application_settings/test_ai_dataset_export.py
+  - tests/views/misc/test_application_settings_endpoints.py

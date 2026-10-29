@@ -1,0 +1,24 @@
+feature: type_safety
+criterion: strict_type_checks
+assessor: codex-folder-structure-20261001
+scope: Korrektur von 11 Pyright-Fehlern ohne neue Ignore-Regeln oder Änderung der Import-Service-Logik.
+changes:
+  - BASE_DIR wird in dev.py und prod.py explizit re-exportiert; Settings-Vertrag bleibt erhalten.
+  - Unbenutzter Django-Settings-Import aus optimierten Video-Fixtures entfernt.
+  - PostgreSQL-Fehlerklassifikation wird über den öffentlichen Celery-Task geprüft; privater Attempt-Typ und Handler werden nicht mehr direkt importiert.
+  - Ungetypte Lambdas durch vorhandene unittest.mock.Mock-Rückgabewerte ersetzt.
+  - Exakte Fehleridentität und Übergabe desselben Attempt-Objekts bleiben in Assertions erhalten.
+  - Reine Hub-Control-Flow-Tests verwenden vorhandenen no_db-Marker statt unnötiger Datenbank-Provisionierung.
+verification:
+  - command: .devenv/state/venv/bin/pyright vor Änderungen
+    result: 11 Fehler, 8 Warnungen.
+  - command: .devenv/state/venv/bin/pyright geänderte Dateien
+    result: 0 Fehler, 0 Warnungen.
+  - command: Pyright --venvpath /tmp/endoreg-pyright-verification
+    result: Ursprüngliche Fehler behoben. 70 weitere Fehler nach paralleler Service-Reorganisation; Diagnose an codex-services-structure-20261001 über Nachricht b782f0f24eb1421d8b942d01b1fbedbe gesendet. Keine Unterdrückungen hinzugefügt.
+  - command: Isoliertes pytest unter Devenv für Hub-Policy, Produktionssettings und Runtime-Isolation
+    result: 32 bestanden, 2 Warnungen in 10.89 Sekunden. Fokussierter Pyright vor pytest fehlerfrei.
+  - command: agent:sync und eingefrorene uv-Synchronisierung
+    result: Gemeinsame Umgebung wurde während paralleler Synchronisierung wiederholt ersetzt; reproduzierbare Prüfung in /tmp/endoreg-pyright-verification/venv erstellt. Systembibliotheken über Devenv bereitgestellt.
+  - command: tracker.py validate; git diff HEAD --check
+    result: Bestanden; 37 gültige Feature-Definitionen.

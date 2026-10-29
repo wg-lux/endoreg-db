@@ -1,4 +1,5 @@
-# pytest plugin package for shared fixtures
+from .cache import cache
+
 
 __all__ = [
     "cache",

@@ -1,0 +1,35 @@
+version: 1
+tier: module
+path: endoreg_db/models/administration
+summary: Administrative centers, personnel, equipment and application settings.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+files:
+- file: person/patient/patient.py
+  role: Patient persistence with a unique stable UUID; hash-based creation delegates keyed UUIDv8 and center locking to patient_identity, retaining existing profile helpers and historical alias lookup.
+- file: person/patient/patient_hash_alias.py
+  role: Center-scoped historical patient hashes retained across salt migrations, without secrets or direct identifiers.
+- file: app_settings.py
+  role: Application settings persistence.
+- file: center/__init__.py
+  role: Center models and resources.
+- file: center/center.py
+  role: Center persistence with a globally unique immutable center key.
+- file: person/__init__.py
+  role: Staff and patient identity models.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/administration
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/administration
+parent: ../structure.yml
+submodules: []
