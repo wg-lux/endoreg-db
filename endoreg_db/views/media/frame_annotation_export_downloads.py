@@ -2,7 +2,9 @@
 
 The browser writes the listed files into a folder the user picks, or saves the
 ZIP archive where it lacks a folder picker. Access rules live in
-``endoreg_db.services.media.frame_annotation_export_downloads``.
+``endoreg_db.services.media.frame_annotation_export_downloads``. With Nginx
+offload, single files leave via X-Accel-Redirect so frame bytes never occupy
+an application worker; the archive is assembled on the fly and stays here.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from uuid import UUID
 
 from django.contrib.auth.models import AnonymousUser, User
 from django.core.exceptions import ValidationError as DjangoValidationError
-from django.http import StreamingHttpResponse
+from django.http import HttpResponseBase, StreamingHttpResponse
 from rest_framework import serializers, status
 from rest_framework.request import Request
 from rest_framework.response import Response
@@ -29,6 +31,10 @@ from endoreg_db.services.media.frame_annotation_export_downloads import (
     list_export_run_files,
     log_export_run_access,
     resolve_export_run_file,
+)
+from endoreg_db.utils.nginx_accel import (
+    build_nginx_accel_response_for_path,
+    nginx_offload_enabled,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage_streaming import (
@@ -65,9 +71,7 @@ def _run_or_error(request: Request, job_id: UUID) -> CompletedExportRun | Respon
         return Response({"error": str(exc)}, status=status.HTTP_409_CONFLICT)
 
 
-def _private(
-    response: StreamingHttpResponse,
-) -> StreamingHttpResponse:
+def _private[R: HttpResponseBase](response: R) -> R:
     response["Cache-Control"] = "private, no-store"
     response["X-Content-Type-Options"] = "nosniff"
     return response
@@ -103,7 +107,7 @@ class FrameAnnotationExportRunFileView(OpenApiAPIView):
 
     def get(
         self, request: Request, job_id: UUID, relative_path: str
-    ) -> StreamingHttpResponse | Response:
+    ) -> HttpResponseBase:
         run = _run_or_error(request, job_id)
         if isinstance(run, Response):
             return run
@@ -117,8 +121,19 @@ class FrameAnnotationExportRunFileView(OpenApiAPIView):
             return Response(
                 {"error": "Export file not found."}, status=status.HTTP_404_NOT_FOUND
             )
-        size = path.stat().st_size
         content_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+        if nginx_offload_enabled():
+            # Nginx answers Range requests itself from the internal location.
+            log_export_run_access(run, user=_user(request), access="file", file_count=1)
+            return _private(
+                build_nginx_accel_response_for_path(
+                    path=path,
+                    content_type=content_type,
+                    filename=path.name,
+                    disposition="attachment",
+                )
+            )
+        size = path.stat().st_size
         try:
             response = build_partial_content_response_from_path(
                 file_path=path,

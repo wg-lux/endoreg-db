@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import io
+import os
 import zipfile
 from collections.abc import Iterable
 from typing import cast
+from unittest import mock
 from uuid import uuid4
 
 from django.contrib.auth.models import User
@@ -76,6 +78,20 @@ class FrameAnnotationExportDownloadApiTests(TestCase):
         assert response.status_code == 200
         assert _body(response) == b"jpeg"
         assert response["Content-Type"] == "image/jpeg"
+        assert response["Cache-Control"] == "private, no-store"
+
+    def test_nginx_offload_hands_file_to_protected_location(self) -> None:
+        with mock.patch.dict(os.environ, {"SERVE_WITH_NGINX": "true"}):
+            response = self.client.get(self._url("files/frames/frame_1.jpg"))
+
+        assert response.status_code == 200
+        assert response.content == b""
+        assert response["X-Accel-Redirect"] == (
+            f"/protected_media/frame_annotation_exports/{self.run_name}"
+            "/frames/frame_1.jpg"
+        )
+        assert response["Content-Type"] == "image/jpeg"
+        assert response["Content-Disposition"] == ('attachment; filename="frame_1.jpg"')
         assert response["Cache-Control"] == "private, no-store"
 
     def test_streams_archive(self) -> None:

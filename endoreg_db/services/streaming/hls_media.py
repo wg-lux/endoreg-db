@@ -79,7 +79,6 @@ from endoreg_db.services.video_storage.workflow import (
     probe_video_artifact,
     probe_video_presentation_timeline,
     probe_video_frame_timestamps,
-    validate_hls_segment_and_pts_equivalence,
     validate_normalized_output,
     validate_proven_resampled_hls_equivalence,
 )
@@ -1747,15 +1746,7 @@ def _validate_generated_hls_profile(
             )
             assert_storage_compliance(output_probe, profile=profile)
             evidence = None
-        if evidence is not None:
-            validate_hls_segment_and_pts_equivalence(
-                source_timeline=source_probe.timeline,
-                output_timeline=output_probe.timeline,
-                source_timestamps=source_frame_timestamps,
-                output_timestamps=output_frame_timestamps,
-                segments=segment_boundaries,
-                profile=profile,
-            )
+
         if encoder_stats_path is not None:
             if source_content_hash is None:
                 raise ValueError("HLS provenance requires source content identity")

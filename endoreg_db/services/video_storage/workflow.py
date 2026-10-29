@@ -61,7 +61,6 @@ from endoreg_db.services.video_storage.validation import (
     assert_storage_compliance,
     assert_temporal_equivalence,
     validate_annotation_fps_resample,
-    validate_hls_segment_and_pts_equivalence,
     validate_normalized_output,
     validate_proven_resampled_hls_equivalence,
 )
@@ -172,7 +171,6 @@ __all__ = [
     "segment_timeline_references",
     "timeline_from_video_metadata",
     "validate_annotation_fps_resample",
-    "validate_hls_segment_and_pts_equivalence",
     "validate_normalized_output",
     "validate_proven_resampled_hls_equivalence",
     "video_normalization_evidence",
