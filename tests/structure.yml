@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: helpers/video_timeline.py
+  role: Explicit typed constant-frame-rate timeline contracts for synthetic segment and inference fixtures.
 - file: utils/test_operation_log.py
   role: Audit failure propagation, real transaction rollback and audit preflight before import startup.
 - file: services/test_report_pdf_artifact.py

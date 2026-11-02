@@ -43,6 +43,9 @@ from endoreg_db.views.video.segments_crud import (
 )
 
 
+from tests.helpers.video_timeline import constant_rate_video_metadata
+
+
 class VideoSegmentFpsNormalizationViewTest(TestCase):
     def setUp(self) -> None:
         self.factory = APIRequestFactory()
@@ -111,6 +114,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
             fps=30.0,
             frame_count=1000,
             duration=33.33,
+            meta=constant_rate_video_metadata(
+                fps_num=30, frame_count=1000, duration_seconds=33.33
+            ),
         )
 
         # 3. Create a Label
@@ -166,6 +172,23 @@ class LabelVideoSegmentSerializerTest(TestCase):
         self.assertFalse(serializer.is_valid())
         # Fix: Cast errors to a dict to allow safe membership check
         self.assertIn("end_time", _serializer_errors(serializer))
+
+    def test_time_update_without_source_timeline_preserves_segment_coordinates(self):
+        self.video.meta = {}
+        self.video.save(update_fields=["meta"])
+        serializer = LabelVideoSegmentSerializer(
+            instance=self.segment,
+            data={"start_time": 0.1, "end_time": 0.5},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn(
+            "requires a persisted source timeline", str(_serializer_errors(serializer))
+        )
+        self.segment.refresh_from_db()
+        self.assertEqual(self.segment.start_frame_number, 0)
+        self.assertEqual(self.segment.end_frame_number, 30)
 
     def test_video_store_creation_payload(self):
         """
@@ -380,6 +403,7 @@ class PredictionSegmentAnnotationsRouteTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="pred-anno-route-hash",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="pred_route.mp4",
             fps=25.0,
             frame_count=100,
@@ -464,6 +488,7 @@ class VideoSegmentsByVideoPayloadModeTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="segments-payload-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
             original_file_name="segments_payload.mp4",
             fps=25.0,
             frame_count=200,
@@ -531,6 +556,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="validate-async-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="validate_async.mp4",
             fps=25.0,
             frame_count=100,
@@ -875,6 +901,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="blacken-outside-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="blacken_outside.mp4",
             fps=25.0,
             frame_count=100,
@@ -1223,6 +1250,7 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="segment-source-filter-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="segment_filter.mp4",
             fps=25.0,
             frame_count=100,
@@ -1304,6 +1332,7 @@ class VideoSegmentsBulkMutationTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="bulk-segments-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
             original_file_name="bulk_segments.mp4",
             fps=25.0,
             frame_count=200,
@@ -1532,6 +1561,7 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="prediction-import-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
             original_file_name="prediction_import.mp4",
             fps=25.0,
             frame_count=200,

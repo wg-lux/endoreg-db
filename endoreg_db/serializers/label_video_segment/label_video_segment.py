@@ -28,6 +28,7 @@ from endoreg_db.services.video_files.timeline_index import (
     VideoTimelineIndex,
     VideoTimelineIndexCache,
 )
+from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_frame_stream_path,
@@ -496,7 +497,10 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
             raise serializers.ValidationError("video_id is required.")
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
-        boundaries = self._segment_boundaries(attrs)
+        try:
+            boundaries = self._segment_boundaries(attrs)
+        except VideoTimelineMappingError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
         self._validate_boundary_presence(boundaries)
         self._validate_effective_time(attrs, boundaries)
         self._validate_frame_boundaries(boundaries)

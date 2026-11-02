@@ -23,6 +23,7 @@ from endoreg_db.views.video.segments_crud import (
     video_segments_by_video,
     video_segments_collection,
 )
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 FRAMES_PER_SEGMENT = 3
 
@@ -34,6 +35,7 @@ def _video_with_segments(segment_count: int) -> tuple[VideoFile, list[int]]:
         original_file_name="hydration.mp4",
         fps=25.0,
         frame_count=1000,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=1000),
     )
     label = Label.objects.create(name="hydration-label")
     source = InformationSource.objects.create(name="hydration-source")

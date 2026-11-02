@@ -30,6 +30,7 @@ from endoreg_db.models.media.video.video_processing import VideoProcessingHistor
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.other.information_source import InformationSource
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from lx_dtypes.models.contracts.video_temporal_inference import (
@@ -162,6 +163,7 @@ def _create_video(tmp_path: Path) -> VideoFile:
         duration=0.16,
         frame_dir=str(frame_dir),
         fps=25.0,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=4),
     )
     Frame.objects.bulk_create(
         [

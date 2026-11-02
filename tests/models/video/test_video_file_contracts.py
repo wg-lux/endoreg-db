@@ -345,19 +345,15 @@ def test_video_file_get_fps_defaults_to_50_when_missing(video_center: Center):
 
 
 @pytest.mark.django_db
-def test_video_file_frame_number_to_seconds_uses_existing_or_loaded_fps(
+@pytest.mark.parametrize("fps", [None, 25.0])
+def test_video_file_frame_number_to_seconds_requires_persisted_timeline(
     video_center: Center,
+    fps: float | None,
 ):
     video = VideoFile.objects.create(
-        center=video_center, raw_video_hash="frame-time", fps=25
+        center=video_center, raw_video_hash="frame-time", fps=fps
     )
 
-    assert video.frame_number_to_s(50) == 2.0
-
-    video.fps = None
-    with patch.object(video, "get_fps", return_value=10):
-        assert video.frame_number_to_s(25) == 2.5
-
-    with patch.object(video, "get_fps", return_value=0):
-        with pytest.raises(ValueError, match="FPS must be set"):
+    with patch.object(video, "get_fps", side_effect=AssertionError("must not probe")):
+        with pytest.raises(ValueError, match="requires a persisted source timeline"):
             video.frame_number_to_s(25)

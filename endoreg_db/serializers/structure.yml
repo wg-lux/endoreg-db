@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - No service workflow ownership or duplicate clinical payload schema; keep public fields snake_case.
 files:
+- file: label_video_segment/label_video_segment.py
+  role: Typed segment representation and frame/time mutation validation; missing clinical timeline mappings become request validation errors.
 - file: patient_examination/patient_examination.py
   role: Hash-free examination representation and local patient ID validation within authorized centers.
 - file: __init__.py
@@ -28,6 +30,7 @@ dependencies:
   - endoreg_db/services/hub
   - endoreg_db/services/centers
   - endoreg_db/services/patient_identity
+  - endoreg_db/services/video_files
   external:
   - rest_framework
   - lx_dtypes

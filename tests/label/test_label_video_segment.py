@@ -15,6 +15,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.serializers import LabelVideoSegmentSerializer
+from endoreg_db.services.video_storage.workflow import persist_video_source_timeline
 from lx_dtypes.models.contracts.video_segments import SegmentCrudPayload
 
 from ..helpers.data_loader import load_data
@@ -56,12 +57,6 @@ def _video_frame_count(video_file: VideoFile) -> int:
     return int(frame_count)
 
 
-def _video_fps(video_file: VideoFile) -> float:
-    fps = video_file.fps or video_file.get_fps()
-    assert fps is not None and fps > 0
-    return float(fps)
-
-
 def _segment_crud_data(
     *,
     video_file: VideoFile,
@@ -87,6 +82,8 @@ class LabelVideoSegmentModelTest(TestCase):
 
         self.ai_model_meta = get_latest_segmentation_model()
         self.video_file = get_default_video_file()
+        with self.video_file.ensure_local_raw_file() as source_path:
+            persist_video_source_timeline(self.video_file, source_path)
         self.assertIsNotNone(self.video_file, "VideoFile should be created")
         self.assertIsNotNone(
             self.video_file.frame_count, "VideoFile frame_count should be set"
@@ -196,13 +193,12 @@ class LabelVideoSegmentModelTest(TestCase):
         Verifies that the serializer validates the input data, successfully creates a segment, and assigns a Label instance to the segment.
         """
         v = self.video_file
-        fps = _video_fps(v)
         data = _segment_crud_data(
             video_file=v,
             label_id=None,
             label_name="appendix",
-            start_time=self.start_frame / fps,
-            end_time=self.end_frame / fps,
+            start_time=v.frame_number_to_s(self.start_frame),
+            end_time=v.frame_number_to_s(self.end_frame),
         )
         s = LabelVideoSegmentSerializer(data=data)
         assert s.is_valid(), cast(_SerializerErrors, s).errors
@@ -394,12 +390,11 @@ class LabelVideoSegmentModelTest(TestCase):
         assert label is not None
         label_id = _pk_int(label)
         frame_count = _video_frame_count(self.video_file)
-        fps = _video_fps(self.video_file)
         data = _segment_crud_data(
             video_file=self.video_file,
             label_id=label_id,
-            start_time=0.0,
-            end_time=frame_count / fps,
+            start_time=self.video_file.frame_number_to_s(0),
+            end_time=self.video_file.frame_number_to_s(frame_count),
         )
 
         serializer = LabelVideoSegmentSerializer(data=data)
