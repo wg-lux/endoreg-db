@@ -10,6 +10,7 @@ from threading import Barrier
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
+from types import SimpleNamespace
 
 import pytest
 from _pytest.logging import LogCaptureFixture
@@ -17,6 +18,7 @@ from django.db.models.fields.files import FieldFile
 from pytest import MonkeyPatch
 
 from endoreg_db.utils import file_operations
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.utils.paths import get_runtime_paths
 
 from endoreg_db.utils.file_operations import (
@@ -38,6 +40,49 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.encryption.encryption import encrypt_stream
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("free_bytes", [119, 120])
+def test_disk_capacity_uses_typed_error_and_exact_measured_budget(
+    tmp_path: Path, monkeypatch: MonkeyPatch, free_bytes: int
+) -> None:
+    def disk_usage(path: Path) -> SimpleNamespace:
+        assert path == tmp_path
+        return SimpleNamespace(total=1000, used=1000 - free_bytes, free=free_bytes)
+
+    monkeypatch.setattr(file_operations.shutil, "disk_usage", disk_usage)
+    if free_bytes < 120:
+        with pytest.raises(InsufficientStorageError) as failure:
+            file_operations.ensure_disk_capacity(
+                destination_dir=tmp_path, required_bytes=100, safety_margin=1.2
+            )
+        assert failure.value.required_space == 120
+        assert failure.value.available_space == free_bytes
+    else:
+        file_operations.ensure_disk_capacity(
+            destination_dir=tmp_path, required_bytes=100, safety_margin=1.2
+        )
+
+
+def test_atomic_copy_storage_shortage_preserves_source_and_existing_destination(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    source, destination = tmp_path / "source.bin", tmp_path / "destination.bin"
+    source.write_bytes(b"new source")
+    destination.write_bytes(b"previous destination")
+
+    def disk_usage(_path: Path) -> SimpleNamespace:
+        return SimpleNamespace(total=1000, used=1000, free=0)
+
+    monkeypatch.setattr(file_operations.shutil, "disk_usage", disk_usage)
+    with pytest.raises(InsufficientStorageError):
+        file_operations.atomic_copy_file(source=source, destination=destination)
+    assert source.read_bytes() == b"new source"
+    assert destination.read_bytes() == b"previous destination"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "destination.bin",
+        "source.bin",
+    ]
 
 
 class _StreamingStorage:

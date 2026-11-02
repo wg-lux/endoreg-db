@@ -4,7 +4,6 @@ from __future__ import annotations
 from endoreg_db.utils.storage.files import canonical_media_name
 
 import logging
-import shutil
 import uuid
 from pathlib import Path
 from typing import TYPE_CHECKING, Optional, Protocol, TypedDict, cast
@@ -89,40 +88,18 @@ def check_storage_capacity(
 ) -> None:
     src_path = Path(src_path)
     dst_root = Path(dst_root)
-    src_size = 0
-
-    try:
-        src_size = src_path.stat().st_size
-        ensure_disk_capacity(
-            destination_dir=dst_root,
-            required_bytes=src_size,
-            safety_margin=safety_margin,
-        )
-        logger.info(
-            "Storage check passed for %s into %s with %.2fx safety margin",
-            src_path,
-            dst_root,
-            safety_margin,
-        )
-    except OSError as exc:
-        if "Insufficient disk space" in str(exc):
-            free_space = 0
-            try:
-                free_space = shutil.disk_usage(dst_root).free
-            except OSError:
-                pass
-
-            raise InsufficientStorageError(
-                (
-                    "Insufficient storage space. "
-                    f"Required: {int(src_size * safety_margin) / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB on {dst_root}"
-                ),
-                required_space=int(src_size * safety_margin),
-                available_space=free_space,
-            ) from exc
-
-        logger.warning("Could not check storage capacity: %s", exc)
+    src_size = src_path.stat().st_size
+    ensure_disk_capacity(
+        destination_dir=dst_root,
+        required_bytes=src_size,
+        safety_margin=safety_margin,
+    )
+    logger.info(
+        "Storage check passed for %s into %s with %.2fx safety margin",
+        src_path,
+        dst_root,
+        safety_margin,
+    )
 
 
 def atomic_copy_with_fallback(
@@ -141,24 +118,6 @@ def atomic_copy_with_fallback(
         logger.debug("Copy successful: %s -> %s", src_path, dst_path)
         return True
     except OSError as exc:
-        if "Insufficient disk space" in str(exc):
-            free_space = 0
-            try:
-                free_space = shutil.disk_usage(dst_path.parent).free
-            except OSError:
-                pass
-
-            required_space = src_path.stat().st_size
-            raise InsufficientStorageError(
-                (
-                    "Insufficient space for copy operation. "
-                    f"Required: {required_space / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB"
-                ),
-                required_space=required_space,
-                available_space=free_space,
-            ) from exc
-
         logger.exception("Copy operation failed: %s -> %s: %s", src_path, dst_path, exc)
         raise
 

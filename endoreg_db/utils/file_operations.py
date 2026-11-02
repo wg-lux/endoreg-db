@@ -17,6 +17,7 @@ from uuid import uuid4
 
 from django.db.models.fields.files import FieldFile
 
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.file_inventory import observe_file_operation
 from endoreg_db.utils.structured_logging import (
@@ -108,9 +109,11 @@ def ensure_disk_capacity(
     free_bytes = shutil.disk_usage(destination_dir).free
     minimum_required = int(required_bytes * safety_margin)
     if free_bytes < minimum_required:
-        raise OSError(
+        raise InsufficientStorageError(
             f"Insufficient disk space for write into {destination_dir}: "
-            f"required={minimum_required} available={free_bytes}"
+            f"required={minimum_required} available={free_bytes}",
+            required_space=minimum_required,
+            available_space=free_bytes,
         )
 
 
