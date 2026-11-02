@@ -45,6 +45,7 @@ let
     libxkbcommon     # Often required by newer Qt/OpenCV builds    
   ];
   runtimePackages = with pkgs; [
+    file # libmagic for content-based upload validation
     ffmpeg-headless.bin
     zlib
     jq

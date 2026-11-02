@@ -3,11 +3,13 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false
 
 from typing import cast
+
+import pytest
 from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth.models import Group, User
-from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.files.uploadedfile import SimpleUploadedFile, UploadedFile
 from django.test import TestCase
 from django.test.utils import override_settings
 
@@ -21,6 +23,8 @@ from endoreg_db.models import (
     ReportLlmInferenceJob,
     UploadJob,
 )
+
+from endoreg_db.views.misc import upload_views
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -56,6 +60,86 @@ class UploadEndpointTests(TestCase):
         assert second.status_code == 409, second.content
         assert UploadJob.objects.count() == 1
         dispatch.assert_called_once()
+
+    def test_upload_rejects_disguised_content_without_persistence_or_dispatch(self):
+        self._authenticate_for_center()
+        with (
+            patch(
+                "endoreg_db.services.hub.ingest.create_or_reuse_upload_job"
+            ) as create,
+            patch(
+                "endoreg_db.services.hub.ingest.start_upload_job_processing"
+            ) as dispatch,
+        ):
+            for suffix in ("pdf", "mp4", "avi", "mov", "wmv"):
+                with self.subTest(suffix=suffix):
+                    response = self.client.post(
+                        "/api/upload/",
+                        data={
+                            "file": SimpleUploadedFile(
+                                f"disguised.{suffix}",
+                                b"This is plain text, not a report or video.",
+                                content_type="application/pdf",
+                            )
+                        },
+                    )
+                    assert response.status_code == 400, response.content
+                    assert "file type" in response.json()["error"]
+            create.assert_not_called()
+            dispatch.assert_not_called()
+        assert UploadJob.objects.count() == 0
+
+    def test_detector_failures_reject_before_persistence_or_dispatch(self):
+        self._authenticate_for_center()
+        cases = (
+            (False, None, "unavailable"),
+            (True, "", "could not be determined"),
+            (True, "application/octet-stream", "could not be determined"),
+            (True, RuntimeError("native detector failed"), "detection failed"),
+        )
+        with (
+            patch(
+                "endoreg_db.services.hub.ingest.create_or_reuse_upload_job"
+            ) as create,
+            patch(
+                "endoreg_db.services.hub.ingest.start_upload_job_processing"
+            ) as dispatch,
+        ):
+            for available, result, expected_error in cases:
+                with (
+                    self.subTest(result=result),
+                    patch.object(upload_views, "MAGIC_AVAILABLE", available),
+                    patch.object(upload_views, "_magic") as detector,
+                ):
+                    if isinstance(result, Exception):
+                        detector.from_buffer.side_effect = result
+                    else:
+                        detector.from_buffer.return_value = result
+                    response = self.client.post(
+                        "/api/upload/",
+                        data={
+                            "file": SimpleUploadedFile("valid.pdf", MINIMAL_PDF_BYTES)
+                        },
+                    )
+                    assert response.status_code == 400, response.content
+                    assert expected_error in response.json()["error"]
+            create.assert_not_called()
+            dispatch.assert_not_called()
+        assert UploadJob.objects.count() == 0
+
+    def test_pdf_content_is_accepted_independent_of_filename_and_declared_type(self):
+        self._authenticate_for_center()
+        with patch("endoreg_db.services.hub.ingest.start_upload_job_processing"):
+            response = self.client.post(
+                "/api/upload/",
+                data={
+                    "file": SimpleUploadedFile(
+                        "report.untrusted", MINIMAL_PDF_BYTES, content_type="text/plain"
+                    )
+                },
+            )
+        assert response.status_code == 201, response.content
+        assert UploadJob.objects.get().content_type == "application/pdf"
 
     def _authenticate_for_center(self, center: Center | None = None) -> Center:
         resolved_center = center or ApplicationSettings.get_solo().center
@@ -641,3 +725,49 @@ class UploadEndpointTests(TestCase):
             "Failed to start processing: inline processing failed"
             in response.json()["error"]
         )
+
+
+class _MimeTestView(upload_views.UploadFileView):
+    def detect_mime_type(self, uploaded_file: UploadedFile) -> str:
+        return self._detect_mime_type(uploaded_file)
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    "mime_type", sorted(upload_views.UploadFileView.ALLOWED_MIME_TYPES)
+)
+def test_mime_detection_reads_content_from_start_and_rewinds(mime_type: str) -> None:
+    uploaded = SimpleUploadedFile(
+        "misleading.bin", MINIMAL_PDF_BYTES, content_type="text/plain"
+    )
+    uploaded.seek(10)
+    with (
+        patch.object(upload_views, "MAGIC_AVAILABLE", True),
+        patch.object(upload_views, "_magic") as detector,
+    ):
+        detector.from_buffer.return_value = mime_type
+        assert _MimeTestView().detect_mime_type(uploaded) == mime_type
+        detector.from_buffer.assert_called_once_with(MINIMAL_PDF_BYTES, mime=True)
+    assert uploaded.tell() == 0
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    "failure", [None, "", "application/octet-stream", RuntimeError("failure")]
+)
+def test_mime_detection_rewinds_after_rejection(
+    failure: str | Exception | None,
+) -> None:
+    uploaded = SimpleUploadedFile("disguised.pdf", MINIMAL_PDF_BYTES)
+    uploaded.seek(10)
+    with (
+        patch.object(upload_views, "MAGIC_AVAILABLE", failure is not None),
+        patch.object(upload_views, "_magic") as detector,
+    ):
+        if isinstance(failure, Exception):
+            detector.from_buffer.side_effect = failure
+        else:
+            detector.from_buffer.return_value = failure
+        with pytest.raises(ValueError):
+            _MimeTestView().detect_mime_type(uploaded)
+    assert uploaded.tell() == 0

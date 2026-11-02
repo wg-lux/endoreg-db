@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import mimetypes
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from importlib import import_module
@@ -26,12 +25,12 @@ class _MagicModule(Protocol):
     def from_buffer(self, buffer: bytes, *, mime: bool) -> str: ...
 
 
-# Try to import python-magic, but provide fallback if not available
+# Missing content detection rejects uploads rather than trusting their filenames.
 try:
     import magic as _magic_module
 
     _magic: _MagicModule | None = cast(_MagicModule, _magic_module)
-except ImportError:
+except (ImportError, OSError):
     _magic = None
 
 MAGIC_AVAILABLE = _magic is not None
@@ -483,52 +482,22 @@ class UploadFileView(APIView):
             )
 
     def _detect_mime_type(self, uploaded_file: UploadedFile) -> str:
-        """
-        Detect MIME type using python-magic as primary method,
-        fallback to mimetypes module.
-        """
-        uploaded_file_name = uploaded_file.name
-
+        """Detect file content without trusting the filename or multipart declaration."""
         try:
-            # Reset file pointer
             uploaded_file.seek(0)
+            if not MAGIC_AVAILABLE or _magic is None:
+                raise ValueError("Content-based file type detection is unavailable")
 
-            # Try python-magic first (more reliable) if available
-            if MAGIC_AVAILABLE and _magic is not None:
-                try:
-                    # Read first chunk for magic detection
-                    chunk = uploaded_file.read(2048)
-                    uploaded_file.seek(0)  # Reset again
-
-                    mime_type = _magic.from_buffer(chunk, mime=True)
-                    if mime_type and mime_type != "application/octet-stream":
-                        return mime_type
-                except Exception:
-                    pass  # Fall back to mimetypes
-
-            # Fallback to mimetypes module
-            uploaded_file_name = uploaded_file_name or ""
-            mime_guess, _ = mimetypes.guess_type(uploaded_file_name)
-            if isinstance(mime_guess, str):
-                return mime_guess
-
-            # Last resort - check file extension
-            normalized_name = uploaded_file_name.lower()
-            if normalized_name.endswith(".pdf"):
-                return "application/pdf"
-            elif normalized_name.endswith((".mp4", ".m4v")):
-                return "video/mp4"
-            elif normalized_name.endswith(".avi"):
-                return "video/avi"
-            elif normalized_name.endswith((".mov", ".qt")):
-                return "video/quicktime"
-            elif normalized_name.endswith(".wmv"):
-                return "video/x-ms-wmv"
-
-            raise ValueError("Could not determine file type")
-
+            chunk = uploaded_file.read(2048)
+            try:
+                mime_type = _magic.from_buffer(chunk, mime=True)
+            except Exception as exc:
+                # python-magic exposes library-specific failures at this integration boundary.
+                raise ValueError("Content-based file type detection failed") from exc
+            if not mime_type or mime_type == "application/octet-stream":
+                raise ValueError("File content type could not be determined")
+            return mime_type
         finally:
-            # Ensure file pointer is reset
             uploaded_file.seek(0)
 
 
