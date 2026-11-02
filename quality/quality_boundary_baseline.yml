@@ -7,8 +7,8 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 350
-  fingerprint: a9e786e22b38a429a1f0e286ebb8d0a653c7c2a80781a1b04a287231c3848be9
+  count: 349
+  fingerprint: 66c8612a1eebdd6f57f67ea8a758587cd8c8df336d92c7b4db297279d628a0a0
   owner: endoreg_db maintainers
   reason: >-
     Reviewed inventory after the exception-reduction cohort, the extraction of
@@ -71,6 +71,9 @@ broad_exception:
     from the exact Git index; no new policy findings. Existing stale
     recorded totals are corrected without adding exceptions.
     Commit-cohort review 2026-11-02: fix(reports): render complete PDF artifacts without lossy fallback. Snapshot recomputed
+    from the exact Git index; no new policy findings. Existing stale
+    recorded totals are corrected without adding exceptions.
+    Commit-cohort review 2026-11-02: fix(video): count outside frames by interval union and expose query errors. Snapshot recomputed
     from the exact Git index; no new policy findings. Existing stale
     recorded totals are corrected without adding exceptions.
   review_after: 2026-11-20
