@@ -1,5 +1,6 @@
 use crate::encrypted_format::{
-    decrypt_aes_gcm, invalid_data, read_header, unwrap_data_key, MAX_CHUNK_BYTES,
+    chunk_aad, chunk_nonce, decrypt_aes_gcm, invalid_data, read_header, unwrap_data_key,
+    validate_chunk_length, AUTHENTICATION_TAG_BYTES, MAX_CHUNK_BYTES,
 };
 use crate::encryption_state::has_encryption_magic;
 use crate::errors::map_io_error;
@@ -107,6 +108,18 @@ fn changed_during_read_error(path: &PathBuf) -> std::io::Error {
     )
 }
 
+/// Read the next chunk length, or `None` at a clean end of file.
+fn read_chunk_length(reader: &mut impl Read) -> std::io::Result<Option<u64>> {
+    let mut length = [0_u8; 4];
+    match reader.read_exact(&mut length[..1]) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => return Ok(None),
+        Err(error) => return Err(error),
+    }
+    reader.read_exact(&mut length[1..])?;
+    Ok(Some(u64::from(u32::from_be_bytes(length))))
+}
+
 fn stable_file_identity_impl(
     path: PathBuf,
     chunk_size: usize,
@@ -132,30 +145,36 @@ fn stable_file_identity_impl(
     if has_encryption_magic(&mut reader)? {
         let (header, header_bytes) = read_header(&mut reader)?;
         let dek = unwrap_data_key(&header, master_keys)?;
+        let maximum = header.chunk_size + AUTHENTICATION_TAG_BYTES;
         let mut counter: u64 = 0;
-        let mut final_chunk_seen = false;
-        loop {
-            let mut length = [0_u8; 4];
-            match reader.read_exact(&mut length[..1]) {
-                Ok(()) => {}
-                Err(error) if error.kind() == std::io::ErrorKind::UnexpectedEof => break,
-                Err(error) => return Err(error),
-            }
-            reader.read_exact(&mut length[1..])?;
-            let size = u32::from_be_bytes(length) as usize;
-            if final_chunk_seen || size <= 16 || size as u64 > header.chunk_size + 16 {
+        // Read one length field ahead so each chunk knows whether it is final.
+        let mut pending = read_chunk_length(&mut reader)?;
+        if pending.is_none() && header.authenticates_end() {
+            return Err(invalid_data(
+                "encrypted file lacks its authenticated terminal chunk",
+            ));
+        }
+        let exceeds = |size: Option<u64>| size.is_some_and(|size| size > maximum);
+        if exceeds(pending) {
+            return Err(invalid_data(
+                "encrypted chunk length does not match chunk geometry",
+            ));
+        }
+        while let Some(size) = pending {
+            let mut ciphertext = vec![0_u8; size as usize];
+            reader.read_exact(&mut ciphertext)?;
+            pending = read_chunk_length(&mut reader)?;
+            // Reject an unbounded next length before it can change this chunk's role.
+            if exceeds(pending) {
                 return Err(invalid_data(
                     "encrypted chunk length does not match chunk geometry",
                 ));
             }
-            final_chunk_seen = (size as u64) < header.chunk_size + 16;
-            let mut ciphertext = vec![0_u8; size];
-            reader.read_exact(&mut ciphertext)?;
-            let sequence = u32::try_from(counter)
-                .map_err(|_| invalid_data("encrypted chunk counter overflowed"))?;
-            let mut nonce = header.nonce_prefix.to_vec();
-            nonce.extend_from_slice(&sequence.to_be_bytes());
-            hasher.update(decrypt_aes_gcm(&dek, &nonce, &ciphertext, &header_bytes)?);
+            let is_final = pending.is_none();
+            validate_chunk_length(&header, counter, size, is_final)?;
+            let nonce = chunk_nonce(&header, counter)?;
+            let aad = chunk_aad(&header, &header_bytes, is_final);
+            hasher.update(decrypt_aes_gcm(&dek, &nonce, &ciphertext, &aad)?);
             counter += 1;
         }
     } else {

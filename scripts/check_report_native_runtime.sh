@@ -49,10 +49,18 @@ from pathlib import Path
 
 import endoreg_db.endoreg_rust_backend as native
 
-capability = ("report_source_snapshot", "report_source_snapshot_v1", "0.1.0")
-assert capability in native.native_capabilities()
-hls_capability = ("hls_state_machine", "hls_state_v1", "0.1.0")
-assert hls_capability in native.native_capabilities()
+# Contracts are versioned independently of the crate implementation version.
+contracts = {(name, contract) for name, contract, _version in native.native_capabilities()}
+for required in (
+    ("report_source_snapshot", "report_source_snapshot_v1"),
+    ("hls_state_machine", "hls_state_v1"),
+    ("lifecycle_state_machine", "lifecycle_state_v3"),
+    ("state_vocabulary", "state_vocabulary_v1"),
+):
+    assert required in contracts, required
+vocabularies = dict(native.native_state_vocabularies())
+assert "materializing" in vocabularies["hls_in_flight_status"]
+assert native.transition_operation_lifecycle("queued", "claim") == "claimed"
 assert (
     native.derive_hls_reservation_action("materializing", False, True, True)
     == "already_in_flight"
@@ -63,17 +71,12 @@ assert (
 )
 assert native.derive_hls_reconciliation_action("queued", True) == "fail_and_cleanup"
 
+# Report snapshots copy atomically in Python and hash through this native identity.
 root = Path(tempfile.mkdtemp(dir="."))
 source = root / "source.pdf"
-target = root / "snapshot.pdf"
 payload = b"%PDF-1.4\nwheel-runtime-check\n%%EOF\n"
 source.write_bytes(payload)
-size_bytes, _modified_time_ns, digest = native.stable_snapshot_to_path(
-    str(source),
-    str(target),
-    4096,
-)
+size_bytes, _modified_time_ns, digest = native.stable_file_identity(source, 4096)
 assert size_bytes == len(payload)
 assert digest == hashlib.sha256(payload).hexdigest()
-assert target.read_bytes() == payload
 '

@@ -13,7 +13,6 @@ from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File
 from django.core.files.storage import FileSystemStorage, Storage
 from django.utils.deconstruct import deconstructible
-from endoreg_db.config.secret_keyring import configured_master_keyring
 from endoreg_db.utils.encryption.rotation import storage_write_lock
 
 from endoreg_db.utils.file_operations import (
@@ -21,16 +20,15 @@ from endoreg_db.utils.file_operations import (
     ensure_directory,
     safe_unlink_file,
 )
-from endoreg_db.utils.rust_backend import (
-    decrypt_encrypted_file_range,
-    is_lx_encrypted_file,
-)
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 
 from .encryption import (
     DEFAULT_CHUNK_SIZE,
     DecryptedStream,
+    EncryptedFileHeader,
     EncryptedFileLayout,
     MAGIC as MAGIC,
+    authenticate_terminal_chunk,
     encrypt_stream,
     inspect_encrypted_file_layout,
     iter_decrypted_byte_range,
@@ -43,7 +41,6 @@ from .encryption import (
 
 IndexCacheKey: TypeAlias = tuple[str, int, int, int, int, int]
 IndexCacheValue: TypeAlias = EncryptedFileLayout
-NATIVE_DECRYPT_BATCH_BYTES = 4 * 1024 * 1024
 
 
 class _HasFileLike(Protocol):
@@ -164,9 +161,22 @@ class EncryptedStorage(FileSystemStorage):
 
         with self.open_encrypted(name) as source:
             index_payload = inspect_encrypted_file_layout(source)
+            # Version two: authenticate the end once per file identity so a
+            # reported size or a served range cannot hide removed chunks.
+            authenticate_terminal_chunk(
+                source,
+                master_key=self._layout_key(index_payload.header),
+                layout=index_payload,
+            )
         self._index_cache.clear()
         self._index_cache[cache_key] = index_payload
         return index_payload
+
+    def _layout_key(self, header: EncryptedFileHeader) -> bytes:
+        if self._explicit_master_key is None:
+            return select_file_master_key(header)
+        unwrap_file_dek(header, self._explicit_master_key)
+        return self._explicit_master_key
 
     def get_plaintext_size(self, name: str) -> int:
         layout = self._get_cached_index(name)
@@ -184,72 +194,14 @@ class EncryptedStorage(FileSystemStorage):
         end: int,
         chunk_size: int = 64 * 1024,
     ) -> Iterator[bytes]:
-        if (
-            self._explicit_master_key is None
-            and configured_master_keyring() is not None
-        ):
-            # One open descriptor pins the generation across atomic replacement.
-            # The native path reopens by pathname and cannot supply this guarantee.
-            with self.open_encrypted(name) as source:
-                layout = inspect_encrypted_file_layout(source)
-                key = select_file_master_key(layout.header)
-                yield from iter_decrypted_byte_range(
-                    source,
-                    master_key=key,
-                    start=start,
-                    end=end,
-                    output_chunk_size=chunk_size,
-                    layout=layout,
-                )
-            return
-        layout = self._get_cached_index(name)
-        plaintext_size = layout.plaintext_size
-        if start < 0 or end < start or end >= plaintext_size:
-            raise ValueError(
-                f"Requested byte range {start}-{end} exceeds plaintext size {plaintext_size}"
-            )
-
-        full_path = Path(self.path(name))
-        master_key = self._explicit_master_key or load_master_key()
-        first_batch_end = min(end, start + NATIVE_DECRYPT_BATCH_BYTES - 1)
-        native_payload = decrypt_encrypted_file_range(
-            path=full_path,
-            master_key=master_key,
-            start=start,
-            end=first_batch_end,
-        )
-        if native_payload is not None:
-            cursor = start
-            batch_end = first_batch_end
-            while True:
-                expected_length = batch_end - cursor + 1
-                if len(native_payload) != expected_length:
-                    raise RuntimeError(
-                        "Rust encrypted range decryption returned an inconsistent "
-                        f"length for {name}: {len(native_payload)} != {expected_length}"
-                    )
-                for offset in range(0, len(native_payload), chunk_size):
-                    yield native_payload[offset : offset + chunk_size]
-                cursor = batch_end + 1
-                if cursor > end:
-                    return
-                batch_end = min(end, cursor + NATIVE_DECRYPT_BATCH_BYTES - 1)
-                native_payload = decrypt_encrypted_file_range(
-                    path=full_path,
-                    master_key=master_key,
-                    start=cursor,
-                    end=batch_end,
-                )
-                if native_payload is None:
-                    raise RuntimeError(
-                        "Rust encrypted range decryption became unavailable during "
-                        f"streaming for {name}"
-                    )
-
+        # Keep authentication and every yielded chunk on one file generation,
+        # including when a writer atomically replaces its pathname.
         with self.open_encrypted(name) as source:
+            layout = inspect_encrypted_file_layout(source)
+            key = self._layout_key(layout.header)
             yield from iter_decrypted_byte_range(
                 source,
-                master_key=master_key,
+                master_key=key,
                 start=start,
                 end=end,
                 output_chunk_size=chunk_size,

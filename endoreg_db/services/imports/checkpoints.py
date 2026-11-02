@@ -24,7 +24,10 @@ from endoreg_db.models.state.anonymization import (
     anonymization_phase,
 )
 from endoreg_db.schemas.import_file import ImportCheckpoint
-from endoreg_db.schemas.import_processing import ImportProcessingStack
+from endoreg_db.schemas.import_processing import (
+    ImportProcessingEvent,
+    ImportProcessingStack,
+)
 from endoreg_db.services.hub.upload_job_state_machine import upload_job_recovery_filter
 from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.imports.processing import (
@@ -147,7 +150,10 @@ def _artifact(ctx: ImportContext, name: str) -> FieldFile:
 
 
 def _save_receipt(
-    ctx: ImportContext, checkpoint: ImportCheckpoint | None, *, event: str | None = None
+    ctx: ImportContext,
+    checkpoint: ImportCheckpoint | None,
+    *,
+    event: ImportProcessingEvent | None = None,
 ) -> None:
     with ctx.owned_mutation():
         field, metadata = _metadata(ctx)
@@ -162,7 +168,7 @@ def _save_receipt(
         job_id = current_upload_job_id()
         if job_id is not None and (checkpoint is not None or event is not None):
             initialize_import_processing_stack(ctx)
-            if event == "published":
+            if event is ImportProcessingEvent.PUBLISHED:
                 assert ctx.file_hash is not None
                 record_published_import(
                     job_id, media_id=int(instance.pk), source_sha256=ctx.file_hash
@@ -170,7 +176,7 @@ def _save_receipt(
             else:
                 update_import_processing_stack(
                     job_id,
-                    "prepared",
+                    ImportProcessingEvent.PREPARED,
                     media_id=int(instance.pk),
                 )
 
@@ -183,7 +189,9 @@ def clear_import_checkpoint(ctx: ImportContext, *, published: bool = True) -> No
         return
     checkpoint = ImportCheckpoint.model_validate(payload)
     artifact = _artifact(ctx, checkpoint.artifact_name)
-    _save_receipt(ctx, None, event="published" if published else None)
+    _save_receipt(
+        ctx, None, event=ImportProcessingEvent.PUBLISHED if published else None
+    )
     transaction.on_commit(partial(safe_delete_field_file, artifact, missing_ok=False))
 
 
@@ -202,7 +210,7 @@ def prepared_import_artifact(
     stack = initialize_import_processing_stack(ctx)
     if job_id is not None and ctx.force_reprocess:
         with ctx.owned_mutation():
-            stack = update_import_processing_stack(job_id, "reset")
+            stack = update_import_processing_stack(job_id, ImportProcessingEvent.RESET)
     _, metadata = _metadata(ctx)
     payload = metadata.get("import_checkpoint")
     if payload is not None and ctx.force_reprocess:
@@ -211,7 +219,7 @@ def prepared_import_artifact(
     if payload is None:
         if job_id is not None:
             with ctx.owned_mutation():
-                update_import_processing_stack(job_id, "prepare")
+                update_import_processing_stack(job_id, ImportProcessingEvent.PREPARE)
         ctx = prepare(ctx)
         prepared_path = ctx.anonymized_path
         try:

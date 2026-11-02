@@ -1,84 +1,58 @@
+use crate::state_token::{state_tokens, Vocabulary};
+use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[allow(dead_code)]
-enum SegmentAnnotationStatus {
-    NotStarted,
-    CleanupRequired,
-    CleanupQueued,
-    CleanupRunning,
-    CleanupFailed,
-    Validated,
-}
-
-impl SegmentAnnotationStatus {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::NotStarted => "not_started",
-            Self::CleanupRequired => "cleanup_required",
-            Self::CleanupQueued => "cleanup_queued",
-            Self::CleanupRunning => "cleanup_running",
-            Self::CleanupFailed => "cleanup_failed",
-            Self::Validated => "validated",
-        }
+state_tokens! {
+    /// The cleanup_queued/running/failed tokens are projected by Python from the
+    /// post-validation rebuild history; the flag reducer below never emits them.
+    #[allow(dead_code)]
+    enum SegmentAnnotationStatus {
+        NotStarted => "not_started",
+        CleanupRequired => "cleanup_required",
+        CleanupQueued => "cleanup_queued",
+        CleanupRunning => "cleanup_running",
+        CleanupFailed => "cleanup_failed",
+        Validated => "validated",
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FrameAnnotationStatus {
-    NotStarted,
-    FramesUnavailable,
-    PredictionPending,
-    PredictionReady,
-    AnnotationReady,
-    AnnotationComplete,
-}
-
-impl FrameAnnotationStatus {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::NotStarted => "not_started",
-            Self::FramesUnavailable => "frames_unavailable",
-            Self::PredictionPending => "prediction_pending",
-            Self::PredictionReady => "prediction_ready",
-            Self::AnnotationReady => "annotation_ready",
-            Self::AnnotationComplete => "annotation_complete",
-        }
+state_tokens! {
+    enum FrameAnnotationStatus {
+        NotStarted => "not_started",
+        FramesUnavailable => "frames_unavailable",
+        PredictionPending => "prediction_pending",
+        PredictionReady => "prediction_ready",
+        AnnotationReady => "annotation_ready",
+        AnnotationComplete => "annotation_complete",
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FrameTaskMode {
-    Random,
-    Filtered,
-}
-
-impl FrameTaskMode {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Random => "random",
-            Self::Filtered => "filtered",
-        }
+state_tokens! {
+    enum FrameTaskMode {
+        Random => "random",
+        Filtered => "filtered",
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum FrameSamplingStrategy {
-    Balanced,
-    Segments,
-    Annotations,
-    None,
+state_tokens! {
+    enum FrameSamplingStrategy {
+        Balanced => "balanced",
+        Segments => "segments",
+        Annotations => "annotations",
+        None => "none",
+    }
 }
 
-impl FrameSamplingStrategy {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Balanced => "balanced",
-            Self::Segments => "segments",
-            Self::Annotations => "annotations",
-            Self::None => "none",
-        }
-    }
+pub(crate) fn vocabularies() -> Vec<Vocabulary> {
+    vec![
+        (
+            "segment_annotation_status",
+            SegmentAnnotationStatus::tokens(),
+        ),
+        ("frame_annotation_status", FrameAnnotationStatus::tokens()),
+        ("frame_task_mode", FrameTaskMode::tokens()),
+        ("frame_sampling_strategy", FrameSamplingStrategy::tokens()),
+    ]
 }
 
 fn resolve_segment_annotation_status(
@@ -120,22 +94,12 @@ fn resolve_frame_annotation_status(
     FrameAnnotationStatus::AnnotationReady
 }
 
-fn normalize_task_mode(value: &str) -> FrameTaskMode {
-    if value.trim().to_ascii_lowercase() == FrameTaskMode::Filtered.as_str() {
-        FrameTaskMode::Filtered
-    } else {
-        FrameTaskMode::Random
-    }
+fn normalize_task_mode(value: &str) -> Option<FrameTaskMode> {
+    FrameTaskMode::parse(&value.trim().to_ascii_lowercase())
 }
 
-fn normalize_sampling_strategy(value: &str) -> FrameSamplingStrategy {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "segments" => FrameSamplingStrategy::Segments,
-        "annotations" => FrameSamplingStrategy::Annotations,
-        "none" => FrameSamplingStrategy::None,
-        "balanced" => FrameSamplingStrategy::Balanced,
-        _ => FrameSamplingStrategy::Balanced,
-    }
+fn normalize_sampling_strategy(value: &str) -> Option<FrameSamplingStrategy> {
+    FrameSamplingStrategy::parse(&value.trim().to_ascii_lowercase())
 }
 
 #[pyfunction]
@@ -171,13 +135,19 @@ pub(crate) fn derive_frame_annotation_status(
 }
 
 #[pyfunction]
-pub(crate) fn normalize_frame_task_mode_token(value: &str) -> &'static str {
-    normalize_task_mode(value).as_str()
+pub(crate) fn normalize_frame_task_mode_token(value: &str) -> PyResult<&'static str> {
+    normalize_task_mode(value)
+        .map(FrameTaskMode::as_str)
+        .ok_or_else(|| PyValueError::new_err(format!("unsupported frame task mode: {value}")))
 }
 
 #[pyfunction]
-pub(crate) fn normalize_frame_sampling_strategy_token(value: &str) -> &'static str {
-    normalize_sampling_strategy(value).as_str()
+pub(crate) fn normalize_frame_sampling_strategy_token(value: &str) -> PyResult<&'static str> {
+    normalize_sampling_strategy(value)
+        .map(FrameSamplingStrategy::as_str)
+        .ok_or_else(|| {
+            PyValueError::new_err(format!("unsupported frame sampling strategy: {value}"))
+        })
 }
 
 #[cfg(test)]
@@ -250,27 +220,26 @@ mod tests {
 
     #[test]
     fn normalizes_frame_task_tokens() {
-        assert_eq!(normalize_task_mode(" filtered "), FrameTaskMode::Filtered);
-        assert_eq!(normalize_task_mode("unexpected"), FrameTaskMode::Random);
+        assert_eq!(
+            normalize_task_mode(" Filtered "),
+            Some(FrameTaskMode::Filtered)
+        );
+        assert_eq!(normalize_task_mode("random"), Some(FrameTaskMode::Random));
+        for token in ["", "unexpected", "filter"] {
+            assert_eq!(normalize_task_mode(token), None);
+        }
     }
 
     #[test]
     fn normalizes_frame_sampling_tokens() {
-        assert_eq!(
-            normalize_sampling_strategy("segments"),
-            FrameSamplingStrategy::Segments
-        );
-        assert_eq!(
-            normalize_sampling_strategy("annotations"),
-            FrameSamplingStrategy::Annotations
-        );
-        assert_eq!(
-            normalize_sampling_strategy("none"),
-            FrameSamplingStrategy::None
-        );
-        assert_eq!(
-            normalize_sampling_strategy("unexpected"),
-            FrameSamplingStrategy::Balanced
-        );
+        for strategy in FrameSamplingStrategy::ALL {
+            assert_eq!(
+                normalize_sampling_strategy(&format!(" {} ", strategy.as_str().to_uppercase())),
+                Some(*strategy)
+            );
+        }
+        for token in ["", "unexpected", "segment"] {
+            assert_eq!(normalize_sampling_strategy(token), None);
+        }
     }
 }

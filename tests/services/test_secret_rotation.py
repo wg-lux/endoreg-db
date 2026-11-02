@@ -24,6 +24,7 @@ from endoreg_db.utils.encryption.encryption import (
 )
 from endoreg_db.utils.encryption.rotation import rotate_encrypted_file
 from endoreg_db.utils.file_operations import atomic_write_file
+from tests.helpers.legacy_encryption import legacy_v1_encrypted
 
 
 def write_ring(
@@ -95,6 +96,28 @@ def test_rotation_preserves_plaintext_changes_data_key_and_resumes(
     assert not rotate_encrypted_file(
         path, active_key=new, retiring_keys=(old,), apply=True
     ).changed
+
+
+def test_same_key_legacy_upgrade_is_explicit_and_idempotent(tmp_path: Path) -> None:
+    key, payload = b"k" * 32, b"legacy payload" * 8
+    path = atomic_write_file(
+        destination=tmp_path / "legacy",
+        content=[legacy_v1_encrypted(payload, key, chunk_size=32)],
+        file_mode=0o600,
+    )
+    original = path.read_bytes()
+    assert not rotate_encrypted_file(path, active_key=key, retiring_keys=()).changed
+    assert path.read_bytes() == original
+    assert rotate_encrypted_file(
+        path, active_key=key, retiring_keys=(), apply=True
+    ).changed
+    upgraded = path.read_bytes()
+    assert read_header(BytesIO(upgraded))[0].version == 2
+    assert b"".join(iter_decrypted_chunks(BytesIO(upgraded), master_key=key)) == payload
+    assert not rotate_encrypted_file(
+        path, active_key=key, retiring_keys=(), apply=True
+    ).changed
+    assert path.read_bytes() == upgraded
 
 
 @pytest.mark.parametrize("failure", ["wrong_key", "tamper", "publication"])
@@ -201,12 +224,18 @@ def test_signing_rotation_rejects_previous_signatures(
 def test_authoritative_hash_rejects_missing_complete_chunks(tmp_path: Path) -> None:
     import hashlib
 
+    from tests.helpers.legacy_encryption import legacy_v1_encrypted
+
     payload = b"x" * 64
-    path = encrypted_file(tmp_path / "artifact", payload, b"o" * 32)
+    path = atomic_write_file(
+        destination=tmp_path / "artifact",
+        content=[legacy_v1_encrypted(payload, b"o" * 32)],
+        file_mode=0o600,
+    )
     with path.open("rb") as source:
         _, _ = read_header(source)
         header_end = source.tell()
-    # Remove one complete record: legacy LXENC01 has no authenticated EOF.
+    # Remove one complete record: version one has no authenticated EOF.
     truncated = path.read_bytes()[: header_end + 4 + 32 + 16]
     atomic_write_file(destination=path, content=[truncated], file_mode=0o600)
     with pytest.raises(ValueError, match="authoritative"):
@@ -215,6 +244,26 @@ def test_authoritative_hash_rejects_missing_complete_chunks(tmp_path: Path) -> N
             active_key=b"n" * 32,
             retiring_keys=(b"o" * 32,),
             expected_plaintext_sha256=hashlib.sha256(payload).hexdigest(),
+            apply=True,
+        )
+    assert path.read_bytes() == truncated
+
+
+def test_version_two_rejects_missing_complete_chunks_without_reference(
+    tmp_path: Path,
+) -> None:
+    payload = b"x" * 64
+    path = encrypted_file(tmp_path / "artifact", payload, b"o" * 32)
+    with path.open("rb") as source:
+        _, _ = read_header(source)
+        header_end = source.tell()
+    truncated = path.read_bytes()[: header_end + 4 + 32 + 16]
+    atomic_write_file(destination=path, content=[truncated], file_mode=0o600)
+    with pytest.raises(InvalidTag):
+        rotate_encrypted_file(
+            path,
+            active_key=b"n" * 32,
+            retiring_keys=(b"o" * 32,),
             apply=True,
         )
     assert path.read_bytes() == truncated

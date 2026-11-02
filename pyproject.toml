@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.7.5"
+version = "1.7.7"
 
 requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
@@ -79,7 +79,7 @@ dependencies = [
   "python-magic>=0.4.27",
   "python-jose[cryptography]>=3.5.0",
   "mozilla-django-oidc>=4.0.1",
-  "lx-anonymizer[gpu]==1.1.1",
+  "lx-anonymizer[gpu]==1.1.2",
   # Runtime for the deployment-provisioned German report-embedding model.
   "spacy>=3.8.0,<3.9.0",
   "googlemaps>=4.10.0",
@@ -91,7 +91,7 @@ dependencies = [
   "lx-ai-core[torch]==0.0.4",
   "celery-types>=0.26.0",
   "lightning-fabric>=2.6.5",
-  "lx-dtypes>=0.6.2",
+  "lx-dtypes>=0.6.4",
   "snakemake==9.23.1",
 ]
 

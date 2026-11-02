@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from endoreg_db.services.imports.execution import ImportExecutionFence
 from django.db import transaction
+from endoreg_db.schemas.import_processing import ImportProcessingEvent
 from endoreg_db.services.imports.processing import update_import_processing_stack
 from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.imports.checkpoints import (
@@ -287,7 +288,9 @@ class ReportImportService:
                 job_id = current_upload_job_id()
                 if job_id is not None:
                     update_import_processing_stack(
-                        job_id, "bind_source", source_sha256=ctx.file_hash
+                        job_id,
+                        ImportProcessingEvent.BIND_SOURCE,
+                        source_sha256=ctx.file_hash,
                     )
             return fence
 

@@ -5,11 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.encryption import encrypted as encrypted_storage_module
-from endoreg_db.utils.encryption.encrypted import (
-    NATIVE_DECRYPT_BATCH_BYTES,
-    EncryptedStorage,
-)
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.encryption.encryption import (
     encrypt_stream,
     inspect_encrypted_file_layout,
@@ -99,12 +95,9 @@ def _write_encrypted_file(
 
 
 @pytest.mark.unit
-def test_encrypted_storage_prefers_bounded_native_range_batches(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_encrypted_storage_yields_bounded_range_chunks(tmp_path: Path) -> None:
     master_key = b"k" * 32
-    plaintext = bytes(index % 251 for index in range(NATIVE_DECRYPT_BATCH_BYTES + 37))
+    plaintext = bytes(index % 251 for index in range(4 * 1024 * 1024 + 37))
     encrypted_path = tmp_path / "video.mp4"
     _write_encrypted_file(
         encrypted_path,
@@ -112,27 +105,8 @@ def test_encrypted_storage_prefers_bounded_native_range_batches(
         master_key=master_key,
         chunk_size=1024 * 1024,
     )
-    calls: list[tuple[Path, int, int]] = []
-
-    def native_decrypt(
-        *,
-        path: Path,
-        master_key: bytes,
-        start: int,
-        end: int,
-    ) -> bytes:
-        assert master_key == b"k" * 32
-        calls.append((path, start, end))
-        return plaintext[start : end + 1]
-
-    monkeypatch.setattr(
-        encrypted_storage_module,
-        "decrypt_encrypted_file_range",
-        native_decrypt,
-    )
     storage = EncryptedStorage(location=tmp_path, master_key=master_key)
-
-    selected = b"".join(
+    chunks = list(
         storage.iter_decrypted_range(
             encrypted_path.name,
             start=0,
@@ -140,25 +114,14 @@ def test_encrypted_storage_prefers_bounded_native_range_batches(
             chunk_size=64 * 1024,
         )
     )
-
-    assert selected == plaintext
-    assert calls == [
-        (encrypted_path, 0, NATIVE_DECRYPT_BATCH_BYTES - 1),
-        (
-            encrypted_path,
-            NATIVE_DECRYPT_BATCH_BYTES,
-            len(plaintext) - 1,
-        ),
-    ]
+    assert b"".join(chunks) == plaintext
+    assert all(0 < len(chunk) <= 64 * 1024 for chunk in chunks)
 
 
 @pytest.mark.unit
-def test_encrypted_storage_uses_python_reference_when_native_is_unavailable(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_encrypted_storage_reads_subrange_across_chunks(tmp_path: Path) -> None:
     master_key = b"k" * 32
-    plaintext = b"native-unavailable-fallback"
+    plaintext = b"cross-chunk-storage-range"
     encrypted_path = tmp_path / "video.mp4"
     _write_encrypted_file(
         encrypted_path,
@@ -166,28 +129,7 @@ def test_encrypted_storage_uses_python_reference_when_native_is_unavailable(
         master_key=master_key,
         chunk_size=8,
     )
-
-    def native_unavailable(
-        *,
-        path: Path,
-        master_key: bytes,
-        start: int,
-        end: int,
-    ) -> None:
-        del path, master_key, start, end
-        return None
-
-    monkeypatch.setattr(
-        encrypted_storage_module,
-        "decrypt_encrypted_file_range",
-        native_unavailable,
-    )
-    storage = EncryptedStorage(
-        location=tmp_path,
-        master_key=master_key,
-        chunk_size=8,
-    )
-
+    storage = EncryptedStorage(location=tmp_path, master_key=master_key)
     selected = b"".join(
         storage.iter_decrypted_range(
             encrypted_path.name,
@@ -196,5 +138,4 @@ def test_encrypted_storage_uses_python_reference_when_native_is_unavailable(
             chunk_size=4,
         )
     )
-
     assert selected == plaintext[3:21]

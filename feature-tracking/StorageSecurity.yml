@@ -92,6 +92,10 @@ definition_of_done:
     auf Solid-State-Laufwerken oder Copy-on-Write-Dateisystemen.
   - SAP-ZIP-Importe extrahieren ausschließlich in private geschützte Arbeitsverzeichnisse; unsichere Archivpfade
     und Links werden abgewiesen, Arbeitskopien auch bei Fehlern entfernt.
+  - Neu geschriebene verschlüsselte Payloads nutzen LXENC Version 2. Python-, native Bereichs- und Hashleser
+    weisen entfernte oder angehängte vollständige Chunks sowie einen fehlenden Endchunk ab; der Hüllschlüssel
+    wird über key_id ohne Probeentschlüsselung gewählt und ist an eine authentifizierte file_id gebunden;
+    Version 1 bleibt lesbar.
   required: true
   verification:
     kind: manual

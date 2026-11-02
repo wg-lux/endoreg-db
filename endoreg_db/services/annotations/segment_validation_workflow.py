@@ -118,19 +118,13 @@ def resolve_segment_annotation_status(video: VideoFile) -> str:
     )
     raw_segment_validated = bool(getattr(state, "segment_annotations_validated", False))
     outside_segments_removed = bool(getattr(state, "outside_segments_removed", False))
-    rust_status = derive_segment_annotation_status(
-        segment_annotations_created=segment_annotations_created,
-        segment_annotations_validated=raw_segment_validated,
-        outside_segments_removed=outside_segments_removed,
-    )
-    if rust_status is not None:
-        return rust_status
-
-    if raw_segment_validated and outside_segments_removed:
-        return SegmentAnnotationStatus.VALIDATED.value
-    if raw_segment_validated or segment_annotations_created:
-        return SegmentAnnotationStatus.CLEANUP_REQUIRED.value
-    return SegmentAnnotationStatus.NOT_STARTED.value
+    return SegmentAnnotationStatus(
+        derive_segment_annotation_status(
+            segment_annotations_created=segment_annotations_created,
+            segment_annotations_validated=raw_segment_validated,
+            outside_segments_removed=outside_segments_removed,
+        )
+    ).value
 
 
 def segment_annotations_are_final(video: VideoFile) -> bool:

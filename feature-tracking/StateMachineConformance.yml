@@ -56,8 +56,8 @@ definition_of_done:
   category: operations
   title: Retry and recovery admission share one state-machine entry point
   acceptance:
-  - Automatic persisted-stack recovery and user priority requests use the same admission function;
-    Rust owns the remaining stage stack and fixed checkpoint reference persisted on UploadJob.
+  - Automatic persisted-stack recovery and user priority requests use the same admission function; Rust
+    owns the remaining stage stack and fixed checkpoint reference persisted on UploadJob.
   - The checkpoint resume in UploadJobRetryView and recover_interrupted_upload_jobs use one typed admission
     function in upload_job_state_machine instead of calling UploadJob.schedule_retry with inline validation.
   - The admission keeps the row-lock and fencing-token snapshot check, and accepts an IMPORT_INTERRUPTED
@@ -183,6 +183,56 @@ definition_of_done:
   assessment:
     status: not_assessed
     evidence: []
+- id: native_vocabulary_single_source
+  category: requirements
+  title: Rust is the single source of every native state vocabulary
+  acceptance:
+  - Every native state machine declares each state, event and action token exactly once in Rust and exports
+    the complete vocabulary through native_state_vocabularies.
+  - Each Python mirror enum is registered once; application startup refuses to run when any mirror differs
+    from the Rust vocabulary in either direction, and a parametrized test covers every registered vocabulary.
+  - utils/rust_backend.py keeps no duplicate token sets and no Python re-implementation of a native decision;
+    a missing native function raises instead of falling back.
+  - Unknown frame task-mode and sampling-strategy tokens raise ValueError in Rust instead of defaulting.
+  - Rust unit tests, including vocabulary uniqueness and serde token parity, pass through the devenv rust:report-runtime
+    task.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/rust_backend/test_state_enum_parity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/state_vocabulary.rs
+    - kind: code
+      reference: endoreg_db/services/runtime/native_state_vocabulary.py
+    - kind: test
+      reference: '2026-11-02 HEAD 22a5cccf + working tree: RUSTFLAGS embed cargo test => 40 passed; pyright
+        project-wide 0 errors; pytest tests/rust_backend => 215 passed; lifecycle/lease/import-stack/checkpoint/state-model
+        suites => 219 passed after restoring wrapper contracts (81 lifecycle passed on rerun); HLS/integrity/training/transfer/export/post-validation
+        => 247 passed; frame annotation task suites => 100 passed; training compare-and-swap regression
+        test fails without the status guard and passes with it.'
+    - kind: test
+      reference: '2026-11-02 index-only checkout over HEAD 22a5cccf: cargo test (embedded Python) => 37
+        passed; stub_gen output equals staged endoreg_rust_backend.pyi after ruff format; pyright 0 errors
+        in staged files (22 pre-existing HEAD errors in text_finding_approval and test_hls_media/test_text_finding_approval);
+        pytest test_state_enum_parity + test_lifecycle_state_machine against the index tree => 134 passed.
+        Working tree: scripts/check_report_native_runtime.sh => exit 0.'
+    - kind: test
+      reference: '2026-11-02 working tree: pyright on processing, report_import_service, ingest, checkpoints
+        and test_import_processing_stack => 0 errors; pyright probe passing "validate" => reportArgumentType
+        error; zero literal events remain (rg); devenv shell pytest import stack, checkpoints, report
+        import service, upload endpoints, hub ingest provenance => 190 passed, 3 skipped.'
+    note: Awaiting independent review and commit. update_import_processing_stack now accepts only ImportProcessingEvent;
+      every call site (services, report import, hub ingest, tests) passes the typed mirror, and pyright
+      rejects a plain string event.
+    assessed_by: claude-rust-state-sot-20261102
+    assessed_at: '2026-11-02T14:46:06.342915Z'
 - id: state_machine_documentation
   category: documentation
   title: Lifecycle mapping and phase rule are documented

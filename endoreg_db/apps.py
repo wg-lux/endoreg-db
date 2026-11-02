@@ -108,6 +108,13 @@ class EndoregDbConfig(AppConfig):
         EndoregPathsModel.model_rebuild()
 
         validate_runtime_storage_contract()
+
+        from endoreg_db.services.runtime.native_state_vocabulary import (
+            verify_native_state_vocabularies,
+        )
+
+        # Rust owns every state vocabulary; a drifted Python mirror must not start.
+        verify_native_state_vocabularies()
         executable = Path(sys.argv[0]).name if sys.argv else ""
         if (
             "pytest" in executable

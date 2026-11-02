@@ -19,7 +19,10 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models import PortalUserInfo, UploadJob
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
-from endoreg_db.schemas.import_processing import ImportProcessingStack
+from endoreg_db.schemas.import_processing import (
+    ImportProcessingEvent,
+    ImportProcessingStack,
+)
 from endoreg_db.services.hub.upload_job_files import track_upload_job_files
 from endoreg_db.services.hub.upload_job_import_lease import (
     reconcile_expired_upload_job_import_leases,
@@ -269,7 +272,7 @@ def test_priority_is_idempotent_and_precedes_other_dispatches(
     )
     normal.next_retry_at = timezone.now() - timedelta(minutes=1)
     normal.save(update_fields=["next_retry_at"])
-    update_import_processing_stack(normal.pk, "validate")
+    update_import_processing_stack(normal.pk, ImportProcessingEvent.VALIDATE)
     user = User.objects.create_user(username="import-priority")
     instance = context.instance
     assert instance is not None
@@ -381,7 +384,7 @@ def test_report_restart_republishes_the_same_persisted_task(
     job.error_code = UploadJob.ErrorCode.NONE
     job.last_attempt_at = timezone.now() - timedelta(minutes=2)
     job.save()
-    update_import_processing_stack(job.pk, "validate")
+    update_import_processing_stack(job.pk, ImportProcessingEvent.VALIDATE)
 
     def publish_task(**kwargs: object) -> SimpleNamespace:
         return SimpleNamespace(id=kwargs["task_id"])

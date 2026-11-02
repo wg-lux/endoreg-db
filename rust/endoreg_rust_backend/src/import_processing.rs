@@ -1,21 +1,48 @@
 //! Durable import work stack. Python persists this value; only Rust advances it.
+use crate::state_token::{state_tokens, Vocabulary};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use serde::{Deserialize, Serialize};
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-enum Stage {
-    PrepareArtifact,
-    PublishArtifact,
-    CompleteUpload,
+state_tokens! {
+    #[derive(Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum Stage {
+        PrepareArtifact => "prepare_artifact",
+        PublishArtifact => "publish_artifact",
+        CompleteUpload => "complete_upload",
+    }
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize)]
-#[serde(rename_all = "snake_case")]
-enum MediaKind {
-    Video,
-    Report,
+state_tokens! {
+    #[derive(Deserialize, Serialize)]
+    #[serde(rename_all = "snake_case")]
+    enum MediaKind {
+        Video => "video",
+        Report => "report",
+    }
+}
+
+state_tokens! {
+    enum ImportEvent {
+        Validate => "validate",
+        BindSource => "bind_source",
+        Prepare => "prepare",
+        AdoptPublished => "adopt_published",
+        Prioritize => "prioritize",
+        Reset => "reset",
+        Prepared => "prepared",
+        Published => "published",
+        Completed => "completed",
+    }
+}
+
+pub(crate) fn vocabularies() -> Vec<Vocabulary> {
+    vec![
+        ("import_processing_stage", Stage::tokens()),
+        ("import_media_kind", MediaKind::tokens()),
+        ("import_processing_event", ImportEvent::tokens()),
+    ]
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -77,14 +104,16 @@ impl ProcessingStack {
 
     fn apply(
         &mut self,
-        event: &str,
+        event: ImportEvent,
         media_id: Option<u64>,
         source_sha256: Option<&str>,
     ) -> Result<(), String> {
+        use ImportEvent as Event;
+
         self.validate()?;
         match event {
-            "validate" => (),
-            "bind_source" => {
+            Event::Validate => (),
+            Event::BindSource => {
                 let hash = source_sha256.ok_or("Source binding requires a hash")?;
                 if self
                     .source_sha256
@@ -95,13 +124,13 @@ impl ProcessingStack {
                 }
                 self.source_sha256 = Some(hash.into());
             }
-            "prepare" if self.remaining.first() == Some(&Stage::PrepareArtifact) => (),
-            "adopt_published" => {
+            Event::Prepare if self.remaining.first() == Some(&Stage::PrepareArtifact) => (),
+            Event::AdoptPublished => {
                 // Callers supply verified publication evidence, never a stage plan.
                 if self.checkpoint.is_none()
                     || self.remaining.first() == Some(&Stage::PublishArtifact)
                 {
-                    self.apply("prepared", media_id, None)?;
+                    self.apply(Event::Prepared, media_id, None)?;
                 } else if self
                     .checkpoint
                     .as_ref()
@@ -110,14 +139,14 @@ impl ProcessingStack {
                 {
                     return Err("Published artifact does not match the checkpoint media".into());
                 }
-                self.apply("published", None, None)?;
+                self.apply(Event::Published, None, None)?;
             }
-            "prioritize" if !self.remaining.is_empty() => self.priority = 1,
-            "reset" => {
+            Event::Prioritize if !self.remaining.is_empty() => self.priority = 1,
+            Event::Reset => {
                 self.remaining = STAGES.to_vec();
                 self.checkpoint = None;
             }
-            "prepared" => {
+            Event::Prepared => {
                 let checkpoint = Checkpoint {
                     reference: self.reference.clone(),
                     media_id: media_id
@@ -133,17 +162,22 @@ impl ProcessingStack {
                     return Err("Invalid prepared checkpoint transition".into());
                 }
             }
-            "published" if self.remaining.first() == Some(&Stage::PublishArtifact) => {
+            Event::Published if self.remaining.first() == Some(&Stage::PublishArtifact) => {
                 self.remaining.remove(0);
             }
-            "published" if self.remaining.first() == Some(&Stage::CompleteUpload) => (),
-            "published" if self.remaining.is_empty() => (),
-            "completed" if self.remaining.first() == Some(&Stage::CompleteUpload) => {
+            Event::Published if self.remaining.first() == Some(&Stage::CompleteUpload) => (),
+            Event::Published if self.remaining.is_empty() => (),
+            Event::Completed if self.remaining.first() == Some(&Stage::CompleteUpload) => {
                 self.remaining.clear();
                 self.priority = 0;
             }
-            "completed" if self.remaining.is_empty() => (),
-            _ => return Err(format!("Invalid import processing stack event: {event}")),
+            Event::Completed if self.remaining.is_empty() => (),
+            _ => {
+                return Err(format!(
+                    "Invalid import processing stack event: {}",
+                    event.as_str()
+                ))
+            }
         }
         self.validate()
     }
@@ -151,11 +185,8 @@ impl ProcessingStack {
 
 #[pyfunction]
 pub(crate) fn new_import_processing_stack(reference: &str, media_type: &str) -> PyResult<String> {
-    let kind = match media_type {
-        "video" => MediaKind::Video,
-        "report" => MediaKind::Report,
-        _ => return Err(PyValueError::new_err("Unknown import media type")),
-    };
+    let kind = MediaKind::parse(media_type)
+        .ok_or_else(|| PyValueError::new_err("Unknown import media type"))?;
     let stack = ProcessingStack {
         version: 1,
         reference: reference.into(),
@@ -177,10 +208,13 @@ pub(crate) fn transition_import_processing_stack(
     media_id: Option<u64>,
     source_sha256: Option<&str>,
 ) -> PyResult<String> {
+    let parsed_event = ImportEvent::parse(event).ok_or_else(|| {
+        PyValueError::new_err(format!("Invalid import processing stack event: {event}"))
+    })?;
     let mut stack: ProcessingStack =
         serde_json::from_str(payload).map_err(|error| PyValueError::new_err(error.to_string()))?;
     stack
-        .apply(event, media_id, source_sha256)
+        .apply(parsed_event, media_id, source_sha256)
         .map_err(PyValueError::new_err)?;
     serde_json::to_string(&stack).map_err(|error| PyValueError::new_err(error.to_string()))
 }
@@ -202,26 +236,30 @@ mod tests {
     #[test]
     fn restart_preserves_reference_and_remaining_work() {
         let mut state = stack();
-        assert!(state.apply("published", None, None).is_err());
+        assert!(state.apply(ImportEvent::Published, None, None).is_err());
         state
-            .apply("bind_source", None, Some(&"b".repeat(64)))
+            .apply(ImportEvent::BindSource, None, Some(&"b".repeat(64)))
             .unwrap();
         assert!(state
-            .apply("bind_source", None, Some(&"c".repeat(64)))
+            .apply(ImportEvent::BindSource, None, Some(&"c".repeat(64)))
             .is_err());
-        state.apply("prepared", Some(7), None).unwrap();
+        state.apply(ImportEvent::Prepared, Some(7), None).unwrap();
         let mut restored: ProcessingStack =
             serde_json::from_str(&serde_json::to_string(&state).unwrap()).unwrap();
-        restored.apply("prepared", Some(7), None).unwrap();
-        assert!(restored.apply("prepared", Some(8), None).is_err());
-        restored.apply("prioritize", None, None).unwrap();
+        restored
+            .apply(ImportEvent::Prepared, Some(7), None)
+            .unwrap();
+        assert!(restored
+            .apply(ImportEvent::Prepared, Some(8), None)
+            .is_err());
+        restored.apply(ImportEvent::Prioritize, None, None).unwrap();
         assert_eq!(restored.priority, 1);
-        restored.apply("published", None, None).unwrap();
-        restored.apply("completed", None, None).unwrap();
-        restored.apply("completed", None, None).unwrap();
+        restored.apply(ImportEvent::Published, None, None).unwrap();
+        restored.apply(ImportEvent::Completed, None, None).unwrap();
+        restored.apply(ImportEvent::Completed, None, None).unwrap();
         assert_eq!(restored.reference, state.reference);
         assert!(restored.remaining.is_empty());
-        assert!(restored.apply("prioritize", None, None).is_err());
+        assert!(restored.apply(ImportEvent::Prioritize, None, None).is_err());
     }
     #[test]
     fn rejects_corrupt_or_reordered_stack() {
@@ -235,13 +273,35 @@ mod tests {
     #[test]
     fn published_adoption_owns_stage_selection_and_preserves_media_identity() {
         let mut state = stack();
-        state.apply("adopt_published", Some(7), None).unwrap();
+        state
+            .apply(ImportEvent::AdoptPublished, Some(7), None)
+            .unwrap();
         assert_eq!(state.remaining, vec![Stage::CompleteUpload]);
-        state.apply("adopt_published", Some(7), None).unwrap();
-        assert!(state.apply("adopt_published", Some(8), None).is_err());
-        state.apply("completed", None, None).unwrap();
-        state.apply("adopt_published", Some(7), None).unwrap();
-        assert!(state.apply("adopt_published", Some(8), None).is_err());
+        state
+            .apply(ImportEvent::AdoptPublished, Some(7), None)
+            .unwrap();
+        assert!(state
+            .apply(ImportEvent::AdoptPublished, Some(8), None)
+            .is_err());
+        state.apply(ImportEvent::Completed, None, None).unwrap();
+        state
+            .apply(ImportEvent::AdoptPublished, Some(7), None)
+            .unwrap();
+        assert!(state
+            .apply(ImportEvent::AdoptPublished, Some(8), None)
+            .is_err());
         assert!(state.remaining.is_empty());
+    }
+
+    #[test]
+    fn persisted_serde_names_equal_exported_tokens() {
+        for stage in Stage::ALL {
+            let persisted = serde_json::to_string(stage).unwrap();
+            assert_eq!(persisted, format!("\"{}\"", stage.as_str()));
+        }
+        for kind in MediaKind::ALL {
+            let persisted = serde_json::to_string(kind).unwrap();
+            assert_eq!(persisted, format!("\"{}\"", kind.as_str()));
+        }
     }
 }

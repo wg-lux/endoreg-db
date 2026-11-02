@@ -110,9 +110,23 @@ def derive_segment_annotation_status(
     segment_annotations_validated: bool,
     outside_segments_removed: bool,
 ) -> str: ...
+def encrypted_chunk_context(
+    data: bytes, counter: int, ciphertext_length: int, final: bool
+) -> tuple[bytes, bytes]:
+    r"""
+    Validate chunk geometry and return the shared nonce and associated data.
+    """
+    ...
+
 def encryption_status(path: pathlib.Path) -> str: ...
 def is_lx_encrypted_file(path: pathlib.Path) -> bool: ...
 def native_capabilities() -> list[tuple[str, str, str]]: ...
+def native_state_vocabularies() -> list[tuple[str, list[str]]]:
+    r"""
+    Every native state, event and action vocabulary; Python mirrors are verified against it.
+    """
+    ...
+
 def new_import_processing_stack(reference: str, media_type: str) -> str:
     r"""
     Create a durable import processing stack.
@@ -124,6 +138,14 @@ def normalize_frame_task_mode_token(value: str) -> str: ...
 def parse_encrypted_header(data: bytes) -> tuple[int, str, int, bytes, bytes, bytes]:
     r"""
     Validate the shared encrypted header contract.
+    """
+    ...
+
+def parse_encrypted_header_metadata(
+    data: bytes,
+) -> tuple[int, str, int, bytes, bytes, bytes, bytes | None, bytes | None]:
+    r"""
+    Validate the shared encrypted header contract including versioned identifiers.
     """
     ...
 

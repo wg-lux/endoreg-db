@@ -557,10 +557,6 @@ def test_interruption_requires_native_authorization_before_mutation(
     monkeypatch: pytest.MonkeyPatch, cancel_requested: bool, native_refuses: bool
 ) -> None:
     from endoreg_db.services.runtime import lifecycle_state_machine
-    from endoreg_db.utils.rust_backend import (
-        OperationLifecycleEventToken,
-        OperationLifecycleStateToken,
-    )
 
     job = _upload_job(Center.objects.create(name="native-interruption-guard"))
     lease = acquire_upload_job_import_lease(
@@ -577,11 +573,7 @@ def test_interruption_requires_native_authorization_before_mutation(
     native_transition = lifecycle_state_machine.transition_operation_lifecycle_native
     events: list[tuple[str, str]] = []
 
-    def reject_interruption(
-        *,
-        current_state: OperationLifecycleStateToken,
-        event: OperationLifecycleEventToken,
-    ) -> OperationLifecycleStateToken:
+    def reject_interruption(*, current_state: str, event: str) -> str:
         events.append((current_state, event))
         if event == "reconcile_fail":
             if native_refuses:

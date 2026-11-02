@@ -25,6 +25,8 @@ files:
   role: Opt-in function profiling.
 - file: encryption/__init__.py
   role: Encryption utilities.
+- file: encryption/encryption.py
+  role: Shared LXENC v1/v2 stream orchestration and single production encoder; native format rules supply chunk validation, nonces and associated data.
 - file: storage/__init__.py
   role: Encrypted storage integration.
 entrypoints:

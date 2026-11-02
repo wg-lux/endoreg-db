@@ -10,6 +10,10 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: utils/test_encryption_format_v2.py
+  role: LXENC version two terminal-chunk, key-identifier and file-binding guarantees across Python and native readers.
+- file: helpers/legacy_encryption.py
+  role: Version-one LXENC fixture writer proving legacy media stays readable; production writers emit version two.
 - file: environment/test_node_marker_matching.py
   role: Whole-word ai/inference auto-marking in conftest; substrings such as claim or failed stay in the fast lane.
 - file: helpers/video_timeline.py

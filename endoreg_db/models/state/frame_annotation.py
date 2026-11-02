@@ -291,20 +291,22 @@ class FrameAnnotationSourceName(Protocol):
 
 
 class FrameAnnotationStatus(str, Enum):
+    """Mirror of the native ``frame_annotation_status`` vocabulary."""
+
     NOT_STARTED = "not_started"
     FRAMES_UNAVAILABLE = "frames_unavailable"
     PREDICTION_PENDING = "prediction_pending"
     PREDICTION_READY = "prediction_ready"
     ANNOTATION_READY = "annotation_ready"
-    ANNOTATION_IN_PROGRESS = "annotation_in_progress"
     ANNOTATION_COMPLETE = "annotation_complete"
-    STALE = "stale"
 
     def __str__(self) -> str:
         return self.value
 
 
 class FrameTaskMode(str, Enum):
+    """Mirror of the native ``frame_task_mode`` vocabulary."""
+
     RANDOM = "random"
     FILTERED = "filtered"
 
@@ -313,6 +315,8 @@ class FrameTaskMode(str, Enum):
 
 
 class FrameSamplingStrategy(str, Enum):
+    """Mirror of the native ``frame_sampling_strategy`` vocabulary."""
+
     BALANCED = "balanced"
     SEGMENTS = "segments"
     ANNOTATIONS = "annotations"
@@ -329,24 +333,19 @@ SUPPORTED_FRAME_SAMPLING_STRATEGIES = {
 
 
 def normalize_frame_task_mode(value: object) -> FrameTaskMode:
-    parsed = str(value or FrameTaskMode.RANDOM.value).strip().lower()
-    rust_value = normalize_frame_task_mode_token(parsed)
-    if rust_value is not None:
-        return FrameTaskMode(rust_value)
-    if parsed == FrameTaskMode.FILTERED.value:
-        return FrameTaskMode.FILTERED
-    return FrameTaskMode.RANDOM
+    """Absent values select random; unknown task modes raise ValueError in Rust."""
+    return FrameTaskMode(
+        normalize_frame_task_mode_token(str(value or FrameTaskMode.RANDOM.value))
+    )
 
 
 def normalize_frame_sampling_strategy(value: object) -> FrameSamplingStrategy:
-    parsed = str(value or FrameSamplingStrategy.BALANCED.value).strip().lower()
-    rust_value = normalize_frame_sampling_strategy_token(parsed)
-    if rust_value is not None:
-        return FrameSamplingStrategy(rust_value)
-    for strategy in FrameSamplingStrategy:
-        if parsed == strategy.value:
-            return strategy
-    return FrameSamplingStrategy.BALANCED
+    """Absent values select balanced; unknown strategies raise ValueError in Rust."""
+    return FrameSamplingStrategy(
+        normalize_frame_sampling_strategy_token(
+            str(value or FrameSamplingStrategy.BALANCED.value)
+        )
+    )
 
 
 def normalize_frame_annotator(annotator: str | None) -> str | None:

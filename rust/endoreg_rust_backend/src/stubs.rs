@@ -63,6 +63,21 @@ fn stub_type_bool() -> TypeInfo {
     TypeInfo::builtin("bool")
 }
 
+fn stub_type_state_vocabularies() -> TypeInfo {
+    TypeInfo::builtin("list[tuple[str, list[str]]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "native_state_vocabularies",
+        args: &[],
+        r#return: stub_type_state_vocabularies,
+        doc: "Every native state, event and action vocabulary; Python mirrors are verified against it.",
+        signature: Some(""),
+        module: None,
+    }
+}
+
 inventory::submit! {
     PyFunctionInfo {
         name: "native_capabilities",
@@ -426,6 +441,9 @@ fn stub_type_list_bytes() -> TypeInfo {
 fn stub_type_header() -> TypeInfo {
     TypeInfo::builtin("tuple[int, str, int, bytes, bytes, bytes]")
 }
+fn stub_type_header_metadata() -> TypeInfo {
+    TypeInfo::builtin("tuple[int, str, int, bytes, bytes, bytes, bytes | None, bytes | None]")
+}
 inventory::submit! {
     PyFunctionInfo {
         name: "parse_encrypted_header",
@@ -433,6 +451,35 @@ inventory::submit! {
         r#return: stub_type_header,
         doc: "Validate the shared encrypted header contract.",
         signature: Some("data: bytes"),
+        module: None,
+    }
+}
+
+fn stub_type_chunk_context() -> TypeInfo {
+    TypeInfo::builtin("tuple[bytes, bytes]")
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "parse_encrypted_header_metadata",
+        args: &[ArgInfo { name: "data", r#type: stub_type_bytes }],
+        r#return: stub_type_header_metadata,
+        doc: "Validate the shared encrypted header contract including versioned identifiers.",
+        signature: Some("data: bytes"),
+        module: None,
+    }
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "encrypted_chunk_context",
+        args: &[
+            ArgInfo { name: "data", r#type: stub_type_bytes },
+            ArgInfo { name: "counter", r#type: stub_type_int },
+            ArgInfo { name: "ciphertext_length", r#type: stub_type_int },
+            ArgInfo { name: "final", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_chunk_context,
+        doc: "Validate chunk geometry and return the shared nonce and associated data.",
+        signature: Some("data: bytes, counter: int, ciphertext_length: int, final: bool"),
         module: None,
     }
 }

@@ -13,6 +13,8 @@ mod import_state;
 mod lifecycle_state;
 mod pdf;
 mod state_enums;
+mod state_token;
+mod state_vocabulary;
 mod storage_profile;
 mod stubs;
 mod timeline_index;
@@ -39,6 +41,14 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         encrypted_format::parse_encrypted_header,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        encrypted_format::parse_encrypted_header_metadata,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        encrypted_format::encrypted_chunk_context,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(capabilities::native_capabilities, module)?)?;
@@ -126,6 +136,10 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         storage_profile::storage_profile_policy_rows,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        state_vocabulary::native_state_vocabularies,
         module
     )?)?;
     Ok(())

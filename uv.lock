@@ -544,6 +544,15 @@ wheels = [
 ]
 
 [[package]]
+name = "defusedxml"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
+]
+
+[[package]]
 name = "dill"
 version = "0.4.1"
 source = { registry = "https://pypi.org/simple" }
@@ -764,7 +773,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.7.5"
+version = "1.7.7"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -907,8 +916,8 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.1" },
-    { name = "lx-dtypes", specifier = ">=0.6.2" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.2" },
+    { name = "lx-dtypes", specifier = ">=0.6.4" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -1607,7 +1616,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "1.1.1"
+version = "1.1.2"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1639,9 +1648,9 @@ dependencies = [
     { name = "ultralytics" },
     { name = "verovio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/56/88/304ee11429991b8cb98f408392710c36e88825d202d4dfbee1a199c12478/lx_anonymizer-1.1.1.tar.gz", hash = "sha256:9e258222fb502548dba70155fd5978f804499f2437bd1031c9dd8e9c5afbeb78", size = 16382100, upload-time = "2026-10-28T10:05:47.038Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/44/2c/33a2cd871de12274f1376115645e48538ee37477d088636d452ca1a6e280/lx_anonymizer-1.1.2.tar.gz", hash = "sha256:0375030962a0f71f025a55ba1ddfab5fef7faeb3acc964d93acca795c3bb846d", size = 16313157, upload-time = "2026-11-02T11:52:26.614Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/a4/4e/c206cdc9bc0193452e1f99e8ca67c83708af7d6ba605321ac00c2a79c962/lx_anonymizer-1.1.1-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:49ff316a90842c7910f8d2fd744eb72d1409a235f83fbaa7b41410a4f0f1f532", size = 16202694, upload-time = "2026-10-28T10:04:32.389Z" },
+    { url = "https://files.pythonhosted.org/packages/f4/9c/d21049113bd3b658ac30a5ee39fd25d006a9150562ed84fc213072716746/lx_anonymizer-1.1.2-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:f17a8836052d12443377cd2aa77cb504c18767241db002d0f408ffc21bf0dd62", size = 16205823, upload-time = "2026-11-02T11:52:22.065Z" },
 ]
 
 [package.optional-dependencies]
@@ -1654,10 +1663,11 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.6.2"
+version = "0.6.4"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
+    { name = "defusedxml" },
     { name = "django" },
     { name = "django-ninja" },
     { name = "django-stubs", extra = ["compatible-mypy"] },
@@ -1677,11 +1687,12 @@ dependencies = [
     { name = "requests" },
     { name = "scikit-learn" },
     { name = "scipy" },
+    { name = "tomli-w" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/69/f0/b19b96b4c6d18a15fb059c67b4945c1bfba2be9b2ef94fb1a125c671d8c6/lx_dtypes-0.6.2.tar.gz", hash = "sha256:4e4431d1d4848012206734285fb815c51ff53f9af7a20427f300e17e6025a37b", size = 4925723, upload-time = "2026-10-29T09:13:04.294Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/77/18/1206d8ae074498d06db910b0f03b2588ef6db3fd338c36e28efc7e008f4e/lx_dtypes-0.6.4.tar.gz", hash = "sha256:cce41c9b3dab70434c5099708532200d2c293dd31b81206d5e9b43c1a292c2b5", size = 4984769, upload-time = "2026-11-02T11:44:19.819Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/4d/62/b9597efb6f62427d77d46af15cb5722c867b3c2ee193b323e26335c77249/lx_dtypes-0.6.2-py3-none-any.whl", hash = "sha256:ca5727731128ca649d35a238a79bbe792d4ff84cd505461aa8465b7b4febf9c6", size = 1323485, upload-time = "2026-10-29T09:13:01.515Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/2c/4fce903b943ac77a0a9b464883102eb71d4f25b26532b8292667b75d5c76/lx_dtypes-0.6.4-py3-none-any.whl", hash = "sha256:e1626482816994a558404335842a314ce87d5999eea1ffefa7a3b30fba47e236", size = 1398976, upload-time = "2026-11-02T11:44:17.476Z" },
 ]
 
 [[package]]
@@ -3799,6 +3810,15 @@ sdist = { url = "https://files.pythonhosted.org/packages/da/25/b1681c1c30ea3ea6e
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9e/65/c83cb3545a65a9eaa2e13b22c93d5e00bd7624b354a44adbdc93d5d9bd91/tokenizers-0.20.3-cp312-cp312-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:f2b7cb962564785a83dafbba0144ecb7f579f1d57d8c406cdaa7f32fe32f18ad", size = 2997679, upload-time = "2024-11-05T17:31:23.134Z" },
     { url = "https://files.pythonhosted.org/packages/90/af/60c957af8d2244321124e893828f1a4817cde1a2d08d09d423b73f19bd2f/tokenizers-0.20.3-cp312-cp312-musllinux_1_1_x86_64.whl", hash = "sha256:2b6e54e71f84c4202111a489879005cb14b92616a87417f6c102c833af961ea2", size = 9303621, upload-time = "2024-11-05T17:31:27.341Z" },
+]
+
+[[package]]
+name = "tomli-w"
+version = "1.2.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/19/75/241269d1da26b624c0d5e110e8149093c759b7a286138f4efd61a60e75fe/tomli_w-1.2.0.tar.gz", hash = "sha256:2dd14fac5a47c27be9cd4c976af5a12d87fb1f0b4512f81d69cce3b35ae25021", size = 7184, upload-time = "2025-01-15T12:07:24.262Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c7/18/c86eb8e0202e32dd3df50d43d7ff9854f8e0603945ff398974c1d91ac1ef/tomli_w-1.2.0-py3-none-any.whl", hash = "sha256:188306098d013b691fcadc011abd66727d3c414c571bb01b1a174ba8c983cf90", size = 6675, upload-time = "2025-01-15T12:07:22.074Z" },
 ]
 
 [[package]]

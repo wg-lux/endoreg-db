@@ -12,6 +12,8 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
 from endoreg_db import endoreg_rust_backend as native
 from endoreg_db.config.secret_keyring import configured_master_keys
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from tests.helpers.legacy_encryption import legacy_v1_encrypted
 from endoreg_db.utils.encryption.encryption import (
     CHUNK_LENGTH_STRUCT,
     HEADER_LENGTH_STRUCT,
@@ -55,24 +57,56 @@ def keyring(root: Path, active: bytes, retiring: bytes) -> Path:
 
 @pytest.mark.parametrize("key_size", [16, 24, 32])
 @pytest.mark.parametrize("payload_size", [0, 1, 32, 65])
+@pytest.mark.parametrize("version", [1, 2])
 def test_native_single_and_batch_hash_read_retiring_keys(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     key_size: int,
     payload_size: int,
+    version: int,
 ) -> None:
     old, new = bytes(range(key_size)), b"n" * key_size
     manifest = keyring(tmp_path, new, old)
     monkeypatch.setenv("LX_ANNOTATE_MASTER_KEYRING_FILE", str(manifest))
     monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY", "invalid-shadowed-inline-key")
     payload = bytes(range(payload_size))
-    old_file = write_file(tmp_path / "old.media", encrypted(payload, old))
+    old_data = (
+        legacy_v1_encrypted(payload, old) if version == 1 else encrypted(payload, old)
+    )
+    old_file = write_file(tmp_path / "old.media", old_data)
     new_file = write_file(tmp_path / "new.media", encrypted(payload, new))
     results = stable_file_identities([old_file, new_file], worker_count=2)
     assert results is not None
     for path, result in zip([old_file, new_file], results, strict=True):
         assert stable_file_identity(path) == result
         assert result[2] == hashlib.sha256(payload).hexdigest()
+    storage = EncryptedStorage(location=tmp_path)
+    for path in (old_file, new_file):
+        with storage.open(path.name) as source:
+            assert source.read() == payload
+        assert storage.get_plaintext_size(path.name) == payload_size
+        if payload_size:
+            assert (
+                b"".join(
+                    storage.iter_decrypted_range(
+                        path.name, start=0, end=payload_size - 1
+                    )
+                )
+                == payload
+            )
+    if payload_size:
+        assert (
+            b"".join(
+                iter_decrypted_byte_range(
+                    BytesIO(old_data), master_key=old, start=0, end=payload_size - 1
+                )
+            )
+            == payload
+        )
+        assert (
+            native.decrypt_encrypted_file_range(old_file, old, 0, payload_size - 1)
+            == payload
+        )
     snapshot = configured_master_keys()
     assert snapshot is not None and snapshot.readers == (new, old)
     monkeypatch.delenv("LX_ANNOTATE_MASTER_KEYRING_FILE")
@@ -81,13 +115,41 @@ def test_native_single_and_batch_hash_read_retiring_keys(
         stable_file_identity(old_file)
 
 
+@pytest.mark.parametrize("version", [1, 2])
+def test_legacy_header_api_preserves_six_fields(version: int) -> None:
+    data = (
+        legacy_v1_encrypted(b"payload", b"k" * 32)
+        if version == 1
+        else encrypted(b"payload", b"k" * 32)
+    )
+    _, encoded = read_header(BytesIO(data))
+    legacy = native.parse_encrypted_header(encoded)
+    metadata = native.parse_encrypted_header_metadata(encoded)
+    assert len(legacy) == 6 and len(metadata) == 8
+    assert legacy == metadata[:6]
+    assert (metadata[6] is None) == (version == 1)
+    assert (metadata[7] is None) == (version == 1)
+
+
+@pytest.mark.parametrize(
+    "counter,length,final", [(2**32, 48, False), (0, 17, False), (1, 16, True)]
+)
+def test_shared_chunk_context_rejects_invalid_geometry(
+    counter: int, length: int, final: bool
+) -> None:
+    encoded = build_file_header(master_key=b"k" * 32, chunk_size=32).to_bytes()
+    with pytest.raises(ValueError):
+        native.encrypted_chunk_context(encoded, counter, length, final)
+
+
 @pytest.mark.parametrize(
     "field,value",
     [
         ("version", True),
         ("version", "1"),
         ("version", 1.0),
-        ("version", 2),
+        ("version", 1),
+        ("version", 3),
         ("chunk_size", True),
         ("chunk_size", "32"),
         ("chunk_size", 32.0),

@@ -1,46 +1,38 @@
+use crate::state_token::{state_tokens, Vocabulary};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AnonymizationStatus {
-    NotStarted,
-    ExtractingFrames,
-    ProcessingAnonymization,
-    DoneProcessingAnonymization,
-    Validated,
-    Failed,
-    Started,
-    Anonymized,
+state_tokens! {
+    enum AnonymizationStatus {
+        NotStarted => "not_started",
+        ExtractingFrames => "extracting_frames",
+        ProcessingAnonymization => "processing_anonymization",
+        DoneProcessingAnonymization => "done_processing_anonymization",
+        Validated => "validated",
+        Failed => "failed",
+        Started => "started",
+        Anonymized => "anonymized",
+    }
+}
+
+state_tokens! {
+    enum AnonymizationPhase {
+        NotStarted => "not_started",
+        InProgress => "in_progress",
+        AwaitingValidation => "awaiting_validation",
+        Validated => "validated",
+        Failed => "failed",
+    }
+}
+
+pub(crate) fn vocabularies() -> Vec<Vocabulary> {
+    vec![
+        ("anonymization_status", AnonymizationStatus::tokens()),
+        ("anonymization_phase", AnonymizationPhase::tokens()),
+    ]
 }
 
 impl AnonymizationStatus {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::NotStarted => "not_started",
-            Self::ExtractingFrames => "extracting_frames",
-            Self::ProcessingAnonymization => "processing_anonymization",
-            Self::DoneProcessingAnonymization => "done_processing_anonymization",
-            Self::Validated => "validated",
-            Self::Failed => "failed",
-            Self::Started => "started",
-            Self::Anonymized => "anonymized",
-        }
-    }
-
-    fn parse(value: &str) -> Option<Self> {
-        match value {
-            "not_started" => Some(Self::NotStarted),
-            "extracting_frames" => Some(Self::ExtractingFrames),
-            "processing_anonymization" => Some(Self::ProcessingAnonymization),
-            "done_processing_anonymization" => Some(Self::DoneProcessingAnonymization),
-            "validated" => Some(Self::Validated),
-            "failed" => Some(Self::Failed),
-            "started" => Some(Self::Started),
-            "anonymized" => Some(Self::Anonymized),
-            _ => None,
-        }
-    }
-
     /// Exhaustive lifecycle phase; consumers must not keep their own status lists.
     const fn phase(self) -> AnonymizationPhase {
         match self {
@@ -52,27 +44,6 @@ impl AnonymizationStatus {
             Self::DoneProcessingAnonymization => AnonymizationPhase::AwaitingValidation,
             Self::Validated => AnonymizationPhase::Validated,
             Self::Failed => AnonymizationPhase::Failed,
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum AnonymizationPhase {
-    NotStarted,
-    InProgress,
-    AwaitingValidation,
-    Validated,
-    Failed,
-}
-
-impl AnonymizationPhase {
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::NotStarted => "not_started",
-            Self::InProgress => "in_progress",
-            Self::AwaitingValidation => "awaiting_validation",
-            Self::Validated => "validated",
-            Self::Failed => "failed",
         }
     }
 }
@@ -236,21 +207,10 @@ pub(crate) fn anonymization_status_phase(status: &str) -> PyResult<&'static str>
 mod tests {
     use super::{resolve_status, AnonymizationPhase, AnonymizationStateFlags, AnonymizationStatus};
 
-    const ALL_STATUSES: [AnonymizationStatus; 8] = [
-        AnonymizationStatus::NotStarted,
-        AnonymizationStatus::ExtractingFrames,
-        AnonymizationStatus::ProcessingAnonymization,
-        AnonymizationStatus::DoneProcessingAnonymization,
-        AnonymizationStatus::Validated,
-        AnonymizationStatus::Failed,
-        AnonymizationStatus::Started,
-        AnonymizationStatus::Anonymized,
-    ];
-
     #[test]
     fn every_status_round_trips_and_has_one_phase() {
-        for status in ALL_STATUSES {
-            assert_eq!(AnonymizationStatus::parse(status.as_str()), Some(status));
+        for status in AnonymizationStatus::ALL {
+            assert_eq!(AnonymizationStatus::parse(status.as_str()), Some(*status));
         }
         let in_progress = [
             AnonymizationStatus::ExtractingFrames,

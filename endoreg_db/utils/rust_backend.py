@@ -3,12 +3,17 @@ from __future__ import annotations
 import logging
 from importlib import import_module
 from pathlib import Path
+from enum import StrEnum
 from typing import Literal, Protocol, cast
 from collections.abc import Callable, Sequence
 
 from endoreg_db.config.secret_keyring import configured_master_keys
 
 # Native header values have already passed the shared format validator.
+type ParsedEncryptedHeaderMetadata = tuple[
+    int, str, int, bytes, bytes, bytes, bytes | None, bytes | None
+]
+
 type ParsedEncryptedHeader = tuple[int, str, int, bytes, bytes, bytes]
 
 logger = logging.getLogger(__name__)
@@ -70,6 +75,10 @@ _build_frame_records: Callable[..., list[tuple[int, str]]] | None
 _render_single_page_pdf: Callable[[str], bytes] | None
 _stable_file_identity: Callable[[Path, int, list[bytes]], tuple[int, int, str]] | None
 _parse_encrypted_header: Callable[[bytes], ParsedEncryptedHeader] | None
+_parse_encrypted_header_metadata: (
+    Callable[[bytes], ParsedEncryptedHeaderMetadata] | None
+)
+_encrypted_chunk_context: Callable[[bytes, int, int, bool], tuple[bytes, bytes]] | None
 _native_capabilities: Callable[[], list[tuple[str, str, str]]] | None
 _encryption_status: Callable[[Path], str] | None
 _decrypt_encrypted_file_range: Callable[[Path, bytes, int, int], bytes] | None
@@ -94,6 +103,7 @@ _derive_frame_annotation_status: Callable[[bool, bool, bool, bool, bool], str] |
 _normalize_frame_task_mode_token: Callable[[str], str] | None
 _normalize_frame_sampling_strategy_token: Callable[[str], str] | None
 _storage_profile_policy_rows: Callable[[], list[tuple[str, str, str]]] | None
+_native_state_vocabularies: Callable[[], list[tuple[str, list[str]]]] | None
 _rust_backend_available = False
 
 
@@ -189,6 +199,10 @@ try:
     )
     _stable_file_identity = getattr(rust_backend, "stable_file_identity", None)
     _parse_encrypted_header = getattr(rust_backend, "parse_encrypted_header", None)
+    _parse_encrypted_header_metadata = getattr(
+        rust_backend, "parse_encrypted_header_metadata", None
+    )
+    _encrypted_chunk_context = getattr(rust_backend, "encrypted_chunk_context", None)
     _native_capabilities = getattr(rust_backend, "native_capabilities", None)
     _encryption_status = getattr(rust_backend, "encryption_status", None)
     _decrypt_encrypted_file_range = getattr(
@@ -201,6 +215,9 @@ try:
     )
     _storage_profile_policy_rows = getattr(
         rust_backend, "storage_profile_policy_rows", None
+    )
+    _native_state_vocabularies = getattr(
+        rust_backend, "native_state_vocabularies", None
     )
 
     _rust_backend_available = True
@@ -215,6 +232,8 @@ except Exception as exc:
     _render_single_page_pdf = None
     _stable_file_identity = None
     _parse_encrypted_header = None
+    _parse_encrypted_header_metadata = None
+    _encrypted_chunk_context = None
     _native_capabilities = None
     _encryption_status = None
     _decrypt_encrypted_file_range = None
@@ -233,6 +252,7 @@ except Exception as exc:
     _normalize_frame_task_mode_token = None
     _normalize_frame_sampling_strategy_token = None
     _storage_profile_policy_rows = None
+    _native_state_vocabularies = None
     _rust_backend_available = False
 
 RUST_BACKEND_AVAILABLE: bool = _rust_backend_available
@@ -335,6 +355,29 @@ def parse_encrypted_header(data: bytes) -> ParsedEncryptedHeader:
             "Rust parse_encrypted_header is required for encrypted media"
         )
     return _parse_encrypted_header(data)
+
+
+def require_encrypted_format_runtime() -> None:
+    if _parse_encrypted_header_metadata is None or _encrypted_chunk_context is None:
+        raise RuntimeError(
+            "LXENC v2 requires matching Python and native backend artifacts; "
+            "install or rebuild them together before reading or writing media"
+        )
+
+
+def parse_encrypted_header_metadata(data: bytes) -> ParsedEncryptedHeaderMetadata:
+    require_encrypted_format_runtime()
+    assert _parse_encrypted_header_metadata is not None
+    return _parse_encrypted_header_metadata(data)
+
+
+def encrypted_chunk_context(
+    data: bytes, counter: int, ciphertext_length: int, final: bool
+) -> tuple[bytes, bytes]:
+    """Use the native format authority for chunk bounds, nonce and associated data."""
+    require_encrypted_format_runtime()
+    assert _encrypted_chunk_context is not None
+    return _encrypted_chunk_context(data, counter, ciphertext_length, final)
 
 
 def encryption_status(path: Path) -> Literal["encrypted", "plaintext"]:
@@ -559,30 +602,31 @@ def compose_frame_ancestry(
     return _compose_frame_ancestry(source_frame_counts, source_frame_indices)
 
 
-HlsReservationAction = Literal[
-    "queue",
-    "already_ready",
-    "already_in_flight",
-]
-HlsPublicationAction = Literal[
-    "publish_initial",
-    "replace_ready",
-    "defer",
-    "reject",
-]
-HlsReconciliationAction = Literal["preserve", "fail_and_cleanup"]
+class HlsReservationAction(StrEnum):
+    """Mirror of the native ``hls_reservation_action`` vocabulary."""
 
-_HLS_IN_FLIGHT_STATUSES = frozenset({"queued", "materializing", "validated"})
-_HLS_RESERVATION_ACTIONS = frozenset({"queue", "already_ready", "already_in_flight"})
-_HLS_PUBLICATION_ACTIONS = frozenset(
-    {"publish_initial", "replace_ready", "defer", "reject"}
-)
-_HLS_RECONCILIATION_ACTIONS = frozenset({"preserve", "fail_and_cleanup"})
+    ALREADY_READY = "already_ready"
+    ALREADY_IN_FLIGHT = "already_in_flight"
+    QUEUE = "queue"
 
 
-def _validate_hls_in_flight_status(status: str) -> None:
-    if status and status not in _HLS_IN_FLIGHT_STATUSES:
-        raise ValueError(f"unsupported HLS in-flight status: {status}")
+class HlsPublicationAction(StrEnum):
+    """Mirror of the native ``hls_publication_action`` vocabulary."""
+
+    REJECT = "reject"
+    DEFER = "defer"
+    REPLACE_READY = "replace_ready"
+    PUBLISH_INITIAL = "publish_initial"
+
+
+class HlsReconciliationAction(StrEnum):
+    """Mirror of the native ``hls_reconciliation_action`` vocabulary."""
+
+    FAIL_AND_CLEANUP = "fail_and_cleanup"
+    PRESERVE = "preserve"
+
+
+_NATIVE_DECISION_ERRORS = (OSError, RuntimeError, TypeError, ValueError, OverflowError)
 
 
 def derive_hls_reservation_action(
@@ -592,31 +636,16 @@ def derive_hls_reservation_action(
     ready_matches_source: bool,
     force: bool,
 ) -> HlsReservationAction:
-    _validate_hls_in_flight_status(active_status)
-    if active_status and active_is_stale:
-        return "queue"
+    """Native reservation decision; an empty status means no in-flight attempt."""
     if _derive_hls_reservation_action is None:
-        if active_status:
-            return "already_in_flight"
-        if ready_matches_source and not force:
-            return "already_ready"
-        return "queue"
+        raise RuntimeError("Rust derive_hls_reservation_action is unavailable.")
     try:
-        action = str(
-            _derive_hls_reservation_action(
-                active_status,
-                active_is_stale,
-                ready_matches_source,
-                force,
-            )
+        action = _derive_hls_reservation_action(
+            active_status, active_is_stale, ready_matches_source, force
         )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
+    except _NATIVE_DECISION_ERRORS as exc:
         raise RuntimeError(f"Rust derive_hls_reservation_action failed: {exc}") from exc
-    if action not in _HLS_RESERVATION_ACTIONS:
-        raise RuntimeError(
-            f"Rust returned unsupported HLS reservation action: {action}"
-        )
-    return cast(HlsReservationAction, action)
+    return HlsReservationAction(action)
 
 
 def derive_hls_publication_action(
@@ -626,29 +655,16 @@ def derive_hls_publication_action(
     has_active_lease: bool,
     has_ready_generation: bool,
 ) -> HlsPublicationAction:
-    _validate_hls_in_flight_status(attempt_status)
+    """Native publication decision for one validated materialization attempt."""
     if _derive_hls_publication_action is None:
-        if attempt_status != "validated" or not owner_matches:
-            return "reject"
-        if has_active_lease:
-            return "defer"
-        return "replace_ready" if has_ready_generation else "publish_initial"
+        raise RuntimeError("Rust derive_hls_publication_action is unavailable.")
     try:
-        action = str(
-            _derive_hls_publication_action(
-                attempt_status,
-                owner_matches,
-                has_active_lease,
-                has_ready_generation,
-            )
+        action = _derive_hls_publication_action(
+            attempt_status, owner_matches, has_active_lease, has_ready_generation
         )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
+    except _NATIVE_DECISION_ERRORS as exc:
         raise RuntimeError(f"Rust derive_hls_publication_action failed: {exc}") from exc
-    if action not in _HLS_PUBLICATION_ACTIONS:
-        raise RuntimeError(
-            f"Rust returned unsupported HLS publication action: {action}"
-        )
-    return cast(HlsPublicationAction, action)
+    return HlsPublicationAction(action)
 
 
 def derive_hls_reconciliation_action(
@@ -656,134 +672,29 @@ def derive_hls_reconciliation_action(
     status: str,
     is_stale: bool,
 ) -> HlsReconciliationAction:
-    _validate_hls_in_flight_status(status)
+    """Native stale-attempt decision; non-in-flight statuses raise in Rust."""
     if _derive_hls_reconciliation_action is None:
-        return (
-            "fail_and_cleanup"
-            if status in _HLS_IN_FLIGHT_STATUSES and is_stale
-            else "preserve"
-        )
+        raise RuntimeError("Rust derive_hls_reconciliation_action is unavailable.")
     try:
-        action = str(_derive_hls_reconciliation_action(status, is_stale))
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
+        action = _derive_hls_reconciliation_action(status, is_stale)
+    except _NATIVE_DECISION_ERRORS as exc:
         raise RuntimeError(
             f"Rust derive_hls_reconciliation_action failed: {exc}"
         ) from exc
-    if action not in _HLS_RECONCILIATION_ACTIONS:
-        raise RuntimeError(
-            f"Rust returned unsupported HLS reconciliation action: {action}"
-        )
-    return cast(HlsReconciliationAction, action)
+    return HlsReconciliationAction(action)
 
 
-ServiceLifecycleStateToken = Literal[
-    "stopped",
-    "starting",
-    "running",
-    "degraded",
-    "stopping",
-    "failed",
-    "lost",
-]
-ServiceLifecycleEventToken = Literal[
-    "start_requested",
-    "start_succeeded",
-    "start_failed",
-    "health_degraded",
-    "health_restored",
-    "stop_requested",
-    "stop_succeeded",
-    "stop_failed",
-    "runtime_failed",
-    "ownership_lost",
-    "reconcile_stopped",
-]
-OperationLifecycleStateToken = Literal[
-    "queued",
-    "claimed",
-    "running",
-    "retry_wait",
-    "succeeded",
-    "failed",
-    "cancelled",
-    "lost",
-]
-OperationLifecycleEventToken = Literal[
-    "claim",
-    "start",
-    "succeed",
-    "fail",
-    "retry_scheduled",
-    "retry_ready",
-    "retry_requested",
-    "cancel",
-    "ownership_lost",
-    "integrity_lost",
-    "reconcile_retry",
-    "reconcile_fail",
-]
-
-_SERVICE_LIFECYCLE_STATES = frozenset(
-    {
-        "stopped",
-        "starting",
-        "running",
-        "degraded",
-        "stopping",
-        "failed",
-        "lost",
-    }
-)
-_SERVICE_LIFECYCLE_EVENTS = frozenset(
-    {
-        "start_requested",
-        "start_succeeded",
-        "start_failed",
-        "health_degraded",
-        "health_restored",
-        "stop_requested",
-        "stop_succeeded",
-        "stop_failed",
-        "runtime_failed",
-        "ownership_lost",
-        "reconcile_stopped",
-    }
-)
-_OPERATION_LIFECYCLE_STATES = frozenset(
-    {
-        "queued",
-        "claimed",
-        "running",
-        "retry_wait",
-        "succeeded",
-        "failed",
-        "cancelled",
-        "lost",
-    }
-)
-_OPERATION_LIFECYCLE_EVENTS = frozenset(
-    {
-        "claim",
-        "start",
-        "succeed",
-        "fail",
-        "retry_scheduled",
-        "retry_ready",
-        "retry_requested",
-        "cancel",
-        "ownership_lost",
-        "integrity_lost",
-        "reconcile_retry",
-        "reconcile_fail",
-    }
-)
 _LIFECYCLE_STATE_MACHINE_CAPABILITY = "lifecycle_state_machine"
 _LIFECYCLE_STATE_MACHINE_CONTRACT = "lifecycle_state_v3"
 
 
-def _require_lifecycle_state_machine_capability() -> None:
+def _require_lifecycle_transition(
+    transition: Callable[[str, str], str] | None,
+) -> Callable[[str, str], str]:
+    """Both reducers form one capability; either missing disables both."""
     if (
-        _transition_service_lifecycle is None
+        transition is None
+        or _transition_service_lifecycle is None
         or _transition_operation_lifecycle is None
         or not has_native_capability(
             _LIFECYCLE_STATE_MACHINE_CAPABILITY,
@@ -793,56 +704,31 @@ def _require_lifecycle_state_machine_capability() -> None:
         raise RuntimeError(
             "required Rust lifecycle_state_machine capability is unavailable"
         )
+    return transition
 
 
-def transition_service_lifecycle(
-    *,
-    current_state: ServiceLifecycleStateToken,
-    event: ServiceLifecycleEventToken,
-) -> ServiceLifecycleStateToken:
-    if current_state not in _SERVICE_LIFECYCLE_STATES:
-        raise ValueError(f"unsupported service lifecycle state: {current_state}")
-    if event not in _SERVICE_LIFECYCLE_EVENTS:
-        raise ValueError(f"unsupported service lifecycle event: {event}")
-    _require_lifecycle_state_machine_capability()
-    assert _transition_service_lifecycle is not None
+def transition_service_lifecycle(*, current_state: str, event: str) -> str:
+    """Native service transition; unknown tokens and impossible transitions raise ValueError."""
+    transition = _require_lifecycle_transition(_transition_service_lifecycle)
     try:
-        target_state = str(_transition_service_lifecycle(current_state, event))
+        return transition(current_state, event)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
     except (OSError, RuntimeError, TypeError, OverflowError) as exc:
         raise RuntimeError(f"Rust transition_service_lifecycle failed: {exc}") from exc
-    if target_state not in _SERVICE_LIFECYCLE_STATES:
-        raise RuntimeError(
-            f"Rust returned unsupported service lifecycle state: {target_state}"
-        )
-    return cast(ServiceLifecycleStateToken, target_state)
 
 
-def transition_operation_lifecycle(
-    *,
-    current_state: OperationLifecycleStateToken,
-    event: OperationLifecycleEventToken,
-) -> OperationLifecycleStateToken:
-    if current_state not in _OPERATION_LIFECYCLE_STATES:
-        raise ValueError(f"unsupported operation lifecycle state: {current_state}")
-    if event not in _OPERATION_LIFECYCLE_EVENTS:
-        raise ValueError(f"unsupported operation lifecycle event: {event}")
-    _require_lifecycle_state_machine_capability()
-    assert _transition_operation_lifecycle is not None
+def transition_operation_lifecycle(*, current_state: str, event: str) -> str:
+    """Native operation transition; unknown tokens and impossible transitions raise ValueError."""
+    transition = _require_lifecycle_transition(_transition_operation_lifecycle)
     try:
-        target_state = str(_transition_operation_lifecycle(current_state, event))
+        return transition(current_state, event)
     except ValueError as exc:
         raise ValueError(str(exc)) from exc
     except (OSError, RuntimeError, TypeError, OverflowError) as exc:
         raise RuntimeError(
             f"Rust transition_operation_lifecycle failed: {exc}"
         ) from exc
-    if target_state not in _OPERATION_LIFECYCLE_STATES:
-        raise RuntimeError(
-            f"Rust returned unsupported operation lifecycle state: {target_state}"
-        )
-    return cast(OperationLifecycleStateToken, target_state)
 
 
 def derive_segment_annotation_status(
@@ -850,21 +736,14 @@ def derive_segment_annotation_status(
     segment_annotations_created: bool,
     segment_annotations_validated: bool,
     outside_segments_removed: bool,
-) -> str | None:
+) -> str:
     if _derive_segment_annotation_status is None:
-        return None
-    try:
-        return _derive_segment_annotation_status(
-            segment_annotations_created,
-            segment_annotations_validated,
-            outside_segments_removed,
-        )
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust derive_segment_annotation_status failed, falling back to Python: %s",
-            exc,
-        )
-        return None
+        raise RuntimeError("Rust derive_segment_annotation_status is unavailable.")
+    return _derive_segment_annotation_status(
+        segment_annotations_created,
+        segment_annotations_validated,
+        outside_segments_removed,
+    )
 
 
 def derive_frame_annotation_status(
@@ -886,30 +765,33 @@ def derive_frame_annotation_status(
     )
 
 
-def normalize_frame_task_mode_token(value: str) -> str | None:
+def normalize_frame_task_mode_token(value: str) -> str:
+    """Return the canonical token; unknown task modes raise ValueError in Rust."""
     if _normalize_frame_task_mode_token is None:
-        return None
-    try:
-        return _normalize_frame_task_mode_token(value)
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust normalize_frame_task_mode_token failed, falling back to Python: %s",
-            exc,
-        )
-        return None
+        raise RuntimeError("Rust normalize_frame_task_mode_token is unavailable.")
+    return _normalize_frame_task_mode_token(value)
 
 
-def normalize_frame_sampling_strategy_token(value: str) -> str | None:
+def normalize_frame_sampling_strategy_token(value: str) -> str:
+    """Return the canonical token; unknown strategies raise ValueError in Rust."""
     if _normalize_frame_sampling_strategy_token is None:
-        return None
-    try:
-        return _normalize_frame_sampling_strategy_token(value)
-    except (OSError, RuntimeError, TypeError, ValueError, OverflowError) as exc:
-        logger.warning(
-            "Rust normalize_frame_sampling_strategy_token failed, falling back to Python: %s",
-            exc,
+        raise RuntimeError(
+            "Rust normalize_frame_sampling_strategy_token is unavailable."
         )
-        return None
+    return _normalize_frame_sampling_strategy_token(value)
+
+
+def native_state_vocabularies() -> dict[str, frozenset[str]]:
+    """Every native state, event and action vocabulary, keyed by vocabulary name."""
+    if _native_state_vocabularies is None or not has_native_capability(
+        "state_vocabulary", "state_vocabulary_v1"
+    ):
+        raise RuntimeError("required Rust state_vocabulary capability is unavailable")
+    rows = _native_state_vocabularies()
+    vocabularies = {name: frozenset(tokens) for name, tokens in rows}
+    if len(vocabularies) != len(rows):
+        raise RuntimeError("Rust returned duplicate state vocabulary names")
+    return vocabularies
 
 
 def storage_profile_policy_rows() -> list[tuple[str, str, str]] | None:

@@ -754,11 +754,12 @@ def _reserve_video_upload_import_handoff(
             return job, None, False
 
         job.refresh_from_db()
+        from endoreg_db.schemas.import_processing import ImportProcessingEvent
         from endoreg_db.services.imports.processing import (
             update_import_processing_stack,
         )
 
-        update_import_processing_stack(job.pk, "validate")
+        update_import_processing_stack(job.pk, ImportProcessingEvent.VALIDATE)
         mark_upload_job_processing(job)
         _update_upload_provenance(
             job,
@@ -1703,11 +1704,12 @@ def process_upload_job(job_id: str) -> bool:
 
     if job.content_type in {"application/pdf", "text/plain"}:
         from endoreg_db.services.jobs.report_llm_jobs import dispatch_report_llm_import
+        from endoreg_db.schemas.import_processing import ImportProcessingEvent
         from endoreg_db.services.imports.processing import (
             update_import_processing_stack,
         )
 
-        update_import_processing_stack(job.pk, "validate")
+        update_import_processing_stack(job.pk, ImportProcessingEvent.VALIDATE)
         mark_upload_job_processing(job)
         provenance = _update_upload_provenance(job, stored_upload_path=job.file.name)
         provenance.setdefault("stored_upload_path", job.file.name)

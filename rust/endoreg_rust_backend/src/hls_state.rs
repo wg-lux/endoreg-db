@@ -1,21 +1,92 @@
+use crate::state_token::{state_tokens, Vocabulary};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-const QUEUED: &str = "queued";
-const MATERIALIZING: &str = "materializing";
-const VALIDATED: &str = "validated";
-
-fn is_in_flight(status: &str) -> bool {
-    matches!(status, QUEUED | MATERIALIZING | VALIDATED)
+state_tokens! {
+    /// Persisted artifact statuses that still hold one materialization attempt.
+    enum InFlightStatus {
+        Queued => "queued",
+        Materializing => "materializing",
+        Validated => "validated",
+    }
 }
 
-fn validate_optional_in_flight_status(status: &str) -> PyResult<()> {
-    if status.is_empty() || is_in_flight(status) {
-        return Ok(());
+state_tokens! {
+    enum ReservationAction {
+        AlreadyReady => "already_ready",
+        AlreadyInFlight => "already_in_flight",
+        Queue => "queue",
     }
-    Err(PyValueError::new_err(format!(
-        "unsupported HLS in-flight status: {status}"
-    )))
+}
+
+state_tokens! {
+    enum PublicationAction {
+        Reject => "reject",
+        Defer => "defer",
+        ReplaceReady => "replace_ready",
+        PublishInitial => "publish_initial",
+    }
+}
+
+state_tokens! {
+    enum ReconciliationAction {
+        FailAndCleanup => "fail_and_cleanup",
+        Preserve => "preserve",
+    }
+}
+
+pub(crate) fn vocabularies() -> Vec<Vocabulary> {
+    vec![
+        ("hls_in_flight_status", InFlightStatus::tokens()),
+        ("hls_reservation_action", ReservationAction::tokens()),
+        ("hls_publication_action", PublicationAction::tokens()),
+        ("hls_reconciliation_action", ReconciliationAction::tokens()),
+    ]
+}
+
+/// An empty token means no in-flight attempt; any other token must be in flight.
+fn parse_optional_in_flight_status(status: &str) -> PyResult<Option<InFlightStatus>> {
+    if status.is_empty() {
+        return Ok(None);
+    }
+    InFlightStatus::parse(status)
+        .map(Some)
+        .ok_or_else(|| PyValueError::new_err(format!("unsupported HLS in-flight status: {status}")))
+}
+
+fn reservation_action(
+    active_status: Option<InFlightStatus>,
+    active_is_stale: bool,
+    ready_matches_source: bool,
+    force: bool,
+) -> ReservationAction {
+    match active_status {
+        None if ready_matches_source && !force => ReservationAction::AlreadyReady,
+        Some(_) if !active_is_stale => ReservationAction::AlreadyInFlight,
+        _ => ReservationAction::Queue,
+    }
+}
+
+fn publication_action(
+    attempt_status: Option<InFlightStatus>,
+    owner_matches: bool,
+    has_active_lease: bool,
+    has_ready_generation: bool,
+) -> PublicationAction {
+    let can_publish = attempt_status == Some(InFlightStatus::Validated) && owner_matches;
+    match (can_publish, has_active_lease) {
+        (false, _) => PublicationAction::Reject,
+        (true, true) => PublicationAction::Defer,
+        (true, false) if has_ready_generation => PublicationAction::ReplaceReady,
+        (true, false) => PublicationAction::PublishInitial,
+    }
+}
+
+fn reconciliation_action(status: Option<InFlightStatus>, is_stale: bool) -> ReconciliationAction {
+    if status.is_some() && is_stale {
+        return ReconciliationAction::FailAndCleanup;
+    }
+    ReconciliationAction::Preserve
 }
 
 #[pyfunction]
@@ -25,12 +96,8 @@ pub(crate) fn derive_hls_reservation_action(
     ready_matches_source: bool,
     force: bool,
 ) -> PyResult<&'static str> {
-    validate_optional_in_flight_status(active_status)?;
-    Ok(match active_status {
-        "" if ready_matches_source && !force => "already_ready",
-        _ if !active_status.is_empty() && !active_is_stale => "already_in_flight",
-        _ => "queue",
-    })
+    let active = parse_optional_in_flight_status(active_status)?;
+    Ok(reservation_action(active, active_is_stale, ready_matches_source, force).as_str())
 }
 
 #[pyfunction]
@@ -40,14 +107,14 @@ pub(crate) fn derive_hls_publication_action(
     has_active_lease: bool,
     has_ready_generation: bool,
 ) -> PyResult<&'static str> {
-    validate_optional_in_flight_status(attempt_status)?;
-    let can_publish = attempt_status == VALIDATED && owner_matches;
-    Ok(match (can_publish, has_active_lease) {
-        (false, _) => "reject",
-        (true, true) => "defer",
-        (true, false) if has_ready_generation => "replace_ready",
-        _ => "publish_initial",
-    })
+    let attempt = parse_optional_in_flight_status(attempt_status)?;
+    Ok(publication_action(
+        attempt,
+        owner_matches,
+        has_active_lease,
+        has_ready_generation,
+    )
+    .as_str())
 }
 
 #[pyfunction]
@@ -55,11 +122,8 @@ pub(crate) fn derive_hls_reconciliation_action(
     status: &str,
     is_stale: bool,
 ) -> PyResult<&'static str> {
-    validate_optional_in_flight_status(status)?;
-    if is_in_flight(status) && is_stale {
-        return Ok("fail_and_cleanup");
-    }
-    Ok("preserve")
+    let parsed = parse_optional_in_flight_status(status)?;
+    Ok(reconciliation_action(parsed, is_stale).as_str())
 }
 
 #[cfg(test)]

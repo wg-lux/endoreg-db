@@ -15,6 +15,9 @@ entrypoints:
 - name: apply_deployment
   file: deployment_setup.py
   purpose: Apply the reviewed deployment plan under catalog and local-center ownership locks.
+- name: verify_native_state_vocabularies
+  file: native_state_vocabulary.py
+  purpose: Called from EndoregDbConfig.ready; refuses to run when a Python mirror differs from Rust.
 files:
 - file: __init__.py
   role: Deployment, Betriebsbereitschaft und Dienstkoordination.
@@ -24,6 +27,8 @@ files:
   role: Exports check_environment_readiness, assert_environment_readiness.
 - file: lifecycle_state_machine.py
   role: Exports transition_service_lifecycle, transition_operation_lifecycle, reduce_operation_lifecycle.
+- file: native_state_vocabulary.py
+  role: Registry of Python mirrors for every native Rust vocabulary; verify_native_state_vocabularies fails startup on drift.
 - file: offline_batch_runner.py
   role: Exports load_offline_batch_runner_config, run_offline_batch.
 - file: polling_coordinator.py
@@ -62,3 +67,4 @@ tests:
   - tests/services/test_reconciliation_service.py
   - tests/services/test_disk_pressure_cleanup_contract.py
   - tests/services/test_deployment_setup.py
+  - tests/rust_backend/test_state_enum_parity.py

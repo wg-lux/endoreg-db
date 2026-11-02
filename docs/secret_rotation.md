@@ -1,5 +1,31 @@
 # Online rotation of media, identity and Django signing secrets
 
+## Choose your task
+
+For media files, start with the [v1 upgrade and resume procedure](#v1-machines-and-interrupted-media-migrations).
+For patient identity or signing-key changes, use the [key rotation guide](key_rotation.md).
+For implementation details, see [format versions](#format-versions).
+These are separate operations; a media-format upgrade does not require changing
+patient identity salts or disk encryption.
+
+Application users do not need to run these commands. Ask the operator when
+imports and editing can resume. If media becomes unreadable, report the time,
+action and non-sensitive error through your approved support channel; preserve
+the existing record and file. Do not send patient data or keys in support logs.
+
+First-time administrators should arrange the production service account,
+environment and tested recovery copy with their deployment maintainer before
+running the procedure. A development shell is not the production environment.
+
+| Term | Meaning here |
+| --- | --- |
+| Reader / writer | A web process, worker or tool that reads / creates stored files. |
+| Keyring | A private file listing which existing key files may be used. It is not a new key. |
+| Active / retiring key | The key used for new writes / an older key retained to read existing data. |
+| Preview / apply | Check existing files without rewriting them / explicitly rewrite eligible files. |
+| HLS | Segmented video used for streaming; its keys and retained generations also need checking. |
+| Lease | A temporary reservation while media is in use; wait for it to finish before retrying. |
+
 ## Central identity delivery is disabled
 
 Identity salts remain on their originating node. The runtime rejects injected
@@ -27,7 +53,7 @@ Manifests use YAML with integer `schema_version: 1`; unknown fields are rejected
 
 | Environment setting | Purpose |
 | --- | --- |
-| `LX_ANNOTATE_MASTER_KEYRING_FILE` | Media keyring; overrides the single master-key configuration while set |
+| `LX_ANNOTATE_MASTER_KEYRING_FILE` | Media keyring; takes precedence over the private master-key file. Inline material remains test-profile only. |
 | `DJANGO_IDENTITY_SALT_KEYRING_FILE` | Identity migration; ordinary `DJANGO_SALT_FILE` remains valid without a manifest |
 | `DJANGO_SIGNING_KEYRING_FILE` | `SECRET_KEY` and `SECRET_KEY_FALLBACKS` in `endoreg_db.config.settings.prod` |
 
@@ -68,6 +94,76 @@ This requires the updated command: endoreg-db 1.3.8 already committed partial
 results without that flag. Add `--review-file` with an absolute private YAML path
 when supplying reviewed original identities.
 
+## V1 machines and interrupted media migrations
+
+LXENC v1/v2 identifies the file format; the `LXENC01` prefix and the package's
+version number do not identify it. Mixed v1/v2 files are supported by the new
+readers. This procedure does not convert or format LUKS disks.
+
+1. Retain a tested encrypted database/media backup and every key needed to read
+   it. Record the current active and retiring generations without exposing keys.
+   For v1 data, compare against independent expected hashes or an authenticated
+   inventory: a successful read alone cannot detect historical whole-chunk loss.
+2. Finish or stop any existing rotation job cleanly. Coordinate rollout so old
+   readers cannot receive v2 writes: deploy the matching Python package and
+   native extension to web, workers, maintenance and other readers, then resume
+   writes. If coordinated rollout is unavailable, pause writers for that window.
+   Verify the deployed artifact includes the v2 fixes; no minimum published
+   release is asserted by these unreleased notes.
+3. Configure `LX_ANNOTATE_MASTER_KEYRING_FILE` with the existing active key and
+   all required retiring keys using the private manifest contract above. For a
+   format-only upgrade, keep the existing key active; no new key is required.
+   Confirm every process uses the intended manifest. Do not overwrite key files.
+4. In the installed production service environment, as its service user, run:
+
+   Preview first:
+
+   ```sh
+   python -m django rotate_storage_secrets --include-hls
+   ```
+
+   Run apply only after reviewing the preview and recovery evidence. Preview
+   authenticates files; it does not rewrite them or prove all files are v2.
+   Keep space for a replacement encrypted file; HLS regeneration may need more.
+
+   ```sh
+   python -m django rotate_storage_secrets --include-hls --apply
+   ```
+5. For an interrupted or partial migration, keep the same intended keyring and
+   published files. Review the reported counts and protected `.stage` artifacts;
+   do not delete staging blindly or promote it manually. Resolve missing or
+   unmanaged files and failed authentication using the verified recovery copy.
+   Let active media leases finish, then repeat preview and apply. Already-current
+   v2 files remain unchanged; v1 files and retiring-key files are processed.
+6. Repeat preview and verify old/new media reads, streaming and HLS. Account for
+   replicas and retained backups before approving any key retirement. Keep
+   recovery keys for every retained backup. Do not downgrade to v1-only readers
+   after v2 writes: code rollback cannot reverse ciphertext or database changes.
+
+For an interrupted host-storage migration, retain its separate LuxNix plan,
+state and recovery media and follow the LuxNix operator checklist. Do not rerun
+formatting or change disk-encryption mode to repair an application read failure.
+
+## Read the media migration result
+
+Read the printed counts and final error or success message before deciding what
+to do next. An incomplete run can still have safely migrated some files.
+
+| Result | Next action |
+| --- | --- |
+| `authenticated` / `rotated` | Files checked / replaced in this run. Zero replacements can be normal on a repeat run; preview alone does not establish v2 completion. |
+| `deferred` | Let playback or other active work finish, then retry. |
+| `failed` or `missing_registered_files` | Have the operator investigate the named failure or missing file and its recovery copy. Do not generate a new key. |
+| `unmanaged_encrypted` or `staging_files_pending_review` | Ask the storage maintainer to identify ownership and review retained files; do not delete or promote them manually. |
+| `outside_application_encryption` | Have the maintainer confirm the separate filesystem protection and intended storage policy for these files. |
+| `hls_pending` or `historical_hls_keys_pending_retirement` | Review streaming generations separately before retiring keys, even if the file check succeeds. |
+
+Completion requires a successful repeat preview, working old/new media reads,
+and review of HLS, replicas and backups. A successful file command alone is not
+permission to delete recovery material. For escalation, retain the exact command,
+installed version, counts and non-secret error; keep credentials and clinical
+data out of shared diagnostics.
+
 ## Media replacement contract
 
 - Only registered LXENC01 files inside protected storage are replaced automatically.
@@ -82,9 +178,9 @@ when supplying reviewed original identities.
 - Preserve the source until verification. Stage beside it on the same protected
   filesystem, with capacity for at least one additional encrypted file. Replace
   the published path atomically; open readers retain their file generation.
-- In keyring mode, range readers use the Python reader with a fixed descriptor
-  rather than reopening through the native reader. A killed process may leave
-  encrypted `.stage` files; inspect these before retiring keys. No automatic
+- Storage range readers keep one open file descriptor throughout each response.
+  A killed process may leave encrypted `.stage` files; inspect these before
+  retiring keys. No automatic
   destructive cleanup is implied.
 - HTTP Live Streaming (HLS) receives new keys and segments through its validated
   generation workflow. This may transcode and has no constant-time guarantee;
@@ -211,9 +307,15 @@ return plus line feed is allowed; other whitespace and extra lines are not trimm
 Single-file and keyring identity/signing inputs share validators. Master material
 is strictly Base64-decoded in both paths.
 
-Source precedence remains: master keyring, inline master, master file; identity
-keyring, salt file, optional inline salt; signing keyring, signing file, inline
-signing key. Production signing keys require 32 characters and cannot start with
+Production media keys come from a private master-keyring manifest or a private
+master-key file. Inline `LX_ANNOTATE_MASTER_KEY` material is accepted only in an
+explicit test settings profile; production mode rejects it even if a valid file
+or keyring is also configured. Running under pytest alone does not authorize
+inline keys, and production settings validate this restriction at startup.
+Within an explicit test profile, source precedence remains master keyring, inline
+master, master file. Identity precedence remains keyring, salt file, optional
+inline salt; signing precedence remains keyring, signing file, inline signing
+key. Production signing keys require 32 characters and cannot start with
 `django-insecure-`. The health check fingerprints `settings.SECRET_KEY`; replacing
 a file changes that only after settings reload. Missing production signing keys
 also fail under pytest; development/test profiles retain their explicit test keys.
@@ -234,16 +336,57 @@ reads still fill the prefix; nonblocking probe opens prevent named pipes from
 blocking a worker. Parsers must still validate headers and authenticate chunks.
 
 Python, native range and native hash readers share `encrypted_format.rs`: headers
-are at most 64 KiB, chunk sizes are positive integers, version is exactly 1, the
-algorithm and fields are known and unique, Base64 is canonical URL-safe, and
-key/nonce lengths are fixed. Extra or coerced values fail. Complete readers
-authenticate each bounded chunk; only the final chunk may be shorter. Incomplete
-length fields fail. Python fills short record reads; indexing validates declared
+are at most 64 KiB, chunk sizes are positive integers, version is exactly 1 or 2
+with its matching algorithm, each version's fields are known, unique and complete,
+Base64 is canonical URL-safe, and key/nonce/identifier lengths are fixed. Extra or
+coerced values fail. Complete readers authenticate each bounded chunk; only the
+final chunk may be shorter. Incomplete or unbounded length fields fail before any
+chunk is decrypted. Python fills short record reads; indexing validates declared
 geometry and file bounds. Even empty-file size queries authenticate the wrapped key.
 
-LXENC01 does not authenticate a final total length. Removing whole trailing chunks
-requires an independent expected plaintext hash or inventory reference to detect.
-Range readers authenticate requested chunks rather than the entire file.
+### Format versions
+
+Backward compatibility means the updated runtime reads existing v1 files without
+rewriting them. It does not mean v1-only software can read v2 files. Install the
+Python package and native extension together; incompatible native artifacts are
+rejected explicitly before a new file is written. The native six-field header
+parser API remains available; extended metadata uses the same underlying parser.
+
+Storage writes, repair and rotation share one Python encoder. Python streaming
+and native range/hash readers use the Rust header and chunk contract, including
+chunk bounds, nonces and authenticated data. Their I/O loops and cryptographic
+library calls remain separate and are checked with common v1/v2 fixtures. HLS
+key wrapping and transfer envelopes are different protocols, not alternate LXENC
+file implementations.
+
+Writers, including rotation replacements, emit version 2 (`AESGCM-chunked-v2`).
+Version 1 remains readable. To upgrade registered legacy files, run the media
+preview, then media apply above; keep an independently verified encrypted backup
+and its keys. Apply upgrades v1 even with an unchanged active key. Rerun after an
+interruption; verified v2 files using the active key remain unchanged. Deploy v2
+readers to every consumer before applying; a software rollback still needs v2
+reading support once v2 files have been written.
+
+| Property | Version 1 | Version 2 |
+| --- | --- | --- |
+| End of file | Not authenticated | Every chunk's associated data records whether it is final; an empty file is one empty terminal chunk |
+| Wrapping-key selection | Trial decryption with each configured generation | `key_id`, a domain-separated SHA-256 prefix of the master key, selects exactly one generation |
+| Wrapped data key | Constant associated data | Bound to `key_id` and a random 128-bit `file_id` |
+
+Version 2 therefore detects removed or appended whole chunks and a header without
+its terminal chunk in every complete reader. `EncryptedStorage` authenticates the
+terminal chunk when it caches a file's layout. Python and native range readers
+authenticate that terminal chunk before returning any requested bytes, including
+early ranges. Storage responses verify and read the same open file generation.
+
+Version 1 does not authenticate a final total length. Removing whole trailing
+chunks requires an independent expected plaintext hash or inventory reference to
+detect.
+
+`file_id` is authenticated but not yet stored by models. Swapping complete
+encrypted files between records therefore stays undetected until a record stores
+and compares the expected `file_id`. Moving a file does not invalidate it: no
+path is bound, because ingest and quarantine move protected payloads.
 
 The Python adapter resolves `configured_master_keys` once per operation or batch
 and passes active and explicitly retiring keys as bytes to

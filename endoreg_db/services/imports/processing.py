@@ -7,7 +7,11 @@ if TYPE_CHECKING:
     from endoreg_db.import_files.context.import_context import ImportContext
 from django.db import transaction
 from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.schemas.import_processing import ImportProcessingStack
+from endoreg_db.schemas.import_processing import (
+    ImportMediaKind,
+    ImportProcessingEvent,
+    ImportProcessingStack,
+)
 from endoreg_db.utils.rust_backend import (
     new_import_processing_stack,
     import_processing_stack_transition,
@@ -26,17 +30,18 @@ def import_source_hash(job: UploadJob) -> str:
 @transaction.atomic
 def update_import_processing_stack(
     job_id: UUID,
-    event: str,
+    event: ImportProcessingEvent,
     *,
     media_id: int | None = None,
     source_sha256: str | None = None,
 ) -> ImportProcessingStack:
+    """Apply one native stack event; the mirror is verified against Rust at startup."""
     job = UploadJob.objects.select_for_update().get(pk=job_id)
     if job.processing_stack is None:
         if job.content_type.startswith("video/"):
-            kind = "video"
+            kind = ImportMediaKind.VIDEO
         elif job.content_type in {"application/pdf", "text/plain"}:
-            kind = "report"
+            kind = ImportMediaKind.REPORT
         else:
             raise ValueError(
                 "Upload media type does not support an import processing stack"
@@ -68,23 +73,27 @@ def initialize_import_processing_stack(
     with ctx.owned_mutation():
         if ctx.file_hash is not None:
             return update_import_processing_stack(
-                job_id, "bind_source", source_sha256=ctx.file_hash
+                job_id, ImportProcessingEvent.BIND_SOURCE, source_sha256=ctx.file_hash
             )
-        return update_import_processing_stack(job_id, "validate")
+        return update_import_processing_stack(job_id, ImportProcessingEvent.VALIDATE)
 
 
 @transaction.atomic
 def record_published_import(job_id: UUID, *, media_id: int, source_sha256: str) -> None:
     """Adopt an independently verified published artifact through native events."""
-    update_import_processing_stack(job_id, "bind_source", source_sha256=source_sha256)
-    update_import_processing_stack(job_id, "adopt_published", media_id=media_id)
+    update_import_processing_stack(
+        job_id, ImportProcessingEvent.BIND_SOURCE, source_sha256=source_sha256
+    )
+    update_import_processing_stack(
+        job_id, ImportProcessingEvent.ADOPT_PUBLISHED, media_id=media_id
+    )
 
 
 def complete_import_processing_stack(job: UploadJob) -> None:
     """Called in the existing fenced UploadJob completion transaction."""
     current = UploadJob.objects.only("processing_stack").get(pk=job.pk)
     if current.processing_stack is not None:
-        stack = update_import_processing_stack(job.pk, "completed")
+        stack = update_import_processing_stack(job.pk, ImportProcessingEvent.COMPLETED)
         job.processing_stack = stack.model_dump(mode="json")
 
 
@@ -101,6 +110,6 @@ def prioritize_checkpoint(job: UploadJob) -> bool:
         job, "Prioritized checkpoint recovery.", delay_seconds=1
     ):
         return False
-    stack = update_import_processing_stack(job.pk, "prioritize")
+    stack = update_import_processing_stack(job.pk, ImportProcessingEvent.PRIORITIZE)
     job.processing_stack = stack.model_dump(mode="json")
     return True
