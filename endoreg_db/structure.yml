@@ -40,8 +40,6 @@ files:
   role: Add center-scoped historical patient hash aliases without backfilling unauthenticated identity links.
 - file: tasks.py
   role: Celery task adapters; there is no tasks directory.
-- file: api_urls.py
-  role: Public API routing composition.
 - file: root_urls.py
   role: Deployment URL root.
 - file: celery.py
