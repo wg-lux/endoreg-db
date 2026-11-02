@@ -9,6 +9,8 @@ responsibilities:
 boundaries:
 - Do not place secrets, patient information or parallel readiness records in messages.
 files:
+- file: reports/audit_followup_handoffs.md
+  role: Bounded audit follow-up assignments with ownership, acceptance and verification; feature YAML retains readiness authority.
 - file: AnnotationDatasetExportJobs.yml
   role: Authoritative browser dataset export job scope, acceptance criteria and readiness evidence.
 - file: reports/retired_media_paths_removal.yml
