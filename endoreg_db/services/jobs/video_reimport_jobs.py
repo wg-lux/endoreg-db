@@ -22,6 +22,9 @@ from lx_dtypes.models.contracts.video_reimport import (
 from lx_dtypes.models.contracts.json_types import JsonValue
 
 from endoreg_db.services.jobs.timeouts import is_processing_timeout
+from endoreg_db.services.jobs.processing_history import (
+    set_history_task_id as _set_history_task_id,
+)
 from endoreg_db.services.jobs.error_handling import is_insufficient_storage
 from endoreg_db.services.jobs.video_reimport_budget import (
     MAX_REIMPORT_SOFT_SECONDS,
@@ -441,13 +444,6 @@ def _reserve_reimport_history(
             config=config.model_dump(mode="json"),
         )
         return history, RESERVATION_CREATED
-
-
-def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
-    if history.task_id == task_id:
-        return
-    history.task_id = task_id
-    history.save(update_fields=["task_id"])
 
 
 def _get_processing_history(

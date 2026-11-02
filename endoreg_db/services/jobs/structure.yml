@@ -4,6 +4,7 @@ path: endoreg_db/services/jobs
 parent: ../structure.yml
 summary: Background-work admission, dispatch, execution ownership and recovery.
 responsibilities:
+- Persist shared video processing-history task identities without redundant writes.
 - Admit and dispatch background workloads with ownership, budgets and transport checks.
 - Recover stale work and clean recorded task artifacts.
 boundaries:
@@ -16,6 +17,8 @@ entrypoints:
   file: heavy_jobs.py
   purpose: Reject broker transport that violates the selected workload security requirement.
 files:
+- file: processing_history.py
+  role: Idempotent task_id-only persistence shared by temporal inference, post-validation rebuild and video reimport.
 - file: __init__.py
   role: Centralized service modules for background and heavy job orchestration.
 - file: error_handling.py

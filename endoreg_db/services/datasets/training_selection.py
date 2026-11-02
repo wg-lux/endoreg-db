@@ -17,6 +17,9 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.services.media.frame_intervals import (
+    merge_half_open_frame_intervals as _merge_frame_intervals,
+)
 from endoreg_db.services.annotations.segment_identity import (
     MANUAL_ANNOTATION_INFORMATION_SOURCE_NAMES,
     manual_frame_annotation_preference_filter,
@@ -128,22 +131,6 @@ def infer_training_labelset(
         )
 
     return LabelSet.objects.get(id=next(iter(common_ids)))
-
-
-def _merge_frame_intervals(
-    intervals: list[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    if not intervals:
-        return []
-    intervals.sort()
-    merged: list[tuple[int, int]] = [intervals[0]]
-    for start_frame, end_frame in intervals[1:]:
-        previous_start, previous_end = merged[-1]
-        if start_frame <= previous_end:
-            merged[-1] = (previous_start, max(previous_end, end_frame))
-        else:
-            merged.append((start_frame, end_frame))
-    return merged
 
 
 def _frame_interval_query(intervals: list[tuple[int, int]]) -> models.Q:

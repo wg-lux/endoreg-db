@@ -51,6 +51,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
     ensure_secure_transport_for_job_kind,
 )
 from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
+from endoreg_db.services.jobs.processing_history import (
+    set_history_task_id as _set_history_task_id,
+)
 from endoreg_db.services.video_files import (
     delete_video_frames,
     predict_video,
@@ -1301,13 +1304,6 @@ def _reserve_temporal_inference_history(
             config=dispatch_config.to_dict(),
         )
         return history, "created"
-
-
-def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
-    if history.task_id == task_id:
-        return
-    history.task_id = task_id
-    history.save(update_fields=["task_id"])
 
 
 def _get_processing_history(history_id: int | None) -> VideoProcessingHistory | None:

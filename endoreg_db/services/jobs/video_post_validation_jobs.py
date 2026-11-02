@@ -24,6 +24,9 @@ from endoreg_db.config.env import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+from endoreg_db.services.jobs.processing_history import (
+    set_history_task_id as _set_history_task_id,
+)
 from endoreg_db.services.annotations.segment_validation_workflow import (
     blackening_history_config,
     is_outside_frame_blackening_history,
@@ -323,13 +326,6 @@ def _reserve_blackening_history(
         )
         mark_post_validation_incomplete(locked_video)
         return history, RESERVATION_CREATED
-
-
-def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
-    if history.task_id == task_id:
-        return
-    history.task_id = task_id
-    history.save(update_fields=["task_id"])
 
 
 def _get_processing_history(

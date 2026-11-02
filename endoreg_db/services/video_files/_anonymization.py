@@ -12,6 +12,9 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
 from django.db import transaction
 
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
+from endoreg_db.services.media.frame_intervals import (
+    merge_half_open_frame_intervals as _merge_half_open_intervals,
+)
 from endoreg_db.services.streaming.streamable_media import (
     sync_video_streamable_artifacts,
 )
@@ -78,22 +81,6 @@ def _video_has_integrity_failure(video: "VideoFile") -> bool:
     return payload.get("integrity_status") == "lost" or bool(
         getattr(getattr(video, "state", None), "processing_error", False)
     )
-
-
-def _merge_half_open_intervals(
-    intervals: list[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    if not intervals:
-        return []
-    intervals.sort()
-    merged: list[tuple[int, int]] = [intervals[0]]
-    for start_frame, end_frame in intervals[1:]:
-        previous_start, previous_end = merged[-1]
-        if start_frame <= previous_end:
-            merged[-1] = (previous_start, max(previous_end, end_frame))
-        else:
-            merged.append((start_frame, end_frame))
-    return merged
 
 
 def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:

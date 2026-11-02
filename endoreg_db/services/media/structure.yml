@@ -4,6 +4,7 @@ path: endoreg_db/services/media
 parent: ../structure.yml
 summary: Media integrity, operation leases and approved processed-media exports.
 responsibilities:
+- Merge shared half-open frame intervals without changing caller-owned validation rules.
 - Verify current media integrity and coordinate operation leases.
 - Authorize approved processed-media exports and explicit source deletion.
 boundaries:
@@ -19,6 +20,8 @@ entrypoints:
   file: export_ready.py
   purpose: Approve the current processed generation after center, state, clinical lifecycle, hash and audit checks.
 files:
+- file: frame_intervals.py
+  role: Shared sorted, adjacency-preserving half-open frame interval merge for media processing and training selection.
 - file: __init__.py
   role: Medienintegrität, Operationsleases und Exportfreigabe.
 - file: export_annotated.py

@@ -29,6 +29,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
 )
+from endoreg_db.services.media.frame_intervals import (
+    merge_half_open_frame_intervals as _merge_frame_intervals,
+)
 from endoreg_db.services.runtime.lifecycle_state_machine import (
     OperationLifecycleEvent,
     OperationLifecycleState,
@@ -462,22 +465,6 @@ def _create_run_staging_dir(run_id: str) -> Path:
     root = ensure_directory(_model_training_staging_root(), dir_mode=0o750)
     staging_dir = root / f"run-{run_id}-{uuid4().hex}"
     return ensure_directory(staging_dir, dir_mode=0o750)
-
-
-def _merge_frame_intervals(
-    intervals: list[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    if not intervals:
-        return []
-    intervals.sort()
-    merged: list[tuple[int, int]] = [intervals[0]]
-    for start_frame, end_frame in intervals[1:]:
-        previous_start, previous_end = merged[-1]
-        if start_frame <= previous_end:
-            merged[-1] = (previous_start, max(previous_end, end_frame))
-        else:
-            merged.append((start_frame, end_frame))
-    return merged
 
 
 def _frame_interval_query(intervals: list[tuple[int, int]]) -> Any:

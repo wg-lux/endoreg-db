@@ -14,6 +14,7 @@ from endoreg_db.models.label.annotation.image_classification import (
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
+from endoreg_db.services.media.frame_intervals import merge_half_open_frame_intervals
 from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
@@ -120,18 +121,7 @@ def merge_outside_frame_intervals(
         start_frame = int(frame_number)
         intervals.append((start_frame, start_frame + 1))
 
-    if not intervals:
-        return []
-
-    intervals.sort()
-    merged: list[tuple[int, int]] = [intervals[0]]
-    for start_frame, end_frame in intervals[1:]:
-        previous_start, previous_end = merged[-1]
-        if start_frame <= previous_end:
-            merged[-1] = (previous_start, max(previous_end, end_frame))
-        else:
-            merged.append((start_frame, end_frame))
-    return merged
+    return merge_half_open_frame_intervals(intervals)
 
 
 def rebuild_processed_video_without_outside_frames(
