@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/storage_management.py
+  role: Read-only canonical-storage capacity reporting; all legacy cleanup entrypoints fail closed.
 - file: commands/report_concept_embeddings.py
   role: Center-scoped source hashes, local embedding capture and similarity CSV on standard output.
 - file: commands/collect_study_examination.py
