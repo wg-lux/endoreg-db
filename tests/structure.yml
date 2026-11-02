@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: administration/center/test_center_shift.py
+  role: Presence-fraction model/database bounds, atomic migration rejection and explicit scheduling refusal.
 - file: services/test_frame_annotation_export_jobs.py
   role: Export configuration, authorization, dispatch, claim fencing and process-lock regression tests.
 - file: views/media/test_frame_annotation_export_jobs_api.py
