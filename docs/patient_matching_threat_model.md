@@ -1,7 +1,9 @@
 # Patient linkage under complete key compromise
 
-This document describes the current linkage contract in
-[Site_scoped_linkage_publication(2)(1).docx](<../patient_matching_lean/Site_scoped_linkage_publication(2)(1).docx>).
+This document describes the current linkage contract reviewed in the local,
+Git-ignored manuscript `patient_matching_lean/Site_scoped_linkage_publication(2)(1).docx`.
+The manuscript is a local review artifact rather than a required checkout file;
+the repository-owned implementation contract is [source patient matching](source_patient_matching.md).
 Scope and approval evidence belong to [HubTransfer.yml](../feature-tracking/HubTransfer.yml),
 `linkage_manuscript_evidence`, and [Anonymization.yml](../feature-tracking/Anonymization.yml),
 `incremental_reidentification_experiment`.
