@@ -59,6 +59,7 @@ from ...serializers import VoPPatientDataSerializer
 from endoreg_db.utils.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_START,
+    ACTION_ANONYMIZATION_START_REQUESTED,
     STATUS_NOT_STARTED,
     STATUS_PROCESSING,
 )
@@ -651,6 +652,16 @@ def start_anonymization(request: Request, file_id: int) -> Response:
     """
     Start anonymization with processing lock to prevent duplicates.
     """
+    if not transaction.get_autocommit():
+        return Response(
+            {
+                "detail": (
+                    "Synchronous anonymization requires autocommit so its start-request "
+                    "audit is durable before processing begins."
+                )
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     # First check what type of file this is
     kind = _requested_anonymization_kind(request, file_id)
     info = AnonymizationService.get_status(file_id, kind=kind)
@@ -687,6 +698,17 @@ def start_anonymization(request: Request, file_id: int) -> Response:
                 },
                 status=status.HTTP_409_CONFLICT,
             )
+
+        # Direct import requires autocommit for independently visible ownership.
+        # Audit the request before any irreversible processing can begin.
+        record_operation(
+            request,
+            action=ACTION_ANONYMIZATION_START_REQUESTED,
+            resource_type=file_type,
+            resource_id=file_id,
+            status_before=status_val,
+            status_after=status_val,
+        )
 
         # Proceed with starting anonymization
         service = AnonymizationService()

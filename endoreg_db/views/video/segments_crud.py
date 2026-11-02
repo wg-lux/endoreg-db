@@ -1330,50 +1330,21 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
             )
             segment_id = segment.pk
 
-            def _log_after_commit():
-                # re-read from DB to get the REAL final state
-                segment.refresh_from_db()
-                state = segment.state
-
-                status_after = (
-                    STATUS_VALIDATED
-                    if (state and state.is_validated)
-                    else STATUS_UNVALIDATED
-                )
-
-                record_operation(
-                    cast(HttpRequest, request),
-                    action=ACTION_SEGMENT_ANNOTATED,
-                    resource_type="video_segment",
-                    resource_id=segment.pk,
-                    status_before=status_before,
-                    status_after=status_after,
-                    meta={
-                        "video_id": video.pk,
-                        "label": _segment_label_name(segment),
-                        "information_source": information_source_name,
-                        "annotator": annotation_annotator,
-                    },
-                )
-
-            transaction.on_commit(_log_after_commit)
-
-            """
-            status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
-
+            segment.refresh_from_db()
             record_operation(
-                request,
+                cast(HttpRequest, request),
                 action=ACTION_SEGMENT_ANNOTATED,
                 resource_type="video_segment",
                 resource_id=segment.pk,
                 status_before=status_before,
-                status_after=status_after,
+                status_after=_segment_validation_status_before(segment),
                 meta={
                     "video_id": video.pk,
-                    "label": segment.label.name if segment.label else None,
+                    "label": _segment_label_name(segment),
                     "information_source": information_source_name,
+                    "annotator": annotation_annotator,
                 },
-            )"""
+            )
         annotation_task_id, expansion_completed = (
             _dispatch_segment_annotation_expansion(
                 video_id=int(video.pk),
@@ -1491,7 +1462,7 @@ def _segment_validation_status_before(segment: LabelVideoSegment) -> str:
     return STATUS_UNVALIDATED
 
 
-def _register_bulk_validation_audit(
+def _record_bulk_validation_audit(
     *,
     request: Request,
     segment_id: int,
@@ -1500,25 +1471,22 @@ def _register_bulk_validation_audit(
     information_source_name: str | None,
     annotator: str | None,
 ) -> None:
-    def _log_after_commit() -> None:
-        segment = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
-        status_after = _segment_validation_status_before(segment)
-        record_operation(
-            cast(HttpRequest, request),
-            action=ACTION_SEGMENT_ANNOTATED,
-            resource_type="video_segment",
-            resource_id=_segment_pk(segment),
-            status_before=status_before,
-            status_after=status_after,
-            meta={
-                "video_id": video_id,
-                "bulk": True,
-                "information_source": information_source_name,
-                "annotator": annotator,
-            },
-        )
-
-    transaction.on_commit(_log_after_commit)
+    segment = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
+    status_after = _segment_validation_status_before(segment)
+    record_operation(
+        cast(HttpRequest, request),
+        action=ACTION_SEGMENT_ANNOTATED,
+        resource_type="video_segment",
+        resource_id=_segment_pk(segment),
+        status_before=status_before,
+        status_after=status_after,
+        meta={
+            "video_id": video_id,
+            "bulk": True,
+            "information_source": information_source_name,
+            "annotator": annotator,
+        },
+    )
 
 
 def _validate_one_bulk_segment(
@@ -1533,33 +1501,35 @@ def _validate_one_bulk_segment(
     timeline_indexes: VideoTimelineIndexCache,
 ) -> bool:
     try:
-        _apply_bulk_segment_timing(
-            segment=segment,
-            timing_data=timing_data,
-            video_id=video_id,
-            timeline_indexes=timeline_indexes,
-        )
-        status_before = _segment_validation_status_before(segment)
-        segment.mark_validated(
-            is_validated=is_validated,
-            information_source_name=(
-                information_source_name if is_validated else str(None)
-            ),
-        )
-        _register_bulk_validation_audit(
-            request=request,
-            segment_id=_segment_pk(segment),
-            status_before=status_before,
-            video_id=video_id,
-            information_source_name=information_source_name,
-            annotator=annotator,
-        )
-        return True
+        with transaction.atomic():
+            _apply_bulk_segment_timing(
+                segment=segment,
+                timing_data=timing_data,
+                video_id=video_id,
+                timeline_indexes=timeline_indexes,
+            )
+            status_before = _segment_validation_status_before(segment)
+            segment.mark_validated(
+                is_validated=is_validated,
+                information_source_name=(
+                    information_source_name if is_validated else str(None)
+                ),
+            )
     except MediaOperationDeferred:
         raise
     except Exception as exc:
         logger.exception("Error validating segment %s: %s", segment.pk, exc)
         return False
+
+    _record_bulk_validation_audit(
+        request=request,
+        segment_id=_segment_pk(segment),
+        status_before=status_before,
+        video_id=video_id,
+        information_source_name=information_source_name,
+        annotator=annotator,
+    )
+    return True
 
 
 def _update_bulk_segments_atomically(

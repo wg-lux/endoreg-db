@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use snake_case API fields; parse requests at the boundary and delegate workflows to services.
 files:
+- file: anonymization/overview.py
+  role: Anonymization overview and synchronous start boundary; persist start-request audit before autocommit import work.
 - file: misc/upload_views.py
   role: Content-validated API uploads; missing, failed or unsupported content detection rejects before persistence and dispatch.
 - file: patient_examination/patient_examination_detail.py

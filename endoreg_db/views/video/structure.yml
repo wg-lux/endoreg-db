@@ -16,7 +16,7 @@ files:
 - file: hls_stream.py
   role: HTTP Live Streaming (HLS) playlist, key and segment endpoints.
 - file: segments_crud.py
-  role: Segment CRUD boundary.
+  role: Segment CRUD boundary; validation mutations and required operation audit commit together.
 - file: reimport.py
   role: Video reimport endpoint.
 - file: export_annotated.py

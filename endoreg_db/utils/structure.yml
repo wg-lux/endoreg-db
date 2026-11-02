@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: operation_log.py
+  role: Required operation audit persistence; save failures propagate to caller-owned clinical transactions.
 - file: verify_salt.py
   role: Shared identity salt strength validation preserving established UTF-8 key material.
 - file: video/executable_discovery.py
@@ -46,6 +48,7 @@ entrypoints:
   purpose: Domain-separated HMAC-SHA-256 with centrally validated active or enrolled identity salts.
 dependencies:
   internal:
+  - endoreg_db/models
   - endoreg_db/services/video_files
   - endoreg_db/services/video_storage
   - endoreg_db/services/streaming

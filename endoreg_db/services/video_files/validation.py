@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import logging
 from typing import TYPE_CHECKING
+
+from django.db import transaction
 from endoreg_db.services.secret_rotation.identity import identity_rotation_transaction
 
 if TYPE_CHECKING:
@@ -50,14 +52,19 @@ def validate_video_metadata_annotation(
 
     get_or_create_video_state(video).mark_anonymization_validated(save=True)
     video.save()
-    blockers = cleanup_validated_raw_video(int(video.pk), apply=True)
-    if blockers:
-        logger.warning(
-            "Raw cleanup deferred for validated video %s: %s",
-            video.raw_video_hash,
-            ",".join(blockers),
-        )
-    video.refresh_from_db()
+    video_id = int(video.pk)
+
+    def _cleanup_raw_after_commit() -> None:
+        blockers = cleanup_validated_raw_video(video_id, apply=True)
+        if blockers:
+            logger.warning(
+                "Raw cleanup deferred for validated video %s: %s",
+                video.raw_video_hash,
+                ",".join(blockers),
+            )
+        video.refresh_from_db()
+
+    transaction.on_commit(_cleanup_raw_after_commit)
     logger.info(
         "Metadata annotation validated and saved for video %s.", video.raw_video_hash
     )

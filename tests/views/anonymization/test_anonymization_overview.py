@@ -288,7 +288,7 @@ def test_shared_metadata_never_overrides_document_hash_or_media_type() -> None:
     assert getattr(report_item, "_overview_upload_job", None) is None
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 @pytest.mark.parametrize("kind", ["pdf", "report", "video", None, "invalid"])
 def test_start_disambiguates_shared_ids_and_preserves_har_integrity_gate(
     kind: str | None, monkeypatch: pytest.MonkeyPatch
