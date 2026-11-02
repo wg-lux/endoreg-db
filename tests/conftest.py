@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from collections.abc import Generator, Iterator, Mapping
 from contextlib import ExitStack, contextmanager
@@ -989,6 +990,20 @@ def _node_matches(item: pytest.Item, *needles: str) -> bool:
     return any(needle in nodeid or needle in class_name for needle in needles)
 
 
+_CAMEL_CASE_BOUNDARY = re.compile(r"(?<=[a-z0-9])(?=[A-Z])|(?<=[A-Z])(?=[A-Z][a-z])")
+
+
+def _node_has_word(item: pytest.Item, *words: str) -> bool:
+    """Match whole words of the node id, splitting snake_case and camelCase.
+
+    Substring matching is too broad for short needles: "ai" occurs in
+    "claim", "failed" and "available".
+    """
+    spaced = _CAMEL_CASE_BOUNDARY.sub(" ", item.nodeid)
+    tokens = {token.lower() for token in re.split(r"[^A-Za-z0-9]+", spaced)}
+    return not tokens.isdisjoint(words)
+
+
 def pytest_collection_modifyitems(
     config: pytest.Config,
     items: list[pytest.Item],
@@ -1014,7 +1029,7 @@ def pytest_collection_modifyitems(
             item.add_marker(pytest.mark.expensive)
 
         # Auto-mark AI tests
-        if _node_matches(item, "ai", "inference"):
+        if _node_has_word(item, "ai", "inference"):
             item.add_marker(pytest.mark.ai)
             item.add_marker(pytest.mark.expensive)
 

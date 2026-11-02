@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: environment/test_node_marker_matching.py
+  role: Whole-word ai/inference auto-marking in conftest; substrings such as claim or failed stay in the fast lane.
 - file: helpers/video_timeline.py
   role: Explicit typed constant-frame-rate timeline contracts for synthetic segment and inference fixtures.
 - file: utils/test_operation_log.py
