@@ -53,7 +53,7 @@ files:
 - file: pdf_renderer.py
   role: Exports get_renderer_binary, build_report_template_pdf_payload, render_pdf_with_rust_renderer.
 - file: persistence.py
-  role: Exports persist_report_pdf_artifact, save_report_submission, delete_report_draft.
+  role: Persist complete rendered report artifacts without lossy fallback, transactional submissions and draft deletion.
 - file: runtime_validation.py
   role: Exports validate_final_report_submission.
 - file: structured_records.py

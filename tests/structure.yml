@@ -10,6 +10,8 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: services/test_report_pdf_artifact.py
+  role: Complete structured report rendering with embedded images, strict defaults and renderer-failure no-artifact regression tests.
 - file: test_logger_conf.py
   role: Logger configuration preserves wrapper auditing, path redaction and visible directory failures.
 - file: services/test_shared_video_helpers.py

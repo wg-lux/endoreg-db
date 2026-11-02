@@ -5,7 +5,7 @@ from endoreg_db.utils.storage.report_fields import (
     ReportArtifactFieldFile,
     report_staging_path,
 )
-from endoreg_db.utils.file_operations import get_file_hash, atomic_write_file
+from endoreg_db.utils.hashs import get_file_hash
 
 import json
 from dataclasses import dataclass
@@ -139,70 +139,6 @@ def _normalize_pdf_meta_payload(
     return cast(PdfFileMetaJsonObject, validated_pdf_meta or {})
 
 
-def _escape_pdf_text(text: str) -> str:
-    return text.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _render_minimal_pdf_bytes(*, title: str, body_text: str) -> bytes:
-    """
-    Render a tiny valid single-page PDF with plain text content.
-
-    Fallback renderer used when no PDF engine (e.g. WeasyPrint) is installed.
-    """
-    title = (title or "Report").strip()
-    body_text = body_text or ""
-    lines = [title] + [ln for ln in body_text.splitlines() if ln.strip()]
-    if not lines:
-        lines = ["Report"]
-
-    y = 780
-    content_ops: list[str] = ["BT", "/F1 12 Tf"]
-    for line in lines[:60]:
-        content_ops.append(f"72 {y} Td ({_escape_pdf_text(line[:180])}) Tj")
-        y -= 14
-        if y < 72:
-            break
-    content_ops.append("ET")
-    content_stream = "\n".join(content_ops).encode("latin-1", errors="replace")
-
-    objects: list[bytes] = []
-    objects.append(b"<< /Type /Catalog /Pages 2 0 R >>")
-    objects.append(b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>")
-    objects.append(
-        b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
-        b"/Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>"
-    )
-    objects.append(b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>")
-    objects.append(
-        b"<< /Length "
-        + str(len(content_stream)).encode("ascii")
-        + b" >>\nstream\n"
-        + content_stream
-        + b"\nendstream"
-    )
-
-    out = bytearray(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for idx, obj in enumerate(objects, start=1):
-        offsets.append(len(out))
-        out.extend(f"{idx} 0 obj\n".encode("ascii"))
-        out.extend(obj)
-        out.extend(b"\nendobj\n")
-
-    xref_pos = len(out)
-    out.extend(f"xref\n0 {len(objects) + 1}\n".encode("ascii"))
-    out.extend(b"0000000000 65535 f \n")
-    for off in offsets[1:]:
-        out.extend(f"{off:010d} 00000 n \n".encode("ascii"))
-    out.extend(
-        (
-            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            f"startxref\n{xref_pos}\n%%EOF\n"
-        ).encode("ascii")
-    )
-    return bytes(out)
-
-
 def persist_report_pdf_artifact(
     report: PatientExaminationReport,
     patient_examination: PatientExamination,
@@ -212,14 +148,20 @@ def persist_report_pdf_artifact(
     frame_image_paths: list[str] | None = None,
     frame_captions: list[str] | None = None,
     patient_identity: Mapping[str, object] | None = None,
-    strict_renderer: bool = False,
+    strict_renderer: bool = True,
 ) -> tuple[int | None, int | None]:
     """
-    Create/update linked full-report + pdf media artifacts for a persisted report.
+    Create linked complete report artifacts; renderer failures propagate.
+
+    The legacy ``strict_renderer`` keyword remains accepted only as true.
 
     Returns:
         (anonym_examination_report_id, raw_pdf_file_id)
     """
+    if not strict_renderer:
+        raise ReportPersistenceValidationError(
+            {"strict_renderer": "Lossy report rendering is not supported."}
+        )
     report_ref = cast(_PatientExaminationReportLike, report)
     patient_obj = patient_examination.patient
     assert patient_obj is not None, (
@@ -231,12 +173,6 @@ def persist_report_pdf_artifact(
     report_date = patient_examination.date_start
 
     report_id = report_ref.id
-    report_language = report_ref.language
-    report_title = report_ref.title or (
-        f"{report_ref.template_name} Befundbericht"
-        if report_language == "de"
-        else f"{report_ref.template_name} report"
-    )
     pdf_body = rendered_text or report_ref.rendered_text or ""
     pdf_meta_input: dict[str, object] = {
         "source": "patient_examination_report",
@@ -259,31 +195,20 @@ def persist_report_pdf_artifact(
     )
 
     with report_staging_path() as out_path:
-        try:
-            from endoreg_db.services.reports.pdf_renderer import (
-                build_report_template_pdf_payload,
-                render_pdf_with_rust_renderer,
-            )
+        from endoreg_db.services.reports.pdf_renderer import (
+            build_report_template_pdf_payload,
+            render_pdf_with_rust_renderer,
+        )
 
-            payload = build_report_template_pdf_payload(
-                report=report,
-                patient_examination=patient_examination,
-                section_blocks=renderer_section_blocks,
-                frame_image_paths=frame_image_paths,
-                frame_captions=frame_captions,
-                patient_identity=renderer_patient_identity,
-            )
-            render_pdf_with_rust_renderer(payload, output_path=out_path)
-        except Exception:
-            if strict_renderer:
-                raise
-            atomic_write_file(
-                destination=out_path,
-                content=[
-                    _render_minimal_pdf_bytes(title=report_title, body_text=pdf_body)
-                ],
-                file_mode=0o600,
-            )
+        payload = build_report_template_pdf_payload(
+            report=report,
+            patient_examination=patient_examination,
+            section_blocks=renderer_section_blocks,
+            frame_image_paths=frame_image_paths,
+            frame_captions=frame_captions,
+            patient_identity=renderer_patient_identity,
+        )
+        render_pdf_with_rust_renderer(payload, output_path=out_path)
         pdf_hash = get_file_hash(out_path)
         pdf_bytes = out_path.read_bytes()
 
