@@ -8,6 +8,8 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: logger_conf.py
+  role: Logging configuration creates its directory through audited filesystem wrappers.
 - file: migrations/0117_center_shift_presence_fraction.py
   role: Add model validators and a database range constraint without rewriting invalid existing planning data.
 - file: migrations/0113_frameannotationexportjob.py

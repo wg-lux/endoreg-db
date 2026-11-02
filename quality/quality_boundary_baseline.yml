@@ -7,8 +7,8 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 354
-  fingerprint: ef59831268f87630bb32379900537a052d0577bb00a042d569a7792a7f65c938
+  count: 351
+  fingerprint: 8f029aed714a2e89a23b416ff3e27ca178e5f8fc978d17c1bd4eb06ad44bbcb5
   owner: endoreg_db maintainers
   reason: >-
     Reviewed inventory after the exception-reduction cohort, the extraction of
@@ -67,10 +67,13 @@ broad_exception:
     The reviewed Celery job-boundary handler in hub ingest is unchanged; its
     function was renamed from _run_video_upload_import_job to the public
     run_video_upload_import_job because endoreg_db.tasks imports it.
+    Commit-cohort review 2026-11-02: fix(logging): use audited directory creation and remove unused log deletion. Snapshot recomputed
+    from the exact Git index; no new policy findings. Existing stale
+    recorded totals are corrected without adding exceptions.
   review_after: 2026-11-20
 type_suppression:
-  count: 107
-  fingerprint: 8872cde90727876f57c31acef7d7ef31e1cc94446dc1cc47fb6caa2af674f37b
+  count: 73
+  fingerprint: 7716e0dfdc77cc74bb96ea0e71e39c767214a9632657eb68f58628d22b138a44
   owner: endoreg_db maintainers
   reason: >-
     Reviewed legacy inventory after removing four type suppressions from the
@@ -94,4 +97,7 @@ type_suppression:
     suppressions from the clinical lifecycle commit were replaced by explicit
     casts after the existing isinstance checks in clinical_lifecycle/facts.py
     and audit_clinical_lifecycle.py, so the total decreases from 109 to 107.
+    Commit-cohort review 2026-11-02: fix(logging): use audited directory creation and remove unused log deletion. Snapshot recomputed
+    from the exact Git index; no new policy findings. Existing stale
+    recorded totals are corrected without adding exceptions.
   review_after: 2026-11-20
