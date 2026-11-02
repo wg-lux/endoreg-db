@@ -58,7 +58,7 @@ files:
 - file: post_validation_blackening.py
   role: Exports merge_outside_frame_intervals, rebuild_processed_video_without_outside_frames.
 - file: processor_resolution.py
-  role: Exports get_default_video_processor_name, resolve_processor_name_for_import.
+  role: Resolve explicit video processor names or the configured application default; missing configuration fails closed.
 - file: queries.py
   role: Exports video_hash_exists, get_video_by_pk, get_video_by_content_hash.
 - file: reimport_orchestrator.py
