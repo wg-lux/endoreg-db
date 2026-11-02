@@ -239,12 +239,20 @@ def configured_master_keyring() -> SecretKeyring | None:
     return load_keyring(Path(path), kind="master") if path else None
 
 
-def configured_master_keys() -> SecretKeyring | None:
-    """Resolve one immutable key snapshot for Python and native readers."""
+@sensitive_variables()
+def configured_master_keys(*, allow_inline: bool = True) -> SecretKeyring | None:
+    """Resolve one immutable key snapshot; inline material is test-profile only."""
+    from endoreg_db.config.env import inline_master_key_allowed
+
+    value = os.environ.get("LX_ANNOTATE_MASTER_KEY", "")
+    if value and (not allow_inline or not inline_master_key_allowed()):
+        raise ValueError(
+            "Inline master keys are permitted only in explicit test profiles; "
+            "configure a private master-key file or keyring"
+        )
     ring = configured_master_keyring()
     if ring is not None:
         return ring
-    value = os.environ.get("LX_ANNOTATE_MASTER_KEY", "")
     path = os.environ.get("LX_ANNOTATE_MASTER_KEY_FILE", "")
     if not value and path:
         value = read_secret_line(Path(path))

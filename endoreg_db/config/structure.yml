@@ -14,7 +14,7 @@ files:
 - file: env.py
   role: Typed environment access.
 - file: secret_keyring.py
-  role: Private local keyring validation, rejection of central identity injection, and active-only signing credentials.
+  role: Private local keyring validation, test-profile-only inline media keys, rejection of central identity injection, and active-only signing credentials.
 - file: identity_hashing.py
   role: Identity salt validation and keyring access.
 dependencies:

@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 from endoreg_db.config.identity_hashing import load_identity_salt
 from endoreg_db.config.secret_keyring import (
+    configured_master_keys,
     configured_signing_keys,
 )
 
@@ -30,6 +31,8 @@ from . import keycloak as KEYCLOAK
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
 
 DJANGO_SALT = load_identity_salt(required=True, allow_inline=False)
+# Production validation must remain strict even when loaded by a test process.
+configured_master_keys(allow_inline=False)
 
 DEBUG = False if pytest_active else env_bool("DJANGO_DEBUG", False)
 REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT = env_bool(

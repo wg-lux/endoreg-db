@@ -19,6 +19,9 @@ pytestmark = pytest.mark.no_db
 def private_identity_salt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """Give every subprocess its own valid salt, independent of host keyrings."""
     for name in (
+        "LX_ANNOTATE_MASTER_KEY",
+        "LX_ANNOTATE_MASTER_KEY_FILE",
+        "LX_ANNOTATE_MASTER_KEYRING_FILE",
         "DJANGO_SALT",
         "DJANGO_IDENTITY_SALT_KEYRING_FILE",
         "DJANGO_IDENTITY_CENTER_ID",

@@ -5,23 +5,28 @@ import hashlib
 import json
 import runpy
 import secrets
+from collections.abc import Callable
+from typing import cast
 from pathlib import Path
 
 import pytest
 import yaml
 from django.core.exceptions import ImproperlyConfigured
+from django.core.files.base import ContentFile
 from django.test import override_settings
 
 from endoreg_db.config.identity_hashing import load_identity_salt
 from endoreg_db.config.secret_keyring import (
     IdentitySaltBundle,
     configured_identity_keyring,
+    configured_master_keys,
     load_identity_bundle,
     load_keyring,
     read_secret_line,
 )
 from endoreg_db.management.commands import check_system_health
 from endoreg_db.utils.encryption.encryption import load_master_key
+from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 from endoreg_db.utils.file_operations import atomic_write_file
 
 pytestmark = pytest.mark.no_db
@@ -33,6 +38,8 @@ def private_file(path: Path, payload: bytes) -> Path:
 
 @pytest.fixture(autouse=True)
 def isolated_sources(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
+    monkeypatch.delenv("DJANGO_ENV", raising=False)
     for name in (
         "LX_ANNOTATE_MASTER_KEYRING_FILE",
         "LX_ANNOTATE_MASTER_KEY_FILE",
@@ -188,6 +195,135 @@ def test_master_sources_resolve_identical_bytes(
     )
     monkeypatch.setenv("LX_ANNOTATE_MASTER_KEYRING_FILE", str(manifest))
     assert load_master_key() == raw
+
+
+@pytest.mark.parametrize(
+    "settings_module",
+    ["endoreg_db.config.settings.test", "tests.settings_test", "host.settings.test"],
+)
+def test_inline_master_requires_explicit_test_profile(
+    monkeypatch: pytest.MonkeyPatch, settings_module: str
+) -> None:
+    raw = bytes(range(32))
+    monkeypatch.delenv("DJANGO_ENV", raising=False)
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", settings_module)
+    monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY", base64.urlsafe_b64encode(raw).decode())
+
+    ring = configured_master_keys()
+
+    assert ring is not None and ring.active == raw
+
+
+@pytest.mark.parametrize(
+    ("settings_module", "environment"),
+    [
+        (None, None),
+        ("endoreg_db.config.settings.dev", None),
+        ("endoreg_db.config.settings.prod", None),
+        ("host.settings_prod", None),
+        ("host.testing", None),
+        ("endoreg_db.config.settings.test", "production"),
+        ("endoreg_db.config.settings.test", " Production "),
+    ],
+)
+@pytest.mark.parametrize("other_source", ["file", "keyring"])
+def test_non_test_inline_master_rejects_before_reading_other_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    settings_module: str | None,
+    environment: str | None,
+    other_source: str,
+) -> None:
+    for name, value in (
+        ("DJANGO_SETTINGS_MODULE", settings_module),
+        ("DJANGO_ENV", environment),
+    ):
+        if value is None:
+            monkeypatch.delenv(name, raising=False)
+        else:
+            monkeypatch.setenv(name, value)
+    encoded = base64.urlsafe_b64encode(bytes(range(32))).decode()
+    monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY", encoded)
+    monkeypatch.setenv(
+        "LX_ANNOTATE_MASTER_KEY_FILE"
+        if other_source == "file"
+        else "LX_ANNOTATE_MASTER_KEYRING_FILE",
+        "/private/master-source",
+    )
+
+    def reject_file_access(*args: object, **kwargs: object) -> bytes:
+        pytest.fail("Forbidden inline key configuration accessed another secret source")
+
+    monkeypatch.setattr(
+        "endoreg_db.config.secret_keyring.read_private_file", reject_file_access
+    )
+    with pytest.raises(ValueError, match="Inline master keys") as error:
+        configured_master_keys()
+    assert encoded not in str(error.value)
+
+
+@pytest.mark.parametrize("source", ["file", "keyring"])
+def test_production_master_private_sources_remain_available(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, source: str
+) -> None:
+    raw = bytes(range(32))
+    secret = private_file(tmp_path / "master", base64.urlsafe_b64encode(raw))
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.prod")
+    monkeypatch.setenv("DJANGO_ENV", "production")
+    if source == "file":
+        monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY_FILE", str(secret))
+    else:
+        manifest = private_file(
+            tmp_path / "ring.yml",
+            yaml.safe_dump({"schema_version": 1, "active": str(secret)}).encode(),
+        )
+        monkeypatch.setenv("LX_ANNOTATE_MASTER_KEYRING_FILE", str(manifest))
+
+    ring = configured_master_keys()
+
+    assert ring is not None and ring.readers == (raw,)
+
+
+def test_production_settings_reject_inline_master_even_under_pytest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    salt = private_file(tmp_path / "salt", secrets.token_hex(32).encode())
+    encoded = base64.urlsafe_b64encode(bytes(range(32))).decode()
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.test")
+    monkeypatch.setenv("DJANGO_SALT_FILE", str(salt))
+    monkeypatch.setenv("LX_ANNOTATE_MASTER_KEY", encoded)
+
+    with pytest.raises(ValueError, match="Inline master keys") as error:
+        runpy.run_module("endoreg_db.config.settings.prod")
+    assert encoded not in str(error.value)
+
+
+@pytest.mark.parametrize("operation", ["read", "write"])
+@pytest.mark.parametrize("inline", [False, True])
+def test_production_media_io_rejects_missing_or_inline_keys_before_file_access(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    operation: str,
+    inline: bool,
+) -> None:
+    monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "endoreg_db.config.settings.prod")
+    monkeypatch.setenv("DJANGO_ENV", "production")
+    if inline:
+        monkeypatch.setenv(
+            "LX_ANNOTATE_MASTER_KEY",
+            base64.urlsafe_b64encode(bytes(range(32))).decode(),
+        )
+    location = tmp_path / "encrypted-media"
+    storage = LazyEncryptedStorage(location=location)
+
+    with pytest.raises(
+        ImproperlyConfigured,
+        match="Inline master keys|configured master key is required",
+    ):
+        if operation == "read":
+            cast(Callable[[str], object], getattr(storage, "open"))("artifact.bin")
+        else:
+            storage.save("artifact.bin", ContentFile(b"isolated media fixture"))
+    assert not location.exists()
 
 
 @pytest.mark.parametrize("suffix", ["!", "\n", " "])

@@ -166,6 +166,11 @@ def _is_production_runtime() -> bool:
     )
 
 
+def inline_master_key_allowed() -> bool:
+    """Permit inline media keys only in an explicitly selected test profile."""
+    return _is_explicit_test_settings() and not _is_production_runtime()
+
+
 def _default_test_runtime_root() -> Path:
     namespace = os.environ.get("ENDOREG_TEST_RUN_NAMESPACE", "").strip()
     root = BASE_DIR / "data" / "tests" / "runtime"
