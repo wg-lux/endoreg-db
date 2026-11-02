@@ -52,7 +52,7 @@ def approve_text_finding(
         )
     existing = PatientFinding.objects.filter(instance_id=instance_id).first()
     if existing is not None and (
-        existing.source != PatientFinding.Source.REPORT_TEXT
+        existing.source != str(PatientFinding.Source.REPORT_TEXT)
         or existing.source_report_id != report.pk
     ):
         raise ValidationError(
@@ -75,10 +75,10 @@ def approve_text_finding(
     )
     patient_finding = PatientFinding.objects.get(instance_id=instance_id)
     if (
-        patient_finding.source != PatientFinding.Source.REPORT_TEXT
+        patient_finding.source != str(PatientFinding.Source.REPORT_TEXT)
         or patient_finding.source_report_id != report.pk
     ):
-        patient_finding.source = PatientFinding.Source.REPORT_TEXT
+        patient_finding.source = str(PatientFinding.Source.REPORT_TEXT)
         patient_finding.source_report = report
         patient_finding.save(update_fields=["source", "source_report"])
     persist_patient_examination_dtypes_record_from_ledger(patient_examination)

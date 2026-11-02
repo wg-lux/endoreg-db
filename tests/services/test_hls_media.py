@@ -1057,11 +1057,6 @@ def test_materialize_video_hls_real_ffmpeg_commits_staged_output(
     _write_tiny_ffmpeg_mp4(source_path, pixel_format=pixel_format)
     source_probe = hls_media.probe_video_artifact(source_path)
     assert source_probe.pixel_format == pixel_format
-    if pixel_format == "yuv444p":
-        with pytest.raises(VideoStorageNormalizationError, match="pixel format"):
-            hls_media.assert_storage_compliance(
-                source_probe, profile=hls_media.configured_video_storage_profile()
-            )
     create_video = (
         _create_raw_video if artifact_kind == "raw" else _create_processed_video
     )

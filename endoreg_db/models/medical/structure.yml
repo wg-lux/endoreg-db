@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 files:
+- file: patient/patient_finding.py
+  role: Patient finding persistence with source-report provenance and optional source linkage.
 - file: patient/patient_medication.py
   role: Patient medication with validated legacy dosage and BMP fields.
 - file: patient/patient_medication_schedule.py

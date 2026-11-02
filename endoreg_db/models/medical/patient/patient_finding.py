@@ -127,6 +127,7 @@ class PatientFinding(models.Model):
     if TYPE_CHECKING:
         patient_examination_id: int
         finding_id: int
+        source_report_id: int | None
 
         @property
         def classifications(

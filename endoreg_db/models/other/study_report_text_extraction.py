@@ -29,6 +29,10 @@ if TYPE_CHECKING:
 class StudyReportTextExtraction(models.Model):
     """Evidence only: approval creates findings explicitly and separately."""
 
+    if TYPE_CHECKING:
+        report_id: int
+        patient_examination_id: int
+
     objects = models.Manager["StudyReportTextExtraction"]()
     uuid: models.UUIDField[UUID, UUID] = models.UUIDField(
         default=uuid4, unique=True, editable=False

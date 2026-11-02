@@ -102,21 +102,22 @@ def test_approval_records_provenance_classifications_and_refreshes_ledger(
     )
     user = User.objects.create(username="text-approver")
     instance = uuid4()
-    kwargs = {
-        "report": report,
-        "patient_examination": examination,
-        "finding_name": "text_approval_polyp",
-        "instance_id": instance,
-        "classifications": [("text_approval_paris", "text_approval_ip")],
-        "user": user,
-    }
-    first = text_finding_approval.approve_text_finding(**kwargs)
-    second = text_finding_approval.approve_text_finding(**kwargs)
+    first, second = [
+        text_finding_approval.approve_text_finding(
+            report=report,
+            patient_examination=examination,
+            finding_name="text_approval_polyp",
+            instance_id=instance,
+            classifications=[("text_approval_paris", "text_approval_ip")],
+            user=user,
+        )
+        for _ in range(2)
+    ]
 
     assert first.pk == second.pk
     assert PatientFinding.objects.count() == 1
     stored = PatientFinding.objects.get(instance_id=instance)
-    assert stored.source == PatientFinding.Source.REPORT_TEXT
+    assert stored.source == "report_text"
     assert stored.source_report_id == report.pk
     assert list(
         stored.classifications.filter(is_active=True).values_list(
