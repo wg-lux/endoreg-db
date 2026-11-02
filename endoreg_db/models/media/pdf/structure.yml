@@ -11,7 +11,7 @@ files:
 - file: raw_pdf.py
   role: RawPdfFile fields, integrity and retained service wrappers.
 - file: report_file.py
-  role: Parsed report document models.
+  role: Parsed report document models; unimplemented examination datetime updates reject explicitly.
 - file: pdf_processing_history.py
   role: Report processing history.
 - file: report_llm_job.py
