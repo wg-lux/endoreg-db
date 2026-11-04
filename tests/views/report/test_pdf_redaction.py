@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 # pyright: reportUnknownMemberType=false
 
 import json
@@ -16,13 +18,10 @@ from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHist
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.operation_log import OperationLog
 from endoreg_db.models.state.raw_pdf import RawPdfState
-from endoreg_db.services.reports.import_service import ReportImportService
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.storage import ensure_local_file
 
-MINIMAL_PDF_BYTES = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
-    "Sample report"
-)
+MINIMAL_PDF_BYTES = render_single_page_pdf("Sample report")
 MINIMAL_PDF_MANIFEST = {
     "version": 1,
     "pages": [

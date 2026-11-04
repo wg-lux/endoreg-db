@@ -149,6 +149,24 @@ replacement.
 Playlist, key, and segment requests renew a media-operation lease. Publication,
 regeneration, and cleanup must defer while the relevant lease is active.
 
+## Runtime cost and lookup boundaries
+
+[`hls_stream.py`](../endoreg_db/views/video/hls_stream.py) authorizes source access
+before pre-lock verification and repeats the authoritative lookup under the video
+row lock. This lets the locked check reuse a verified digest without holding the
+row lock through a full source read. Key and segment lookups validate generation
+identity and root paths; they do not rescan every segment in the generation.
+
+[`source_hash.py`](../endoreg_db/services/video_files/source_hash.py) caches at most
+128 encrypted-filesystem generations per process. Reuse is bound to storage,
+path, device, inode, size, mode and modification/change timestamps. It rechecks
+metadata after hashing and resets on fork. Other storage implementations hash
+each time. Repeated filenames alone never authorize reuse.
+
+[`hls_media.py`](../endoreg_db/services/streaming/hls_media.py) owns reservation,
+encoding, source/timeline validation and atomic publication. Python profiles show
+caller time including waits for FFmpeg; they do not profile the encoder internally.
+
 ## Artifact Materialization
 
 The durable artifact states are:
@@ -177,25 +195,16 @@ production convergence.
 
 ## Current Production-Readiness Limits
 
-The implementation is not yet a complete production-readiness proof. The
-feature tracker currently records these material limits:
+Import finalization now checks terminal HLS results through `hls_result_is_ready`:
+only `materialized` and `already_ready` qualify. Regular raw imports require both
+raw and processed derivatives; verified received-generation reuse requires only
+processed HLS. `queued` is never import-completion evidence.
 
-- import and correction callers do not consistently enforce the real typed
-  terminal HLS result, so a caller can report false success or reject a
-  successful publication;
-- backfill admission and accounting can select a populated file field whose
-  physical source is absent, and its outcome counts are not yet reliable per
-  distinct video;
-- persisted and emitted HLS errors can still include source-path context, and
-  health reporting and recovery do not yet use one stale-work policy;
-- failure-injection evidence is missing for broker loss, hard worker loss,
-  multi-process concurrency, and the packaged lx-annotate production runtime;
-- source-generation and publication integrity are implemented in part, but
-  formal production rollout and corpus-convergence evidence remain outstanding.
-
-Do not describe imports as fully stream-ready merely because HLS work was
-dispatched. Do not enable destructive cleanup based on HLS state until the
-tracker's required gates are verified.
+This describes the checked source, not a deployment or whole-corpus acceptance.
+Use [VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml)
+for current failure-injection, packaged-runtime, rollout and cleanup evidence.
+Do not enable destructive cleanup without its required gates. Avoid copying a
+snapshot of open tracker items into this runbook: those lists become stale.
 
 ## Frontend Lifecycle and Diagnosis
 

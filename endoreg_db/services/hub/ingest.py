@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import os
 import uuid
-import json
 import logging
 import hashlib
 from collections.abc import Callable, Iterable
@@ -27,8 +26,6 @@ from django.core.files.uploadedfile import UploadedFile
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from kombu.exceptions import OperationalError as KombuOperationalError
-from pydantic import ValidationError
-import yaml
 
 # Explicit re-exports preserve historical helper imports and object identity.
 from endoreg_db.services.hub import ingest_provenance, preanonymized_metadata
@@ -41,6 +38,9 @@ from endoreg_db.services.hub.ingest_provenance import (
 )
 from endoreg_db.services.hub.preanonymized_metadata import (
     apply_preanonymized_metadata as _apply_preanonymized_metadata,
+)
+from endoreg_db.services.hub.upload_center_resolution import (
+    resolve_declared_upload_center as resolve_declared_upload_center,
 )
 
 from endoreg_db.services.hub.upload_job_files import (
@@ -141,6 +141,12 @@ from endoreg_db.utils.structured_logging import (
     safe_log_value,
 )
 from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.interface.data_formats import (
+    DataFormatError,
+    DataFormatId,
+    RecordValidationError,
+    read_record,
+)
 
 STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 UPLOAD_JOB_REUSE_ATTEMPTS = 10
@@ -293,47 +299,6 @@ def resolve_upload_center(
         return declared_center
 
     return resolve_default_center()
-
-
-def resolve_declared_upload_center(
-    *,
-    center_key: str | None = None,
-    center_name: str | None = None,
-) -> tuple[Center | None, str | None]:
-    normalized_center_key = (center_key or "").strip()
-    normalized_center_name = (center_name or "").strip()
-
-    if not normalized_center_key and not normalized_center_name:
-        return None, None
-
-    center_by_key = None
-    center_by_name = None
-
-    if normalized_center_key:
-        center_by_key = Center.objects.filter(center_key=normalized_center_key).first()
-        if center_by_key is None and not normalized_center_name:
-            return None, f"Unknown center_key: {normalized_center_key}"
-
-    if normalized_center_name:
-        center_by_name = Center.objects.filter(name=normalized_center_name).first()
-        if center_by_name is None and not normalized_center_key:
-            return None, f"Unknown center_name: {normalized_center_name}"
-
-    if center_by_key is not None and center_by_name is not None:
-        if center_by_key.pk != center_by_name.pk:
-            return None, "center_key and center_name refer to different centers"
-        return center_by_key, None
-
-    if center_by_key is not None:
-        return center_by_key, None
-
-    if center_by_name is not None:
-        return center_by_name, None
-
-    if normalized_center_key and normalized_center_name:
-        return None, "Unknown center identity"
-
-    return None, None
 
 
 def resolve_default_center() -> Center | None:
@@ -1292,6 +1257,15 @@ def _default_processor_name() -> str | None:
     return fallback.name if fallback is not None else None
 
 
+_PREANONYMIZED_SIDECAR_FORMATS: dict[str, DataFormatId] = {
+    ".json": DataFormatId.JSON,
+    ".yaml": DataFormatId.YAML,
+    ".yml": DataFormatId.YAML,
+}
+# Sidecars may carry full anonymized report text; this bounds hostile drops only.
+_PREANONYMIZED_SIDECAR_MAX_BYTES = 4 * 1024 * 1024
+
+
 def _load_preanonymized_sidecar(
     file_path: Path,
     *,
@@ -1299,7 +1273,7 @@ def _load_preanonymized_sidecar(
 ) -> tuple[PreanonymizedIngestPayload | None, Path | None]:
     sidecar_paths = [
         candidate
-        for suffix in (".json", ".yaml", ".yml")
+        for suffix in _PREANONYMIZED_SIDECAR_FORMATS
         if (candidate := file_path.with_suffix(suffix)).exists()
     ]
     if len(sidecar_paths) > 1:
@@ -1317,29 +1291,31 @@ def _load_preanonymized_sidecar(
         return None, None
 
     sidecar_path = sidecar_paths[0]
-    sidecar_text = sidecar_path.read_text(encoding="utf-8")
-    payload: object
-    if sidecar_path.suffix == ".json":
-        payload = json.loads(sidecar_text)
-    else:
-        payload = yaml.safe_load(sidecar_text)
-    if not isinstance(payload, dict):
-        raise ValueError(
-            "Preanonymized sidecar must contain a mapping; "
-            f"{watcher_path_reference_text(sidecar_path)}"
-        )
+    model_cls = (
+        LocalStudyServerPreanonymizedIngestPayload
+        if strict
+        else PreanonymizedIngestPayload
+    )
     try:
-        model_cls = (
-            LocalStudyServerPreanonymizedIngestPayload
-            if strict
-            else PreanonymizedIngestPayload
+        # The suffix selects the format: "report.fhir.json" is still plain JSON.
+        payload = read_record(
+            model_cls,
+            sidecar_path,
+            data_format=_PREANONYMIZED_SIDECAR_FORMATS[sidecar_path.suffix],
+            max_bytes=_PREANONYMIZED_SIDECAR_MAX_BYTES,
         )
-        return model_cls.model_validate(payload), sidecar_path
-    except ValidationError as exc:
+    except RecordValidationError as exc:
         raise ValueError(
             "Invalid preanonymized sidecar payload; "
-            f"{watcher_path_reference_text(sidecar_path)}"
-        ) from exc
+            f"{watcher_path_reference_text(sidecar_path)}: {exc}"
+        ) from None
+    except DataFormatError as exc:
+        # Codec messages carry neither sidecar content nor its path.
+        raise ValueError(
+            "Preanonymized sidecar must contain a mapping that can be read safely; "
+            f"{watcher_path_reference_text(sidecar_path)}: {exc}"
+        ) from None
+    return payload, sidecar_path
 
 
 def _quarantine_preanonymized_drop(

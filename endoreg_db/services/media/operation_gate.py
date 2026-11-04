@@ -100,7 +100,10 @@ def acquire_media_operation_lease(
     )
 
     with transaction.atomic():
-        locked_video = VideoFile.objects.select_for_update().get(pk=request.video_id)
+        # Lease admission needs only identity; timeline JSON can be megabytes.
+        locked_video = (
+            VideoFile.objects.select_for_update().only("pk").get(pk=request.video_id)
+        )
         cleanup_pending = StorageRotationCleanupReceipt.objects.filter(
             rotation__source_placement__media_lease_video=locked_video,
             rotation__state__in=[

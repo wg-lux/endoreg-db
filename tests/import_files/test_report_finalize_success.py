@@ -1,3 +1,5 @@
+from tests.helpers.pdf import render_single_page_pdf
+
 # pyright: reportPrivateUsage=false
 from pathlib import Path
 from unittest.mock import Mock
@@ -8,7 +10,6 @@ from django.db import models, transaction
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
-from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
@@ -57,8 +58,8 @@ def test_publication_preserves_previous_generation_across_failures(
     monkeypatch: pytest.MonkeyPatch,
     failure: str,
 ) -> None:
-    previous = ReportImportService._render_single_page_pdf("previous report")
-    candidate_bytes = ReportImportService._render_single_page_pdf("replacement report")
+    previous = render_single_page_pdf("previous report")
+    candidate_bytes = render_single_page_pdf("replacement report")
     center = Center.objects.create(
         name="generation-test", display_name="Generation test"
     )

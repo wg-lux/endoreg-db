@@ -81,6 +81,15 @@ def load_video_timeline_index(video: VideoFile) -> VideoTimelineIndex:
         .order_by("frame_number")
         .values_list("frame_number", "timestamp")
     )
+    if not rows and mapping.requires_persisted_pts:
+        from endoreg_db.services.video_files.timestamp_backfill import (
+            backfill_missing_video_timestamps,
+        )
+
+        previous_meta = video.meta
+        backfill_missing_video_timestamps(video)
+        if video.meta is not previous_meta:
+            return load_video_timeline_index(video)
     try:
         native = build_timeline_index(
             [int(frame_number) for frame_number, _ in rows],

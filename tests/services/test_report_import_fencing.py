@@ -21,9 +21,18 @@ from endoreg_db.services.reports.import_fencing import (
     report_import_mutation_guard,
 )
 
-pytestmark = pytest.mark.django_db(transaction=True)
+pytestmark = pytest.mark.django_db
+
+# Committed rows are required by heartbeat threads (separate connection) and by
+# unchanged-row assertions: inside one test transaction PostgreSQL Now() is
+# frozen, so a stray timestamp-only write would compare equal to the snapshot.
+committed = pytest.mark.django_db(transaction=True)
+
+# Far beyond any application/database clock skew, unlike a one-second margin.
+_EXPIRED_LEASE_AGE = timedelta(hours=1)
 
 
+@committed
 def test_heartbeat_rejects_outer_transaction_without_closing_caller_connection() -> (
     None
 ):
@@ -38,6 +47,7 @@ def test_heartbeat_rejects_outer_transaction_without_closing_caller_connection()
     assert connection.is_usable()
 
 
+@committed
 def test_heartbeat_exit_preserves_caller_connection_and_original_error() -> None:
     fence = acquire_report_import_fence("b" * 64)
     original_connection = connection.connection
@@ -62,7 +72,7 @@ def test_expired_attempt_is_fenced_from_finalization() -> None:
     content_hash = "b" * 64
     stale = acquire_report_import_fence(content_hash)
     ReportImportAttempt.objects.filter(content_hash=content_hash).update(
-        lease_expires_at=timezone.now() - timedelta(seconds=1)
+        lease_expires_at=timezone.now() - _EXPIRED_LEASE_AGE
     )
     current = acquire_report_import_fence(content_hash)
 
@@ -123,7 +133,7 @@ def test_expired_owner_cannot_mutate_report_metadata() -> None:
     content_hash = "d" * 64
     stale = acquire_report_import_fence(content_hash)
     ReportImportAttempt.objects.filter(content_hash=content_hash).update(
-        lease_expires_at=timezone.now() - timedelta(seconds=1)
+        lease_expires_at=timezone.now() - _EXPIRED_LEASE_AGE
     )
 
     with (
@@ -133,6 +143,7 @@ def test_expired_owner_cannot_mutate_report_metadata() -> None:
         pytest.fail("stale attempt entered the mutation boundary")
 
 
+@committed
 @pytest.mark.parametrize("operation", ["renew", "mutate", "finalize", "fail"])
 def test_superseded_owner_cannot_change_replacement_attempt(
     operation: Literal["renew", "mutate", "finalize", "fail"],
@@ -140,7 +151,7 @@ def test_superseded_owner_cannot_change_replacement_attempt(
     content_hash = "3" * 64
     stale = acquire_report_import_fence(content_hash)
     ReportImportAttempt.objects.filter(content_hash=content_hash).update(
-        lease_expires_at=timezone.now() - timedelta(seconds=1)
+        lease_expires_at=timezone.now() - _EXPIRED_LEASE_AGE
     )
     current = acquire_report_import_fence(content_hash)
     before = ReportImportAttempt.objects.values().get(content_hash=content_hash)
@@ -169,6 +180,7 @@ def test_superseded_owner_cannot_change_replacement_attempt(
     )
 
 
+@committed
 @pytest.mark.parametrize("boundary", ["mutate", "finalize"])
 def test_failed_guard_rolls_back_database_writes_and_preserves_owner(
     boundary: Literal["mutate", "finalize"],
@@ -200,6 +212,7 @@ def test_failed_guard_rolls_back_database_writes_and_preserves_owner(
     )
 
 
+@committed
 def test_background_heartbeat_renews_during_long_running_stage(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -219,6 +232,7 @@ def test_background_heartbeat_renews_during_long_running_stage(
         assert renewed.wait(timeout=1)
 
 
+@committed
 def test_background_heartbeat_failure_is_raised_at_guard(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -243,7 +257,7 @@ def test_background_heartbeat_failure_is_raised_at_guard(
 def test_expired_owner_is_rejected_without_a_replacement(operation: str) -> None:
     fence = acquire_report_import_fence("6" * 64)
     ReportImportAttempt.objects.filter(content_hash=fence.content_hash).update(
-        lease_expires_at=timezone.now() - timedelta(seconds=1)
+        lease_expires_at=timezone.now() - _EXPIRED_LEASE_AGE
     )
     if operation == "fail":
         assert not mark_report_import_fence_failed(fence)
@@ -283,6 +297,7 @@ def test_report_heartbeat_preserves_database_recovery_exception(
     )
 
 
+@committed
 def test_second_claim_admission_preserves_winner_epoch() -> None:
     from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
 
@@ -306,12 +321,13 @@ def test_second_claim_admission_preserves_winner_epoch() -> None:
     assert ReportImportAttempt.objects.values().get(pk=first.content_hash) == before
 
 
+@committed
 def test_duplicate_admission_precedes_expired_owner_lost_mutation() -> None:
     from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
 
     first = acquire_report_import_fence("f" * 64)
     ReportImportAttempt.objects.filter(pk=first.content_hash).update(
-        lease_expires_at=timezone.now() - timedelta(seconds=1)
+        lease_expires_at=timezone.now() - _EXPIRED_LEASE_AGE
     )
     before = ReportImportAttempt.objects.values().get(pk=first.content_hash)
     admissions = 0

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 import uuid
 from pathlib import Path
 
@@ -16,9 +18,10 @@ from endoreg_db.services.reports.import_fencing import (
     report_import_finalization_guard,
 )
 
-from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models import Center, RawPdfFile, UploadJob
 from endoreg_db.services.hub.ingest import process_watcher_file
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
+from endoreg_db.services.imports.processing import record_published_import
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
@@ -42,9 +45,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     )
     first_drop = paths.import_report / "case-a.pdf"
     second_drop = paths.import_report / "case-b.pdf"
-    payload = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
-        "topology ingest"
-    )
+    payload = render_single_page_pdf("topology ingest")
     atomic_write_file(destination=first_drop, content=(payload,))
     atomic_write_file(destination=second_drop, content=(payload,))
     content_hash = get_file_hash(first_drop)
@@ -103,6 +104,13 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             }
             report.save()
             report.get_or_create_state().mark_anonymization_validated()
+            # The stub publishes without preparation, so adopt it like any
+            # independently verified artifact before the lifecycle completes.
+            upload_job_id = current_upload_job_id()
+            assert upload_job_id is not None
+            record_published_import(
+                upload_job_id, media_id=int(report.pk), source_sha256=file_hash
+            )
             with report_import_finalization_guard(fence):
                 self.lifecycle.succeeded(report)
             return report

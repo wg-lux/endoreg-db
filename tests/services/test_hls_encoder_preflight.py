@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from io import BytesIO
+from os import stat_result
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -12,6 +13,61 @@ from endoreg_db.services.video_storage.hls_encoding import (
     HlsEncodingProfileName,
     hls_encoding_profile_by_name,
 )
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("size", [0, 17, 1024 * 1024 + 17])
+def test_source_staging_uses_bounded_reads_and_one_capacity_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, size: int
+) -> None:
+    from endoreg_db.utils import file_operations
+
+    payload = b"x" * size
+    source = BytesIO(payload)
+    read = Mock(wraps=source.read)
+    monkeypatch.setattr(source, "read", read)
+    capacity = Mock(wraps=file_operations.ensure_disk_capacity)
+    monkeypatch.setattr(file_operations, "ensure_disk_capacity", capacity)
+
+    output = hls_media._materialize_seekable_plaintext_source(
+        source=source,
+        source_file_name="source.mp4",
+        source_size_bytes=size,
+        temp_source_dir=tmp_path,
+    )
+
+    assert output.read_bytes() == payload
+    assert all(
+        call.args == (hls_media.HLS_SOURCE_CHUNK_BYTES,) for call in read.call_args_list
+    )
+    capacity.assert_called_once_with(destination_dir=tmp_path, required_bytes=size)
+
+
+@pytest.mark.no_db
+def test_output_progress_stats_each_candidate_once_and_ignores_nonfiles(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    segment = tmp_path / "seg_000.ts"
+    segment.write_bytes(b"segment")
+    directory = tmp_path / "seg_directory.ts"
+    directory.mkdir()
+    playlist = tmp_path / "playlist.m3u8"  # Not yet published by FFmpeg.
+    original_stat = Path.stat
+    calls: dict[Path, int] = {}
+
+    def counted_stat(path: Path, *, follow_symlinks: bool = True) -> stat_result:
+        calls[path] = calls.get(path, 0) + 1
+        return original_stat(path, follow_symlinks=follow_symlinks)
+
+    monkeypatch.setattr(Path, "stat", counted_stat)
+    progress = hls_media._hls_output_progress(
+        segment_dir=tmp_path, playlist_path=playlist
+    )
+
+    assert progress.file_count == 1
+    assert progress.total_bytes == len(b"segment")
+    assert progress.latest_mtime_ns > 0
+    assert all(calls[path] == 1 for path in (segment, directory, playlist))
 
 
 @pytest.mark.parametrize("ffmpeg_available", [False, True])

@@ -5,18 +5,16 @@ from __future__ import annotations
 import csv
 import io
 import math
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import UTC, date, datetime
 from pathlib import Path
 from uuid import uuid5
 from xml.etree.ElementTree import ParseError
 from zipfile import BadZipFile, ZipFile
 
-from xlrd.biffh import XLRDError
-
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
-    DtypesRecordClassificationChoicePayload,
     DtypesRecordClassificationChoiceDescriptorPayload,
+    DtypesRecordClassificationChoicePayload,
     DtypesRecordClassificationGroupPayload,
     DtypesRecordFindingPayload,
     DtypesRecordPersistencePayload,
@@ -27,13 +25,22 @@ from lx_dtypes.models.contracts.table_import import (
     TableExtractor,
     TableMapping,
     TableRecord,
+    TableSource,
 )
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
 from lx_dtypes.models.ledger.p_examination.Pydantic import PExamination
 from lx_dtypes.models.meta.ReportMeta import ReportPatientInfo
 from lx_dtypes.packages import load_registered_package
 from lx_dtypes.utils.study_setup_yaml import MAX_SETUP_BYTES, parse_setup_yaml
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, ValidationError
+from xlrd.biffh import XLRDError
+
+from endoreg_db.services.studies.table_prefill import (
+    PatientExtractor,
+    TablePrefill,
+    TablePrefillRules,
+    suggest_mapping,
+)
 
 MAX_TABLE_BYTES = 20 * 1024 * 1024
 MAX_TABLE_ROWS = 10_000
@@ -86,22 +93,24 @@ def _cell(value: object) -> str:
     raise ValueError("Unsupported spreadsheet cell type")
 
 
-def _table_rows(content: bytes, suffix: str, spec: TableMapping) -> Iterable[list[str]]:
+def _table_rows(
+    content: bytes, suffix: str, source: TableSource
+) -> Iterable[list[str]]:
     try:
-        yield from _read_table_rows(content, suffix, spec)
+        yield from _read_table_rows(content, suffix, source)
     except (csv.Error, BadZipFile, XLRDError, ParseError, KeyError, OSError) as error:
         raise ValueError("Malformed table document") from error
 
 
 def _read_table_rows(
-    content: bytes, suffix: str, spec: TableMapping
+    content: bytes, suffix: str, source: TableSource
 ) -> Iterable[list[str]]:
     if len(content) > MAX_TABLE_BYTES:
         raise ValueError("Table exceeds 20 MiB")
     if suffix == ".csv":
         reader = csv.reader(
-            io.StringIO(content.decode(spec.source.encoding), newline=""),
-            delimiter=spec.source.delimiter,
+            io.StringIO(content.decode(source.encoding), newline=""),
+            delimiter=source.delimiter,
             strict=True,
         )
         for row in reader:
@@ -109,19 +118,14 @@ def _read_table_rows(
     elif suffix == ".xlsx":
         from openpyxl import load_workbook
 
-        with ZipFile(io.BytesIO(content)) as archive:
-            if (
-                sum(member.file_size for member in archive.infolist())
-                > MAX_TABLE_BYTES * 5
-            ):
-                raise ValueError("Expanded workbook exceeds 100 MiB")
+        _check_workbook_expansion(content)
         workbook = load_workbook(io.BytesIO(content), read_only=True, data_only=False)
         try:
-            if spec.source.sheet is None and len(workbook.sheetnames) != 1:
+            if source.sheet is None and len(workbook.sheetnames) != 1:
                 raise ValueError("Select a sheet for workbooks with multiple sheets")
-            if spec.source.sheet and spec.source.sheet not in workbook.sheetnames:
+            if source.sheet and source.sheet not in workbook.sheetnames:
                 raise ValueError("Selected sheet is missing")
-            sheet = workbook[spec.source.sheet or workbook.sheetnames[0]]
+            sheet = workbook[source.sheet or workbook.sheetnames[0]]
             if sheet.max_column and sheet.max_column > MAX_TABLE_COLUMNS:
                 raise ValueError("Workbook exceeds column limit")
             for cells in sheet.iter_rows():
@@ -137,16 +141,16 @@ def _read_table_rows(
 
         workbook = xlrd.open_workbook(file_contents=content, on_demand=True)
         try:
-            if spec.source.sheet is None and workbook.nsheets != 1:
+            if source.sheet is None and workbook.nsheets != 1:
                 raise ValueError("Select a sheet for workbooks with multiple sheets")
             sheet = (
-                workbook.sheet_by_name(spec.source.sheet)
-                if spec.source.sheet
+                workbook.sheet_by_name(source.sheet)
+                if source.sheet
                 else workbook.sheet_by_index(0)
             )
             if (
                 sheet.ncols > MAX_TABLE_COLUMNS
-                or sheet.nrows > MAX_TABLE_ROWS + spec.source.header_row
+                or sheet.nrows > MAX_TABLE_ROWS + source.header_row
             ):
                 raise ValueError("Workbook exceeds table limits")
             for number in range(sheet.nrows):
@@ -165,6 +169,41 @@ def _read_table_rows(
             workbook.release_resources()
     else:
         raise ValueError("Supported table formats are .csv, .xlsx and .xls")
+
+
+def _check_workbook_expansion(content: bytes) -> None:
+    with ZipFile(io.BytesIO(content)) as archive:
+        if sum(member.file_size for member in archive.infolist()) > MAX_TABLE_BYTES * 5:
+            raise ValueError("Expanded workbook exceeds 100 MiB")
+
+
+def table_sheet_names(content: bytes, suffix: str) -> list[str]:
+    """Worksheet names of a bounded workbook; CSV files have none."""
+    if len(content) > MAX_TABLE_BYTES:
+        raise ValueError("Table exceeds 20 MiB")
+    try:
+        if suffix == ".csv":
+            return []
+        if suffix == ".xlsx":
+            from openpyxl import load_workbook
+
+            _check_workbook_expansion(content)
+            workbook = load_workbook(io.BytesIO(content), read_only=True)
+            try:
+                return list(workbook.sheetnames)
+            finally:
+                workbook.close()
+        if suffix == ".xls":
+            import xlrd
+
+            legacy = xlrd.open_workbook(file_contents=content, on_demand=True)
+            try:
+                return list(legacy.sheet_names())
+            finally:
+                legacy.release_resources()
+    except (BadZipFile, XLRDError, ParseError, KeyError, OSError) as error:
+        raise ValueError("Malformed table document") from error
+    raise ValueError("Supported table formats are .csv, .xlsx and .xls")
 
 
 def _columns(spec: TableMapping) -> dict[str, TableColumn]:
@@ -267,7 +306,7 @@ def extract_table_records(
     records: list[TableRecord] = []
     seen: set[str] = set()
     header: list[str] | None = None
-    for number, values in enumerate(_table_rows(content, suffix, spec), start=1):
+    for number, values in enumerate(_table_rows(content, suffix, spec.source), start=1):
         if number < spec.source.header_row:
             continue
         if (
@@ -326,6 +365,137 @@ def extract_table_records(
     if not records:
         raise ValueError("Table contains no data rows")
     return records
+
+
+MAX_PREFILL_SAMPLES = 20
+MAX_PREFILL_SAMPLE_CHARS = 1000
+MAX_INSPECTED_VALUE_COLUMNS = 50
+MAX_INSPECTED_VALUES = 200
+MAX_INSPECTED_VALUE_CHARS = 255
+
+
+class TableColumnValues(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    column: str
+    values: list[str]
+    truncated: bool
+
+
+class TableInspection(BaseModel):
+    """Headers and requested distinct cells for mapping authoring; nothing is stored.
+
+    Values are normalized exactly as the importer reads them, so they can be
+    used verbatim as ``values`` keys of a :class:`TableColumn`. They are a list
+    rather than a mapping because column names are data, not field names.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    sheets: list[str]
+    sheet_required: bool
+    columns: list[str]
+    row_count: int
+    values: list[TableColumnValues]
+    prefill: TablePrefill | None = None
+
+
+def inspect_table(
+    content: bytes,
+    suffix: str,
+    source: TableSource,
+    *,
+    value_columns: Sequence[str] = (),
+    prefill_rules: TablePrefillRules | None = None,
+    patient_extractor: PatientExtractor | None = None,
+) -> TableInspection:
+    """Read the header and distinct values of ``value_columns`` within import limits.
+
+    With ``prefill_rules`` the first non-empty cells of each column are sampled
+    in memory to suggest assignments; the samples are never returned.
+    """
+    if len(value_columns) > MAX_INSPECTED_VALUE_COLUMNS or len(
+        set(value_columns)
+    ) != len(value_columns):
+        raise ValueError("Request at most 50 distinct value columns")
+    sheets = table_sheet_names(content, suffix)
+    if source.sheet is None and len(sheets) > 1:
+        return TableInspection(
+            sheets=sheets, sheet_required=True, columns=[], row_count=0, values=[]
+        )
+    header: list[str] | None = None
+    distinct: dict[str, dict[str, None]] = {name: {} for name in value_columns}
+    truncated: set[str] = set()
+    samples: dict[str, list[str]] = {}
+    row_count = 0
+    for number, values in enumerate(_table_rows(content, suffix, source), start=1):
+        if number < source.header_row:
+            continue
+        if (
+            len(values) > MAX_TABLE_COLUMNS
+            or number > MAX_TABLE_ROWS + source.header_row
+        ):
+            raise TableExtractionError(number, "table", "table_limit_exceeded")
+        if header is None:
+            header = values
+            if (
+                not header
+                or any(not name for name in header)
+                or len(header) != len(set(header))
+            ):
+                raise TableExtractionError(
+                    number, "header", "empty_or_duplicate_header"
+                )
+            if not set(value_columns).issubset(header):
+                raise TableExtractionError(number, "header", "source_column_missing")
+            samples = {name: [] for name in header}
+            continue
+        if not any(values):
+            continue
+        if len(values) != len(header):
+            raise TableExtractionError(number, "table", "row_width_mismatch")
+        row_count += 1
+        row = dict(zip(header, values, strict=True))
+        if prefill_rules is not None:
+            for name, value in row.items():
+                kept = samples[name]
+                if (
+                    value
+                    and len(kept) < MAX_PREFILL_SAMPLES
+                    and len(value) <= MAX_PREFILL_SAMPLE_CHARS
+                ):
+                    kept.append(value)
+        for name, seen in distinct.items():
+            value = row[name]
+            if not value or value in seen:
+                continue
+            if (
+                len(seen) >= MAX_INSPECTED_VALUES
+                or len(value) > MAX_INSPECTED_VALUE_CHARS
+            ):
+                # Free text is not a terminology column; keep it out of the response.
+                truncated.add(name)
+                continue
+            seen[value] = None
+    if header is None:
+        raise ValueError("Table has no header row")
+    return TableInspection(
+        sheets=sheets,
+        sheet_required=False,
+        columns=header,
+        row_count=row_count,
+        values=[
+            TableColumnValues(
+                column=name, values=sorted(seen), truncated=name in truncated
+            )
+            for name, seen in distinct.items()
+        ],
+        prefill=None
+        if prefill_rules is None
+        else suggest_mapping(
+            header, samples, prefill_rules, extractor=patient_extractor
+        ),
+    )
 
 
 def _lx_record(

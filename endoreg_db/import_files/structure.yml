@@ -7,14 +7,16 @@ responsibilities:
 boundaries:
 - Preserve content-hash deduplication, encrypted storage, fenced publication and failure propagation.
 files:
+- file: processing/video_processing/video_anonymization.py
+  role: Allocate attempt-owned anonymization output in protected transcoding staging before fenced publication.
 - file: context/import_context.py
   role: Typed import context with one derived media reference, stable center identity and distinct forced reprocessing/recovery intent.
 - file: context/file_lock.py
-  role: File and content-hash locking.
+  role: File and content-hash locking; optional bounded wait lets cleanup probe import liveness without waiting.
 - file: file_storage/create_video_file.py
   role: Content-identity reuse and canonical processor binding before video processing.
 - file: file_storage/state_management.py
-  role: Import finalization and derivative readiness.
+  role: Fenced import finalization and source-matched derivative readiness; cleanup delegates only explicit staging paths.
 - file: file_storage/cleanup.py
   role: Owned staging cleanup.
 - file: processing/report_processing/report_anonymization.py
@@ -22,10 +24,10 @@ files:
 entrypoints:
 - name: VideoImportService
   file: video_import_service.py
-  purpose: Canonical video import coordinator.
+  purpose: Canonical video import and reanonymization share Rust-tracked encrypted preparation and fenced publication; verified reuse adopts the published native checkpoint.
 - name: ReportImportService
   file: report_import_service.py
-  purpose: Document import coordinator.
+  purpose: Document import coordinator with lossless paginated text conversion; fixture PDF generation belongs to tests.
 dependencies:
   internal:
   - endoreg_db/models

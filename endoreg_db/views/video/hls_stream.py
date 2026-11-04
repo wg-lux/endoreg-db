@@ -138,7 +138,9 @@ def _ready_hls_playlist_path(
     artifact_kind: VideoArtifactKind,
 ) -> Path:
     with transaction.atomic():
-        locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+        locked_video = (
+            VideoFile.objects.select_for_update().defer("meta").get(pk=video.pk)
+        )
         artifact = get_ready_hls_artifact(
             video=locked_video,
             artifact_kind=artifact_kind,
@@ -163,7 +165,7 @@ class HLSPlaylistView(APIView):
         request: Request,
         pk: int | str | None = None,
     ) -> HttpResponse | StreamingHttpResponse:
-        video = _get_video_or_404(pk)
+        video = _get_video_or_404(pk, defer_metadata=True)
         artifact_kind = _artifact_kind_from_request(request)
         _assert_hls_scope(request, video, artifact_kind)
         self.check_object_permissions(request, video)
@@ -237,12 +239,14 @@ class HLSKeyView(APIView):
     ) -> HttpResponse:
         if key_id is None:
             raise Http404("HLS key ID is required")
-        video = _get_video_or_404(pk)
+        video = _get_video_or_404(pk, defer_metadata=True)
         self.check_object_permissions(request, video)
         _verify_key_addressed_source_before_lock(request, video, key_id)
         try:
             with transaction.atomic():
-                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+                locked_video = (
+                    VideoFile.objects.select_for_update().defer("meta").get(pk=video.pk)
+                )
                 artifact = get_ready_hls_artifact(
                     video=locked_video,
                     key_id=key_id,
@@ -278,14 +282,16 @@ class HLSSegmentView(APIView):
     ) -> HttpResponse:
         if key_id is None:
             raise Http404("HLS key ID is required")
-        video = _get_video_or_404(pk)
+        video = _get_video_or_404(pk, defer_metadata=True)
         self.check_object_permissions(request, video)
         if not nginx_offload_enabled():
             raise Http404("HLS segment offload is not configured")
         _verify_key_addressed_source_before_lock(request, video, key_id)
         try:
             with transaction.atomic():
-                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+                locked_video = (
+                    VideoFile.objects.select_for_update().defer("meta").get(pk=video.pk)
+                )
                 artifact = get_ready_hls_artifact(
                     video=locked_video,
                     key_id=key_id,

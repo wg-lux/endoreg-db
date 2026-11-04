@@ -23,7 +23,11 @@ from endoreg_db.import_files.context import (
     file_lock,
 )
 from endoreg_db.services.imports.execution import ImportExecutionFence
-from endoreg_db.services.imports.processing import initialize_import_processing_stack
+from endoreg_db.services.imports.processing import (
+    initialize_import_processing_stack,
+    record_published_import,
+)
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.imports.checkpoints import (
     clear_import_checkpoint,
     prepared_import_artifact,
@@ -307,6 +311,13 @@ class VideoImportService:
         ctx.current_video = existing_video
         ctx.require_execution_ownership()
         self._ensure_duplicate_streaming(ctx, existing_video)
+        job_id = current_upload_job_id()
+        if job_id is not None:
+            assert ctx.file_hash is not None
+            with ctx.owned_mutation():
+                record_published_import(
+                    job_id, media_id=int(existing_video.pk), source_sha256=ctx.file_hash
+                )
         clear_import_checkpoint(ctx)
         if existing_video.raw_file:
             self._cleanup_duplicate_staging(ctx)
@@ -344,10 +355,17 @@ class VideoImportService:
 
         return self._anonymize_and_finalize(ctx)
 
-    def _anonymize_and_finalize(self, ctx: ImportContext) -> VideoFile | None:
+    def _anonymize_and_finalize(
+        self,
+        ctx: ImportContext,
+        *,
+        prepare: Callable[[ImportContext], ImportContext] | None = None,
+        preserve_existing_video_artifacts: bool = False,
+    ) -> VideoFile | None:
         """Process the verified raw source, normalize, and publish; fence failure handling too."""
         assert ctx.current_video is not None
         current_video = cast(_LocalRawVideo, ctx.current_video)
+        preserve_existing_video_artifacts |= bool(ctx.current_video.processed_file)
         published = False
         try:
             ctx.require_execution_ownership()
@@ -357,7 +375,7 @@ class VideoImportService:
                 current_video.raw_video_hash,
             )
             with prepared_import_artifact(
-                ctx, self._prepare_video_artifact
+                ctx, prepare or self._prepare_video_artifact
             ) as prepared:
                 ctx = prepared
                 ctx.require_execution_ownership()
@@ -376,7 +394,10 @@ class VideoImportService:
                 # Cleanup failure cannot revoke a committed generation.
                 raise
             try:
-                _finalize_video_failure_if_owned(ctx)
+                _finalize_video_failure_if_owned(
+                    ctx,
+                    preserve_existing_video_artifacts=preserve_existing_video_artifacts,
+                )
             except Exception as ownership_exc:
                 logger.exception(
                     "Skipping video failure finalization due to invalid ownership: attempt=%s error=%s",
@@ -388,8 +409,11 @@ class VideoImportService:
 
     def _prepare_video_artifact(self, ctx: ImportContext) -> ImportContext:
         with self._verified_local_raw_source(ctx):
-            ctx = self.anonymizer.anonymize_video(ctx)
-            _normalize_reimport_video_quality(ctx)
+            return self._anonymize_and_normalize(ctx)
+
+    def _anonymize_and_normalize(self, ctx: ImportContext) -> ImportContext:
+        ctx = self.anonymizer.anonymize_video(ctx)
+        _normalize_reimport_video_quality(ctx)
         return ctx
 
     @contextmanager
@@ -490,26 +514,13 @@ class VideoImportService:
                             video
                         ),
                     ):
-                        try:
-                            mark_instance_processing_started(video, ctx)
-                            ctx = self.anonymizer.anonymize_video(ctx)
-                            _normalize_reimport_video_quality(ctx)
-                            logger.info(
-                                "Existing video re-anonymization succeeded for %s",
-                                raw_video_hash,
-                            )
-                            finalize_video_success(ctx)
-                            return video
-                        except Exception as exc:
-                            logger.exception(
-                                "Existing video re-anonymization failed for %s: %s",
-                                raw_video_hash,
-                                exc,
-                            )
-                            finalize_failure(
-                                ctx, preserve_existing_video_artifacts=True
-                            )
-                            raise
+                        result = self._anonymize_and_finalize(
+                            ctx,
+                            prepare=self._anonymize_and_normalize,
+                            preserve_existing_video_artifacts=True,
+                        )
+                        assert result is not None
+                        return result
 
     @staticmethod
     def _ensure_duplicate_streaming(ctx: ImportContext, video: VideoFile) -> None:

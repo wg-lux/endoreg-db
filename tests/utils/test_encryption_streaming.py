@@ -78,61 +78,6 @@ def streamable_roots(
     )
 
 
-def test_streamable_transcode_uses_small_faststart_profile(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    source = tmp_path / "source.mp4"
-    target = tmp_path / "target.mp4"
-    source.write_bytes(b"\x00\x00\x00\x20ftypmp42moovmdatsource")
-    captured: dict[str, object] = {}
-
-    def fake_transcode_video(
-        input_path: Path, output_path: Path, **kwargs: object
-    ) -> Path:
-        captured["input_path"] = input_path
-        captured["output_path"] = output_path
-        captured["kwargs"] = kwargs
-        output_path.write_bytes(b"\x00\x00\x00\x20ftypmp42moovmdatproxy")
-        return output_path
-
-    monkeypatch.setattr(sm.ffmpeg_wrapper, "transcode_video", fake_transcode_video)
-
-    result = sm._transcode_streamable_mp4(source, target)
-
-    assert result == target
-    assert target.read_bytes() == b"\x00\x00\x00\x20ftypmp42moovmdatproxy"
-    assert captured["input_path"] == source
-    assert captured["output_path"] != target
-    assert captured["kwargs"] == {
-        "codec": "libx264",
-        "crf": 35,
-        "preset": "veryfast",
-        "audio_codec": "aac",
-        "audio_bitrate": "32k",
-        "extra_args": [
-            "-profile:v",
-            "high",
-            "-vf",
-            "scale=-2:480:in_range=auto:out_range=full,format=yuv420p",
-            "-pix_fmt",
-            "yuv420p",
-            "-color_range",
-            "pc",
-            "-copyts",
-            "-fps_mode",
-            "passthrough",
-            "-enc_time_base",
-            "demux",
-            "-movflags",
-            "+faststart",
-            "-an",
-        ],
-        "quality_mode": "fast",
-        "force_cpu": True,
-    }
-
-
 def test_streamable_media_state_centralizes_artifact_decisions(
     video: DummyVideo,
     streamable_roots: StreamableRoots,

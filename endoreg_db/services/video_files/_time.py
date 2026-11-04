@@ -46,6 +46,13 @@ def _frame_number_to_s(video: "VideoFile", frame_number: int) -> float:
         .values_list("timestamp", flat=True)
         .first()
     )
+    if row is None and mapping.requires_persisted_pts:
+        mapping, _, _ = _mapping_contract_from_video(video, backfill_if_empty=True)
+        row = (
+            video.frames.filter(frame_number=frame_number)
+            .values_list("timestamp", flat=True)
+            .first()
+        )
     persisted_timestamp = float(row) if row is not None else None
     return frame_number_to_seconds(
         mapping,
@@ -78,6 +85,11 @@ def _seconds_to_frame_number_with_mapping(
         .values_list("frame_number", "timestamp")
         .first()
     )
+    if before is None and after is None and mapping.requires_persisted_pts:
+        previous_meta = video.meta
+        mapping, _, _ = _mapping_contract_from_video(video, backfill_if_empty=True)
+        if video.meta is not previous_meta:
+            return _seconds_to_frame_number_with_mapping(video, mapping, timestamp)
     neighboring_timestamps: dict[int, float] = {}
     for row in (before, after):
         if row is not None:
@@ -97,15 +109,19 @@ def _frame_neighborhood(
     if radius < 1 or radius > 50:
         raise VideoTimelineMappingError("Frame neighborhood radius must be 1 to 50.")
     mapping, timeline_version, timestamp_mapping = _mapping_contract_from_video(video)
+    requested_timestamp = validate_timestamp_seconds(timestamp_seconds)
+    previous_meta = video.meta
+    resolved_frame = _seconds_to_frame_number_with_mapping(
+        video, mapping, requested_timestamp
+    )
+    if video.meta is not previous_meta:
+        mapping, timeline_version, timestamp_mapping = _mapping_contract_from_video(
+            video
+        )
     if mapping.frame_count is None or mapping.frame_count <= 0:
         raise VideoTimelineMappingError(
             "Frame count is required for frame-by-frame navigation."
         )
-
-    requested_timestamp = validate_timestamp_seconds(timestamp_seconds)
-    resolved_frame = _seconds_to_frame_number_with_mapping(
-        video, mapping, requested_timestamp
-    )
     last_display_frame = mapping.frame_count - 1
     current_frame = min(resolved_frame, last_display_frame)
     first_frame = max(0, current_frame - radius)
@@ -167,8 +183,21 @@ def resolve_video_timeline_mapping(video: "VideoFile") -> VideoTimelineMapping:
 
 def _mapping_contract_from_video(
     video: "VideoFile",
+    *,
+    backfill_if_empty: bool = False,
 ) -> tuple[VideoTimelineMapping, TimelineVersion, TimestampMapping]:
+    from endoreg_db.services.video_files.timestamp_backfill import (
+        backfill_missing_video_timestamps,
+    )
+
     payload = VideoFileMetaPayload.model_validate(video.meta or {})
+    previous_meta = video.meta
+    if payload.source_timeline is None or (
+        backfill_if_empty and payload.source_timeline.timestamp_mapping == "ffprobe_pts"
+    ):
+        backfill_missing_video_timestamps(video, payload=payload)
+    if video.meta is not previous_meta:
+        payload = VideoFileMetaPayload.model_validate(video.meta or {})
     source_timeline = payload.source_timeline
     if source_timeline is None:
         raise VideoTimelineMappingError(

@@ -81,9 +81,8 @@ class Command(BaseCommand):
 
         if command_options.apply and not upload_job_source_reaper_apply_enabled():
             raise CommandError(
-                "UploadJob source reaper apply is disabled. Set "
-                "UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true only after reviewing "
-                "a bounded dry-run."
+                "UploadJob source reaper apply is disabled on this host by "
+                "UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=false."
             )
         if command_options.repeat_until_empty and not command_options.apply:
             raise CommandError("--repeat-until-empty requires --apply")

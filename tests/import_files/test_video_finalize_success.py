@@ -4,7 +4,7 @@ from collections.abc import Callable
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
-from typing import NoReturn, cast
+from typing import cast
 
 import pytest
 from pytest import MonkeyPatch
@@ -351,6 +351,8 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     temp_anonymized = tmp_path / "processing" / "anon_temp.mp4"
     temp_anonymized.parent.mkdir(parents=True, exist_ok=True)
     temp_anonymized.write_bytes(b"anonymized")
+    other_attempt = temp_anonymized.parent / "other-attempt.mp4"
+    other_attempt.write_bytes(b"other attempt")
     import_file = tmp_path / "import" / "exam.mp4"
     import_file.parent.mkdir(parents=True, exist_ok=True)
     import_file.write_bytes(b"import")
@@ -402,19 +404,10 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     def fake_processed_video_dir() -> Path:
         return anonym_dir
 
-    def fail_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
-        raise AssertionError("finalize_video_success must not nuke global transcoding")
-
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
         fake_processed_video_dir,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        state_management_module,
-        "nuke_transcoding_dir",
-        fail_nuke_transcoding_dir,
         raising=True,
     )
     monkeypatch.setattr(
@@ -489,7 +482,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         force: bool = False,
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
-        assert force is True
+        assert force is False
         hls_calls.append(int(video_arg.pk))
 
     monkeypatch.setattr(
@@ -524,6 +517,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert raw_path.exists()
     assert final_anonymized.exists()
     assert not sensitive_working_copy.exists()
+    assert other_attempt.read_bytes() == b"other attempt"
     assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
     assert store_calls == [(final_anonymized, video.processed_file.name)]
     assert ownership_checks >= 5
@@ -607,19 +601,10 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
     def fake_processed_video_dir() -> Path:
         return anonym_dir
 
-    def fail_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
-        raise AssertionError("finalize_video_success must not nuke global transcoding")
-
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
         fake_processed_video_dir,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        state_management_module,
-        "nuke_transcoding_dir",
-        fail_nuke_transcoding_dir,
         raising=True,
     )
     monkeypatch.setattr(

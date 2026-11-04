@@ -22,7 +22,8 @@ files:
 - file: __init__.py
   role: Frame-oriented service helpers.
 - file: frame_retention.py
-  role: Exports prune_unused_validated_outside_frames.
+  role: Exports prune_unused_validated_outside_frames; persists frames absent under row locks before deleting
+    files and keeps frames overlapping any non-outside segment.
 - file: frame_segment_reconciliation.py
   role: Exports reconcile_frame_segment_annotations.
 - file: materialize_training_frames.py
@@ -51,9 +52,10 @@ contracts:
   doc: docs/video_frame_extraction_contract.md
 tests:
   directory: tests
-  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_frame_segment_reconciliation.py tests/views/test_central_hub_training_access.py
-    tests/ai/test_aidataset_training_manifest.py
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_frame_segment_reconciliation.py tests/services/test_frame_retention.py
+    tests/views/test_central_hub_training_access.py tests/ai/test_aidataset_training_manifest.py
   files:
   - tests/services/test_frame_segment_reconciliation.py
+  - tests/services/test_frame_retention.py
   - tests/views/test_central_hub_training_access.py
   - tests/ai/test_aidataset_training_manifest.py

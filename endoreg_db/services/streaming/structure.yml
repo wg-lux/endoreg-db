@@ -23,7 +23,10 @@ files:
   role: HTTP Live Streaming, streambare Medien und seekbare Eingaben.
 - file: hls_media.py
   role: Exports hls_result_is_ready, coerce_hls_artifact_kind, resolve_hls_source, and pre-lock playback
-    source verification (ready_hls_artifact_kind_for_key, verify_ready_hls_source_before_lock).
+    source verification (ready_hls_artifact_kind_for_key, verify_ready_hls_source_before_lock); publication
+    requires encoder provenance and exact decoded timestamps, with bounded source reads through the atomic writer.
+    Matching ready output bypasses rebuild cleanup admission; validation failure classification is shared by timing and retry suppression.
+    Boolean source matching and fenced failure updates govern idempotent derivative recovery; missing derivatives rebuild within existing admission gates.
 - file: seekable_media_input.py
   role: Exports serve_seekable_media_input.
 - file: streamable_media.py
@@ -31,7 +34,7 @@ files:
 - file: streamable_media_state.py
   role: Exports build_streamable_media_state.
 - file: streamable_media_transcoding.py
-  role: Exports is_encrypted_file, is_faststart_mp4, transcode_streamable_mp4.
+  role: Encrypted-file probe for legacy derivative reconciliation; no separate MPEG-4 encoder.
 - file: streamable_media_types.py
   role: Exports StreamableArtifactKind, StreamableArtifactDisposition, StreamableArtifactSpec.
 dependencies:

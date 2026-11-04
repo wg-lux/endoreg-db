@@ -45,7 +45,11 @@ files:
 - file: secret_rotation.md
   role: Backend keyring and migration contracts; readiness remains in feature YAML
 - file: README.md
-  role: Documentation navigation
+  role: Task-first operator navigation and contributor reference index.
+- file: center_access_operations.md
+  role: Center assignment, access diagnosis, role boundaries and rollout recovery.
+- file: audit_ledger_operations.md
+  role: Integrity checks, incident response, ledger contracts and retention boundaries.
 - file: agent_context.md
   role: Agent map schema and design rationale
 - file: model_layer_map_for_agents.md
@@ -53,7 +57,7 @@ files:
 - file: video_storage_normalization.md
   role: Canonical video architecture and operational contract
 - file: hub_ingest_operations.md
-  role: Hub ingestion operations
+  role: Import and transfer diagnosis, bounded cleanup, backup and incident recovery.
 contracts:
 - name: Agent workflow
   doc: AGENTS.md

@@ -122,9 +122,9 @@ definition_of_done:
   acceptance:
   - Repeated load_base_db_data runs produce the same domain state without duplicates.
   - Dependencies are resolved explicitly, and invalid YAML data is rejected loudly.
-  - A repeated load_base_db_data run (including --reconcile-legacy) whose catalogue digest matches the stored
-    receipt and whose bound rows all exist skips the row-level comparison; changed YAML content, missing bound
-    rows, or --verify run the full fail-closed reconciliation.
+  - A repeated load_base_db_data run (including --reconcile-legacy) whose catalogue digest matches the
+    stored receipt and whose bound rows all exist skips the row-level comparison; changed YAML content,
+    missing bound rows, or --verify run the full fail-closed reconciliation.
   required: true
   verification:
     kind: manual
@@ -147,6 +147,48 @@ definition_of_done:
   assessment:
     status: not_assessed
     evidence: []
+- id: catalogue_gender_spellings
+  category: data_integrity
+  title: Gender spellings are defined only by the loaded reference catalogue
+  acceptance:
+  - lx-dtypes defines a gender_alias reference record whose identity is the normalized spelling and whose
+    gender relation must resolve inside the same catalogue snapshot.
+  - endoreg_reference@1.0.0 keeps its published bytes and content digest; a separate endoreg_reference@1.1.0
+    adds the alias records without changing any existing record.
+  - load_base_db_data projects the selected catalogue's aliases, and every endoreg-db gender normalization
+    (table import, prefill, SensitiveMeta, anonymization validation, clinical contracts) resolves through
+    one database-backed service instead of local alias lists.
+  - Spellings for other, divers, diverse and d resolve to the catalogue gender other; unknown spellings
+    fail explicitly instead of being passed through.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run lx-dtypes reference-catalogue and hydration tests, then endoreg-db dataloader, gender
+      resolver and import tests after type checking.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/models/contracts/reference_catalog.py::GenderAliasReference,normalize_gender_spelling
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/data/terminology/versions/endoreg_reference/1.1.0/endoreg_reference/gender_alias.yml
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/models/contracts/test_reference_catalog.py
+    - kind: command
+      reference: 'lx-data-models: endoreg-db venv pytest test_reference_catalog.py test_package_snapshot.py
+        test_data_definition_layout.py: 52 passed, 1 failed (unclassified uncommitted table_import_vocabulary.yml,
+        unrelated); pyright on changed files 0 errors'
+    - kind: command
+      reference: 'Packaged catalogue check: endoreg_reference 1.0.0 digest c1c36254 unchanged and default;
+        1.1.0 digest d5d00fd7 verified, 690 records (673 + 17 gender_alias), snapshot closure valid'
+    note: 'Phase 1 (lx-dtypes) implemented, unreleased. Phase 2 open: lx-dtypes release with raised endoreg-db
+      pin, GenderAlias model and migration, catalog binding, load_base_db_data default 1.1.0, one database-backed
+      gender resolver and consumer migration (table import, prefill, SensitiveMeta, anonymization validation,
+      clinical contracts). Package-internal hydration tests could not be collected in this checkout (lx_dtypes/django
+      shadows django); catalogue digests verified directly instead.'
+    assessed_by: claude-ssot-20261102
+    assessed_at: '2026-11-02T09:34:48.323993Z'
 - id: automated_tests
   category: testing
   title: Loader, dependencies, and idempotency are tested automatically

@@ -9,10 +9,12 @@ responsibilities:
 boundaries:
 - Do not place secrets, patient information or parallel readiness records in messages.
 files:
-- file: reports/lxenc_v2_review.md
-  role: LXENC v2 range integrity, generation consistency and repeatable legacy migration review; readiness remains in StorageSecurity.yml.
 - file: reports/audit_followup_handoffs.md
   role: Bounded audit follow-up assignments with ownership, acceptance and verification; feature YAML retains readiness authority.
+- file: reports/lxenc_v2_review.md
+  role: LXENC v2 range integrity, generation consistency and repeatable legacy migration review; readiness remains in StorageSecurity.yml.
+- file: reports/import_dead_code_removal.yml
+  role: Import cleanup evidence, dated video/streaming handoff and authorized legacy-helper removal verification.
 - file: AnnotationDatasetExportJobs.yml
   role: Authoritative browser dataset export job scope, acceptance criteria and readiness evidence.
 - file: reports/retired_media_paths_removal.yml

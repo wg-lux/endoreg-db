@@ -416,12 +416,25 @@ definition_of_done:
         37.41s; existing pytest temporary-directory cleanup warnings. Focused Pyright 0 errors/0 warnings;
         Ruff passed; 65 structure maps and 37 feature definitions valid. Full Pyright: 17 unrelated errors
         in endoreg_db/identity_resolve/generate_public_key.py, 24 warnings.'
-    note: Receiver-service matching verified with DJANGO_SALT=None and forbidden salt resolution. Existing
+    - kind: test
+      reference: tests/services/test_hub_record_identity.py
+    - kind: command
+      reference: '2026-11-02: .devenv/state/venv/bin/pyright endoreg_db/services/hub/ tests/services/test_hub_record_identity.py:
+        0 errors/0 warnings; pytest tests/services/test_hub_record_identity.py tests/services/test_hub_transfer_envelope.py
+        tests/services/test_hub_transfer_unit_decisions.py tests/services/test_source_patient_matching.py
+        tests/services/test_study_hub_transfer.py tests/services/test_transfer_identity_boundary.py tests/services/test_transfer_job_contract.py
+        tests/services/test_transfer_registration_postgresql.py tests/services/test_video_import_transfer_identity.py
+        tests/views/media/test_hub_transfer_endpoints.py -q (PostgreSQL): 213 passed, 43 subtests passed.'
+    note: 'Receiver-service matching verified with DJANGO_SALT=None and forbidden salt resolution. Existing
       production behavior reused; no deployment changes or claim that global hub startup can omit all
       identity configuration. Authenticated center remains the trust boundary; no per-machine isolation
-      or cross-source matching introduced.
-    assessed_by: codex-sha-benchmark-20261019
-    assessed_at: '2026-10-19T12:29:31.690173Z'
+      or cross-source matching introduced. 2026-11-02 audit handoff 2: hub record namespace hashes and
+      identity conflict decisions extracted unchanged (messages, order, lazy previous-patient resolution)
+      into services/hub/hub_record_identity.py; _upsert_sensitive_meta keeps transaction, center/meta
+      row locks and row creation (Radon D28 -> B7, helpers max C11). PostgreSQL race regressions fail
+      when the center lock is removed. Security review of the identity extraction still pending.'
+    assessed_by: claude-audit-followup-hub
+    assessed_at: '2026-11-02T15:08:18.331983Z'
 - id: documented_transfer_scope
   category: requirements
   title: Sender roles, transfer scope, approval semantics, and phase boundaries are explicit
@@ -839,16 +852,50 @@ definition_of_done:
     - kind: runbook
       reference: docs/hub_ingest_operations.md sections Monitoring, Capacity and Alerting, and Backup
         and Restore (typed LuxNix reserve and operator commands)
-    note: Automated verification confirms idempotent reconciliation, restart of lost queued and in-flight
+    - kind: code
+      reference: endoreg_db/services/media/export_ready.py (video_ready_for_export_committed, sent on
+        commit)
+    - kind: code
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_staging.py; /dev/lx-annotate/lx_annotate/hub/hub_export_cleanup.py::run_scheduled_local_processed_video_reaper;
+        /dev/lx-annotate/lx_annotate/settings/settings_base.py (policy-gated beat entry)
+    - kind: test
+      reference: tests/views/media/test_video_ready_export.py; /dev/lx-annotate/tests/hub/test_hub_export_staging.py;
+        /dev/lx-annotate/tests/hub/test_hub_export_cleanup.py
+    - kind: command
+      reference: 'endoreg-db: Pyright 0 errors on changed files; test_video_ready_export.py 17 passed.
+        lx-annotate with endoreg-db source overlay and a verification-only settings_test profile shim:
+        staging+cleanup+celery routing 44 passed; tests/hub 276 passed with 5 failures (4 pre-existing
+        clinical-lifecycle version skew raised before the new signal, 1 since-fixed fixture); cleanup
+        re-run 10 passed. Ruff and structure lint passed in both repos.'
+    - kind: command
+      reference: 'lx-annotate with endoreg-db overlay: tests/hub plus celery routing and secretspec contract
+        303 passed; 4 failures are the pre-existing validated_without_verified_identity version skew in
+        test_hub_export_video_state_path.'
+    - kind: test
+      reference: /dev/lx-annotate/tests/hub/test_hub_export_cleanup.py::HubExportCleanupTests::test_central_hub_never_reaps_its_processed_master
+    - kind: command
+      reference: 'lx-annotate cleanup, staging and celery routing: 44 passed; Pyright shows only the 5
+        pre-existing errors; Ruff passed.'
+    note: 'Automated verification confirms idempotent reconciliation, restart of lost queued and in-flight
       jobs, visible retry exhaustion, fail-closed acknowledgement integrity, and cleanup eligibility only
       after verified applied status. LuxNix atomically couples the PostgreSQL dump and protected media
       snapshot through a private systemd credential. A fresh NixOS virtual machine confirms the authorization
       boundary, joint checksums and publication, rejection of corrupted dumps, and the configurable minimum
       free-space reserve before and after staging; every failure leaves the latest valid restore point
       unchanged. Production-like exercises for hub outage, certificate rotation, and complete joint database/media
-      recovery by an operator remain outstanding.
-    assessed_by: codex-review-data-transfer-mtls
-    assessed_at: '2026-08-03T14:22:21.794179Z'
+      recovery by an operator remain outstanding. 2026-11-03: Validated-export approval now stages the
+      video for transfer, attributed to the approving operator, through an after-commit endoreg-db signal;
+      queueing still follows AUTO_QUEUE. The verified processed-video reaper runs on a 15-minute beat
+      schedule only under eligible_after_verified_apply and isolates blocked jobs per run. Raw media and
+      processed reports are not reaped. No production exercise; readiness unchanged. 2026-11-03 consolidation:
+      lx-annotate''s default policy is now eligible_after_verified_apply; the scheduled task and the operator
+      command share one reap_verified_local_processed_videos with per-job isolation; staging delegates
+      eligibility, site node and idempotency to mark_resources_for_hub_upload. Hub protection: the sender
+      reaper raises HubExportCleanupForbiddenOnHub on central_hub at its single deletion point, which
+      aborts the run, and its beat entry is not registered on hubs. Reviewed endoreg-db generation, upload-source,
+      staging and storage rotation/rekey cleanup: none can remove a referenced current processed master.'
+    assessed_by: claude-hub-staging-cleanup
+    assessed_at: '2026-11-03T11:27:04.160543Z'
 - id: transfer_observability
   category: observability
   title: Operators can correlate user intent, sender work, receiver decisions, and cleanup

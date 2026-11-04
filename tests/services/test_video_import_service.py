@@ -123,6 +123,29 @@ def normalized_dummy_video(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(vis_module, "normalize_video_file", normalize)
 
 
+@pytest.fixture
+def unit_import_checkpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bypass persisted checkpoints for orchestration tests using duck-typed videos."""
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    def prepare_unit(
+        ctx: ImportContext, prepare: Callable[[ImportContext], ImportContext]
+    ) -> nullcontext[ImportContext]:
+        return nullcontext(prepare(ctx))
+
+    def clear_unit(_ctx: ImportContext) -> None:
+        pass
+
+    def no_pending_checkpoint(_instance: object) -> bool:
+        return False
+
+    monkeypatch.setattr(vis_module, "prepared_import_artifact", prepare_unit)
+    monkeypatch.setattr(vis_module, "clear_import_checkpoint", clear_unit)
+    monkeypatch.setattr(
+        vis_module, "has_pending_import_checkpoint", no_pending_checkpoint
+    )
+
+
 def _no_existing_completed_video(
     self: VideoImportService,
     ctx: ImportContext,
@@ -343,6 +366,7 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -374,6 +398,8 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
         return sensitive_path
 
     class DummyVideo:
+        processed_file = None
+
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
@@ -466,6 +492,7 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
 def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -503,6 +530,8 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
         return sensitive_path
 
     class DummyVideo:
+        processed_file = None
+
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
@@ -599,6 +628,7 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
 def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -636,6 +666,8 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
         return sensitive_path
 
     class DummyVideo:
+        processed_file = None
+
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
@@ -803,6 +835,7 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -815,6 +848,7 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     events: list[tuple[object, ...]] = []
 
     class DummyVideo:
+        processed_file = None
         raw_video_hash = "dummy-video-hash"
         width = 640
         height = 480
@@ -1208,6 +1242,17 @@ def test_reanonymize_existing_video_skips_import_staging(
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
+    def prepare_unit(
+        ctx: ImportContext, prepare: Callable[[ImportContext], ImportContext]
+    ) -> nullcontext[ImportContext]:
+        return nullcontext(prepare(ctx))
+
+    def clear_unit(_ctx: ImportContext) -> None:
+        pass
+
+    monkeypatch.setattr(vis_module, "prepared_import_artifact", prepare_unit)
+    monkeypatch.setattr(vis_module, "clear_import_checkpoint", clear_unit)
+
     source_path = tmp_path / "raw.mp4"
     source_path.write_bytes(b"raw-video")
     events: list[tuple[object, ...]] = []
@@ -1329,6 +1374,7 @@ def test_reanonymize_existing_video_skips_import_staging(
 def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -1416,6 +1462,7 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
 def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
     from endoreg_db.utils.file_operations import atomic_write_file
@@ -1874,6 +1921,7 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
     from endoreg_db.services.hub.media_integrity import (
@@ -1899,6 +1947,7 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
         anonymization_validated = False
 
     class DummyVideo:
+        processed_file = None
         pk = 1
         state = DummyState()
         raw_video_hash = "video-hash"
@@ -2055,6 +2104,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
     normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -2106,6 +2156,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
         anonymization_validated = False
 
     class DummyVideo:
+        processed_file = None
         pk = 1
         raw_video_hash = "video-hash"
         sensitive_meta = object()

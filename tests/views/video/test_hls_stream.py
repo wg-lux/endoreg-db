@@ -7,7 +7,9 @@ from uuid import uuid4
 import pytest
 from django.contrib.auth.models import Group, User
 from django.core.files.base import ContentFile
+from django.db import connection
 from django.test import override_settings
+from django.test.utils import CaptureQueriesContext
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Examiner, PortalUserInfo, VideoFile
@@ -21,6 +23,61 @@ from endoreg_db.views.video import hls_stream
 from tests.helpers.hls import FakeHlsOutputRecorder
 
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("artifact_kind", ["raw", "processed"])
+@pytest.mark.parametrize("resource", ["playlist", "key", "segment"])
+def test_hls_playback_avoids_timeline_payload_and_reuses_verified_source(
+    hls_artifact: VideoHlsArtifact,
+    monkeypatch: pytest.MonkeyPatch,
+    artifact_kind: str,
+    resource: str,
+) -> None:
+    monkeypatch.setenv("SERVE_WITH_NGINX", "true")
+    monkeypatch.setenv("NGINX_PROTECTED_MEDIA_URL", "/protected_media/")
+    if artifact_kind == "raw":
+        video = hls_artifact.video
+        video.raw_file.save("raw.mp4", ContentFile(b"raw source"), save=True)
+        hls_media.materialize_video_hls(video.pk, artifact_kind="raw")
+        hls_artifact = VideoHlsArtifact.objects.get(video=video, artifact_kind="raw")
+    events = _record_source_reads(monkeypatch)
+    user = User.objects.create_user(username="hls-query-budget-reader")
+    previous_expiry = None
+    for _ in range(2):
+        request = _authenticated_request(f"/?type={artifact_kind}", user)
+        with CaptureQueriesContext(connection) as queries:
+            if resource == "playlist":
+                response = hls_stream.HLSPlaylistView.as_view()(
+                    request,
+                    pk=hls_artifact.video_id,
+                )
+            elif resource == "key":
+                response = hls_stream.HLSKeyView.as_view()(
+                    request,
+                    pk=hls_artifact.video_id,
+                    key_id=hls_artifact.key_id,
+                )
+            else:
+                response = hls_stream.HLSSegmentView.as_view()(
+                    request,
+                    pk=hls_artifact.video_id,
+                    key_id=hls_artifact.key_id,
+                    segment_name="seg_000.ts",
+                )
+        assert response.status_code == 200
+        metadata_reads = [
+            query["sql"]
+            for query in queries
+            if '"endoreg_db_videofile"."meta"' in query["sql"]
+        ]
+        assert not metadata_reads, (
+            f"Loaded timeline payload {len(metadata_reads)} times"
+        )
+        lease = MediaOperationLease.objects.get(video_id=hls_artifact.video_id)
+        if previous_expiry is not None:
+            assert lease.expires_at > previous_expiry
+        previous_expiry = lease.expires_at
+    assert events.count("read") == 1
 
 
 def test_hls_key_and_segment_do_not_rescan_the_generation(

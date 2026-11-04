@@ -10,24 +10,26 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
-- file: utils/test_encryption_format_v2.py
-  role: LXENC version two terminal-chunk, key-identifier and file-binding guarantees across Python and native readers.
-- file: helpers/legacy_encryption.py
-  role: Version-one LXENC fixture writer proving legacy media stays readable; production writers emit version two.
-- file: environment/test_node_marker_matching.py
-  role: Whole-word ai/inference auto-marking in conftest; substrings such as claim or failed stay in the fast lane.
-- file: helpers/video_timeline.py
-  role: Explicit typed constant-frame-rate timeline contracts for synthetic segment and inference fixtures.
-- file: utils/test_operation_log.py
-  role: Audit failure propagation, real transaction rollback and audit preflight before import startup.
-- file: services/test_report_pdf_artifact.py
-  role: Complete structured report rendering with embedded images, strict defaults and renderer-failure no-artifact regression tests.
-- file: test_logger_conf.py
-  role: Logger configuration preserves wrapper auditing, path redaction and visible directory failures.
+- file: services/test_video_owned_deletion.py
+  role: Full video deletion removes owned assets synchronously, retains ownership on failure and rejects shared or aliased paths.
+- file: services/test_video_timestamp_backfill.py
+  role: Automatic canonical timestamp backfill, identity preservation, idempotence and rejection regressions.
+- file: helpers/pdf.py
+  role: Independent single-page synthetic PDF fixture/reference shared by report tests and native-renderer parity; no clinical renderer fallback.
 - file: services/test_shared_video_helpers.py
   role: Shared half-open interval and processing-history task-ID contracts through existing caller aliases.
+- file: services/test_report_pdf_artifact.py
+  role: Complete structured report rendering with embedded images, strict defaults and renderer-failure no-artifact regression tests.
+- file: utils/test_operation_log.py
+  role: Audit failure propagation, real transaction rollback and audit preflight before import startup.
+- file: test_logger_conf.py
+  role: Logger configuration preserves wrapper auditing, path redaction and visible directory failures.
 - file: administration/center/test_center_shift.py
   role: Presence-fraction model/database bounds, atomic migration rejection and explicit scheduling refusal.
+- file: helpers/video_timeline.py
+  role: Explicit typed constant-frame-rate timeline contracts for synthetic segment and inference fixtures.
+- file: import_files/test_storage_state_management.py
+  role: Import failure propagation, explicit staging cleanup and preservation of concurrent attempt files.
 - file: services/test_frame_annotation_export_jobs.py
   role: Export configuration, authorization, dispatch, claim fencing and process-lock regression tests.
 - file: views/media/test_frame_annotation_export_jobs_api.py
@@ -40,6 +42,10 @@ files:
   role: Native stack persistence, stable restart references, automatic recovery, priority ordering and missing-capability rejection.
 - file: helpers/seed_fixtures.py
   role: Shared minimal gender, center and processor fixtures using canonical data loaders.
+- file: helpers/legacy_encryption.py
+  role: Version-one LXENC fixture writer proving legacy media stays readable; production writers emit version two.
+- file: utils/test_encryption_format_v2.py
+  role: LXENC version two terminal-chunk, key-identifier and file-binding guarantees across Python and native readers.
 - file: scripts/test_export_frame_annotations_script.py
   role: Shared YAML export contract validation, CLI overrides and delegation without duplicated workflow logic.
 - file: services/test_export_file_names.py
@@ -96,6 +102,8 @@ files:
   role: Center-scoped examination resolution, patient alias reuse, idempotency and conflict rejection.
 - file: environment/test_database_fixture_contract.py
   role: Isolated default database creation, per-test rollback and explicit no-database access rejection.
+- file: environment/test_node_marker_matching.py
+  role: Whole-word ai/inference auto-marking in conftest; substrings such as claim or failed stay in the fast lane.
 - file: services/test_migrate_legacy_hashes.py
   role: PostgreSQL atomic identity migration, preflight rejection, idempotency, aliases and writer fencing.
 - file: services/test_patient_hash_aliases.py

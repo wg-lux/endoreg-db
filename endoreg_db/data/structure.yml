@@ -9,6 +9,10 @@ boundaries:
 files:
 - file: spacy/manifest.yml
   role: Provenance and SHA-256 inventory for the deployment-provisioned German model and licenses.
+- file: study_import/colonoscopy.yml
+  role: Versioned colonoscopy study preset for the shared terminology-backed loader.
+- file: study_import/prefill.yml
+  role: Versioned table-import prefill preset for the shared terminology-backed loader.
 - file: setup_config.yaml
   role: Packaged setup configuration.
 - file: __init__.py

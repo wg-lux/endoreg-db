@@ -3,7 +3,7 @@ from __future__ import annotations
 # pyright: reportUnknownMemberType=false
 
 from datetime import date, datetime
-from typing import cast
+from typing import Callable, cast
 import hashlib
 from unittest.mock import patch
 from uuid import uuid4
@@ -30,6 +30,10 @@ from endoreg_db.schemas.sensitive_meta_verification import (
 )
 from endoreg_db.services.patient_identity.verification import (
     update_sensitive_meta_verification,
+)
+from endoreg_db.services.media.export_ready import (
+    VideoReadyForExportCommitted,
+    video_ready_for_export_committed,
 )
 from endoreg_db.services.privacy.quality_evaluation import (
     clear_sensitive_meta_direct_identifiers,
@@ -360,6 +364,69 @@ class VideoReadyExportEndpointTests(TestCase):
 
         assert response.status_code == 409, response.content
         assert "processed_file_sha256" in response.json()["error"]
+
+    def _connect_ready_receiver(self, receiver: Callable[..., None]) -> None:
+        video_ready_for_export_committed.connect(receiver, weak=False)
+
+        def _disconnect() -> None:
+            video_ready_for_export_committed.disconnect(receiver)
+
+        self.addCleanup(_disconnect)
+
+    def test_committed_approval_emits_typed_event_after_commit(self):
+        video = self._video()
+        self.client.force_login(self.user)
+        received: list[VideoReadyForExportCommitted] = []
+
+        def _receiver(*, event: VideoReadyForExportCommitted, **_: object) -> None:
+            received.append(event)
+
+        self._connect_ready_receiver(_receiver)
+        with self.captureOnCommitCallbacks(execute=False) as callbacks:
+            response = self.client.post(
+                f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+                data={
+                    "center_key": self.center.center_key,
+                    "processed_file_sha256": self.processed_sha,
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 200, response.content
+        # Nothing is published before the approving transaction commits.
+        assert received == []
+        for callback in callbacks:
+            callback()
+        assert received == [
+            VideoReadyForExportCommitted(
+                video_id=int(video.pk),
+                center_key=str(self.center.center_key),
+                processed_file_sha256=self.processed_sha,
+                approved_by_user_id=int(self.user.pk),
+            )
+        ]
+
+    def test_rejected_approval_emits_no_event(self):
+        video = self._video()
+        self.client.force_login(self.user)
+        received: list[VideoReadyForExportCommitted] = []
+
+        def _receiver(*, event: VideoReadyForExportCommitted, **_: object) -> None:
+            received.append(event)
+
+        self._connect_ready_receiver(_receiver)
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post(
+                f"/api/media/videos/{video.pk}/mark-ready-for-export/",
+                data={
+                    "center_key": self.center.center_key,
+                    "processed_file_sha256": "0" * 64,
+                },
+                content_type="application/json",
+            )
+
+        assert response.status_code == 409, response.content
+        assert received == []
 
     def test_rejects_center_mismatch(self):
         other_center = Center.objects.create(name=f"other-ready-{uuid4().hex[:8]}")

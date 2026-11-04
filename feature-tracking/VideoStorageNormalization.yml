@@ -153,8 +153,8 @@ definition_of_done:
   - Vor dem Import gespeicherte Präsentationszeitstempel sind explizit auswählbar; fehlende historische
     Werte werden nicht aus der Bildrate rekonstruiert.
   - Downloads schreiben keine zusätzlichen unverschlüsselten Mediendateien auf dem Server.
-  - Medienantworten werden unter ASGI blockweise statt vollständig im Arbeitsspeicher konsumiert;
-    langsame Leser, Abbruch während eines Lesevorgangs, Fehler und WSGI bleiben getestet.
+  - Medienantworten werden unter ASGI blockweise statt vollständig im Arbeitsspeicher konsumiert; langsame
+    Leser, Abbruch während eines Lesevorgangs, Fehler und WSGI bleiben getestet.
   - Browser- und Datei-Medienexport verwenden dieselbe Integritätsentscheidung; aktuelle Inhaltsidentität,
     vorhandener Freigabehash und gelesene Datei müssen übereinstimmen, auch außerhalb des Studienserver-Modus.
   - Annotationsmanifeste referenzieren den kanonischen Processed-Inhaltshash; veraltete Freigaben werden
@@ -171,13 +171,12 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: test
-      reference: '2026-10-28 codex-gc10-unlock-20261028: targeted Pyright 0 errors/0 warnings;
-        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/utils/test_storage_streaming.py
-        tests/utils/test_encryption_range.py tests/views/report/test_report_stream.py
-        tests/views/media/test_video_export_downloads.py -q: 60 passed, no skips.
-        The 64-block ASGI regression reads only one block before first delivery; repeated cancellation,
-        ranges, reader failure, real ciphertext, wrong keys, tampering and WSGI are covered.
-        Source-only change; installed-wheel and gc-10 acceptance remain pending.'
+      reference: '2026-10-28 codex-gc10-unlock-20261028: targeted Pyright 0 errors/0 warnings; RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false pytest tests/utils/test_storage_streaming.py tests/utils/test_encryption_range.py
+        tests/views/report/test_report_stream.py tests/views/media/test_video_export_downloads.py -q:
+        60 passed, no skips. The 64-block ASGI regression reads only one block before first delivery;
+        repeated cancellation, ranges, reader failure, real ciphertext, wrong keys, tampering and WSGI
+        are covered. Source-only change; installed-wheel and gc-10 acceptance remain pending.'
     - kind: test
       reference: '2026-10-06: tests/views/media/test_video_export_downloads.py: 19 passed, 2 bestehende
         Warnungen. Reale verschlüsselte Dateien, falscher Schlüssel, manipuliertes Chiffrat, Rollen/Zentrum,
@@ -220,6 +219,9 @@ definition_of_done:
   category: operations
   title: Periodische Bereinigung erfasst temporäre Dateien bekannter Generationen
   acceptance:
+  - Der Legacy-Befehl storage_management bleibt lesend; Löschoptionen, Notfallbereinigung und direkte
+    Cleanup-Helper brechen ohne Dateimutationen ab. Kapazitätsberichte messen den konfigurierten Laufzeit-Speicher
+    statt des Root-Dateisystems. Speicherknappheit und --force umgehen keine Schutzprüfung.
   - Periodische Aufträge bearbeiten begrenzte Batches vorhandener Generationenbelege, ohne aktuelle Master
     oder unzugeordnete Dateien zu löschen.
   - Veraltete und fehlgeschlagene Streaming-Versuche mit passendem Quellnamen und Hash werden einschließlich
@@ -249,6 +251,15 @@ definition_of_done:
       reference: endoreg_db/tasks.py
     - kind: document
       reference: docs/video_storage_normalization.md
+    - kind: test
+      reference: '2026-11-02: tests/management/commands/test_storage_management.py: alle 30 Fälle bestanden.
+        Gemeinsame Regression über 15 Testdateien: 264 passed, 1 failed; einziger Fehler im neuen Timeline-Validierungstest
+        anschließend behoben und gesamte Segment-Suite mit 36 passed erneut geprüft.'
+    - kind: command
+      reference: '2026-11-02: gezielter Pyright aller geänderten Dateien 0 Fehler/0 Warnungen; Ruff, 67
+        Strukturmanifeste, quality:dead-code und Diffprüfung bestanden. Gesamt-Pyright: 4 Fehler in bereits
+        zuvor geänderter tests/dataloader/test_load_base_db_data_repeat.py, außerhalb dieser Korrekturen.
+        Assessor: codex-storage-review-20261102.'
     note: 'Automatische Bereinigung terminaler HTTP-Live-Streaming-Derivate beider Quellarten implementiert;
       aktuelle verifizierte Quelle und verfügbares Derivat bleiben Voraussetzung. Fehlende historische
       Hashes erlauben nur Derivat-, keine Master-Löschung. Begrenzte Batches, atomar persistierter typisierter
@@ -257,13 +268,66 @@ definition_of_done:
       Suite nach Cursor- und Batch-Erweiterung: 50 passed. Vollständiger Pyright: 0 Fehler, 10 bestehende
       Warnungen; abschließende fokussierte Pyright-Läufe: 0 Fehler/Warnungen. Ruff und diff --check bestanden.
       LuxNix-Allhost-Apply-Konfiguration vorbereitet; kein neuer Produktionscode aktiviert und keine Produktionslöschung
-      durch diese Änderung.'
-    assessed_by: codex-cleanup-20261005
-    assessed_at: '2026-10-06T13:45:29.656953Z'
+      durch diese Änderung.
+
+      2026-11-02: Legacy storage_management auf lesenden Betrieb begrenzt; alle destruktiven Optionen
+      und direkten Helper gesperrt, Kapazität am Laufzeit-Speicher gemessen. Keine Produktionsfreigabe.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T12:53:59.647568Z'
+- id: abandoned_transient_artifact_reclamation
+  category: operations
+  title: Verwaiste temporäre Artefakte abgebrochener Versuche werden nur nach belegtem Eigentümerende
+    bereinigt
+  acceptance:
+  - Ein periodischer Lauf ordnet jeden Eintrag im geschützten Transcoding-Verzeichnis genau einer typisierten
+    Eigentümerart zu - UploadJob-Inventar, HLS-Erzeugung pro Video und Schlüssel, Video-Rohhash oder Speicherdruck-Transcode
+    pro Video-UUID - oder meldet ihn als prozessgebunden beziehungsweise unbekannt.
+  - Gelöscht wird nur, wenn der Eigentümer nachweislich terminal ist oder fehlt - kein aktiver UploadJob,
+    keine wartende oder laufende HLS-Erzeugung, keine laufende Anonymisierung laut Rust-Phase, keine laufende
+    Verarbeitung, keine aktive Medien-Lease - und die jüngste Änderung im Eintrag älter als die konfigurierte
+    Karenzzeit ist. Prozessgebundene und unbekannte Einträge sowie symbolische Links werden nie gelöscht.
+  - Die Bereinigung folgt dem einzigen Apply-Schalter des periodischen Tasks (standardmäßig aktiv; false
+    erzwingt Dry-Run) und ist der einzige Bereiniger dieses Verzeichnisses; Mutationen verwenden die typisierten
+    Wrapper, aktualisieren das UploadJob-Inventar und erzeugen strukturierte JSON-Ereignisse in begrenzten
+    Batches. Master, Streaming-Derivate und Frames liegen außerhalb dieses Verzeichnisses und bleiben
+    unberührt.
+  - Parametrisierte Tests decken jede Eigentümerart in aktivem und terminalem Zustand, junge Einträge,
+    unbekannte Layouts und Dry-Run ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright und fokussierte Tests ausführen; danach Dry-Run-Bericht auf dem Zielhost prüfen,
+      bevor Apply freigegeben wird.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/runtime/transient_artifact_cleanup.py; endoreg_db/import_files/context/file_lock.py
+        (optional timeout, file_lock_path)
+    - kind: test
+      reference: tests/services/test_transient_artifact_cleanup.py
+    - kind: command
+      reference: 'Pyright 0 errors; transient + periodic cleanup re-run after HLS fail-closed tightening:
+        35 passed; import file locks and disk-pressure contract included in the 75-test run.'
+    - kind: runbook
+      reference: docs/video_storage_normalization.md#abandoned-temporary-artifacts
+    - kind: command
+      reference: Same 97-test endoreg-db run, including test_reconciliation_service and test_disk_pressure_cleanup_contract.
+    - kind: command
+      reference: Same 55-test run; Pyright 0 errors.
+    note: '2026-11-03: reap_transient_artifact is the single verified per-unit deletion, used by the periodic
+      loop and the lx-annotate storage monitor; both share list_transient_artifact_units. Not yet assessed
+      on a host.'
+    assessed_by: claude-hub-staging-cleanup
+    assessed_at: '2026-11-03T13:03:49.091202Z'
 - id: explicit_video_copy_deletion
   category: functionality
   title: Explizite Videolöschung entfernt belegte Quellen und Generationen
   acceptance:
+  - Vollständige Videolöschung entfernt eigene Frame- und temporäre Anonymisierungsverzeichnisse synchron
+    vor dem Datenbankdatensatz. Dateisystemfehler verhindern eine Erfolgsmeldung und erhalten die Besitzreferenzen
+    für Wiederholung; reine Frame-Cache-Bereinigung behält ihre Datensatz-Retention.
   - Die explizite Löschung verwendet bestehende UploadJob-Provenienz und Generationenbelege; Dateinamen
     allein begründen keine Löschung.
   - Aktive Medien- oder Importverarbeitung, fremde Referenzen, Symlinks und abweichende Inhalts-Hashes
@@ -293,12 +357,27 @@ definition_of_done:
         4773136339 Bytes über safe_unlink_file entfernt; Quellpfad danach nicht vorhanden, Cleanup completed.
         Strukturierte Dateisystem- und Abschlussereignisse über Syslog protokolliert. Nicht zuordenbare
         Streaming-Verzeichnisse unverändert.'
-    assessed_by: codex-cleanup-20261005
-    assessed_at: '2026-10-06T07:48:49.519505Z'
+    - kind: test
+      reference: '2026-11-04: pytest tests/services/test_video_owned_deletion.py tests/models/video/test_video_file_io_storage.py
+        tests/models/video/test_prediction_frame_deletion_contract.py -q --tb=short: 25 passed, 1 bestehende
+        Pluginwarnung in 48,62 s. Vollständige Videolöschung entfernt Frame-Verzeichnisse einschließlich
+        datasetgebundener Frames synchron; Dateisystemfehler erhalten den Datensatz, Wiederholung nach
+        Teilentfernung funktioniert, Symlinks werden abgewiesen. Cache-Retention bleibt unverändert. Initiale
+        Test-Isolationsfehler durch zurückgelassenen Test-Symlink behoben. Keine Bereitstellung.'
+    - kind: command
+      reference: '2026-11-04: Gesamt-Pyright 0 Fehler, 2 bestehende Warnungen; finale geänderte Python-Dateien
+        0 Fehler, 0 Warnungen. Ruff, git diff --check und 67 Strukturmanifeste bestanden. Pytest meldet
+        zusätzlich Bereinigungswarnungen für alte temporäre hub_backup-Testverzeichnisse.'
+    assessed_by: codex-video-delete-20261104
+    assessed_at: '2026-11-04T10:00:36.105859Z'
 - id: hls_single_access_regeneration
   category: functionality
   title: Einheitlicher Zugriff auf HLS-Derivate ohne Legacy-Adoption
   acceptance:
+  - Playlist-, Schlüssel- und Segmentzugriffe laden im lokalen Wiedergabepfad keine vollständigen Video-Timeline-Metadaten.
+    Lease-Erwerb sperrt dieselbe Videozeile über ihre ID, ohne Medienpayloads zu laden. Bereichsübergreifende
+    Autorisierung liest erforderliche Integritätsdaten weiterhin; wiederholte Wiedergabe nutzt den bestehenden
+    geprüften Hashcache und erneuert die Lease.
   - VideoFile.hls_artifacts ist die typisierte Relation für HTTP-Live-Streaming-Derivate; ein gemeinsamer
     Resolver prüft Wiedergabezugriffe nach Artefaktart oder Schlüssel.
   - Inkompatible Derivate werden neu erzeugt; Legacy-Adoption und Wiederherstellung alter Queued-Ready-Zustände
@@ -314,7 +393,7 @@ definition_of_done:
       testen.
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: code
       reference: VideoFile.hls_artifacts; get_ready_hls_artifact; delete_video_hls_artifacts; Legacy-Adoptionsservice
@@ -338,11 +417,26 @@ definition_of_done:
     - kind: document
       reference: 'docs/video_storage_normalization.md: typisierte VideoFile-Relation, gemeinsamer Resolver,
         Service-Löschung und ausschließlich Regeneration inkompatibler HLS-Derivate.'
-    note: Lokale Refaktorierung verifiziert; keine Produktionsmigration oder Bereinigung ausgeführt. Der
-      frühere Fixture-Fehler ist im abschließenden Lauf behoben. Bestehende Pyright-Warnungen bleiben
-      außerhalb dieses Umfangs.
-    assessed_by: codex-hls-consolidation-20261006-a
-    assessed_at: '2026-10-06T07:54:14.290222Z'
+    - kind: test
+      reference: '2026-11-04: Neue Abfrageregression vor Änderung: 6 fehlgeschlagene Fälle, jeweils 3
+        vollständige Timeline-Metadaten-Ladevorgänge pro Playlist-, Schlüssel- oder Segmentanfrage (raw/processed).
+        Danach tests/views/video/test_hls_stream.py: 38 passed in 43,52 s. Alle sechs Fälle laden keine
+        Timeline-Metadaten, lesen den Quellinhalt bei zwei Anfragen nur einmal und erneuern die Lease.
+        Initialer Test-Harness-Fehler durch response.close vor weiteren DB-Abfragen korrigiert.'
+    - kind: test
+      reference: '2026-11-04: HLS-Views, Source-Hashcache, Media-Operation-Gate, HLS-Service, Video-Import-Finalisierung
+        und Central-Hub-Training: 193 passed, 9 failed in 90,04 s. Sechs neue Test-Harness-Fehler im abschließenden
+        38-passed-Lauf behoben. Drei verbleibende InvalidTag-Fehler in test_training_rejects_encrypted_media_damage_without_plaintext_leaks
+        (image/stream/report-tampered) mit allen drei geänderten Produktionsdateien auf HEAD separat reproduziert;
+        danach Optimierung vollständig wiederhergestellt.'
+    - kind: command
+      reference: '2026-11-04: Gesamt-Pyright 0 Fehler, 2 bestehende Warnungen; geänderte Dateien 0 Fehler
+        und 0 Warnungen. Ruff, git diff --check, 67 Strukturmanifeste und 40 Feature-Definitionen gültig.
+        Bestehende Pytest-Plugin- und Altverzeichnis-Bereinigungswarnungen.'
+    note: Lokale Wiedergabeoptimierung geprüft; keine Bereitstellung oder Messung der Browser-Ladezeit.
+      Unabhängige Trainingstests für manipulierte Medien scheitern auch ohne diese Änderung.
+    assessed_by: codex-video-delete-20261104
+    assessed_at: '2026-11-04T10:21:07.012525Z'
 - id: canonical_frame_timestamp_history
   category: functionality
   title: Vollständige Präsentationszeitstempel vor und nach kanonischer Transkodierung
@@ -569,6 +663,17 @@ definition_of_done:
   category: data_integrity
   title: Persistierte Segmente referenzieren Frames transcode-stabil und eindeutig
   acceptance:
+  - Ohne persistierte Quell-Timeline scheitert die klinische Frame-Zeit-Zuordnung auch bei gespeicherter
+    oder konfigurierter Standardbildrate. Eine explizit persistierte konstante Bildrate bleibt unterstützt;
+    eine fehlende Timeline ist kein Nachweis konstanter Bildrate.
+  - Reale Speicher-Normalisierung und anschließende HTTP-Live-Streaming-Erzeugung akzeptieren 60000/1001,
+    60, 120000/1001, 120 und 240 Bilder pro Sekunde ohne implizite Umrechnung auf 50 Bilder pro Sekunde.
+    Frameanzahl und sämtliche Präsentationszeitstempel bleiben erhalten; abweichende nominale Containerangaben
+    ersetzen keine Zeitstempelprüfung, manipulierte Zeitstempel bleiben Fehler.
+  - HTTP Live Streaming (HLS) mit 60000/1001 Bildern pro Sekunde bleibt bei abweichender nominaler Container-Bildrate
+    zulässig, wenn Encoder-Herkunft und dekodierte Zeitstempel übereinstimmen. Veränderte dekodierte Zeitstempel
+    verhindern weiterhin Veröffentlichung; bestehende Toleranzen werden nicht erweitert. Quell-Dimensionsgrenzen
+    werden vor dem Encoder geprüft.
   - Processed publication automatically maps segment boundaries to the nearest processed presentation
     timestamp (ties select the earlier boundary), keeps decoded frame counts exact and preserves raw timestamp
     history for external sensor alignment. Mapping evidence records before/after coordinates and is committed
@@ -655,8 +760,72 @@ definition_of_done:
       reference: '2026-10-20: Partielle Streaming-Inferenz erhält unabhängig beobachtete exklusive Frame-/Zeitgrenze
         ohne Framecache oder Bildratenableitung. Beide echten Gewichtsquellen und ungültige Grenzen in
         abschließendem 222-bestanden-Lauf erfolgreich; fokussierter Pyright 0 Fehler/0 Warnungen.'
-    assessed_by: codex-test-review-20261020
-    assessed_at: '2026-10-20T11:24:15.886595Z'
+    - kind: test
+      reference: '2026-11-02: Reale CPU-Normalisierung von yuv444p nach zulässigem YUV420 und anschließende
+        HLS-Erzeugung für 60000/1001, 60, 120000/1001, 120 und 240 Bilder/s. Alle Frameanzahlen und Präsentationszeiten
+        bleiben erhalten; nominal abweichende HLS-Metadaten sind erlaubt, manipulierte Zeitstempel werden
+        für jede Rate abgelehnt. RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_hls_media.py::test_hls_nominal_rate_estimate_does_not_replace_timestamp_proof
+        tests/services/test_hls_media.py::test_hls_rejects_unsupported_source_before_encoding tests/services/test_video_storage_normalization.py::test_native_normalization_preserves_any_positive_fps
+        tests/import_files/test_video_import_normalization.py -q --tb=short: 18 passed, 1 warning, 87.76s.
+        Vollständiger Pyright: 0 errors, 2 bestehende warnings; gezielter Pyright und Ruff fehlerfrei.
+        Kein vollständiger klinischer Importlauf, kein GPU-Nachweis, kein Deployment; keine Produktionsvalidierung
+        abgeschwächt.'
+    - kind: test
+      reference: '2026-11-02: gemeinsame Timeline-, native Index-, Inferenz-, Importnormalisierungs-,
+        Segmentextraktions-, API- und reale Label-Video-Regression: 264 passed, 1 failed in 562.56s. Einziger
+        Fehler war der neue Ablehnungstest vor ergänzter Validierungsfehlerübersetzung; abschließend tests/views/video/test_segments_crud.py:
+        36 passed, 1 bestehende Pluginwarnung in 90.06s.'
+    - kind: command
+      reference: '2026-11-02: gezielter Pyright aller geänderten Dateien 0 Fehler/0 Warnungen; Ruff, 67
+        Strukturmanifeste, quality:dead-code und Diffprüfung bestanden. Gesamt-Pyright: 4 Fehler in bereits
+        zuvor geänderter tests/dataloader/test_load_base_db_data_repeat.py, außerhalb dieser Korrekturen.
+        Assessor: codex-storage-review-20261102.'
+    - kind: command
+      reference: '2026-11-04: Autorisierter Bestands-Backfill auf gc-10 durch codex-video-list-20261104-a:
+        21 von 33 Videos ohne Quell-Timeline erkannt. Aeltestes vorhandenes Artefakt verwendet (raw, sonst
+        processed), mit dekodierten Zeitstempeln, Inhaltspruefung und Medien-Lease. Fuenf Transaktionen
+        mit insgesamt 557427 Frame-Zeitstempeln erfolgreich zurueckgekehrt; bestehende Segmentindizes
+        unveraendert. Ein fehlender letzter Frame-Datensatz wurde additiv angelegt. Danach alle Worker
+        wegen PostgreSQL-I/O-Fehlern beendet: aeusseres /data/raid01 zu 100 Prozent belegt (120 KiB frei),
+        waehrend das innere verschluesselte Dateisystem 24 GiB frei meldete; loop0-Allokationsfehler,
+        abgebrochenes ext4-Journal und PostgreSQL-PANIC. Aktives dm-crypt-Mapping ohne Discard-Unterstuetzung.
+        Keine lokale Codeaenderung deployt. Wiederherstellung, erneute Pruefung der Commits und abschliessender
+        Video-Listen-Test stehen aus; keine Produktionsfreigabe. Beide Speicherebenen wurden vor Beginn
+        nicht ausreichend auf Kapazitaet geprueft.'
+    - kind: command
+      reference: '2026-11-04: Nach ausdruecklicher Freigabe wurde ausschliesslich der Migrationssnapshot
+        migration-20261030-1325 entfernt; danach 65 GiB auf dem aeusseren Datentraeger frei. Anwendungsdienste
+        gestoppt, verschluesseltes Dateisystem ausgehaengt, e2fsck -p mit Journal-Replay und Exit-Code
+        1 erfolgreich, deklarierte Mounts und PostgreSQL wieder gestartet. Alle fuenf vorherigen Backfill-Commits
+        erneut bestaetigt. Video 48 nach expliziter Freigabe, gepruefter Quelle und abgelaufenen Playback-Leases
+        geloescht (66629 Datenbankzeilen, keine kanonischen Dateien verbleibend). Video 50 fehlt in der
+        Datenbank; keine HLS- oder inventarisierten Quelldateien verbleiben. App, PostgreSQL und nginx
+        aktiv; HTTPS liefert Login-Weiterleitung. Restliche Timeline-Fehler bestehen; gezielter Backfill
+        mit Kapazitaetspruefung beider Ebenen wieder aufgenommen. Assessor codex-video-list-20261104-a.'
+    - kind: command
+      reference: '2026-11-04: Video 59 auf ausdruecklichen Nutzerwunsch entfernt. Aktiver Import kontrolliert
+        abgebrochen; Worker bestaetigte cancelled ohne Lease-Owner und ohne Retry. Drei falsch eingeordnete
+        Working-Inventare unter processed_videos_final nach Einzelpruefung von Pfad und Fremdreferenzen
+        bereinigt, darunter 5482448003 Bytes vorhandene Datei. Standardloeschung entfernte 153873 Zeilen;
+        Video-Datensatz und kanonische Dateien fehlen. Alle sechs zugeordneten Import-Auditdatensaetze
+        melden completed und null verbleibende inventarisierte Dateien. Inneres Dateisystem danach
+        50 GiB frei, aeusseres 62 GiB frei. Assessor codex-video-list-20261104-a.'
+    - kind: command
+      reference: '2026-11-04: Folgefehler nach Loeschung 59: Overview-Schema lehnt cancelled zusammen
+        mit cleanup_status completed ab. Betroffenen abgeschlossenen Import-Auditdatensatz nach erneuter
+        Abwesenheitspruefung aller Dateien entfernt (19 Zeilen inklusive Inventar); strukturierter
+        Abschluss-Event erhalten. Nutzerangeforderter App-Neustart erfolgreich; App, PostgreSQL und
+        nginx aktiv, HTTPS 302, authentifizierter Anonymisierungs-Overview-Test HTTP 200. Fehlendes
+        Logo ColoReg.png ist ein separater statischer Asset-Fehler. Backfill nun fuer zehn Videos mit
+        insgesamt 1220679 persistierten Frame-Zeitstempeln abgeschlossen; keine vorhandenen Segmentindizes
+        geaendert. Abschliessender authentifizierter Video-Listen-Test HTTP 200, count 30, kein Fehler.
+        Assessor codex-video-list-20261104-a.'
+    note: '2026-11-02: Fehlende Quell-Timeline blockiert klinische Koordinaten; explizite konstante Timeline
+      bleibt zulässig. REST-framework-Validierung übersetzt den Mappingfehler ohne Koordinatenmutation.
+      Keine Produktionsfreigabe.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T12:54:02.942847Z'
 - id: clinical_frame_quality
   category: requirements
   title: Storage-Reduktion erhält die klinisch erforderliche Framequalität
@@ -792,6 +961,10 @@ definition_of_done:
   category: functionality
   title: Gleichzeitige Videoimporte besitzen eindeutige, eingezäunte Ausführungsrechte
   acceptance:
+  - Anonymisierungskandidaten liegen vor der Veröffentlichung im versuchseigenen Transcoding-Staging,
+    niemals im Verzeichnis kanonischer Master. Fehlgeschlagene Veröffentlichung kann den Kandidaten mit
+    der unveränderten Cleanup-Zulassung entfernen; Quelle, vorheriger Master und parallele Versuche bleiben
+    erhalten.
   - All model blocks failing still applies the explicitly configured mask or shared default and marks
     the candidate for human review and reprocessing; encoder and integrity failures remain errors.
   - Mask defaults load from lx-dtypes package data using VideoMaskConfig; authenticated catalogue APIs
@@ -970,12 +1143,32 @@ definition_of_done:
         besitzt Mutation-Guard; Report-Stub erfüllt Lifecycle-Vertrag. Gesamt-Pyright: 0 errors, 8 bestehende
         warnings; Ruff und git diff --check bestanden. Keine Änderung der Produktions-Lease-, Fencing-
         oder Storage-Semantik.'
-    assessed_by: codex-test-inspect-20261002
-    assessed_at: '2026-10-02T08:17:18.355941Z'
+    - kind: document
+      reference: '2026-11-02 gc-10, Video 61: Journal des FFmpeg-Workers vom 2026-10-28 17:23:43 UTC meldet
+        erfolgreiche Anonymisierung; 17:40:30 UTC scheitert HLS mit nominaler Bildrate 59.9401 -> 59,
+        danach StagingCleanupError wegen Kandidat im Masterverzeichnis. Wiederholung wird um 18:19:40
+        UTC durch Dienststopp/SIGTERM beendet. Spätere Upload-Reservierungen laufen ab. Aktuelles installiertes
+        HLS und Repository verwenden bereits Encoder-Herkunft und dekodierte Zeitstempel; lokale Korrektur
+        routet Kandidaten ins freigegebene Transcoding-Staging. Keine Produktionsmutation oder neue klinische
+        Freigabe.'
+    - kind: test
+      reference: '2026-11-02: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/import_files/test_video_anonymization.py tests/import_files/test_video_finalize_success.py
+        tests/import_files/test_import_encryption.py tests/services/test_hls_media.py -q --tb=short: 94
+        passed, 2 warnings, 132.99s. Staging-Cleanup erhält Quelle, vorherigen Master und parallelen Versuch.
+        Reale 60000/1001-HLS-Kodierung mit nominaler 59-Metadatenangabe besteht; manipulierte dekodierte
+        Zeitstempel und übergroße Quellen werden abgelehnt. Gezielter Pyright: 0 errors/0 warnings; Gesamt-Pyright
+        meldete 20 unabhängige Fehler in text_finding_approval und dessen Tests. Ruff bestanden. Keine
+        Toleranzerweiterung, kein Deployment oder Produktions-Retry.'
+    assessed_by: codex-gc10-video61-20261102
+    assessed_at: '2026-11-02T08:55:06.377433Z'
 - id: video_examination_annotation_contract
   category: interoperability
   title: Normalisierte Videos bleiben in der Segmentannotation sicher nutzbar
   acceptance:
+  - outside_frame_count zählt eindeutige Outside-Frames anhand halb-offener Intervalle einschließlich
+    expliziter Frame-Annotationen; überlappende Segmente zählen Frames nicht doppelt. Fehler bei Aufbau
+    oder Auswertung der Outside-Segmentauswahl bleiben sichtbar und werden nicht als leere Auswahl gemeldet.
   - Segment-scoped annotation export uses valid Django null lookups for missing information sources and
     model metadata, preserving source identity and inclusive-start, exclusive-end frame selection for
     both explicit segment IDs and export flags.
@@ -1152,10 +1345,20 @@ definition_of_done:
     - kind: test
       reference: '2026-10-28: Segment list, bulk validation, bulk mutation and annotation-payload frame
         serialization share one loaded video instead of joining the complete timeline metadata per segment
-        or frame. .devenv/state/venv/bin/pytest tests/views/video/test_segment_video_hydration.py
-        tests/views/video/test_segments_crud.py tests/views/video/test_segment_update.py
-        tests/views/video/test_segment_validation_status_view.py tests/services/test_export_frames_contract.py
-        -q: 125 passed; new hydration tests fail 7 of 8 without the repair. Focused Pyright: 0 errors.'
+        or frame. .devenv/state/venv/bin/pytest tests/views/video/test_segment_video_hydration.py tests/views/video/test_segments_crud.py
+        tests/views/video/test_segment_update.py tests/views/video/test_segment_validation_status_view.py
+        tests/services/test_export_frames_contract.py -q: 125 passed; new hydration tests fail 7 of 8
+        without the repair. Focused Pyright: 0 errors.'
+    - kind: test
+      reference: '2026-11-02: alle 15 Tests in tests/views/video/test_video_metadata_view.py bestanden,
+        einschließlich langer/überlappender Segmente, Einzelbildannotation und Fehlern vor sowie bei Datenbankauswertung.
+        Gemeinsame Regression: 264 passed, 1 failed; separater Timeline-Validierungsfehler behoben, gesamte
+        Segment-Suite danach 36 passed.'
+    - kind: command
+      reference: '2026-11-02: gezielter Pyright aller geänderten Dateien 0 Fehler/0 Warnungen; Ruff, 67
+        Strukturmanifeste, quality:dead-code und Diffprüfung bestanden. Gesamt-Pyright: 4 Fehler in bereits
+        zuvor geänderter tests/dataloader/test_load_base_db_data_repeat.py, außerhalb dieser Korrekturen.
+        Assessor: codex-storage-review-20261102.'
     note: 'Der gc-10-Incident vom 2026-07-23 wurde auf synchrones vollständiges Media-Staging in gewöhnlichen
       FPS-/Normalisierungsstatus-Anfragen mit anschließender Frontend-Anfrageverstärkung zurückgeführt;
       Restart, SIGKILL und Host-Shutdown waren manuell ausgelöst. Der Read-Pfad ist nun strikt metadatenbasiert,
@@ -1173,9 +1376,13 @@ definition_of_done:
       2026-09-08: HLS kodiert direkt aus der unveränderten geschützten Quelle; die temporäre MP4-Normalisierung
       entfällt. Reale FFmpeg-Tests belegen genau einen Kodierdurchlauf für Raw und Processed mit profilkonformen
       sowie konvertierungsbedürftigen Pixelformaten. Quellzulassung, Ausgabegates, Mastererhalt und Cleanup
-      bleiben geprüft. Deployment, Produktionsmessung und klinische Abnahme bleiben offen.'
-    assessed_by: codex-export-20260922
-    assessed_at: '2026-09-22T10:16:36.897933Z'
+      bleiben geprüft. Deployment, Produktionsmessung und klinische Abnahme bleiben offen.
+
+      2026-11-02: Outside-Framezahl verwendet vorhandene vereinigte halb-offene Intervalle einschließlich
+      positiver Frameannotation; Auswahlfehler bleiben sichtbar. Bestehende externe Freigabeblocker bleiben
+      erhalten.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T12:54:05.343361Z'
 - id: derived_artifact_lifecycle
   category: functionality
   title: Redundante Roh- und HLS-Artefakte werden erst nach vollständiger Freigabe entfernt
@@ -1347,10 +1554,30 @@ definition_of_done:
         deselected including HLS content-hash alias guard. Jobs and post-validation generation cleanup
         suites44 passed. Focused Pyright and Ruff pass; full backend Pyright0 errors6 warnings before
         additive recovery-contract follow-up.'
-    note: Conservative receipt-only reconciliation and rebuild frame preservation verified locally. Unknown
+    - kind: code
+      reference: tests/utils/test_operation_log.py::test_video_validation_audit_failure_preserves_raw_bytes_and_reference;
+        tests/services/test_video_metadata_validation.py; tests/models/video/test_validation_deletion.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    note: 'Conservative receipt-only reconciliation and rebuild frame preservation verified locally. Unknown
       live receipts remain blockers; no production reconciliation or clinical acceptance performed.
-    assessed_by: codex-endoreg-durable-01a1398f
-    assessed_at: '2026-10-14T12:28:12.604301Z'
+
+      2026-11-02: Metadatenfreigabe registriert Rohvideo-Bereinigung erst für den äußersten Commit. Auditfehler
+      erhalten Quelldateibytes und Referenzen; ein aktiver Medien-Lease blockiert auch den späteren Cleanup.
+      Bestehende Hash-, Ersatz-, Zeitachsen- und Eigentumsgates unverändert; kein Dateisystem-Rollback
+      vorgetäuscht.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T14:11:54.918970Z'
 - id: secure_atomic_migration
   category: security
   title: Normalisierung und Löschung bleiben innerhalb der geschützten Storage-Grenze
@@ -2007,6 +2234,15 @@ definition_of_done:
   category: data_integrity
   title: Every frame decoder exposes authoritative generation-bound presentation timestamps
   acceptance:
+  - Clinical coordinate resolution automatically backfills wholly absent frame timestamps from the hash-verified
+    active canonical media using available decoded presentation timestamps. Publication locking serializes
+    fallback requests; partial coordinates, mismatched frame identities and changed content are never
+    overwritten. Backfill preserves annotations, import states and provenance approvals, and repeated
+    reads do not probe again.
+  - Retained raw and processed media are captured separately. Missing original presentation timestamp
+    fields use validated decoder timestamps throughout shared probing, including import, transcoding,
+    streaming and hub validation; missing original fields alone never reject a video. No nominal-rate
+    coordinates are invented.
   - iter_video_path_frame_samples exposes independently observed presentation timestamps with passthrough
     decoding and exact decoded counts; unused single-frame array APIs are removed.
   - iter_video_file_frame_samples and read_video_file_frame_jpeg use the selected canonical generation
@@ -2076,8 +2312,18 @@ definition_of_done:
         pytest tests/services/test_frame_provenance.py -q --tb=short: 63 passed, 1 bestehende Pluginwarnung
         in 112,76 s; reale Maskierungs-, Detektor- und Frame-Removal-Pfade eingeschlossen. Strukturprüfung
         (67 Manifeste) und git diff --check bestanden. Keine Produktionsabnahme.'
-    assessed_by: codex-video-commit-audit-20261028
-    assessed_at: '2026-10-28T08:02:19.894881Z'
+    - kind: code
+      reference: endoreg_db/services/video_files/timestamp_backfill.py
+    - kind: test
+      reference: '2026-11-04: Automatischer Zeitstempel-Backfill mit getrennten Roh-/Prozessiert-Zeitachsen,
+        verschlüsselten echten Medien, variabler Bildrate, unveränderten Frame-/Segmentidentitäten, parallelen
+        Lesern und Decoder-Fallback bei fehlenden Original-PTS. Integrationslauf (Import, kanonische Zeitachsen,
+        HLS, Hub, Frame-Streaming): 262 passed. Koordinaten-/Provenienz-/API-Regression: 179 passed, 2
+        subtests. Abschließender Backfill-/Index-/Query-Budget-Lauf: 57 passed, 2 subtests. Gesamt-Pyright:
+        0 Fehler, 2 bestehende Warnungen; finale geänderte Dateien: 0 Fehler, 0 Warnungen. Ruff, 67 Strukturmanifeste
+        und git diff --check bestanden. Keine Bereitstellung oder Produktionsabnahme.'
+    assessed_by: codex-pts-backfill-20261104
+    assessed_at: '2026-11-04T09:41:09.286036Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request

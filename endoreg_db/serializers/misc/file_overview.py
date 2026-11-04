@@ -293,9 +293,6 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         read_only=True, allow_null=True, required=False
     )
 
-    def _safe_original_filename(self, upload_job: _FileOverviewUploadJobLike) -> str:
-        return safe_upload_job_original_filename(upload_job)
-
     def _overview_upload_job(
         self, instance: object
     ) -> _FileOverviewUploadJobLike | None:

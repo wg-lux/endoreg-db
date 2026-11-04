@@ -19,11 +19,32 @@ Existing Python imports from `lx_annotate.models.study_cohort` and `lx_annotate.
 ## Workflow for Researchers
 
 1. Save and select a cohort with a name and hypothesis in lx-annotate.
-2. Select **New mapping from template** or copy the [example mapping](../endoreg_db/data/study_import/colonoscopy.yml). Adapt column names to your own table, assign a custom UUID as the `mapping_id`, and select an existing knowledge base version. The template in the UI automatically receives a new UUID.
+2. Either build the mapping from the table itself (see [Mapping assistant](#mapping-assistant)) or select **New mapping from template** or copy the [example mapping](../endoreg_db/data/study_import/colonoscopy.yml). Adapt column names to your own table, assign a custom UUID as the `mapping_id`, and select an existing knowledge base version. The template in the UI automatically receives a new UUID.
 3. In the **Import study table** section, load or edit the YAML file and select **Save mapping**. Already saved mappings are available in the dropdown list.
 4. Select the authorized center and the CSV, XLSX, or XLS file.
 5. **Validate table** executes the clinical import, dataset attachment, and study ledger capture, including database constraints and evaluation against the exact persisted full package snapshot; the complete transaction is rolled back.
 6. **Import into cohort** validates again and atomically saves clinical rows, the linked dataset, and immutable study collection entries for ledger Excel export or hub transfer. A missing package snapshot, invalid observation, or capture failure rolls back the clinical import, dataset attachment, and collection entries. Previously saved mapping files remain available. The preview is subsequently reloaded.
+
+### Mapping assistant
+
+The **Create mapping from the table** section of the import panel builds a mapping without editing YAML:
+
+1. After selecting the CSV, XLSX or XLS file, choose the delimiter and encoding (CSV), the worksheet (workbooks with several sheets) and the header row, then **Read columns**.
+2. Assign a column to the row ID, first name, last name, birth date, gender and examination date, and choose a date format where cells are not ISO dates or native Excel dates. The examination is either the same for all rows or read from a column. Each finding group is a column or a constant finding, with optional classification columns.
+3. **Read values** lists the distinct cells of the gender, examination, finding and classification columns only. Each cell spelling, such as `w` or `Polyp`, is mapped to an identifier of the template knowledge base or to a gender; spellings equal to an identifier ignoring case are preselected.
+4. **Save mapping** stores an ordinary mapping (submitted as JSON, which is valid setup YAML) and selects it. Validation and import then proceed as in steps 4–6.
+
+**Read columns** also prefills the editor from the default rules in [`prefill.yml`](../endoreg_db/data/study_import/prefill.yml); it only fills fields the user has not set, and every suggestion must be reviewed:
+
+- Headers are matched against per-field synonyms (`Vorname`, `Patient.Nachname`, `Geburtsdatum`, `Fallnummer`, `Untersuchungsdatum`, `Befund`, …), case-insensitively and by the last part of dotted names. Earlier synonyms win, so `Nachname` is preferred over a generic `Name`.
+- Date columns get the first format in `date_formats` that parses every sampled cell; ISO and native Excel dates need none.
+- If no first or last name column is found, up to five cells of each free-text column are passed to the `spacy_patient` extractor. A column in which at least two cells yield both names (placeholders such as `unknown` do not count) becomes the patient line, and first name, last name and birth date are mapped to it with `extractor: spacy_patient`. The extractor recognizes lines such as `Patient: Mustermann, Erika, geb. 01.02.1980`. If the local spaCy model is missing, only header suggestions are returned.
+- Gender is never prefilled from spaCy: lx-anonymizer guesses it from the first name. Users may opt in per mapping and are warned.
+- `gender_values` spellings (`w`, `weiblich`, `m`, `männlich`, `d`, …) preselect gender value maps after **Read values**, when the host has the identifier.
+
+Sampled cells are processed in memory and never returned; the response holds column names and rule spellings only.
+
+Value maps are omitted when every cell is already spelled as its identifier. A column with more than 200 distinct values, or values longer than 255 characters, is flagged as truncated: unseen values fail validation with `unmapped_value` until they are added to the YAML. Identity columns are never read for values unless a caller names them explicitly.
 
 One dataset is created per file import. The same user, mapping ID, center, and file content will reuse the same dataset upon repetition. The name comes from the mapping; the API allows `dataset_name`. Clinical datasets have `dataset_type: clinical` and `ai_model_type: null`. They can therefore be managed independently, even without videos or annotations.
 
@@ -205,6 +226,7 @@ The following routes are located under the existing `endoreg-api/` mount; additi
 | --- | --- |
 | `GET media/studies/table-mappings/` | Own mappings (`id`, `name`), permitted centers, and `template` with a new mapping ID |
 | `POST media/studies/table-mappings/` | JSON `{"yaml": "…"}`; validates and saves an immutable mapping |
+| `POST media/studies/table-mappings/inspect/` | Multipart: `file` and optional JSON `options` `{"source": {…}, "value_columns": […], "prefill": false}`; returns `prefill` (field suggestions, gender spellings, `patient_line_column`, `patient_line_detection`) when requested, and `sheets`, `sheet_required`, `columns`, `row_count`, `values` as a list of `{column, values, truncated}`, and the template KB `vocabulary` (examinations with findings, findings with classifications, classifications with choices, genders). Nothing is stored |
 | `GET media/studies/table-mappings/{uuid}/` | JSON with the YAML text in the `yaml` key |
 | `POST media/studies/cohorts/{id}/table-import/` | Multipart: `file`, `mapping_id`, `center_id`, `mode=validate` or `mode=import` |
 | `POST media/studies/cohorts/preview/` | Existing cohort definition; optional `cohort_id` for the imported examination scope |

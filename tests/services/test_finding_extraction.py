@@ -1,3 +1,4 @@
+from tests.helpers.pdf import render_single_page_pdf
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
 from functools import partial
@@ -9,7 +10,6 @@ from django.core.exceptions import ValidationError as DjangoValidationError
 from django.test import override_settings
 from pydantic import ValidationError
 from spacy.language import Language
-from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.services.hub import ingest
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
@@ -212,7 +212,7 @@ def test_sap_report_publication_records_configured_presence(
     )
     atomic_write_file(
         destination=source,
-        content=(ReportImportService._render_single_page_pdf("Polyp"),),
+        content=(render_single_page_pdf("Polyp"),),
     )
     report = ingest._finalize_preanonymized_report(
         source_path=source,

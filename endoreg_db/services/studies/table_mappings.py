@@ -6,7 +6,11 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.table_import import TableMapping
+from lx_dtypes.packages import load_registered_package
+from lx_dtypes.serialization import parse_str_list
+from pydantic import BaseModel, ConfigDict
 
 from endoreg_db.services.studies.table_parser import (
     load_table_mapping,
@@ -61,3 +65,74 @@ def list_table_mappings(owner_id: int) -> list[TableMapping]:
         load_table_mapping(mapping_path(owner_id, UUID(path.stem)))
         for path in sorted(root.glob("*.yml"))
     ]
+
+
+class VocabularyExamination(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    findings: list[str]
+
+
+class VocabularyFinding(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    classifications: list[str]
+
+
+class VocabularyClassification(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    name: str
+    choices: list[str]
+
+
+class TableMappingVocabulary(BaseModel):
+    """Identifiers a mapping may target; the importer validates against the same KB."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    knowledge_base: KnowledgeBaseIdentity
+    examinations: list[VocabularyExamination]
+    findings: list[VocabularyFinding]
+    classifications: list[VocabularyClassification]
+
+
+def mapping_vocabulary(identity: KnowledgeBaseIdentity) -> TableMappingVocabulary:
+    # Record lists flatten list fields to comma-separated text.
+    records = load_registered_package(
+        identity.knowledge_base_module, version=identity.knowledge_base_version
+    ).export_record_lists()
+    return TableMappingVocabulary(
+        knowledge_base=identity,
+        examinations=sorted(
+            (
+                VocabularyExamination(
+                    name=item["name"], findings=sorted(parse_str_list(item["findings"]))
+                )
+                for item in records["examinations"]
+            ),
+            key=lambda item: item.name,
+        ),
+        findings=sorted(
+            (
+                VocabularyFinding(
+                    name=item["name"],
+                    classifications=sorted(parse_str_list(item["classifications"])),
+                )
+                for item in records["findings"]
+            ),
+            key=lambda item: item.name,
+        ),
+        classifications=sorted(
+            (
+                VocabularyClassification(
+                    name=item["name"],
+                    choices=sorted(parse_str_list(item["classification_choices"])),
+                )
+                for item in records["classifications"]
+            ),
+            key=lambda item: item.name,
+        ),
+    )

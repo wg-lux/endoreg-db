@@ -1,7 +1,6 @@
 import logging
 from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.utils.storage.files import canonical_media_name
-import os
 import time
 import uuid
 from collections.abc import Callable
@@ -56,9 +55,7 @@ from endoreg_db.utils.paths import (
 )
 from endoreg_db.utils.ffmpeg_wrapper import get_stream_info
 from endoreg_db.utils.file_operations import (
-    atomic_move_path,
     safe_delete_field_file,
-    safe_rmtree,
     safe_unlink_file,
 )
 from endoreg_db.utils.hashs import get_file_hash
@@ -217,15 +214,6 @@ def _ensure_video_hls_artifacts(
             instance.pk,
             result.status,
         )
-
-
-def ensure_processed_video_hls(
-    instance: VideoFile,
-    *,
-    force: bool = False,
-) -> None:
-    """Compatibility wrapper for callers predating required raw HLS."""
-    ensure_video_hls(instance, force=force)
 
 
 def _ensure_instance_state(
@@ -400,7 +388,7 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
             )
             instance.save()
         ctx.require_execution_ownership()
-        ensure_video_hls(instance, force=True, execution_guard=ctx.execution_guard)
+        ensure_video_hls(instance, execution_guard=ctx.execution_guard)
         ctx.require_execution_ownership()
 
         with ctx.owned_mutation():
@@ -525,53 +513,3 @@ def _delete_video_streamable_artifacts(ctx: ImportContext) -> None:
 
     if update_fields and video.pk:
         video.save(update_fields=update_fields)
-
-
-def nuke_transcoding_dir(transcoding_dir: str | Path | None = None) -> bool:
-    """
-    Delete all files and subdirectories inside the transcoding directory.
-
-    Returns:
-        True if the directory was either empty / successfully cleaned,
-        False if something went wrong (error is logged).
-    """
-    try:
-        if transcoding_dir is None:
-            transcoding_dir = get_runtime_paths().transcoding
-
-        transcoding_dir = Path(transcoding_dir)
-
-        if not transcoding_dir.exists():
-            logger.info(
-                "Transcoding dir %s does not exist; nothing to clean.", transcoding_dir
-            )
-            return True
-
-        if not transcoding_dir.is_dir():
-            logger.error(
-                "Configured transcoding path %s is not a directory.", transcoding_dir
-            )
-            return False
-
-        for entry in transcoding_dir.iterdir():
-            try:
-                if entry.is_file() or entry.is_symlink():
-                    safe_unlink_file(entry, missing_ok=False)
-                elif entry.is_dir():
-                    staged_entry = entry.with_name(
-                        f"{entry.name}.cleanup.{os.getpid()}"
-                    )
-                    atomic_move_path(source=entry, destination=staged_entry)
-                    safe_rmtree(staged_entry, missing_ok=False)
-            except Exception as e:
-                logger.warning(
-                    "Failed to remove entry %s in transcoding dir: %s", entry, e
-                )
-                # Continue trying to delete other entries
-        return True
-
-    except Exception as e:
-        logger.exception(
-            "Unexpected error while nuking transcoding dir: %s", e, exc_info=True
-        )
-        return False

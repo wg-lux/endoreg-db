@@ -3,6 +3,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING
 
 from endoreg_db.models import VideoFile
+from tests.helpers.default_objects import DEFAULT_ENDOSCOPY_PROCESSOR_NAME
 
 if TYPE_CHECKING:
     from .test_video_file import VideoFileModelTest
@@ -24,6 +25,7 @@ def _test_video_create_from_file(test_case: "VideoFileModelTest"):
         video_file = VideoFile.create_from_file(
             file_path=video_path,
             center_name=default_center.name,  # Pass center name as expected by _create_from_file
+            processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
         )
 
         # Assertions

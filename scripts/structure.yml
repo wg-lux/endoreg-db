@@ -27,6 +27,8 @@ files:
   role: Typed structure graph and path validator
 - file: check_documentation_governance.py
   role: Documentation policy and inventory validation
+- file: check_dead_code.py
+  role: Repository dead-code inventory and baseline guard.
 - file: check_lx_dtypes_contract_boundaries.py
   role: Canonical type ownership guard
 - file: check_django_startup_imports.py

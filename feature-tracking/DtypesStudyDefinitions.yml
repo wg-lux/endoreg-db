@@ -20,6 +20,9 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: ../lx-data-models/docs/guides/study-inference.md
+  disposition: reference
+  note: Shared numeric variables, local inference configuration and statistical assumptions.
 - path: docs/study_table_import.md
   disposition: reference
   note: YAML-Zuordnung, Tabellenimport, API, Identität und importierter Kohortenscope.
@@ -37,6 +40,146 @@ source_documents:
   note: Dataset annotation attachment is a separate authorized operation; creating a definition must not
     implicitly attach all annotations.
 definition_of_done:
+- id: configured_dataset_plots
+  category: functionality
+  title: YAML-configured scatter and forest plots for study and annotation labels
+  acceptance:
+  - Study setup YAML supplies plot labels and numeric variables; dropdowns select axes, endpoint labels,
+    image labels or video labels without hardcoded clinical vocabulary.
+  - Authorized saved cohort data produces identifier-free bounded scatter points with explicit missing
+    states and truncation counts; forest label rates use the complete included dataset.
+  - Forest plots show positive proportions and 95-percent Wilson intervals, excluding unknown outcomes;
+    repeated patient units suppress independence-based intervals.
+  - Save, reload, YAML import/export, access boundaries, label aggregation and plot interaction have focused
+    regression coverage.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run shared statistics and setup tests, study API tests, frontend type checks and plot
+      interaction tests.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/stats/study_plots.py
+    - kind: code
+      reference: ../dev/lx-annotate/lx_annotate/services/study_plot_labels.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/stats/test_study.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_cohorts.py
+    - kind: test
+      reference: ../dev/lx-annotate/frontend/src/components/StudyDatasetPlots.test.ts
+    - kind: document
+      reference: ../lx-data-models/docs/guides/study-inference.md
+    - kind: test
+      reference: '2026-11-02: Full endoreg-db Pyright 0 errors, 2 warnings; full lx-annotate Pyright 0
+        errors, 0 warnings with local source overrides; 37 API tests and 4 approval tests passed.'
+    note: 'Implementiert: YAML plots.labels fuer Endpunkte, Bildannotationen und validierte Videosegmente;
+      Dropdowns fuer Quelle, Label, Gruppe und numerische Achsen. Scatter-Daten ohne Identifikatoren,
+      explizites Punktlimit und Fehlwerte. Forest-Plots fuer Label-Anteile mit 95-Prozent-Wilson-Intervallen
+      sowie bestehende Inferenzschaetzer. Wiederholte Patienten unterdruecken Anteilsintervalle. Verifikation:
+      81 Shared-Tests, 27 API-Tests plus 1 Scope-/Annotationsregression, 21 Frontendtests bestanden. YAML-Importvalidierung
+      und Roundtrip enthalten. Shared Pyright 0 Fehler; geaenderte Hostservices mit lokalen Shared-Quellen
+      0 Fehler; Frontend vue-tsc einschliesslich Komponententests und ESLint bestanden. Nachpruefung 2026-11-02:
+      Report-Text-Typfehler behoben; vollstaendiges Host-Pyright mit lokalen Shared-/Backend-Quellen 0
+      Fehler und 0 Warnungen, Backend-Pyright 0 Fehler und 2 bestehende Warnungen. 37 Study-/Report-Text-API-Tests
+      und 4 Approval-Service-Tests bestanden. Pytest meldet Warnungen bei der Bereinigung alter temporaerer
+      Testverzeichnisse. Alle drei Strukturpruefungen und Featurevalidierung bestanden. Kein Deployment;
+      koordinierte Shared-/Host-Auslieferung erforderlich.'
+    assessed_by: codex-study-config-20261030
+    assessed_at: '2026-11-02T09:04:52.586811Z'
+- id: categorical_diagnostic_evaluation
+  category: functionality
+  title: Configure categorical comparisons and diagnostic accuracy on saved endpoints
+  acceptance:
+  - YAML and UI configure two-group Fisher or Pearson chi-square tests, cohort versus case-control design,
+    and diagnostic endpoint/reference pairs.
+  - Authorized ledger endpoint states produce oriented 2x2 tables; repeated patients fail and unknown
+    states follow explicit error or complete-case policy.
+  - Results expose counts, exclusions, two-sided unadjusted p-values, conditional odds ratios, cohort
+    risk ratios and diagnostic proportions with named confidence methods and explicit undefined or unbounded
+    estimates.
+  - Sparse chi-square tables fail with an actionable Fisher recommendation; zero cells never receive silent
+    continuity corrections.
+  - Numerical references, invalid-input tests, YAML roundtrips, ledger integration and frontend authoring/results
+    pass type checks and focused regression tests.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run shared study tests, host cohort API tests and categorical component tests after
+      type checking.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/stats/study_categorical.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/stats/test_study_categorical.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_cohorts.py
+    - kind: test
+      reference: ../dev/lx-annotate/frontend/src/components/StudyCategorical.test.ts
+    - kind: document
+      reference: ../lx-data-models/docs/guides/study-inference.md
+    note: 'Implementiert: YAML-/UI-Konfiguration fuer Fisher-Exakt-Test, Pearson-Chi-Quadrat ohne Yates-Korrektur,
+      bedingte Odds-Ratios mit exakten Intervallen, Kohorten-Risiko-Ratios mit Katz-Intervallen sowie
+      Sensitivitaet, Spezifitaet, praediktive Werte und Genauigkeit mit Wilson-Intervallen. Explizite
+      2x2-Orientierung, Studiendesign, Fehlwertbehandlung, unabhaengige Patienten und nicht bestimmbare/unbeschraenkte
+      Schaetzer. Keine stillen Nullzellenkorrekturen. Verifikation: 61 Shared-Tests, 28 Kohorten-API-Tests
+      und 13 UI-Tests bestanden; Shared- und Host-Pyright mit lokalen Quellen jeweils 0 Fehler, Frontend
+      vue-tsc inklusive Komponententests, ESLint, Ruff und alle Strukturpruefungen bestanden. Backend-Gesamtpruefung:
+      4 Fehler im unabhaengigen, unversionierten tests/dataloader/test_load_base_db_data_repeat.py und
+      2 bestehende Warnungen. Pytest meldete Bereinigungswarnungen fuer alte temporaere Testverzeichnisse.
+      Vorhandene Venvs verwendet, da der Backend-devenv-Interpreter nicht verfuegbar war. Kein Deployment;
+      koordinierte Shared-/Host-Paketveroeffentlichung bleibt erforderlich.'
+    assessed_by: codex-study-config-20261030
+    assessed_at: '2026-11-02T09:26:35.338496Z'
+- id: configured_statistical_inference
+  category: functionality
+  title: Configure and execute local hypothesis tests and multiple linear regression
+  acceptance:
+  - Saved study rules configure numeric ledger variables, independent Welch or paired t-tests, multiple
+    linear regression, alpha and explicit missing-data policy.
+  - The server validates terminology and uses authorized ledger records; paired measurements use existing
+    linked roles and repeated patient units are rejected for independent inference.
+  - Results include sample and missing counts, degrees of freedom, estimates, standard errors, two-sided
+    p-values and confidence intervals; regression includes R squared.
+  - UI configuration survives save/reload and displays results; invalid, degenerate and rank-deficient
+    inputs fail explicitly.
+  - Focused numerical reference, configuration, API and frontend tests pass after type checking.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run shared contract/statistics tests, host study API tests and frontend authoring/result
+      tests after type checking.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: ../lx-data-models/lx_dtypes/stats/study_inference.py
+    - kind: test
+      reference: ../lx-data-models/tests/unit/lx_dtypes/stats/test_study_inference.py
+    - kind: test
+      reference: ../dev/lx-annotate/tests/api/test_study_cohorts.py
+    - kind: test
+      reference: ../dev/lx-annotate/frontend/src/components/StudyInference.test.ts
+    - kind: document
+      reference: ../lx-data-models/docs/guides/study-inference.md
+    note: 'Implementiert: konfigurierbare numerische Variablen, Welch- und gepaarte t-Tests sowie multiple
+      lineare Regression mit Interzept, Alpha, expliziter Fehlwertbehandlung, Konfidenzintervallen und
+      lokalen Serverberechnungen. Shared Pyright: 0 Fehler; 106 fokussierte Shared-Tests bestanden, abschliessend
+      35 Statistiktests erneut bestanden. Frontend vue-tsc und fokussiertes ESLint bestanden; 26 UI/API-Adapter-Tests
+      bestanden. Host API: 27 Tests bestanden, einschliesslich Speicherung, Reload, YAML und aller drei
+      Methoden. Endoreg-Pyright meldete 20 Fehler/2 Warnungen, Annotate-Pyright 5 Fehler in vorhandenen
+      Report-Text-Arbeiten ausserhalb dieses Changes; deshalb keine vollstaendige Freigabe. tomli-w und
+      defusedxml im Annotate-Testvenv nachinstalliert; Hosttests verwenden explizite lokale Source-Pfade.
+      Strukturpruefungen aller drei Repositories bestanden. Kein Deployment.'
+    assessed_by: codex-study-config-20261030
+    assessed_at: '2026-10-30T14:46:24.966478Z'
 - id: study_persistence
   category: functionality
   title: Persist studies and cohorts in endoreg-db with multiple cohorts per study
@@ -177,9 +320,10 @@ definition_of_done:
       rebuilds without parallel storage. Endoreg combined exchange/mapping65 tests passed and final invalid-representation9
       passed (55 unique mapping cases). Annotate real mapped-import-to-collection-to-XLSX regression passed:
       full validation capture rolls back, committed import captures evidence, replay remains idempotent.
-      All51 unique annotate cohort/Excel/table API tests and28 frontend tests passed. Final PostgreSQL DISTINCT-scope import/capture regressions2 passed; shared locking retains the authorized scope. Documentation describes0105
-      capture migration, full snapshot prerequisite, transactional import and0106 hub transfer. Final
-      deployment acceptance remains in progress; no production imports performed.'
+      All51 unique annotate cohort/Excel/table API tests and28 frontend tests passed. Final PostgreSQL
+      DISTINCT-scope import/capture regressions2 passed; shared locking retains the authorized scope.
+      Documentation describes0105 capture migration, full snapshot prerequisite, transactional import
+      and0106 hub transfer. Final deployment acceptance remains in progress; no production imports performed.'
     assessed_by: codex-parser-warnings-20261020
     assessed_at: '2026-10-20T09:46:33.279739Z'
 - id: independent_local_center_defaults
@@ -650,11 +794,13 @@ definition_of_done:
       final strict guideline-date fix30 snapshot/exchange tests passed across all5 reporting packages;
       final full Pyright0 and structure pass, Sphinx HTML/linkcheck pass. Endoreg combined exchange/mapping65
       passed, final mapping boundary9 passed, hub receiver78 passed/7 skipped/3 subtests; annotate sender9
-      passed and all51 cohort/Excel/table API tests passed, frontend28 passed. Final PostgreSQL DISTINCT-scope import/capture regressions2 passed; application capture coverage and missing-snapshot rollback passed. Scoped host typing/lint
-      pass. Prior study rules/statistics implementation remains covered. Broader acceptance remains in
-      progress: endoreg structure has7 unrelated missing patient-matching references, migration-head metadata
-      remains externally locked at0104 although0105/0106 migration files exist, installed wheels require
-      coordinated releases, and no migration/deployment or real transfer was performed.'
+      passed and all51 cohort/Excel/table API tests passed, frontend28 passed. Final PostgreSQL DISTINCT-scope
+      import/capture regressions2 passed; application capture coverage and missing-snapshot rollback passed.
+      Scoped host typing/lint pass. Prior study rules/statistics implementation remains covered. Broader
+      acceptance remains in progress: endoreg structure has7 unrelated missing patient-matching references,
+      migration-head metadata remains externally locked at0104 although0105/0106 migration files exist,
+      installed wheels require coordinated releases, and no migration/deployment or real transfer was
+      performed.'
     assessed_by: codex-parser-warnings-20261020
     assessed_at: '2026-10-20T09:44:10.706528Z'
 - id: legacy_migration

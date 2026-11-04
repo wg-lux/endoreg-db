@@ -218,9 +218,12 @@ class SensitiveMeta(models.Model):
     def create_from_dict(
         cls: type["SensitiveMeta"], data: dict[str, Any]
     ) -> "SensitiveMeta":
-        """Creates a SensitiveMeta instance from a dictionary using external sensitive_meta_logic."""
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.create_sensitive_meta_from_dict(cls, data)
+        """Compatibility facade for the patient_identity dictionary-ingestion service."""
+        from endoreg_db.services.patient_identity.sensitive_meta_ingestion import (
+            create_sensitive_meta_from_dict,
+        )
+
+        return create_sensitive_meta_from_dict(cls, data)
 
     def get_pseudo_examiner(self) -> "Examiner | None":
         """Returns the linked pseudo examiner, if one exists."""
@@ -228,11 +231,13 @@ class SensitiveMeta(models.Model):
             return self.examiners.first()
         return None  # Cannot determine before saving and linking
 
-    # --- Update method delegates to sensitive_meta_logic ---
     def update_from_dict(self, data: dict[str, Any]) -> "SensitiveMeta":
-        """Updates the instance from a dictionary using external sensitive_meta_logic."""
-        # Delegate to sensitive_meta_logic function
-        return sensitive_meta_logic.update_sensitive_meta_from_dict(self, data)
+        """Compatibility facade for the patient_identity dictionary-ingestion service."""
+        from endoreg_db.services.patient_identity.sensitive_meta_ingestion import (
+            update_sensitive_meta_from_dict,
+        )
+
+        return update_sensitive_meta_from_dict(self, data)
 
     def update_from_lx_sensitive_meta(
         self, sensitive_meta: LxSensitiveMeta

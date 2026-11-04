@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from endoreg_db.utils.storage_profile import PayloadKind, StoragePolicy
-from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 
 STREAMABLE_DIRECTORY_MODE = 0o750
 STREAMABLE_FILE_MODE = 0o640
@@ -57,30 +56,6 @@ class StreamableMediaState:
             for artifact in self.artifacts
         )
 
-
-@dataclass(frozen=True, slots=True)
-class StreamableTranscodeProfile:
-    height_px: int = 480
-    codec: str = "libx264"
-    crf: int = 35
-    preset: str = "veryfast"
-    audio_codec: str = "aac"
-    audio_bitrate: str = "32k"
-    disable_audio: bool = True
-    movflags: str = "+faststart"
-
-    def extra_args(self) -> list[str]:
-        args = [
-            *STANDARD_VIDEO_ENCODING.ffmpeg_output_args(height_px=self.height_px),
-            "-movflags",
-            self.movflags,
-        ]
-        if self.disable_audio:
-            args.append("-an")
-        return args
-
-
-DEFAULT_STREAMABLE_TRANSCODE_PROFILE = StreamableTranscodeProfile()
 
 STREAMABLE_ARTIFACT_SPECS: tuple[StreamableArtifactSpec, ...] = (
     StreamableArtifactSpec(

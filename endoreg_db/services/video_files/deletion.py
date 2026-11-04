@@ -18,9 +18,15 @@ from endoreg_db.services.media.source_deletion import (
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.services.video_storage.generation_cleanup import (
     _old_master,
+    _owned_path,
     _referenced,
 )
-from endoreg_db.utils.file_operations import safe_delete_field_file, safe_unlink_file
+from endoreg_db.utils.file_operations import (
+    safe_delete_field_file,
+    safe_rmtree,
+    safe_unlink_file,
+)
+from endoreg_db.utils.paths import get_runtime_paths
 
 
 def delete_recorded_video_copies(video: VideoFile) -> None:
@@ -31,7 +37,20 @@ def delete_recorded_video_copies(video: VideoFile) -> None:
     """
     from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
 
+    from endoreg_db.services.video_files.io import (
+        get_temp_anonymized_video_frame_dir,
+        get_video_frame_dir_path,
+    )
+
     defer_if_video_media_busy(video_id=int(video.pk))
+    paths = get_runtime_paths()
+    frame_dir = get_video_frame_dir_path(video)
+    if not video.raw_video_hash or frame_dir is None or frame_dir == paths.frame:
+        raise ValueError("Video frame directory has no ownership identity")
+    frame_directories = (
+        _owned_path(frame_dir, paths.frame),
+        _owned_path(get_temp_anonymized_video_frame_dir(video), paths.transcoding),
+    )
     jobs = list(
         UploadJob.objects.select_for_update()
         .filter(
@@ -42,8 +61,7 @@ def delete_recorded_video_copies(video: VideoFile) -> None:
         .order_by("pk")
     )
     if (
-        jobs
-        and VideoFile.objects.exclude(pk=video.pk)
+        VideoFile.objects.exclude(pk=video.pk)
         .filter(raw_video_hash=video.raw_video_hash)
         .exists()
     ):
@@ -113,6 +131,11 @@ def delete_recorded_video_copies(video: VideoFile) -> None:
     # Validate every known source before the first irreversible operation.
     for source in originals:
         check_original(source, video.raw_video_hash)
+    # Full deletion cascades frame rows and their annotations. Cache eviction's
+    # dataset retention and best-effort on_commit cleanup do not apply here.
+    for directory in frame_directories:
+        safe_rmtree(directory, missing_ok=True)
+    for source in originals:
         safe_unlink_file(source, missing_ok=True)
     for generation in generations.values():
         if isinstance(generation, Path):

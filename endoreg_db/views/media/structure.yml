@@ -23,6 +23,8 @@ files:
   role: Decoded frame streaming API.
 - file: sensitive_metadata.py
   role: Sensitive metadata and case-resolution API.
+- file: table_mappings.py
+  role: Study-table mapping inspection and prefill API helpers.
 - file: hub/__init__.py
   role: Hub transfer and quarantine API.
 dependencies:

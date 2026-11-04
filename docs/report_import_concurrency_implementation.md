@@ -1,13 +1,25 @@
 # Implementation Guide for Stable Concurrent Report Imports
 
-This guide defines the target architecture for PDF report imports in
-`endoreg-db` and the call boundary to `lx-anonymizer`. It is a technical
-contract, not a progress checklist. Scope, acceptance criteria, and production
+This guide describes the current PDF/TXT import boundaries and the stricter
+snapshot design target. The sections below distinguish implemented behavior
+from that target. Scope, acceptance criteria, and production
 approval are tracked only in
 [`feature-tracking/Reporting.yml`](../feature-tracking/Reporting.yml).
 
 The corresponding library-side contract lives in the `lx-anonymizer`
 repository at `docs/report_import_concurrency_contract.md`.
+
+## Current source map
+
+| File | Responsibility | Diagnose here when |
+| --- | --- | --- |
+| [`report_import_service.py`](../endoreg_db/import_files/report_import_service.py) | PDF/TXT intake, snapshot, deduplication, fenced preparation and publication | An import stalls or a retry unexpectedly prepares again. |
+| [`report_anonymization.py`](../endoreg_db/import_files/processing/report_processing/report_anonymization.py) | Typed library call, extraction receipt and staged-output validation | Extraction or redaction fails before publication. |
+| [`import_fencing.py`](../endoreg_db/services/reports/import_fencing.py) | Content ownership, heartbeat and mutation guards | An owner expires or concurrent attempts contend. |
+| [`import_state_machine.py`](../endoreg_db/services/reports/import_state_machine.py) and [`processing.py`](../endoreg_db/services/imports/processing.py) | Adapt and persist Rust-authorized transitions | State or stage admission is rejected. |
+| [`state_management.py`](../endoreg_db/import_files/file_storage/state_management.py) | Commit artifacts, state and history under the current owner | Files exist but completion is not established. |
+
+A preparation receipt or historical success row is not current publication proof.
 
 ## Goal and scope
 
@@ -16,9 +28,10 @@ workers overlap, a source changes, a job is retried, or identical content is
 uploaded more than once. It may publish at most one canonical anonymized report
 and must never mark a partially written artifact as successful.
 
-Native Rust functions should perform large local file operations outside the
-Python Global Interpreter Lock. Rust does not own domain state transitions,
-database transactions, or publication policy.
+Rust owns lifecycle reduction and import-stage ordering. Python persists the
+validated transitions, holds database fences and performs publication side effects.
+Native file operations can release the Python Global Interpreter Lock; that does
+not make database transactions or publication native operations.
 
 This guide covers source claiming, sensitive working snapshots, content-based
 deduplication, retries, the typed `lx-anonymizer` boundary, PDF validation and
@@ -88,34 +101,24 @@ publication and cleanup still apply to the new attempt.
 
 ## Native snapshot contract
 
-The Rust implementation belongs in `rust/endoreg_rust_backend`. Python calls it
-through a typed filesystem wrapper; import services do not call the PyO3 module
-directly for mutations.
+The current call path is `storage.create_snapshot` →
+`utils.file_operations.atomic_report_source_snapshot`. It returns the frozen
+Pydantic `schemas.import_file.SourceSnapshot`: `contract_version`, `path`,
+`size_bytes`, `modified_time_ns` and `sha256`.
 
-A versioned result type contains at least:
+The wrapper validates a regular source and free space, hashes the source, copies
+it in bounded chunks, then compares metadata, size and the copied content hash.
+It publishes through a no-overwrite hard link, removes temporary output and logs
+structured success or failure. The default snapshot mode is `0600`. Errors
+propagate; failed temporary files are removed.
 
-```python
-@dataclass(frozen=True)
-class ReportSourceSnapshot:
-    contract_version: Literal["report_source_snapshot_v1"]
-    staging_path: Path
-    size_bytes: int
-    modified_time_ns: int
-    sha256: str
-```
-
-The native operation, conceptually
-`stable_snapshot_to_path(source, temporary_target, chunk_size)`, must open the
-source exactly once; reject symbolic links and non-regular files; compare
-device, inode, size, and nanosecond modification time before and after reading;
-verify that the path still identifies the same file; copy and calculate SHA-256
-in one pass while releasing the Python Global Interpreter Lock; reject short
-writes and premature end-of-file; synchronize file and directory; publish only
-by atomic rename within one filesystem; and clean up unpublished temporary
-targets on error. It never mutates database or canonical application state.
-
-The Python boundary maps Rust failures to concrete typed errors. Broad
-`RuntimeError` handling or string inspection is not the durable contract.
+This implementation hashes and copies in separate passes. It is **not** the
+single-open, native copy-and-hash operation previously proposed in this guide.
+The design target additionally requires one open source descriptor, device/inode
+and timestamp checks before and after reading, path-identity verification,
+full synchronization and equivalent typed errors. Do not infer that those target
+guarantees were exercised merely from the `report_source_snapshot_v1` result tag
+or the `atomic_copy_rust_hash` log label.
 
 ## Locks, leases, and fencing
 
@@ -152,22 +155,17 @@ owns canonical publication.
 
 ## Python fallback and production profile
 
-The Python fallback must be explicit, enforce the same postconditions as the
-native implementation, emit a structured event and metric, and produce the same
-hashes and error classes in parity tests.
+The snapshot path above uses the Python filesystem wrapper and the shared hash
+backend. There is no selectable native-versus-Python snapshot mode in that wrapper.
+Earlier proposals for a native snapshot capability gate and development-only
+fallback are not an operational configuration instruction.
 
-In the target production profile, `report_source_snapshot_v1` is a required
-native capability and its absence fails readiness. A development profile may
-use the fallback but cannot claim to have tested native concurrency. The native
-module exposes a machine-readable capability function, for example:
-
-```text
-native_capabilities()
-  -> [("report_source_snapshot_v1", contract_version, implementation_version)]
-```
-
-This remains target behavior until the corresponding criterion in
-`Reporting.yml` has verified evidence; this guide is not deployment evidence.
+Lifecycle reduction and the durable import stack require their native
+capabilities; they do not gain a Python fallback from the snapshot implementation.
+Check the installed extension through `endoreg_db.utils.rust_backend.native_capabilities`
+and deploy compatible package versions. Readiness and target requirements remain
+in [Reporting.yml](../feature-tracking/Reporting.yml) and
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml).
 
 ## Failure and cleanup matrix
 
@@ -180,15 +178,15 @@ This remains target behavior until the corresponding criterion in
 | Result PDF is invalid | Quarantine or clean the attempt according to policy; never mark success |
 | Database fails after file publication | Detect an unreferenced artifact; reconciliation attaches it or quarantines fail-closed |
 | Worker loses its lease | Reject every subsequent state mutation and publication |
-| Native capability is missing | Reject production startup; only an explicit development profile may fall back |
+| Required lifecycle or import-stack capability is missing | Reject the operation; no Python lifecycle fallback |
 
 Cleanup operates only below a resolved approved root and never removes the only
 validated canonical result.
 
 ## Concurrency, observability, and verification
 
-File copies and hashing run natively without the Python Global Interpreter
-Lock. Database transactions remain short and exclude optical character
+Inspect the actual filesystem/hash call path before attributing time to native
+work; the current report snapshot copies through Python. Database transactions remain short and exclude optical character
 recognition, language models, and full-file copies. Per-host anonymization and
 nested native or machine-learning thread pools have explicit limits. Queue
 backpressure is preferred to an unbounded local executor. Cancellation
@@ -217,7 +215,7 @@ and post-reconciliation cleanup.
 Continuous Integration builds from a clean checkout, runs Rust tests,
 regenerates stubs with an empty diff, builds and installs the wheel in a fresh
 environment, invokes the capability and snapshot functions from that wheel,
-tests Python fallback parity, and exercises the oldest supported and current
+tests any explicitly supported fallback for parity, and exercises the oldest supported and current
 `lx-anonymizer` versions. An unversioned local shared object is not evidence.
 
 Implementation order and readiness remain in `Reporting.yml`. Every stage must

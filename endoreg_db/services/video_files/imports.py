@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _CreateVideoFileFromPathKwargs(TypedDict, total=False):
+class CreateVideoFileFromPathKwargs(TypedDict, total=False):
     processor_name: str | None
     raw_video_hash: str | None
     save: bool
@@ -38,7 +38,7 @@ def create_video_file_from_path(
     *,
     model_cls: type["VideoFile"] | None = None,
     center_key: str | None = None,
-    **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
+    **kwargs: Unpack[CreateVideoFileFromPathKwargs],
 ) -> Optional["VideoFile"]:
     from endoreg_db.utils.file_operations import get_file_hash
 

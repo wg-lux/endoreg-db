@@ -62,7 +62,7 @@ def ensure_reference_data(base_db_data: object) -> object:
     return base_db_data
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestVideoValidationDeletionBehavior:
     """
     Test suite to verify correct file deletion during validation.
@@ -297,7 +297,7 @@ class TestVideoValidationDeletionBehavior:
             assert result is True, "Validation should succeed"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestActiveFileLogicWithValidation:
     """
     Test to ensure active_file logic doesn't interfere with validation deletion.
@@ -417,7 +417,7 @@ class TestActiveFileLogicWithValidation:
             assert processed_path.exists(), "Processed should remain"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestValidationDeletion:
     """
     Test validation and gated raw-video cleanup behavior.

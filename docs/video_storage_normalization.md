@@ -721,6 +721,13 @@ directory. Missing requested files fail closed immediately; missing sibling file
 are detected on their own request or the next complete readiness check. These
 checks do not use a readiness cache.
 
+Playlist, key, and segment lookups defer the video's potentially large timeline
+metadata instead of loading it repeatedly for playback. Cross-center access
+checks still load integrity metadata when required. Lease admission locks the
+same video row using only its primary key; all conflict checks and lease renewals
+remain mandatory. This keeps ordinary streaming requests independent of the size
+of stored timestamp arrays without caching authorization or readiness decisions.
+
 Repeated source-content checks reuse a fully computed plaintext Secure Hash
 Algorithm, 256-bit (SHA-256) digest within the current process only. The bounded
 cache holds at most 128 encrypted-file generations. Each entry belongs to the
@@ -776,6 +783,29 @@ repeated events by digest; enabling verbose logging must not reveal intake
 directory topology or patient-derived filenames.
 
 ## Timeline and Frame-Quality Gate
+
+Clinical frame/time conversion requires a persisted
+`VideoFile.meta.source_timeline`. A stored, probed or default frame rate alone
+does not establish constant frame rate, timeline origin or generation identity.
+When all frame timestamps are absent, coordinate mapping automatically captures
+the active canonical video's decoded timestamps and persists them with
+its content hash and rational time base. The publication row lock serializes
+concurrent requests. Existing frame identities and segment boundaries are retained;
+partial coordinates, changed content and mismatched frame counts fail closed.
+This one-time recovery uses protected temporary materialization for the complete
+probe; subsequent reads use persisted coordinates. It does not reconstruct
+transformation ancestry or grant provenance/export approval.
+Retained raw media is captured first, and its original timeline is stored separately
+from the processed timeline used for annotation. If raw media is unavailable,
+processed coordinates remain usable without fabricating an original timeline.
+Shared probing prefers original timestamp fields and uses the decoder's validated
+best-effort timestamps when those fields are absent, including callers using the
+legacy `require_original_pts` keyword. Missing original fields alone never reject
+a video. The `video_original_timestamps_recovered` event records this fallback;
+invalid or wholly undecodable coordinates still fail validation.
+Missing source-timeline evidence with existing coordinates still blocks mapping; rational
+constant-frame-rate conversion remains available only through an explicit
+persisted timeline contract.
 
 During import, the source timeline is persisted in
 `VideoFile.meta.source_timeline` with presentation-timestamp timeline version
@@ -1132,6 +1162,16 @@ generation, and inventory reconciliation must then be verified again.
 
 ### Disk Full and Process Termination
 
+`storage_management` reports capacity on the canonical runtime storage
+filesystem. Its legacy cleanup flags and direct cleanup helpers fail closed.
+Neither `--force` nor `--dry-run` enables those cleanup paths; high disk usage
+never authorizes master, frame, upload, log or temporary-file deletion through
+this command.
+Use `normalize_video_storage` for read-only inventory. Retire recorded replaced
+generations through `reap_processed_video_generations`, first without `--apply`
+to inspect the receipt-based cleanup gates, then with `--apply` only when those
+gates permit deletion.
+
 No further apply run starts after a disk-full condition. Temporary `.part.mp4`
 artifacts are removed inside the protected transcoding directory through the
 central filesystem operations; the previous master reference remains valid.
@@ -1214,6 +1254,41 @@ The worker emits per-video `periodic_hls_cleanup` and
 `periodic_generation_cleanup` results and separate derivative/master counters.
 Track implementation and deployment evidence under `periodic_generation_cleanup`
 in the feature YAML linked above.
+
+### Abandoned temporary artifacts
+
+A temporary transcode artifact lives for one attempt and is removed by that
+attempt's `finally` path. A killed worker leaves it behind in the protected
+transcoding root (`storage/temp`). The periodic `endoreg_db.cleanup_media_sources`
+task classifies every entry there by its owner
+(`endoreg_db/services/runtime/transient_artifact_cleanup.py`):
+
+| Owner kind | Layout | Owner is still active when |
+| --- | --- | --- |
+| UploadJob inventory | Any path registered in the UploadJob file inventory | The job is processing, retrying, retryable or holds an unexpired lease; shared or non-disposable roles are an owner conflict |
+| HTTP Live Streaming (HLS) build | `hls_key_material`, `hls_output`, `hls_plaintext_source` / `<video id>/<key id>` | Its artifact row is queued, materializing or validated, or the video holds an active media-operation lease |
+| Video raw hash | Names starting with the raw video hash, including `anonymizing_<hash>` | The import content-hash lock is held, an UploadJob with that content hash is active, or the video has an active lease or pending/running processing history |
+| Processed transcode | `processed_storage_pressure/<video uuid>` | The video has an active lease or pending/running processing history |
+
+An entry is deleted only if its owner is identified and not active, and nothing
+inside it changed for the grace period. Raw-hash entries are revalidated and
+deleted while the cleanup holds the content-hash lock, so an import cannot start
+during deletion. The anonymization lifecycle phase is not used: a crashed import
+stays in an in-progress phase, so the phase does not prove a running worker.
+These entries are never deleted, only reported:
+
+- HLS build directories without an artifact row
+- process-scoped scratch (`endoreg-fieldfile-`, `upload-source-`, `report-`,
+  random-name materializations and similar)
+- unknown layouts
+- anything containing a symbolic link
+
+Masters, published streaming derivatives and frames live outside this root.
+The pass follows the task's single apply gate, enabled by default;
+`UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=false` makes it a dry run. The
+transcoding root is no longer scanned by startup reconciliation, so this pass
+is its only cleaner.
+Track evidence under `abandoned_transient_artifact_reclamation`.
 
 ## Release Gates
 

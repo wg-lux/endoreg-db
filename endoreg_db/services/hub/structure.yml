@@ -36,7 +36,8 @@ files:
 - file: audit.py
   role: Exports emit_hub_audit_event.
 - file: cleanup.py
-  role: Exports additional_source_paths, inspect_upload_job_source, apply_upload_job_source_cleanup.
+  role: Exports additional_source_paths, inspect_upload_job_source, apply_upload_job_source_cleanup and the shared
+    stored_media_name_referenced query.
 - file: deployment.py
   role: Exports get_deployment_role, hub_mode_enabled, local_study_server_mode_enabled.
 - file: import_monitoring.py
@@ -51,6 +52,9 @@ files:
   role: Exports create_network_node, update_network_node, delete_network_node.
 - file: payloads.py
   role: Recursive source-identity transfer prohibition and compatibility imports.
+- file: hub_record_identity.py
+  role: Pure receiver-side hub record namespace hashes and identity conflict decisions; transfers.py owns locks,
+    row creation and the transaction.
 - file: hub_pseudonyms.py
   role: Contract 7.0 hub-scoped UUIDv8 record pseudonyms for media identity and study bundles; local UUIDs stay on the site.
 - file: preanonymized_metadata.py
@@ -83,10 +87,17 @@ files:
   role: Exports enabled, sanitize, section.
 - file: transfers.py
   role: Version 7 pseudonymous identity linkage, segment timeline coordinates recomputed from received provenance, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
+- file: upload_center_resolution.py
+  role: Declared center_key/center_name lookup and pure center-or-error decision; ingest.py re-exports it.
 - file: upload_job_cancellation.py
   role: Persist import cancellation intent; only the owning worker acknowledges it.
 - file: upload_job_files.py
-  role: Central ownership inventory shared by import staging and source cleanup.
+  role: Central ownership inventory shared by import staging and source cleanup; upload_job_owns_active_attempt
+    is the shared active-attempt predicate.
+- file: upload_staging_orphans.py
+  role: Periodic reclamation of upload job directories whose UploadJob no longer exists and that nothing references;
+    other layouts are only reported; reap_upload_staging_orphan is the verified single-unit deletion shared with
+    the lx-annotate storage monitor.
 - file: upload_job_import_lease.py
   role: Renewable fenced ownership, expired-attempt reconciliation and bounded retained-source recovery invoked by the retry dispatcher.
 - file: upload_job_state_machine.py
@@ -121,7 +132,6 @@ dependencies:
   - django
   - lx_dtypes
   - pydantic
-  - yaml
 submodules: []
 contracts:
 - name: Service ownership and compatibility
@@ -149,10 +159,13 @@ tests:
   - tests/services/test_hub_ingest_dispatch.py
   - tests/services/test_hub_ingest_import_job_contract.py
   - tests/services/test_hub_ingest_unit.py
+  - tests/services/test_hub_record_identity.py
+  - tests/services/test_hub_upload_center_resolution.py
   - tests/services/test_ingest_helper_compatibility.py
   - tests/services/test_preanonymized_external_identity.py
   - tests/services/test_preanonymized_watcher_ingest.py
   - tests/services/test_watcher_storage_import.py
+  - tests/services/test_upload_staging_orphans.py
 schema_version: '1.0'
 feature_definition: ../../../feature-tracking/ImportPipelineRobustness.yml
 criterion: ingest_helper_modules
@@ -190,6 +203,13 @@ modules:
     - tests/services/test_preanonymized_external_identity.py
     - tests/services/test_preanonymized_watcher_ingest.py
     - tests/services/test_ingest_helper_compatibility.py
+  upload_center_resolution.py:
+    owns: Declared upload center normalization, lookup and center-or-error decision
+    effects: Read-only Center lookups; callers own audit events and error translation.
+    tests:
+    - tests/services/test_hub_upload_center_resolution.py
+    - tests/services/test_hub_ingest_unit.py
+    - tests/services/test_ingest_helper_compatibility.py
   watcher_handoff.py:
     owns: Temporary-name rejection, source settling and stat snapshot checks
   upload_job_import_lease.py:
@@ -200,5 +220,10 @@ modules:
     owns: Native-validated job-state transitions, expired-execution interruption and shared cap-preserving recovery admission
   upload_job_files.py:
     owns: Source and media artifact ledger registration
+  upload_staging_orphans.py:
+    owns: Orphaned upload job directory classification and gated deletion
+    effects: Runs inside cleanup_media_sources under its single apply gate (enabled by default) and deletes only after revalidation.
+    tests:
+    - tests/services/test_upload_staging_orphans.py
   cleanup.py:
     owns: Retention eligibility and source cleanup

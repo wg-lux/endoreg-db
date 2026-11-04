@@ -11,7 +11,6 @@ from typing import (
     Any,
     TYPE_CHECKING,
     Protocol,
-    TypedDict,
     Unpack,
     cast,
 )
@@ -97,6 +96,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
     from endoreg_db.models.state.video import VideoState
+    from endoreg_db.services.video_files.imports import CreateVideoFileFromPathKwargs
 
 
 class VideoFrameScoreResult(Protocol):
@@ -117,10 +117,6 @@ class VideoFrameScoreResult(Protocol):
 
     @property
     def timestamps(self) -> list[float] | None: ...
-
-
-class _VideoFileCreateKwargs(TypedDict, total=False):
-    pass
 
 
 class VideoFile(models.Model):
@@ -698,7 +694,7 @@ class VideoFile(models.Model):
         cls,
         file_path: str | Path,
         center_name: str,
-        **kwargs: Unpack[_VideoFileCreateKwargs],
+        **kwargs: Unpack[CreateVideoFileFromPathKwargs],
     ) -> "VideoFile | None":
         from endoreg_db.services.video_files import create_video_file_from_path
 

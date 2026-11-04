@@ -255,6 +255,49 @@ def test_video_integrity_loss_propagates_to_dependent_training_ledger() -> None:
     assert "training input video artifact was lost" in run.error
 
 
+def test_integrity_loss_keeps_a_training_run_retried_after_selection(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        start_frame_number=0,
+        end_frame_number=1,
+    )
+    dataset = AIDataSet.objects.create(name="integrity-concurrent-retry")
+    dataset.video_annotations.add(segment)
+    run = AIModelTrainingRun.objects.create(
+        dataset=dataset,
+        backbone_name="test-backbone",
+        feature_mode="test-features",
+        status=AIModelTrainingRun.STATUS_COMPLETED,
+    )
+    manager = AIModelTrainingRun.objects
+    original_filter = manager.filter
+
+    def filter_after_concurrent_retry(*args: object, **kwargs: object) -> object:
+        if "run_id__in" in kwargs:
+            # Another worker retries the run between selection and the write.
+            original_filter(run_id=run.run_id).update(
+                status=AIModelTrainingRun.STATUS_RETRY_WAIT
+            )
+        return original_filter(*args, **kwargs)
+
+    monkeypatch.setattr(manager, "filter", filter_after_concurrent_retry)
+
+    # Act
+    media_integrity.mark_video_integrity_lost(
+        video,
+        "Canonical processed video is missing.",
+    )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RETRY_WAIT
+    assert "training input video artifact was lost" not in run.error
+
+
 def _video_with_initialized_frames(
     tmp_path: Path,
     *,

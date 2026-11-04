@@ -836,7 +836,7 @@ class VideoAnonymizer:
             video.raw_video_hash, ".mp4"
         )
         temp_output_path = _temp_media_path(
-            anonymized_output_path,
+            get_runtime_paths().transcoding / anonymized_output_path.name,
             marker=f"attempt-{ctx.attempt_id}",
         )
         safe_unlink_file(temp_output_path, missing_ok=True)

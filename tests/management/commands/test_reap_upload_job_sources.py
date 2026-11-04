@@ -105,7 +105,7 @@ def test_repeat_requires_apply() -> None:
         )
 
 
-def test_apply_is_independently_disabled_by_default(
+def test_apply_is_refused_when_host_gate_is_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(

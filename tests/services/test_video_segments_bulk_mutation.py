@@ -16,6 +16,7 @@ from endoreg_db.services.annotations.segments_bulk_mutation import (
     bulk_mutate_video_segments,
 )
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 class VideoSegmentsBulkMutationServiceTest(TestCase):
@@ -27,6 +28,7 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
             original_file_name="bulk_segments_service.mp4",
             fps=25.0,
             frame_count=200,
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
         )
         self.label_a = Label.objects.create(name="bulk-service-outside")
         self.label_b = Label.objects.create(name="bulk-service-polyp")

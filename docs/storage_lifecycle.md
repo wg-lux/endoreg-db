@@ -196,10 +196,11 @@ has an effect where Celery Beat and a maintenance worker are actually running.
 
 The task always reads `UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED`:
 
-- When false (the default), it inventories candidates and blockers without
-  deleting upload sources, old video masters, or superseded HLS.
-- When true, it applies all three cleanup lanes after each lane revalidates its
-  own ownership and integrity conditions.
+- When true (the default), it applies every cleanup lane after each lane
+  revalidates its own ownership and integrity conditions.
+- When set to false, it inventories candidates and blockers without deleting
+  upload sources, orphaned upload directories, abandoned temporary artifacts,
+  old video masters, or superseded HLS.
 
 The lanes are:
 

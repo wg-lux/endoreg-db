@@ -76,14 +76,22 @@ def _query_str_param(params: Mapping[str, str], key: str, default: str = "") -> 
     return params.get(key, default)
 
 
-def _query_int_param(params: Mapping[str, str], key: str, default: int) -> int:
+def _query_int_param(
+    params: Mapping[str, str], key: str, default: int, *, minimum: int
+) -> int:
+    """Keep discovery usable when browser pagination state is malformed or stale."""
     raw_value = params.get(key)
     if raw_value is None or raw_value == "":
         return default
     try:
-        return int(raw_value)
-    except ValueError as exc:
-        raise ValueError(f"{key} must be an integer.") from exc
+        value = int(raw_value)
+    except ValueError:
+        logger.info("Using default video pagination for %s", key)
+        return default
+    if value < minimum:
+        logger.info("Using default video pagination for %s", key)
+        return default
+    return value
 
 
 def _query_bool_param(params: Mapping[str, str], key: str) -> bool | None:
@@ -232,13 +240,10 @@ class VideoMediaView(APIView):
 
             queryset = queryset.order_by("-uploaded_at")
 
-            limit = min(_query_int_param(query_params, "limit", 50), 100)
-            offset = _query_int_param(query_params, "offset", 0)
+            limit = min(_query_int_param(query_params, "limit", 50, minimum=1), 100)
+            offset = _query_int_param(query_params, "offset", 0, minimum=0)
             total_count = queryset.count()
             videos = list(queryset[offset : offset + limit])
-
-            for video in videos:
-                _video_contract_payload(video)
 
             serialized_data = [
                 _serialize_response_data(
@@ -264,11 +269,6 @@ class VideoMediaView(APIView):
                 }
             )
 
-        except ValueError as exc:
-            return Response(
-                {"error": f"Invalid query parameter: {str(exc)}"},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
         except Exception as exc:
             logger.exception("Unexpected error in video list view: %s", exc)
             return Response(
@@ -318,7 +318,7 @@ class VideoMediaView(APIView):
         return self._build_paginated_url(request, max(0, offset - limit), limit)
 
     def _build_paginated_url(self, request: Request, offset: int, limit: int) -> str:
-        params: dict[str, str] = dict(_query_params(request))
+        params = {key: value for key, value in _query_params(request).items()}
         params["offset"] = str(offset)
         params["limit"] = str(limit)
 

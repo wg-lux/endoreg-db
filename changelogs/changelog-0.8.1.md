@@ -1,5 +1,7 @@
 # Prototype Release 0.8.1
 
+> **Current operator action (2026-11-02, unreleased):** Before upgrading a v1 machine or resuming media migration, read the [LXENC v2 changes](../changelog.md) and [upgrade/resume procedure](../docs/secret_rotation.md#v1-machines-and-interrupted-media-migrations). Preserve existing keys and backups; deploy compatible readers before v2 writes. The historical release content below is unchanged.
+
 > Historical release note: this file records statements made for version 0.8.1. It is not evidence of the current production state. The current package version and maturity classifier are defined in `pyproject.toml`.
 
 ## Summary

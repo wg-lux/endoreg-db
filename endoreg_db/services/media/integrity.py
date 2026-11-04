@@ -59,11 +59,14 @@ def _mark_applied_transfer_jobs_lost(
 ) -> int:
     if not resource_hash and upload_job_id is None:
         raise ValueError("transfer integrity propagation requires a resource identity")
+    from endoreg_db.services.hub.transfers import transfer_operation_state
+
+    # The UPDATE below is the compare-and-swap: only rows still APPLIED change.
     reduced = transition_operation_lifecycle(
-        OperationLifecycleState.SUCCEEDED,
+        transfer_operation_state(TransferJob.TransferStatus.APPLIED.value),
         OperationLifecycleEvent.INTEGRITY_LOST,
     )
-    if reduced is not OperationLifecycleState.LOST:
+    if reduced is not transfer_operation_state(TransferJob.TransferStatus.LOST.value):
         raise RuntimeError("transfer integrity loss did not reduce to LOST")
     queryset = TransferJob.objects.filter(
         transfer_status=TransferJob.TransferStatus.APPLIED
@@ -113,7 +116,11 @@ def _mark_video_training_dependencies_lost(video: VideoFile) -> int:
     )
     if not run_ids:
         return 0
-    return AIModelTrainingRun.objects.filter(run_id__in=run_ids).update(
+    # Compare-and-swap: a run retried since selection keeps its new state.
+    return AIModelTrainingRun.objects.filter(
+        run_id__in=run_ids,
+        status=AIModelTrainingRun.STATUS_COMPLETED,
+    ).update(
         status=AIModelTrainingRun.STATUS_LOST,
         error=(
             "A confirmed training input video artifact was lost after successful "

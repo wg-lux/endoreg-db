@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Protocol, cast
 
 from django.db import transaction
+from django.dispatch import Signal
 from django.db.utils import OperationalError, ProgrammingError
 from django.db.models.fields.files import FieldFile
 
@@ -34,6 +36,25 @@ from lx_dtypes.models.contracts.export_ready import ReadyForExportResult
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True, slots=True)
+class VideoReadyForExportCommitted:
+    """Committed approval of one processed generation for export."""
+
+    video_id: int
+    center_key: str
+    processed_file_sha256: str
+    # None only for an authenticated principal without a persisted user row;
+    # attribution-bound receivers must refuse such events.
+    approved_by_user_id: int | None
+
+
+# Sent once per approval, only after the approving transaction commits, with
+# ``sender=VideoFile`` and ``event=VideoReadyForExportCommitted``. Receivers
+# (for example a site node staging hub transfers) must re-validate the current
+# generation against ``event.processed_file_sha256`` before acting.
+video_ready_for_export_committed = Signal()
+
+
 class _CenterIdentity(Protocol):
     pk: int
 
@@ -52,6 +73,11 @@ def _user_identifier(user: Any) -> str:
     if user_id is not None:
         return str(user_id)
     return "authenticated-service"
+
+
+def _persisted_user_id(user: Any) -> int | None:
+    user_id = getattr(user, "pk", None)
+    return int(user_id) if user_id is not None else None
 
 
 def _require_authenticated_user(user: Any) -> None:
@@ -270,6 +296,20 @@ def mark_video_ready_for_export(
         processed_file_sha256=processed_file_sha256,
         request_user=user,
     )
+    committed_event = VideoReadyForExportCommitted(
+        video_id=int(video.pk),
+        center_key=str(center.center_key),
+        processed_file_sha256=processed_file_sha256,
+        approved_by_user_id=_persisted_user_id(user),
+    )
+
+    def _publish_committed_approval() -> None:
+        video_ready_for_export_committed.send(  # pyright: ignore[reportUnknownMemberType]
+            sender=VideoFile,
+            event=committed_event,
+        )
+
+    transaction.on_commit(_publish_committed_approval)
 
     state_ready_for_export_at = cast(datetime | None, state.ready_for_export_at)
     ready_for_export_at: str | None

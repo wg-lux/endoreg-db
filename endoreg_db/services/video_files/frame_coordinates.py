@@ -48,6 +48,17 @@ def artifact_frame_timestamps(
             if recovery.recording_hash != video.raw_video_hash:
                 raise ValueError("Recovered timestamps belong to another recording.")
             candidates.append(recovery.processed_timeline)
+    if not candidates:
+        from endoreg_db.services.video_files.timestamp_backfill import (
+            backfill_missing_video_timestamps,
+        )
+
+        previous_meta = video.meta
+        backfill_missing_video_timestamps(video, payload=payload)
+        if video.meta is not previous_meta:
+            return artifact_frame_timestamps(
+                video, file_type=file_type, source_path=source_path
+            )
     if not candidates or any(item != candidates[0] for item in candidates):
         raise ValueError(
             "Selected media requires an unambiguous canonical timestamp sequence."

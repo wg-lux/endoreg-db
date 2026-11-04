@@ -9,10 +9,20 @@ from django.test import Client
 from django.utils import timezone
 
 from endoreg_db.exceptions import MediaOperationDeferred
-from endoreg_db.models import Center, MediaOperationLease, UploadJob, VideoFile
+from endoreg_db.models import (
+    AIDataSet,
+    Center,
+    Frame,
+    ImageClassificationAnnotation,
+    Label,
+    MediaOperationLease,
+    UploadJob,
+    VideoFile,
+)
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import ProcessedGenerationCleanupReceipt
 from endoreg_db.services.video_files import deletion
+from endoreg_db.services.video_files.io import get_temp_anonymized_video_frame_dir
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
@@ -60,6 +70,84 @@ def test_delete_removes_upload_and_original_drop(
     assert job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
     assert not job.source_file_persisted and not job.file.name
     assert job.status == UploadJob.Status.ERROR
+
+
+def test_full_deletion_removes_dataset_frames_before_commit(video: VideoFile) -> None:
+    frame = Frame.objects.create(
+        video=video, frame_number=0, relative_path="frame.jpg", is_extracted=True
+    )
+    frame_path = frame.file_path
+    temporary = get_temp_anonymized_video_frame_dir(video) / "frame.jpg"
+    for path in (frame_path, temporary):
+        atomic_write_file(destination=path, content=[b"frame"])
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=Label.objects.create(name="delete-frame"),
+        value=True,
+    )
+    dataset = AIDataSet.objects.create(
+        name="delete-frame-dataset",
+        dataset_type=AIDataSet.DATASET_TYPE_IMAGE,
+        ai_model_type=AIDataSet.AI_MODEL_TYPE_IMAGE_MULTILABEL,
+    )
+    dataset.image_annotations.add(annotation)
+    video_id = video.pk
+    response = Client().delete(f"/api/media-management/force-remove/video/{video_id}/")
+    # pytest's outer transaction has not committed: cleanup must already be done.
+    assert response.status_code == 200, response.content
+    assert not frame_path.exists() and not temporary.exists()
+    assert not VideoFile.objects.filter(pk=video_id).exists()
+    assert not Frame.objects.filter(pk=frame.pk).exists()
+    assert not dataset.image_annotations.exists()
+    assert AIDataSet.objects.filter(pk=dataset.pk).exists()
+
+
+@pytest.mark.parametrize("fail_after_removal", [False, True])
+def test_frame_cleanup_failure_keeps_owner_and_is_retryable(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+    fail_after_removal: bool,
+) -> None:
+    directory = get_temp_anonymized_video_frame_dir(video)
+    atomic_write_file(destination=directory / "frame.jpg", content=[b"frame"])
+    original_remove = deletion.safe_rmtree
+
+    def fail(path: Path, *, missing_ok: bool = True) -> None:
+        if path == directory:
+            if fail_after_removal:
+                original_remove(path, missing_ok=missing_ok)
+            raise OSError("frame directory cleanup failed")
+        original_remove(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(deletion, "safe_rmtree", fail)
+    endpoint = f"/api/media-management/force-remove/video/{video.pk}/"
+    response = Client().delete(endpoint)
+    assert response.status_code == 500
+    assert VideoFile.objects.filter(pk=video.pk).exists()
+    assert video.raw_file.storage.exists(str(video.raw_file.name))
+    monkeypatch.setattr(deletion, "safe_rmtree", original_remove)
+    response = Client().delete(endpoint)
+    assert response.status_code == 200, response.content
+    assert not directory.exists()
+    assert not VideoFile.objects.filter(pk=video.pk).exists()
+
+
+def test_frame_directory_symlink_blocks_deletion(
+    video: VideoFile, tmp_path: Path
+) -> None:
+    original = tmp_path / "unrelated.jpg"
+    atomic_write_file(destination=original, content=[b"unrelated"])
+    directory = get_temp_anonymized_video_frame_dir(video)
+    directory.parent.mkdir(parents=True, exist_ok=True)
+    directory.symlink_to(tmp_path, target_is_directory=True)
+    try:
+        with pytest.raises(ValueError, match="symbolic-link"):
+            video.delete()
+        assert original.read_bytes() == b"unrelated"
+        assert video.raw_file.storage.exists(str(video.raw_file.name))
+        assert VideoFile.objects.filter(pk=video.pk).exists()
+    finally:
+        directory.unlink()
 
 
 @pytest.mark.parametrize("field_name", ["raw_file", "processed_file"])

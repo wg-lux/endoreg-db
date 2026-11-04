@@ -17,7 +17,7 @@ from django.db import close_old_connections
 from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.import_files.context.import_context import ImportContext
-from endoreg_db.models import PortalUserInfo, UploadJob
+from endoreg_db.models import PortalUserInfo, UploadJob, VideoFile
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
 from endoreg_db.schemas.import_processing import (
     ImportProcessingEvent,
@@ -60,6 +60,120 @@ from tests.import_files.test_import_checkpoints import (
 
 __all__ = ["context"]
 pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("context", ["video"], indirect=True)
+@pytest.mark.parametrize("hls_ready", [False, True])
+def test_reused_video_adopts_native_publication_only_after_hls(
+    context: ImportContext, monkeypatch: pytest.MonkeyPatch, hls_ready: bool
+) -> None:
+    from endoreg_db.import_files.video_import_service import VideoImportService
+
+    video = context.current_video
+    assert video is not None
+    job = failed_job(context)
+    job.status = UploadJob.Status.PROCESSING
+    job.error_code = UploadJob.ErrorCode.NONE
+    job.save()
+    original = update_import_processing_stack(job.pk, ImportProcessingEvent.VALIDATE)
+    service = object.__new__(VideoImportService)
+    readiness = Mock(side_effect=None if hls_ready else RuntimeError("HLS pending"))
+    monkeypatch.setattr(service, "_ensure_duplicate_streaming", readiness)
+    monkeypatch.setattr(service, "_cleanup_duplicate_staging", Mock())
+
+    with track_upload_job_files(job):
+        if hls_ready:
+            for _ in range(2):
+                assert service._reuse_completed_import(context, video) == video
+        else:
+            with pytest.raises(RuntimeError, match="HLS pending"):
+                service._reuse_completed_import(context, video)
+    job.refresh_from_db()
+    stack = ImportProcessingStack.model_validate(job.processing_stack)
+    if not hls_ready:
+        assert stack == original
+        return
+    assert stack.media_type == "video"
+    assert stack.remaining == ["complete_upload"]
+    assert stack.checkpoint is not None and stack.checkpoint.media_id == video.pk
+    assert stack.source_sha256 == context.file_hash
+    mark_upload_job_completed(job)
+    job.refresh_from_db()
+    assert ImportProcessingStack.model_validate(job.processing_stack).remaining == []
+
+
+@pytest.mark.parametrize("context", ["video"], indirect=True)
+def test_video_reanonymization_uses_native_checkpoint_and_retry_skips_preparation(
+    context: ImportContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from contextlib import nullcontext
+    from django.core.files.base import ContentFile
+    from endoreg_db.import_files import video_import_service as module
+    from endoreg_db.services.imports.execution import ImportExecutionFence
+
+    video = context.current_video
+    assert video is not None
+    context.processor_name = "processor"
+    video.processed_file.save(
+        "previous.mp4", ContentFile(b"previous master"), save=True
+    )
+    previous_name = video.processed_file.name
+    job = failed_job(context)
+    job.status = UploadJob.Status.PROCESSING
+    job.error_code = UploadJob.ErrorCode.NONE
+    job.save()
+    preparation = Mock(side_effect=prepare)
+    service = object.__new__(module.VideoImportService)
+    service._anonymizer = Mock(anonymize_video=preparation)
+
+    def import_names(_video: VideoFile) -> tuple[str, str]:
+        return context.center_name, "processor"
+
+    monkeypatch.setattr(
+        module,
+        "get_video_import_context_names",
+        import_names,
+    )
+    monkeypatch.setattr(module, "_normalize_reimport_video_quality", Mock())
+    publication = Mock(
+        side_effect=[RuntimeError("HLS pending"), RuntimeError("HLS pending"), None]
+    )
+    monkeypatch.setattr(module, "finalize_video_success", publication)
+    with track_upload_job_files(job):
+        with pytest.raises(RuntimeError, match="HLS pending"):
+            service.reanonymize_existing_video_fenced(
+                video,
+                source_path=context.file_path,
+                execution_fence=ImportExecutionFence(
+                    uuid4().hex, lambda: None, nullcontext
+                ),
+            )
+        job.refresh_from_db()
+        saved = ImportProcessingStack.model_validate(job.processing_stack)
+        assert saved.remaining == ["publish_artifact", "complete_upload"]
+        video.refresh_from_db()
+        assert video.processed_file.name == previous_name
+        with video.processed_file.open("rb") as source:
+            assert source.read() == b"previous master"
+        receipt = media_import_checkpoint(video)
+        assert receipt is not None and receipt.normalization is not None
+        assert receipt.extraction is None
+        context.retry = True
+        monkeypatch.setattr(service, "_prepare_video_artifact", must_not_prepare)
+        with pytest.raises(RuntimeError, match="HLS pending"):
+            service._anonymize_and_finalize(context)
+        video.refresh_from_db()
+        assert video.processed_file.name == previous_name
+        assert media_import_checkpoint(video) is not None
+        assert service._anonymize_and_finalize(context) == video
+    preparation.assert_called_once()
+    job.refresh_from_db()
+    published = ImportProcessingStack.model_validate(job.processing_stack)
+    assert published.remaining == ["complete_upload"]
+    assert published.checkpoint == saved.checkpoint
+    mark_upload_job_completed(job)
+    job.refresh_from_db()
+    assert ImportProcessingStack.model_validate(job.processing_stack).remaining == []
 
 
 @pytest.fixture

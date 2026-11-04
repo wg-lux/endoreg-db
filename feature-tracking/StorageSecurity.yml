@@ -31,8 +31,8 @@ definition_of_done:
   - Video, Bericht, Sidecar, Manifest und temporäres Artefakt haben einen eindeutigen Schutzmodus.
   - Operatorseitiges encryption-off ist kein unterstützter Produktionszustand.
   - storage_mode verwendet ausschließlich typisierte, exhaustive Routingentscheidungen.
-  - Der kanonische Dateioperations-Wrapper ist endoreg_db.utils.filesystem.file_operations; abweichende
-    Importpfade sind nur als inventarisierte, getestete und befristete Kompatibilität zulässig.
+  - Der kanonische Dateioperations-Wrapper ist endoreg_db.utils.file_operations; abweichende Importpfade
+    sind nur als inventarisierte, getestete und befristete Kompatibilität zulässig.
   required: true
   verification:
     kind: manual
@@ -74,6 +74,9 @@ definition_of_done:
   category: security
   title: Physischer Datenträgerzugriff ermöglicht keinen Klartextzugriff
   acceptance:
+  - Inline-Master-Keys sind nur in expliziten Testprofilen zulässig. Produktions-, Standard- und unbekannte
+    Profile lehnen konfigurierte Inline-Werte auch neben gültigen privaten Keydateien oder Keyrings ohne
+    Secret-Ausgabe ab; vorhandene Dateiquellen bleiben nutzbar.
   - Managed Non-Video-Payloads nutzen anwendungsseitig verschlüsselten Storage.
   - Videos liegen innerhalb der freigegebenen verschlüsselten, streambaren Grenze.
   - Start schlägt fehl, wenn erforderliche Schlüssel- oder Storageinvarianten fehlen.
@@ -119,6 +122,34 @@ definition_of_done:
         video_processed_transcode_encryption, report_artifact_integrity, encryption_streaming, video_stream,
         report_stream, sap_ish_import: 59 passed. Vollständiger Pyright 0 errors, 10 warnings; gezielte
         Nachprüfung 0 errors, 0 warnings; Ruff und git diff --check bestanden.'
+    - kind: command
+      reference: '2026-11-02: RUSTFLAGS mit python3-config --embed --ldflags, cargo test --offline --lib
+        in rust/endoreg_rust_backend: 37 passed (inkl. 3 neue Version-2-Tests); cargo fmt --check bestanden'
+    - kind: test
+      reference: '2026-11-02: pytest tests/utils/test_encryption_format_v2.py tests/rust_backend/test_encrypted_contract.py
+        tests/utils/test_encryption_range.py tests/services/test_secret_rotation.py und 8 Konsumenten-Testdateien:
+        115 passed, 51 skipped (RUN_VIDEO_TESTS=false); mit RUN_VIDEO_TESTS=true 7 Videodateien: 72 passed,
+        3 skipped (ffmpeg nicht verfügbar)'
+    - kind: command
+      reference: '2026-11-02: pyright auf 9 geänderten Python-Dateien 0 errors, 0 warnings; ruff check
+        und ruff format --check bestanden; maturin develop --release neu gebaut'
+    - kind: review
+      reference: feature-tracking/reports/lxenc_v2_review.md
+    - kind: code
+      reference: tests/environment/test_secret_resolution.py; tests/deployment/test_prod_settings_contract.py;
+        tests/services/test_secret_rotation.py; tests/utils/test_encryption_format_v2.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
     note: '2026-10-06: Atomare Klartextmaterialisierung ausschließlich unter geschütztem Transcoding-Storage,
       Modus 0600 und Bereinigung auch bei Lesefehlern oder Consumer-Abbruch. Speicher-Löschfehler werden
       bei Validierung und expliziter Video-Löschung nicht mehr unterdrückt. Gemeinsame Eigentums-/Hash-/Aktivitätsprüfungen
@@ -145,9 +176,37 @@ definition_of_done:
       inklusive Quellstream-Schließfehler: 59 passed, 2 warnings in 185.14s. Ruff und beide Diff-Prüfungen
       bestanden. Keine zweite vollständige Suite gestartet, da fremde pytest-Suite PID 1687645 aktiv.
       Produktive Verschlüsselung einschließlich Snapshots, Backups und Swap sowie Bereinigung nach hartem
-      Prozessabbruch bleiben unbewiesen; keine Produktionsfreigabe.'
-    assessed_by: codex-storage-20261006-a1
-    assessed_at: '2026-10-07T07:15:09.827094Z'
+      Prozessabbruch bleiben unbewiesen; keine Produktionsfreigabe.
+
+
+
+      2026-11-02 (claude-lxenc-v2): LXENC Version 2 in Python und Rust umgesetzt. Schreiber und Rotation
+      erzeugen Version 2; jeder Chunk authentifiziert, ob er der letzte ist, eine leere Datei besteht
+      aus einem leeren Endchunk. key_id (domänengetrenntes SHA-256-Präfix des Master-Schlüssels) wählt
+      genau eine Generation ohne Probeentschlüsselung; der Hüllschlüssel ist an key_id und eine zufällige
+      128-Bit-file_id gebunden. EncryptedStorage authentifiziert den Endchunk beim Cachen des Layouts,
+      Größenabfragen und ausgelieferte Bereiche scheitern daher bei abgeschnittenen Dateien. Version 1
+      bleibt lesbar. Restrisiken: file_id wird von Modellen noch nicht gespeichert, Vertauschen vollständiger
+      Dateien zwischen Datensätzen bleibt unerkannt; kein Pfad gebunden, da Ingest und Quarantäne Payloads
+      verschieben. Bestehende Version-1-Dateien erhalten erst bei Neuschreiben ein authentifiziertes Ende;
+      Rotation überspringt Version-1-Dateien unter dem aktiven Schlüssel. Kein Produktionsnachweis, keine
+      Produktionsfreigabe.
+
+
+      2026-11-02 Codex-Nachprüfung: Frühe Python-/Rust-Bereiche authentifizieren den Endrecord; Storage
+      hält für alle Schlüsselmodi einen Deskriptor. Explizite Rotation migriert v1 auch mit aktivem Schlüssel
+      und bleibt bei Wiederholung unverändert. 97 Verschlüsselungs- und 32 Konsumententests bestanden;
+      37 Rust-Tests bestanden. Gezielter Pyright 0 Fehler/0 Warnungen; vollständiger Pyright durch 4 bestehende
+      Fehler im fremden Dataloader-Test blockiert (2 Warnungen). Ruff, Format, beide Strukturprüfungen
+      und Tracker-Validierung bestanden. Keine Produktivänderung; Abnahme bleibt offen. Befunde, exakte
+      Befehle und Grenzen: feature-tracking/reports/lxenc_v2_review.md.
+
+      2026-11-02: Inline-Master-Keys sind nur in expliziten Testprofilen zulässig; Produktionsstart und
+      tatsächliche Medienzugriffe lehnen verbotene oder fehlende Schlüssel ab, ohne auf andere Quellen
+      auszuweichen. Private Datei-/Keyringquellen erhalten; keine Schlüssel erzeugt, gelesen oder übertragen
+      außerhalb synthetischer Tests.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T14:13:29.762854Z'
 - id: protected_delivery
   category: functionality
   title: Geschützte Medien werden nur autorisiert und proxygeeignet ausgeliefert
@@ -180,8 +239,11 @@ definition_of_done:
   category: data_integrity
   title: Alle Mutationen sind atomar, typisiert und strukturiert protokolliert
   acceptance:
-  - Produktionscode umgeht endoreg_db.utils.filesystem.file_operations nicht; Cross-Repository-Aufrufer
-    verwenden denselben kanonischen Importpfad oder einen explizit dokumentierten Kompatibilitätswrapper.
+  - Logging-Konfiguration verwendet die zentralen typisierten Dateisystemoperationen mit datensparsamen
+    strukturierten Ereignissen; Mutationsfehler bleiben sichtbar. Die unreferenzierte frühere Loglöschroutine
+    wird nicht als operative Schnittstelle weitergeführt.
+  - Produktionscode umgeht endoreg_db.utils.file_operations nicht; Cross-Repository-Aufrufer verwenden
+    denselben kanonischen Importpfad oder einen explizit dokumentierten Kompatibilitätswrapper.
   - Teilwrites werden nicht als gültige Artefakte sichtbar und Integrität ist hashbar.
   required: true
   verification:
@@ -199,11 +261,29 @@ definition_of_done:
       reference: tests/services/test_video_storage_atomic_migration.py (5 passed)
     - kind: review
       reference: endoreg_db/utils/filesystem/file_operations.py; endoreg_db/services/video_storage/normalization.py
-    note: Der Video-Normalisierer verwendet den kanonischen Filesystem-Facade; Teiloutputs werden nicht
+    - kind: code
+      reference: endoreg_db/logger_conf.py; tests/test_logger_conf.py; endoreg_db/services/video_files/validation.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    note: 'Der Video-Normalisierer verwendet den kanonischen Filesystem-Facade; Teiloutputs werden nicht
       veröffentlicht und Mutationen/Lifecycle sind strukturiert protokolliert. Die repository-weite Migration
       verbleibender Legacy-Imports ist noch offen.
-    assessed_by: Codex
-    assessed_at: '2026-07-20T10:37:53.499645Z'
+
+      2026-11-02: Loggerkonfiguration nutzt zentrale Verzeichnisoperationen mit strukturierten Ereignissen;
+      unreferenzierte Löschroutine und Beispielaufruf nach dokumentierter Freigabe entfernt. Zwei verbliebene
+      Konfigurations-/Fehlerpfadtests bestehen; Rohvideo-Bereinigung ist nach Auditcommit angeordnet.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T14:11:53.263307Z'
 - id: migration_and_repair
   category: operations
   title: Bestandsmigration, Rotation, Reparatur und Rollback sind sicher

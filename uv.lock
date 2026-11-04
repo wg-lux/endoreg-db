@@ -773,7 +773,7 @@ sdist = { url = "https://files.pythonhosted.org/packages/62/59/e47bbd0542d0e6f4c
 
 [[package]]
 name = "endoreg-db"
-version = "1.7.7"
+version = "1.7.8"
 source = { editable = "." }
 dependencies = [
     { name = "celery", extra = ["redis"] },
@@ -851,6 +851,7 @@ dev = [
     { name = "mypy" },
     { name = "pip" },
     { name = "prek" },
+    { name = "pyinstrument" },
     { name = "pylint" },
     { name = "pyright" },
     { name = "pytest" },
@@ -932,6 +933,7 @@ requires-dist = [
     { name = "pip", marker = "extra == 'dev'", specifier = ">=25.2" },
     { name = "prek", marker = "extra == 'dev'", specifier = ">=0.5.3" },
     { name = "pydantic", specifier = ">=2.12" },
+    { name = "pyinstrument", marker = "extra == 'dev'", specifier = ">=5.1.3" },
     { name = "pyjwt", specifier = ">=2.10.1" },
     { name = "pylint", marker = "extra == 'dev'", specifier = ">=4.0.5" },
     { name = "pyright", marker = "extra == 'dev'", specifier = ">=1.1.414" },
@@ -2662,6 +2664,17 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/c3/b2/bc9c9196916376152d655522fdcebac55e66de6603a76a02bca1b6414f6c/pygments-2.20.0.tar.gz", hash = "sha256:6757cd03768053ff99f3039c1a36d6c0aa0b263438fcab17520b30a303a82b5f", size = 4955991, upload-time = "2026-03-29T13:29:33.898Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f4/7e/a72dd26f3b0f4f2bf1dd8923c85f7ceb43172af56d63c7383eb62b332364/pygments-2.20.0-py3-none-any.whl", hash = "sha256:81a9e26dd42fd28a23a2d169d86d7ac03b46e2f8b59ed4698fb4785f946d0176", size = 1231151, upload-time = "2026-03-29T13:29:30.038Z" },
+]
+
+[[package]]
+name = "pyinstrument"
+version = "5.1.3"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/a0/05/5b79b16712f9b7c497f2137868908e5d38646a8ef7871d6008801e6e18a3/pyinstrument-5.1.3.tar.gz", hash = "sha256:93dc5576fa90bb267c46d864712329e8e057f51a6b15d0b4f917558d82066ba7", size = 262250, upload-time = "2026-07-29T17:18:39.748Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/d7/6e/cd47fa4c2fef0d86a25684f0857df854155dfd2492bbbedd33b6c07f0578/pyinstrument-5.1.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4db9ebe8242038bf9f60c623bac0811611e54363a2fe33b79448b548b9108bef", size = 143859, upload-time = "2026-07-29T17:17:43.812Z" },
+    { url = "https://files.pythonhosted.org/packages/fe/d6/1225f67d8da66c93ebdbf97081f9169b52d16c2e4453477f4f7e2de70879/pyinstrument-5.1.3-cp312-cp312-musllinux_1_2_x86_64.whl", hash = "sha256:c027d490a6caa2f18bf92ceecc46ab8580c8eee772af34b04c61c18fb4adf853", size = 143561, upload-time = "2026-07-29T17:17:46.329Z" },
+    { url = "https://files.pythonhosted.org/packages/2b/47/a51976758124654e18d1c11a2dcd6811a7a9c4e03f50d9ee8438e4fe6d20/pyinstrument-5.1.3-graalpy312-graalpy250_312_native-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:e72d5db0bdc8488eba396a5447bdc7ecff067cbd4d7ca8f1d7b862dae0e9c2f6", size = 122216, upload-time = "2026-07-29T17:18:36.748Z" },
 ]
 
 [[package]]

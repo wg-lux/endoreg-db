@@ -1,33 +1,40 @@
 # EndoReg-DB Documentation
 
-Use this guide to learn the project, find a workflow, and choose a contribution.
-The [feature tracker](../feature-tracking/README.md) records scope, progress,
-and verification evidence.
+Start with your task below. Guides describe operation; the
+[feature tracker](../feature-tracking/README.md) records readiness and evidence.
+
+## Upgrading or recovering encrypted media
+
+| Your task | Start here |
+| --- | --- |
+| Use the application during maintenance | Ask the operator when imports and editing can resume. Report missing or unreadable media; do not delete or reimport it as a repair. |
+| Understand what changed | [Current changelog](../changelog.md): effects on existing and partially migrated machines. |
+| Upgrade v1 files or resume a partial migration | [Operator procedure](secret_rotation.md#v1-machines-and-interrupted-media-migrations): prerequisites, preview, apply and verification. |
+| Interpret a migration result | [Result guide](secret_rotation.md#read-the-media-migration-result): counts and next actions. |
+| Review or implement the format | [Format contract](secret_rotation.md#format-versions) and [review evidence](../feature-tracking/reports/lxenc_v2_review.md). |
+
+## Deployment and Operations
+
+| Task | Runbook |
+| --- | --- |
+| Configure or deploy a node | [Configuration](../setup/CONFIGURATION_GUIDE.md), [study server](local_study_server_deployment.md) |
+| Diagnose imports or transfers | [Hub operations](hub_ingest_operations.md#diagnostics-and-restart), [incident workflow](hub_ingest_operations.md#incident-workflow) |
+| Fix login or center access | [Center access](center_access_operations.md#diagnosis) |
+| Check audit integrity | [Audit ledger](audit_ledger_operations.md#operation-and-alerting) |
+| Recover a database and media | [Backup requirements](backup_recovery.md), [hub restore](hub_ingest_operations.md#backup-and-restore) |
+| Inspect storage or interrupted video work | [Storage inventory](video_storage_normalization.md#storage-inventory), [recovery](video_storage_normalization.md#abort-and-recovery) |
+| Reconcile video formats | [Reconciliation service](ops/nixos/video_format_reconciliation.md) |
+| Inspect hub behavior | [Hub ingest reference](wiki/hub_ingest_current_state.md) |
 
 ## Contributor roadmap
 
-1. **Understand the project.** Read the [project overview](project_overview.md)
-   and [privacy guide](../setup/HOW_WE_KEEP_DATA_PRIVATE.md). Follow how reports,
-   videos, and clinical records connect.
-2. **Run a local checkout.** Follow the [quick start](../README.md#quick-start)
-   and [configuration guide](../setup/CONFIGURATION_GUIDE.md). Run
-   `devenv tasks run test:fast` to check the development environment.
-3. **Explore one workflow.** Try the [Django shell examples](developer_examples.md).
-   Choose reporting, media, data loading, or APIs from the topic lists below.
-   Read its contract and relevant tests alongside the implementation.
-4. **Choose a focused contribution.** Use [project development](#project-development)
-   to find an area that interests you. Read its feature YAML, acceptance criteria,
-   and existing evidence. Documentation fixes and test improvements are useful
-   starting points. Follow [AGENTS.md](../AGENTS.md) for coordination and locks.
-5. **Verify and explain the change.** Run the required checks and update the
-   relevant documentation. Record verification in the feature tracker. Describe
-   the problem, resulting behavior, and checks so a reviewer can assess the work.
+1. Read the [project overview](project_overview.md) and [privacy guide](../setup/HOW_WE_KEEP_DATA_PRIVATE.md).
+2. Follow the [quick start](../README.md#quick-start); run `devenv tasks run test:fast`.
+3. Try the [Django shell examples](developer_examples.md) and choose a workflow below.
+4. Read its feature criteria, implementation and tests before editing.
+5. Follow [AGENTS.md](../AGENTS.md) for coordination and verification.
 
 ## Project development
-
-These areas organize the work tracked in the repository. Open the linked YAML
-for current criteria and evidence. Use them to agree on a focused contribution
-with maintainers.
 
 | Area | Focus | Tracked work |
 | --- | --- | --- |
@@ -103,14 +110,6 @@ storage, transcoding, publication, or cleanup behavior.
 - [Processed training frame streams](training-streams.md)
 - [Video reimport processing budget](video_reimport_budget.md)
 
-## Deployment and Operations
-
-- [Configuration and deployment settings](../setup/CONFIGURATION_GUIDE.md)
-- [Local study server deployment](local_study_server_deployment.md)
-- [Hub ingest operations](hub_ingest_operations.md)
-- [Current hub ingest behavior](wiki/hub_ingest_current_state.md)
-- [Video format reconciliation](ops/nixos/video_format_reconciliation.md)
-
 ## Reference and Supporting Material
 
 - [API and endpoint test matrix](api_route_test_matrix.md)
@@ -154,17 +153,8 @@ records current scope and evidence.
 
 ## Authoring Rules
 
-- Write in English with short sentences and direct wording. Preserve exact
-  identifiers, commands, protocol values, and clinical terms.
-- Describe behavior in guides and runbooks. Keep scope, acceptance criteria,
-  and readiness evidence in the relevant feature YAML.
-- Distinguish **implemented**, **verified**, and **deployed**. See
-  [documentation governance](documentation_governance.md) for definitions,
-  review rules, and publication requirements.
-- Link to the main guide for a topic and keep related pages focused.
-  Use repository-relative links instead of workstation paths.
-- Prefer YAML configuration and `load_base_db_data` for base data setup.
-- Use `snake_case` in API examples. Frontend conversion happens at the central
-  API boundary. Heavy video and report endpoints use `/api/media/...`.
-- Regenerate generated references from their source. Keep Sphinx build output
-  under `docs/build/` and out of version control.
+Write short English Markdown guides for human readers. Lead with the task,
+required conditions, steps, expected result, and recovery action. Link to the
+owning contract instead of repeating it. Preserve exact commands and identifiers.
+Keep readiness assessments in feature YAML and follow
+[documentation governance](documentation_governance.md) for review and publication.

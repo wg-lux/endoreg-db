@@ -40,6 +40,6 @@ verification:
   - command: git diff --check und git diff --cached --check
     result: "Exit 0."
 limitations:
-  - Externe direkte Importe des entfernten Root-Moduls müssen auf endoreg_db.utils.filesystem.file_operations migriert werden; Anleitung in endoreg_db/import_files/import_service.md.
+  - Externe direkte Importe des entfernten Root-Moduls müssen auf endoreg_db.utils.file_operations migriert werden; Anleitung in endoreg_db/import_files/import_service.md.
   - Keine Verbraucher in den geprüften Geschwister-Repositories lx-ai-core, lx-data-models und lx-production gefunden; unbekannte externe Verbraucher nicht ausgeschlossen.
   - Keine vollständige Testsuite und kein PostgreSQL-Konkurrenznachweis; unabhängiger pytest-Prozess vor dem abschließenden Smoke-Check erkannt.

@@ -39,6 +39,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.media.table_mappings.TableMappingsView",
     ),
     (
+        "media/studies/table-mappings/inspect/",
+        "study-table-mapping-inspect",
+        "endoreg_db.views.media.table_mappings.TableMappingInspectionView",
+    ),
+    (
         "media/studies/table-mappings/<uuid:mapping_id>/",
         "study-table-mapping-detail",
         "endoreg_db.views.media.table_mappings.TableMappingDetailView",
@@ -182,6 +187,41 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/videos/export-annotated/",
         "video-annotated-export",
         "endoreg_db.views.video.export_annotated.export_annotated",
+    ),
+    (
+        "media/videos/export-annotated/jobs/",
+        "video-annotated-export-job-list",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobListView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/start/",
+        "video-annotated-export-job-start",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobStartView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/validate/",
+        "video-annotated-export-job-validate",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobValidateView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/",
+        "video-annotated-export-job-detail",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobDetailView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/files/",
+        "video-annotated-export-job-files",
+        "endoreg_db.views.media.frame_annotation_export_downloads.FrameAnnotationExportRunFilesView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/files/<path:relative_path>",
+        "video-annotated-export-job-file",
+        "endoreg_db.views.media.frame_annotation_export_downloads.FrameAnnotationExportRunFileView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/archive.zip",
+        "video-annotated-export-job-archive",
+        "endoreg_db.views.media.frame_annotation_export_downloads.FrameAnnotationExportRunArchiveView",
     ),
     (
         "media/videos/video-correction/<int:pk>",

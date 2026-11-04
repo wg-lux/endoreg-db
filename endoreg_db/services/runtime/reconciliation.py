@@ -110,10 +110,11 @@ class ReconciliationService:
             get_runtime_paths().streamable_videos_processed_media,
             get_runtime_paths().streamable_videos_root,
         }
+        # The transcoding root is owned by transient_artifact_cleanup, which
+        # proves attempt ownership before deleting; it is not rescanned here.
         scan_dirs = (
             get_runtime_paths().sensitive_video,
             get_runtime_paths().anonym_video,
-            get_runtime_paths().transcoding,
             get_runtime_paths().streamable_videos_raw_media,
             get_runtime_paths().streamable_videos_processed_media,
             get_runtime_paths().streamable_videos_root,

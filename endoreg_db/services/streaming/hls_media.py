@@ -10,10 +10,10 @@ from endoreg_db.utils.file_operations import atomic_create_file
 
 
 import logging
-import math
 import os
 import re
 import subprocess
+import stat
 import threading
 import time
 from collections import deque
@@ -21,8 +21,7 @@ from collections.abc import Generator, Iterable
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from decimal import Decimal, InvalidOperation
-from fractions import Fraction
+from functools import partial
 from pathlib import Path
 from typing import BinaryIO, Literal, Protocol, cast
 from urllib.parse import urlsplit
@@ -44,13 +43,14 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
-    HlsSegmentBoundary,
-    MeasuredAverageFrameRate,
     VideoArtifactProbe,
 )
 from endoreg_db.services.video_files.source_hash import (
     verified_video_source_hash,
     video_source_hash_is_reusable,
+)
+from endoreg_db.services.video_storage.validation import (
+    assert_normalization_source_supported,
 )
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
@@ -60,6 +60,7 @@ from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING
 from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.services.video_storage.hls_encoding import HlsEncodingProfileName
 from endoreg_db.services.video_storage.workflow import (
     VideoStorageNormalizationError,
     HlsEncodingProfile,
@@ -74,7 +75,6 @@ from endoreg_db.utils.encryption.encryption import load_master_key, decrypt_wrap
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.file_operations import (
     atomic_move_path,
-    ensure_disk_capacity,
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
@@ -93,6 +93,9 @@ from endoreg_db.utils.paths import (
     to_protected_media_relative,
 )
 from endoreg_db.utils.rust_backend import (
+    HlsPublicationAction,
+    HlsReconciliationAction,
+    HlsReservationAction,
     derive_hls_publication_action,
     derive_hls_reconciliation_action,
     derive_hls_reservation_action,
@@ -109,6 +112,7 @@ from endoreg_db.utils.workload_timing import (
 )
 
 logger = logging.getLogger(__name__)
+_HLS_VALIDATION_ERRORS = (VideoStorageNormalizationError, ValueError)
 
 HlsArtifactKind = Literal["raw", "processed"]
 HLS_READY_STATUSES = frozenset({"materialized", "already_ready"})
@@ -132,31 +136,28 @@ def _emit_hls_workload_timing(
     )
 
 
+def _hls_failure_outcome(error: BaseException) -> WorkloadOutcome:
+    if isinstance(error, MediaOperationDeferred):
+        return WorkloadOutcome.DEFERRED
+    if isinstance(error, _HLS_VALIDATION_ERRORS):
+        return WorkloadOutcome.VALIDATION_FAILED
+    return WorkloadOutcome.FAILED
+
+
 @contextmanager
 def _timed_hls_phase(phase: WorkloadPhase) -> Generator[None, None, None]:
     started_at = start_workload_timing()
+    outcome = WorkloadOutcome.COMPLETED
     try:
         yield
-    except MediaOperationDeferred:
-        _emit_hls_workload_timing(
-            started_at=started_at,
-            phase=phase,
-            outcome=WorkloadOutcome.DEFERRED,
-        )
+    except BaseException as exc:
+        outcome = _hls_failure_outcome(exc)
         raise
-
-    except BaseException:
+    finally:
         _emit_hls_workload_timing(
             started_at=started_at,
             phase=phase,
-            outcome=WorkloadOutcome.FAILED,
-        )
-        raise
-    else:
-        _emit_hls_workload_timing(
-            started_at=started_at,
-            phase=phase,
-            outcome=WorkloadOutcome.COMPLETED,
+            outcome=outcome,
         )
 
 
@@ -173,16 +174,16 @@ HLS_TEMP_FILE_MODE = 0o600
 HLS_KEY_WRAP_ALGORITHM = "AESGCM-master-wrap-v1"
 HLS_KEY_WRAP_NONCE_BYTES = 12
 HLS_MATERIALIZATION_STALE_GRACE_SECONDS = 60
-FFMPEG_STDIN_CHUNK_BYTES = 1024 * 1024
+HLS_SOURCE_CHUNK_BYTES = 1024 * 1024
 FFMPEG_STDERR_TAIL_BYTES = 64 * 1024
 FFMPEG_PROCESS_POLL_INTERVAL_SECONDS = 1.0
 FFMPEG_OUTPUT_PROGRESS_WATCHDOG_SECONDS = 300.0
-MP4_PIPE_COMPATIBILITY_SCAN_BYTES = 64 * 1024
 HLS_VIDEO_PROFILE = STANDARD_VIDEO_ENCODING.profile
 HLS_VIDEO_PIXEL_FORMAT = STANDARD_VIDEO_ENCODING.pixel_format
 HLS_VIDEO_COLOR_RANGE = STANDARD_VIDEO_ENCODING.color_range
 HLS_FFMPEG_THREADS_ENV = "LX_ANNOTATE_HLS_FFMPEG_THREADS"
 HLS_KEY_URI_PATTERN = re.compile(r'URI="[^"]+"')
+# Mirror of the native hls_in_flight_status vocabulary, verified at startup.
 HLS_IN_FLIGHT_STATUSES = (
     VideoHlsArtifact.Status.QUEUED.value,
     VideoHlsArtifact.Status.MATERIALIZING.value,
@@ -575,7 +576,7 @@ def _recover_stale_in_flight_artifact(
         status=str(artifact.status),
         is_stale=artifact.updated_at <= _materialization_stale_before(),
     )
-    if action != "fail_and_cleanup":
+    if action is not HlsReconciliationAction.FAIL_AND_CLEANUP:
         return False
 
     stale_status = str(artifact.status)
@@ -583,13 +584,14 @@ def _recover_stale_in_flight_artifact(
         f"Recovered stale HLS {stale_status} attempt after exceeding the "
         "configured FFmpeg timeout."
     )
-    _mark_artifact_failed(
+    if not _mark_artifact_failed(
         artifact_id=int(artifact.pk),
         error=recovery_error,
         expected_key_id=artifact.key_id,
         expected_status=stale_status,
         error_code=VideoHlsArtifact.ErrorCode.STALE_ATTEMPT.value,
-    )
+    ):
+        return False
     logger.warning(
         "Recovered stale HLS attempt: video=%s kind=%s artifact=%s previous_status=%s",
         video_id,
@@ -667,26 +669,32 @@ def reserve_hls_materialization_dispatch(
             ready_matches_source=ready_matches_source,
             force=force,
         )
-        if action == "queue" and active is not None and active_is_stale:
-            _recover_stale_in_flight_artifact(
-                active,
-                video_id=int(video.pk),
-                artifact_kind=parsed_kind,
-            )
-        if action == "already_in_flight" and active is not None:
-            return HlsMaterializationDispatchReservation(
-                artifact_id=int(active.pk),
-                attempt_key_id=active.key_id,
-                artifact_kind=parsed_kind.value,
-                status="already_queued",
-            )
-        if action == "already_ready" and ready is not None:
-            return HlsMaterializationDispatchReservation(
-                artifact_id=int(ready.pk),
-                attempt_key_id=ready.key_id,
-                artifact_kind=parsed_kind.value,
-                status="already_ready",
-            )
+        match action:
+            case HlsReservationAction.ALREADY_IN_FLIGHT:
+                if active is None:
+                    raise RuntimeError("native HLS reservation saw no in-flight row")
+                return HlsMaterializationDispatchReservation(
+                    artifact_id=int(active.pk),
+                    attempt_key_id=active.key_id,
+                    artifact_kind=parsed_kind.value,
+                    status="already_queued",
+                )
+            case HlsReservationAction.ALREADY_READY:
+                if ready is None:
+                    raise RuntimeError("native HLS reservation saw no ready row")
+                return HlsMaterializationDispatchReservation(
+                    artifact_id=int(ready.pk),
+                    attempt_key_id=ready.key_id,
+                    artifact_kind=parsed_kind.value,
+                    status="already_ready",
+                )
+            case HlsReservationAction.QUEUE:
+                if active is not None and active_is_stale:
+                    _recover_stale_in_flight_artifact(
+                        active,
+                        video_id=int(video.pk),
+                        artifact_kind=parsed_kind,
+                    )
         artifact = VideoHlsArtifact.objects.create(
             video=video,
             artifact_kind=parsed_kind.value,
@@ -1057,16 +1065,21 @@ def _publish_validated_artifact(
             has_active_lease=video_has_active_media_operation_leases(int(video.pk)),
             has_ready_generation=ready is not None,
         )
-        if action == "defer":
-            raise MediaOperationDeferred(
-                "HLS publication deferred because media operation leases are active."
-            )
-        if action == "reject":
-            raise RuntimeError(
-                "HLS materialization ownership was lost before READY publication: "
-                f"artifact={artifact_id} expected_key={expected_key_id} "
-                f"current_key={artifact.key_id} current_status={artifact.status}"
-            )
+        match action:
+            case HlsPublicationAction.DEFER:
+                raise MediaOperationDeferred(
+                    "HLS publication deferred because media operation leases are active."
+                )
+            case HlsPublicationAction.REJECT:
+                raise RuntimeError(
+                    "HLS materialization ownership was lost before READY publication: "
+                    f"artifact={artifact_id} expected_key={expected_key_id} "
+                    f"current_key={artifact.key_id} current_status={artifact.status}"
+                )
+            case HlsPublicationAction.REPLACE_READY:
+                superseded = ready
+            case HlsPublicationAction.PUBLISH_INITIAL:
+                superseded = None
 
         playlist_path = target_dir / "playlist.m3u8"
         if temp_output_dir.is_dir():
@@ -1084,10 +1097,10 @@ def _publish_validated_artifact(
                 f"expected={artifact.segment_count} actual={segment_count}"
             )
 
-        if ready is not None:
-            ready.status = VideoHlsArtifact.Status.SUPERSEDED.value
-            ready.error_code = VideoHlsArtifact.ErrorCode.NONE.value
-            ready.save(update_fields=["status", "error_code", "updated_at"])
+        if superseded is not None:
+            superseded.status = VideoHlsArtifact.Status.SUPERSEDED.value
+            superseded.error_code = VideoHlsArtifact.ErrorCode.NONE.value
+            superseded.save(update_fields=["status", "error_code", "updated_at"])
 
         artifact.status = VideoHlsArtifact.Status.READY.value
         artifact.playlist_relative_path = to_protected_media_relative(playlist_path)
@@ -1227,24 +1240,9 @@ def _source_size_bytes(field_file: FieldFile) -> int | None:
     return value if value > 0 else None
 
 
-def _iter_prefixed_source_chunks(
-    *,
-    prefix: bytes,
-    source: BinaryIO,
-) -> Iterable[bytes]:
-    if prefix:
-        yield prefix
-    while True:
-        chunk = source.read(FFMPEG_STDIN_CHUNK_BYTES)
-        if not chunk:
-            break
-        yield chunk
-
-
 def _materialize_seekable_plaintext_source(
     *,
     source: BinaryIO,
-    prefix: bytes,
     source_file_name: str,
     source_size_bytes: int | None,
     temp_source_dir: Path,
@@ -1252,14 +1250,9 @@ def _materialize_seekable_plaintext_source(
     ensure_directory(temp_source_dir, dir_mode=HLS_TEMP_DIRECTORY_MODE)
     suffix = Path(source_file_name).suffix.lower() or ".mp4"
     destination = temp_source_dir / f"source{suffix}"
-    if source_size_bytes is not None:
-        ensure_disk_capacity(
-            destination_dir=temp_source_dir,
-            required_bytes=source_size_bytes,
-        )
     atomic_write_file(
         destination=destination,
-        content=_iter_prefixed_source_chunks(prefix=prefix, source=source),
+        content=iter(partial(source.read, HLS_SOURCE_CHUNK_BYTES), b""),
         required_bytes=source_size_bytes,
         file_mode=HLS_TEMP_FILE_MODE,
         dir_mode=HLS_TEMP_DIRECTORY_MODE,
@@ -1291,7 +1284,7 @@ def _hls_output_progress(
             stat_result = path.stat()
         except FileNotFoundError:
             continue
-        if not path.is_file():
+        if not stat.S_ISREG(stat_result.st_mode):
             continue
         file_count += 1
         total_bytes += int(stat_result.st_size)
@@ -1427,52 +1420,6 @@ def _ffmpeg_command(
     ]
 
 
-def _parse_hls_segment_boundaries(
-    playlist_path: Path, *, source_origin_seconds: float = 0.0
-) -> list[HlsSegmentBoundary]:
-    boundaries: list[HlsSegmentBoundary] = []
-    pending_duration: Decimal | None = None
-    if not math.isfinite(source_origin_seconds) or source_origin_seconds < 0:
-        raise ValueError("Source timestamp origin must be finite and nonnegative")
-    current_start = Decimal(str(source_origin_seconds))
-    for line_number, raw_line in enumerate(
-        playlist_path.read_text(encoding="utf-8").splitlines(),
-        start=1,
-    ):
-        line = raw_line.strip()
-        if line.startswith("#EXTINF:"):
-            raw_duration = line.removeprefix("#EXTINF:").split(",", maxsplit=1)[0]
-            try:
-                duration = Decimal(raw_duration)
-            except InvalidOperation:
-                duration = Decimal(0)
-            if not duration.is_finite() or duration <= 0:
-                raise VideoStorageNormalizationError(
-                    f"HLS playlist has an invalid segment duration on line {line_number}"
-                )
-            pending_duration = duration
-            continue
-        if not line or line.startswith("#"):
-            continue
-        if pending_duration is None:
-            raise VideoStorageNormalizationError(
-                f"HLS playlist segment URI on line {line_number} has no EXTINF duration"
-            )
-        end = current_start + pending_duration
-        boundaries.append(
-            HlsSegmentBoundary(
-                segment_index=len(boundaries),
-                start_timestamp_seconds=float(current_start),
-                duration_seconds=float(pending_duration),
-                end_timestamp_seconds=float(end),
-            )
-        )
-        current_start = end
-        pending_duration = None
-
-    return boundaries
-
-
 def _local_hls_validation_playlist(
     *,
     playlist_path: Path,
@@ -1534,38 +1481,14 @@ def _local_hls_validation_playlist(
     return validation_path
 
 
-def _hls_probe_with_decoded_frame_count(
-    probe: VideoArtifactProbe,
-    timestamps: list[FramePresentationTimestamp],
-) -> VideoArtifactProbe:
-    """Replace MPEG-TS frame/rate estimates with the decoded frame count.
-
-    HLS commonly omits nb_frames and reports the nominal rate as avg_frame_rate.
-    Neither duration times that rate nor that rate itself measures VFR frames.
-    The caller must still validate every decoded PTS against the source.
-    """
-    if not timestamps:
-        raise VideoStorageNormalizationError("HLS output has no decoded frames")
-    rate = Fraction(len(timestamps)) / Fraction(str(probe.timeline.duration_seconds))
-    timeline = probe.timeline.model_copy(
-        update={
-            "frame_count": len(timestamps),
-            "measured_average_frame_rate": MeasuredAverageFrameRate(
-                numerator=rate.numerator, denominator=rate.denominator
-            ),
-        }
-    )
-    return probe.model_copy(update={"timeline": timeline})
-
-
 def _validate_generated_hls_profile(
     *,
     playlist_path: Path,
     key_info_path: Path,
     source_probe: VideoArtifactProbe,
     source_frame_timestamps: list[FramePresentationTimestamp],
-    encoder_stats_path: Path | None = None,
-    source_content_hash: str | None = None,
+    encoder_stats_path: Path,
+    source_content_hash: str,
 ) -> None:
     validation_path = _local_hls_validation_playlist(
         playlist_path=playlist_path,
@@ -1576,71 +1499,48 @@ def _validate_generated_hls_profile(
             validation_path,
             input_policy=FFprobeInputPolicy.TRUSTED_LOCAL_HLS,
         )
-        total_size_bytes = playlist_path.stat().st_size + sum(
-            segment.stat().st_size for segment in playlist_path.parent.glob("seg_*.ts")
+        output_frame_timestamps = probe_video_frame_timestamps(
+            validation_path, require_original_pts=True
         )
-        output_frame_timestamps = (
-            probe_video_frame_timestamps(validation_path, require_original_pts=True)
-            if encoder_stats_path is not None
-            else probe_video_frame_timestamps(validation_path)
+        if (
+            source_probe.timeline.time_base_num is None
+            or source_probe.timeline.time_base_den is None
+            or output_probe.timeline.time_base_num is None
+            or output_probe.timeline.time_base_den is None
+        ):
+            raise ValueError(
+                "HLS provenance requires exact source and output time bases"
+            )
+        source_coordinates = VideoFrameTimeline(
+            content_hash=source_content_hash,
+            time_base_num=source_probe.timeline.time_base_num,
+            time_base_den=source_probe.timeline.time_base_den,
+            presentation_timestamps=[
+                frame.presentation_timestamp for frame in source_frame_timestamps
+            ],
         )
-        output_probe = _hls_probe_with_decoded_frame_count(
-            output_probe, output_frame_timestamps
+        output_coordinates = VideoFrameTimeline(
+            content_hash=get_file_hash(playlist_path),
+            time_base_num=output_probe.timeline.time_base_num,
+            time_base_den=output_probe.timeline.time_base_den,
+            presentation_timestamps=[
+                frame.presentation_timestamp for frame in output_frame_timestamps
+            ],
         )
-        if not source_frame_timestamps:
-            raise VideoStorageNormalizationError("HLS source has no decoded frames")
-        segment_boundaries = _parse_hls_segment_boundaries(
-            playlist_path,
-            source_origin_seconds=source_frame_timestamps[0].presentation_time_seconds,
+        persist_frame_provenance(
+            read_encoder_provenance(
+                encoder_stats_path,
+                source=source_coordinates,
+                output=output_coordinates,
+                allow_container_offset=True,
+                allow_decoder_offset=True,
+            )
         )
-        if len(segment_boundaries) != len(tuple(playlist_path.parent.glob("seg_*.ts"))):
-            raise VideoStorageNormalizationError(
-                "HLS playlist segment count does not match staged segment files"
-            )
-
-        if encoder_stats_path is not None:
-            if source_content_hash is None:
-                raise ValueError("HLS provenance requires source content identity")
-            if (
-                source_probe.timeline.time_base_num is None
-                or source_probe.timeline.time_base_den is None
-                or output_probe.timeline.time_base_num is None
-                or output_probe.timeline.time_base_den is None
-            ):
-                raise ValueError(
-                    "HLS provenance requires exact source and output time bases"
-                )
-            source_coordinates = VideoFrameTimeline(
-                content_hash=source_content_hash,
-                time_base_num=source_probe.timeline.time_base_num,
-                time_base_den=source_probe.timeline.time_base_den,
-                presentation_timestamps=[
-                    frame.presentation_timestamp for frame in source_frame_timestamps
-                ],
-            )
-            output_coordinates = VideoFrameTimeline(
-                content_hash=get_file_hash(playlist_path),
-                time_base_num=output_probe.timeline.time_base_num,
-                time_base_den=output_probe.timeline.time_base_den,
-                presentation_timestamps=[
-                    frame.presentation_timestamp for frame in output_frame_timestamps
-                ],
-            )
-            persist_frame_provenance(
-                read_encoder_provenance(
-                    encoder_stats_path,
-                    source=source_coordinates,
-                    output=output_coordinates,
-                    allow_container_offset=True,
-                    allow_decoder_offset=True,
-                )
-            )
         logger.info(
-            "Validated HLS frame PTS and segment boundaries before publication: "
-            "playlist=%s segments=%s segments_bytes=%s",
+            "Validated HLS frame presentation timestamp provenance before publication: "
+            "playlist=%s frames=%s",
             playlist_path,
-            len(segment_boundaries),
-            total_size_bytes,
+            len(output_frame_timestamps),
         )
     finally:
         safe_unlink_file(validation_path, missing_ok=True)
@@ -1675,16 +1575,17 @@ def _run_ffmpeg_hls(
     source_frame_timestamps: list[FramePresentationTimestamp] = []
     try:
         with _timed_hls_phase(WorkloadPhase.SOURCE_MATERIALIZATION):
-            prefix = source.read(MP4_PIPE_COMPATIBILITY_SCAN_BYTES)
             source_path = _materialize_seekable_plaintext_source(
                 source=source,
-                prefix=prefix,
                 source_file_name=source_file_name,
                 source_size_bytes=source_size_bytes,
                 temp_source_dir=temp_source_dir,
             )
         with _timed_hls_phase(WorkloadPhase.SOURCE_VALIDATION):
             source_probe = probe_video_artifact(source_path)
+            assert_normalization_source_supported(
+                source=source_probe, profile=configured_video_storage_profile()
+            )
             source_content_hash = get_file_hash(source_path)
             input_arg = str(source_path)
             source_frame_timestamps = probe_video_frame_timestamps(
@@ -1914,10 +1815,7 @@ def _existing_ready_result(
             expected_status=VideoHlsArtifact.Status.READY.value,
             error_code=VideoHlsArtifact.ErrorCode.INCONSISTENT_ARTIFACT.value,
         )
-        raise RuntimeError(
-            f"HLS artifact state is inconsistent for video={video_id} "
-            f"kind={artifact_kind.value}"
-        )
+        return None
     return _result_from_ready_artifact(artifact, status="already_ready")
 
 
@@ -2179,8 +2077,6 @@ def _materialize_video_hls_impl(
     )
     parsed_kind = coerce_hls_artifact_kind(artifact_kind)
     requested_encoding_profile = configured_hls_encoding_profile()
-    _retry_failed_hls_cleanup(video_id=int(video_id), artifact_kind=parsed_kind)
-    _retry_superseded_hls_cleanup(video_id=int(video_id), artifact_kind=parsed_kind)
     if not force and reserved_artifact_id is None:
         existing = _existing_ready_result(
             video_id=video_id,
@@ -2188,6 +2084,9 @@ def _materialize_video_hls_impl(
         )
         if existing is not None:
             return existing
+
+    _retry_failed_hls_cleanup(video_id=int(video_id), artifact_kind=parsed_kind)
+    _retry_superseded_hls_cleanup(video_id=int(video_id), artifact_kind=parsed_kind)
 
     from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
 
@@ -2387,7 +2286,7 @@ def _materialize_video_hls_impl(
                 expected_status=None,
                 error_code=(
                     VideoHlsArtifact.ErrorCode.VALIDATION_FAILED.value
-                    if isinstance(exc, VideoStorageNormalizationError)
+                    if isinstance(exc, _HLS_VALIDATION_ERRORS)
                     else VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED.value
                 ),
             )
@@ -2425,14 +2324,8 @@ def materialize_video_hls(
             reservation_key_id=reservation_key_id,
             claim_queued=claim_queued,
         )
-    except MediaOperationDeferred:
-        outcome = WorkloadOutcome.DEFERRED
-        raise
-    except (VideoStorageNormalizationError, ValueError):
-        outcome = WorkloadOutcome.VALIDATION_FAILED
-        raise
-    except BaseException:
-        outcome = WorkloadOutcome.FAILED
+    except BaseException as exc:
+        outcome = _hls_failure_outcome(exc)
         raise
     else:
         if hls_result_is_ready(result.status) and result.artifact_kind == "processed":
@@ -2558,36 +2451,18 @@ def verify_ready_hls_source_before_lock(
 
 def _has_supported_encoding_profile(artifact: VideoHlsArtifact) -> bool:
     """Validate persisted provenance without applying today's encoder default."""
-    try:
-        hls_encoding_profile_by_name(artifact.encoding_profile_name)
-    except ValueError:
-        return False
-    return True
+    return any(
+        artifact.encoding_profile_name == name.value for name in HlsEncodingProfileName
+    )
 
 
 def hls_artifact_matches_current_source_metadata(
     *, video: VideoFile, artifact: VideoHlsArtifact
 ) -> bool:
     """Match published identity without decoding or hashing media in overview GETs."""
-    if not artifact.source_content_hash:
-        return False
-
-    try:
-        kind = coerce_hls_artifact_kind(artifact.artifact_kind)
-        source = resolve_hls_source(video, kind)
-        expected_hash, generation_id = _hls_source_identity(video, kind)
-
-        return bool(
-            _matches_hls_source(
-                artifact,
-                source_file_name=source.source_file_name,
-                source_generation_id=generation_id,
-                source_content_hash=expected_hash,
-            )
-            and _has_supported_encoding_profile(artifact)
-        )
-    except (FileNotFoundError, ValueError, VideoStorageNormalizationError):
-        return False
+    return _artifact_matches_current_source(
+        video=video, artifact=artifact, verify_content=False
+    )
 
 
 def _ready_artifact_matches_current_source(
@@ -2596,23 +2471,28 @@ def _ready_artifact_matches_current_source(
     artifact: VideoHlsArtifact,
 ) -> bool:
     """Reject legacy or superseded READY rows at every playback boundary."""
+    return _artifact_matches_current_source(
+        video=video, artifact=artifact, verify_content=True
+    )
+
+
+def _artifact_matches_current_source(
+    *, video: VideoFile, artifact: VideoHlsArtifact, verify_content: bool
+) -> bool:
     if not artifact.source_content_hash:
         return False
     try:
         artifact_kind = coerce_hls_artifact_kind(artifact.artifact_kind)
         source = resolve_hls_source(video, artifact_kind)
-        _, generation_id = _hls_source_identity(video, artifact_kind)
-        expected_hash = _source_content_hash(source)
-        return bool(
-            artifact.source_content_hash
-            and _matches_hls_source(
-                artifact,
-                source_file_name=source.source_file_name,
-                source_generation_id=generation_id,
-                source_content_hash=expected_hash,
-            )
-            and _has_supported_encoding_profile(artifact)
-        )
+        expected_hash, generation_id = _hls_source_identity(video, artifact_kind)
+        if verify_content:
+            expected_hash = _source_content_hash(source)
+        return _matches_hls_source(
+            artifact,
+            source_file_name=source.source_file_name,
+            source_generation_id=generation_id,
+            source_content_hash=expected_hash,
+        ) and _has_supported_encoding_profile(artifact)
     except (FileNotFoundError, ValueError, VideoStorageNormalizationError):
         return False
 

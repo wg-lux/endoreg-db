@@ -34,9 +34,11 @@ files:
 - file: table_import.py
   role: Atomic table import using canonical identity, clinical and media services.
 - file: table_mappings.py
-  role: User-owned immutable mapping documents in canonical protected runtime storage.
+  role: User-owned immutable mapping documents in canonical protected runtime storage, and the KB vocabulary a mapping may target.
+- file: table_prefill.py
+  role: Default mapping suggestions from header synonyms, date formats and spaCy patient-line detection (data/study_import/prefill.yml); returns column names only.
 - file: table_parser.py
-  role: Bounded table extraction into LX records, without database mutations.
+  role: Bounded table extraction into LX records, and header/distinct-value inspection for mapping authoring, without database mutations.
 dependencies:
   internal:
   - endoreg_db/helpers

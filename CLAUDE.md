@@ -12,6 +12,9 @@ New typing helpers are only allowed if they unify typing usage across various fi
 
 You are working in an existing codebase. Do not guess architecture from filenames alone.
 
+States of all Import stages are only owned by the Rust State Machine for memory safety. Dont duplicate that.
+
+If an agent doesnt answer to a request for five minutes its lock can be overwritten. This is not meant to harm your workflow but to encourage message reading.
 ## Source of Truth Hierarchy & Agent Context Protocol
 
 `structure.yml` is the authoritative directory navigation and ownership map.

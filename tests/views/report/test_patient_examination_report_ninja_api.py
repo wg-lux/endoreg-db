@@ -329,6 +329,7 @@ def test_selector_rejects_invalid_finding_identity_without_mutations(
 from tests.helpers.report_validation import (
     successful_runtime_validation as _successful_runtime_validation,
 )
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 class _ReportHeaderPayload(TypedDict):
@@ -435,6 +436,7 @@ def selector_context(
         patient=report_patient,
         fps=25.0,
         frame_count=100,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         original_file_name="selector.mp4",
     )
     segment = LabelVideoSegment.objects.create(
@@ -475,6 +477,7 @@ def export_context(
         patient=report_patient,
         fps=25.0,
         frame_count=100,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         original_file_name="export-report.mp4",
     )
 
@@ -990,6 +993,7 @@ def test_segment_frame_selector_includes_video_segments_by_shared_sensitive_meta
         sensitive_meta=sensitive_meta,
         fps=25.0,
         frame_count=100,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         original_file_name="selector-shared-meta.mp4",
     )
 

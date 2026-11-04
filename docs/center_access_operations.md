@@ -5,202 +5,145 @@ This runbook describes the operational contract for the
 
 ## Repository and deployment status
 
-The repository implements and tests the access matrix, identity-backed center
-memberships, central-hub processed-video reads, and administration surfaces
-described below. The feature tracker remains `active`: its manual security
-review, complete access-regression assessment, production-like migration and
-rollout exercise, alerts, and administrator/operator exercise remain
-`in_progress`. Repository evidence therefore does not establish that a specific
-production deployment has enabled or operationally approved these capabilities.
-
-## Terms and identity source
-
-Center access is derived exclusively from an already cryptographically verified
-Keycloak `groups` claim. A center uses the group format
-`/centers/<center_key>`, for example `/centers/berlin`. The claim must be a list
-of strings. Nested paths, empty keys, and unknown `center_key` values are
-rejected. A failed login does not change the existing local assignment.
-
-The local many-to-many `PortalUserInfo.centers` relationship is only a cache of
-the identity source. At every new login, the verified claim completely replaces
-the cache. Zero, one, or multiple centers are valid. The workflow's configured
-default center grants no permission. `is_staff` and `is_superuser` remain
-explicit global exceptions; missing memberships never imply global access.
-
-### Keycloak claim delivery
-
-Assign users to `/centers/<center_key>` in Keycloak and configure a Group
-Membership mapper with token claim name `groups` and full group paths enabled.
-Include the claim in UserInfo and the ID token for browser login, and in the
-access token for bearer authentication. The mapper's client scope must be
-assigned to the application client. A group assignment without a delivered
-claim cannot authorize the user locally.
-
-Browser authentication checks that UserInfo's subject matches the verified ID
-token. When UserInfo omits `groups`, it uses the groups from that verified ID
-token. An explicit UserInfo list takes precedence, including `[]` for revocation.
-Bearer authentication uses only its verified access-token groups. If no trusted
-source supplies the claim, authentication fails with `missing_groups_claim`
-without changing memberships; missing mapper configuration is not treated as
-an intentional revocation. Malformed and unknown groups also fail authentication.
-
-After changing groups or mappers, sign out and sign in again. Verify the
-`center_access_identity_sync_completed` event and the assigned center IDs.
-Manual PostgreSQL membership edits are not a durable assignment mechanism.
-
-## Access matrix
-
-In this table, “own” always means assigned to a center through verified
-membership. A default center or deployment role does not replace that
-assignment.
-
-| Resource/action | `standalone` | `site_node` | `local_study_server` | `central_hub` |
-|---|---|---|---|---|
-| Video list and anonymization overview | own centers | own centers | own centers | complete for own centers; other centers only for anonymized, processed videos with pseudonymous metadata |
-| Anonymized, processed playback: HTTP Live Streaming (HLS) playlist, key, segment, frame, and timeline | own centers and `video:read` | own centers and `video:read` | own centers and `video:read` | hub-wide with `video:read` when processed, anonymized, error-free, and not `lost` |
-| Raw video and raw frames | own centers and `video:read` | own centers and `video:read` | own centers and `video:read` | own centers and `video:read`; no hub exception |
-| Patients | own centers and `patient:read` or `patient:write` | own centers and specialist role | own centers and specialist role | own centers and specialist role; no hub exception |
-| Reports | own centers and `patient:read` or `patient:write` | own centers and specialist role | own centers and specialist role | own centers and specialist role; no hub exception |
-| Uploads | own centers and `patient:write` | own centers and `patient:write` | exactly one declared own center and `patient:write` | own centers and `patient:write`; no hub exception |
-| Annotation exports | own centers and `video:write` | own centers and `video:write` | exactly one own center, or explicit global staff access, and `video:write` | own centers and `video:write`; raw-media export remains prohibited |
-| Administration and quarantine | only the applicable administrator or specialist role; the target resource's center boundary remains in force | same | same | same; `video:read` grants no administration access |
-| Write operations, including segment changes, reimport, and export flag | own center and applicable `*:write` role | own center and applicable `*:write` role | own center and applicable `*:write` role | own center and applicable `*:write` role; no hub read exception |
-| Hub transfer receiver: registration, status, and processed medium | disabled (`404`) | disabled (`404`) | disabled (`404`) | valid node credentials and mutual Transport Layer Security (mTLS); center exclusively from `NetworkNode.owning_center`, without a Django user session |
-
-A hub detail response for another center excludes patient names, dates of birth,
-original filenames, local paths, integrity errors, operator names, and upload
-diagnostics. The lx-annotate frontend displays the neutral label `Video <id>`
-and the center.
-
-### Technical enforcement and checkpoints
-
-- `endoreg_db.views.access_control` separates the narrow read-only hub exception
-  from strict center checks for patients, raw media, and URL-addressed video
-  write paths. Existing objects from another center return `404`, just like
-  missing objects, to avoid a resource-existence oracle.
-- The documented debug contract remains consistent: when
-  `EnvironmentAwarePermission` permits anonymous local debug requests, the
-  downstream center check does not impose a contradictory membership block.
-  This bypass does not apply in production.
-- Hub transfer endpoints are a separate machine-to-machine boundary. They
-  authenticate the `NetworkNode` and bind every operation to its
-  `owning_center`; Django user roles and memberships are neither required nor
-  evaluated there.
-- `PatientViewSet.get_queryset()` restricts list, detail, update, and deletion
-  to memberships; creation checks the validated `center_key` before saving.
-- Upload and annotation export require a specialist role. The export service
-  also compares video centers, an optional `center_key`, and effective
-  memberships. `all_centers` remains an explicit staff exception.
-- Segment changes, corrections, reimport, and export approval use both
-  `video:write` and the strict center check. These paths do not invoke the hub
-  playback exception.
-- lx-annotate consumes center keys and pseudonymous labels from the application
-  programming interface (API), but makes no security decision; authorization
-  remains in the backend.
-- `tests/views/test_center_access_matrix.py` covers patient boundaries for all
-  four roles and negative hub cases for upload, export, administration, and
-  write access. Specialized view tests cover hub transfer, Fast Healthcare
-  Interoperability Resources (FHIR), patient creation, reports, raw media,
-  existence concealment, and processed playback.
+Use [CenterAccess.yml](../feature-tracking/CenterAccess.yml) for review and rollout
+evidence. Repository tests do not establish approval or enablement on a deployed host.
 
 ## Assignment, revocation, and refresh
 
-The administration page manages the local plural `PortalUserInfo.centers`
-assignment. Django superusers may manage all users and centers. The
-Keycloak-synchronized `center_scope:global_admin` role grants the same global
-center administration without making the user a Django superuser.
-`center_scope:admin` remains limited to the user's single, unambiguous own
-center. Broad roles such as `data:write` or `admin`, and staff status alone, are
-insufficient.
+Persistent membership changes belong in Keycloak:
 
-Both administrator permissions are assigned as exactly named **Keycloak realm
-roles**. The global administration view uses `center_scope:global_admin`, and
-delegated center administration uses `center_scope:admin`. The application
-synchronizes these roles into same-named Django groups at login, but does not
-assign or revoke Keycloak roles itself.
+1. Assign or revoke `/centers/<center_key>`; the key must exist in `Center.center_key`.
+2. Sign out and in, or fully renew OpenID Connect authentication. A page reload
+   does not refresh issued tokens.
+3. Confirm `center_access_identity_sync_completed` for the expected user and centers.
+4. After revocation, confirm HTTP `404` for resources outside remaining centers.
 
-Global administrators also see every host registered in `NetworkNode` on the
-administration page, including inactive entries, role, center, URL/HTTPS
-configuration status, and time of the last local change. The view exposes
-neither the URL nor shared secret and performs no remote liveness probe when
-opened. It deliberately shows local registration and configuration state;
-runtime telemetry from storage nodes remains separately labeled.
+The administration page changes only the local cache. Each change requires a
+reason, conflict protection against previously read center keys and durable audit.
+Editing one's own account is prohibited. The next verified login replaces this
+cache; the API never changes Keycloak roles or groups.
 
-Every change requires a reason and conflict protection based on the center keys
-read previously, and is durably audited. Changes to the caller's own account are
-prohibited. The API does not change Keycloak roles or groups: at the next login,
-the verified `/centers/<center_key>` claim replaces the local cache. Persistent
-assignments must therefore also be made in Keycloak.
+| Administrator | Scope |
+| --- | --- |
+| Django superuser | All users and centers. |
+| Keycloak realm role `center_scope:global_admin` | Global center administration, without Django superuser status. |
+| Keycloak realm role `center_scope:admin` | The administrator's single, unambiguous own center. |
 
-1. In the identity provider, assign or revoke the `/centers/<center_key>`
-   groups. The key must already exist in `Center.center_key`.
-2. End the active session and log in again, or fully renew the OpenID Connect
-   authentication flow. Reloading the page does not update an already issued
-   token.
-3. Confirm that `center_access_identity_sync_completed` was logged for the
-   expected user ID and center IDs.
-4. After revocation, also confirm that resources outside the remaining centers
-   return HTTP `404`.
+Roles synchronize to same-named Django groups at login. `data:write`, `admin`
+and staff status alone are insufficient.
 
-Never copy tokens, complete claims, or clinical payloads into tickets, shell
-output, or logs.
+Global administrators also see all registered `NetworkNode` hosts, including
+inactive entries, role, center, URL/HTTPS configuration status and last local
+change. This exposes neither URLs nor secrets and performs no liveness probe;
+remote storage telemetry is separately labeled.
+
+Never put tokens, complete claims or clinical payloads in tickets, shell output or logs.
 
 ## Diagnosis
 
-Inspect the effective configuration without exposing token contents:
+For an empty video list, check `video:read`, deployment role and a fresh login.
+For denied playback, also check the processed artifact, `VideoState.anonymized`,
+unset `processing_error`, and `meta.integrity_status` other than `lost`.
+
+Inspect effective access without printing tokens:
 
 ```bash
 devenv shell -- python manage.py shell -c \
   'from django.contrib.auth import get_user_model; from endoreg_db.services.centers.access import resolve_allowed_center_ids; from endoreg_db.services.hub import get_deployment_role; u=get_user_model().objects.get(username="BENUTZER"); print({"deployment_role": get_deployment_role(), "user_id": u.pk, "center_ids": sorted(resolve_allowed_center_ids(u) or []) if resolve_allowed_center_ids(u) is not None else "global"})'
 ```
 
-Relevant structured JavaScript Object Notation (JSON) events:
+| Structured event | Reason | Action |
+| --- | --- | --- |
+| `center_access_identity_sync_completed` | Cache replaced | Confirm expected user and center IDs. |
+| `center_access_identity_sync_rejected` | `missing_groups_claim` | Configure the client mapper and renew login. |
+| Same | `malformed_groups_claim` | Correct the claim shape. |
+| Same | `unknown_center_keys` | Align Keycloak with deliberately deployed center data. |
+| `center_access_denied` | `no_membership` | Assign membership unless the narrow hub read exception applies. |
+| Same | `outside_center_scope` | Check the resource's center. |
+| Same | `hub_video_not_anonymized_processed` | Check incomplete, failed or lost video state. |
 
-- `center_access_identity_sync_completed`: membership cache was replaced.
-- `center_access_identity_sync_rejected` with `missing_groups_claim`: configure
-  the client mapper and renew authentication; no explicit groups were delivered.
-- `center_access_identity_sync_rejected` with `malformed_groups_claim`: claim
-  shape is invalid.
-- `center_access_identity_sync_rejected` with `unknown_center_keys`: identity
-  provider and center master data disagree.
-- `center_access_denied` with `no_membership`: no assignment exists outside the
-  hub read exception.
-- `center_access_denied` with `outside_center_scope`: resource belongs to another
-  center.
-- `center_access_denied` with `hub_video_not_anonymized_processed`: a hub request
-  targeted an incomplete, failed, or lost video.
+Unknown claims never fall back to a default center.
 
-For an empty video list, first check `video:read`, the deployment role, and a
-fresh login. For denied playback, also confirm that a processed artifact exists,
-`VideoState.anonymized` is set, `processing_error` is not set, and
-`meta.integrity_status` is not `lost`. Correct unknown center claims in Keycloak
-or in deliberately deployed center master data; there is no automatic fallback
-to the default center.
+## Terms and identity source
+
+Access comes only from a cryptographically verified Keycloak `groups` claim:
+a list of strings such as `/centers/berlin`. Nested paths, empty or unknown
+`center_key` values fail authentication without changing local assignments.
+
+`PortalUserInfo.centers` caches the claim and is fully replaced at each login.
+Zero, one or multiple centers are valid. Default centers grant no access;
+`is_staff` and `is_superuser` are explicit global exceptions.
+
+### Keycloak claim delivery
+
+Configure a Group Membership mapper named `groups`, with full paths enabled,
+and assign its client scope to the application. Deliver groups in UserInfo and
+the ID token for browser login, and the access token for bearer authentication.
+
+Browser login verifies that UserInfo and ID-token subjects match. Explicit
+UserInfo groups take precedence, including `[]` for revocation; an omitted claim
+falls back only to the verified ID token. Bearer login uses verified access-token
+groups. If neither trusted browser source supplies groups, login fails with
+`missing_groups_claim`; missing mapper configuration does not revoke memberships.
+
+After changing groups or mappers, sign out and in. Confirm
+`center_access_identity_sync_completed` and the center IDs. Database membership
+edits do not survive the next identity synchronization.
+
+## Access matrix
+
+“Own center” means verified membership, never a workflow default or deployment role.
+The common rule applies to all four deployment roles unless noted.
+
+| Resource or action | Common rule | Role-specific exception |
+| --- | --- | --- |
+| Video list and anonymization overview | Own centers | `central_hub` also lists other centers' anonymized processed videos with pseudonymous metadata. |
+| Processed playback: HTTP Live Streaming (HLS), frames and timeline | Own centers and `video:read` | `central_hub` allows hub-wide reads only when processed, anonymized, error-free and not `lost`. |
+| Raw video and frames | Own centers and `video:read` | None. |
+| Patients and reports | Own centers and specialist role | `standalone` requires `patient:read` or `patient:write`. No hub exception. |
+| Uploads | Own centers and `patient:write` | `local_study_server` requires exactly one declared own center. |
+| Annotation exports | Own centers and `video:write`; no raw export | `local_study_server` requires exactly one own center or explicit global staff access. |
+| Administration and quarantine | Applicable administrator or specialist role; target center boundary | `video:read` grants no administration rights. |
+| Segment edits, reimport and export flag | Own center and applicable `*:write` role | No hub read exception. |
+| Hub transfer receiver | Disabled (`404`) | Only `central_hub`: node credentials and mutual Transport Layer Security (mTLS); center from `NetworkNode.owning_center`, no Django session. |
+
+Other-center hub detail responses exclude names, dates of birth, original
+filenames, local paths, integrity errors, operator names and upload diagnostics.
+The frontend displays `Video <id>` and the center.
+
+### Technical enforcement and checkpoints
+
+The backend enforces access; lx-annotate labels are not authorization.
+`endoreg_db.views.access_control` separates hub read permission from strict
+patient, raw-media and write checks. Foreign objects return `404` like missing
+ones. Patient creation validates `center_key`; querysets restrict all other
+operations. Exports compare video centers, optional `center_key` and memberships;
+`all_centers` is an explicit staff exception.
+
+Hub transfer authenticates nodes independently of user sessions. Anonymous
+requests permitted by `EnvironmentAwarePermission` in local debug mode bypass
+the downstream membership check only there, never in production.
+
+`tests/views/test_center_access_matrix.py` and specialized views test all roles,
+hub-transfer, FHIR, patient/report/raw-media boundaries and existence concealment.
 
 ## Migration, rollout, and rollback
 
 Migration `0051_portaluserinfo_centers` creates plural memberships and copies
-existing `Examiner.center` assignments forward. Before rollout, record the
-database backup, migration plan, and count of existing `PortalUserInfo` rows.
-Rollback uses the previous application version and migrates Django to the
-previous state; the old `Examiner.center` relationship remains during the
-transition. The reverse migration removes new multiple assignments and must run
-only after a verified export and restore check.
+`Examiner.center`. Record the database backup, migration plan and existing
+`PortalUserInfo` count before rollout.
 
-Rollout sequence:
+1. Run `./feature-tracking/tracker.py validate` and the tracker's focused tests.
+2. Test forward and reverse migration in a production-like environment; compare
+   row counts and legacy access.
+3. Set `ENDOREG_DEPLOYMENT_ROLE` explicitly; hub-wide reads require `central_hub`.
+4. Restart all affected backends and force a new login.
+5. Check a positive hub case and negative site-node, raw-media and write cases
+   before recording operational evidence.
 
-1. Run `./feature-tracking/tracker.py validate` and the focused tests from the
-   tracker.
-2. Test the migration forward and backward in a production-like environment;
-   compare row counts and legacy access.
-3. Check `ENDOREG_DEPLOYMENT_ROLE` explicitly. Hub-wide visibility is permitted
-   only for `central_hub`.
-4. Restart all affected backend processes so settings and code are loaded
-   consistently, then force a new login.
-5. Check one positive hub case and one negative site-node, raw-media, and write
-   case. Only then update the operational assessment in the tracker.
-
-If unexpected visibility occurs, first roll back the application version or
-remove the `central_hub` deployment role, then restart every backend process.
-Membership data is not deleted automatically. Raw media is neither exported nor
-used as a recovery fallback.
+For unexpected visibility, roll back the application or remove the `central_hub`
+role, then restart every backend. Memberships are not deleted automatically.
+Database rollback restores the previous migration state; `Examiner.center`
+remains during transition. Reverse migration removes new multiple assignments,
+so first verify their export and restoration. Never export raw media or use it
+as a recovery fallback.

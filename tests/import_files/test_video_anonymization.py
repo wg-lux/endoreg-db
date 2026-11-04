@@ -13,6 +13,7 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.video_processing import video_anonymization
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
@@ -662,7 +663,8 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     result_ctx = anonymizer.anonymize_video(ctx)
 
     assert result_ctx.anonymized_path == (
-        output_dir / f"phi-video-anonymize.attempt-{ctx.attempt_id}.mp4"
+        get_runtime_paths().transcoding
+        / f"phi-video-anonymize.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
@@ -751,7 +753,8 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     assert canonical_output.read_bytes() == b"previous-processed-video"
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path == (
-        output_dir / f"staged-reanonymize-video.attempt-{ctx.attempt_id}.mp4"
+        get_runtime_paths().transcoding
+        / f"staged-reanonymize-video.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path.read_bytes() == b"fresh-anonymized-video"
 
@@ -865,7 +868,8 @@ def test_anonymize_video_uses_local_source_path_override(
         == ctx.validated_raw_source_sha256
     )
     assert result_ctx.anonymized_path == (
-        output_dir / f"local-source-video.attempt-{ctx.attempt_id}.mp4"
+        get_runtime_paths().transcoding
+        / f"local-source-video.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
@@ -949,6 +953,25 @@ def test_anonymizer_creates_fresh_frame_cleaner_per_attempt(
     assert len(frame_cleaner_instances) == 2
     assert frame_cleaner_instances[0] is not frame_cleaner_instances[1]
     assert ctx.anonymized_path != next_ctx.anonymized_path
+
+    # A failed publication must clean only this attempt, using the real staging
+    # admission policy; the canonical directory and concurrent attempt survive.
+    from endoreg_db.import_files.file_storage.state_management import (
+        delete_associated_files,
+    )
+
+    assert ctx.anonymized_path is not None
+    failed_candidate = ctx.anonymized_path
+    assert failed_candidate.is_relative_to(get_runtime_paths().transcoding)
+    canonical = output_dir / "retained.mp4"
+    canonical.write_bytes(b"previous-generation")
+    delete_associated_files(ctx, preserve_existing_video_artifacts=True)
+    assert ctx.anonymized_path is None
+    assert not failed_candidate.exists()
+    assert next_ctx.anonymized_path is not None
+    assert next_ctx.anonymized_path.read_bytes() == b"anonymized-video"
+    assert canonical.read_bytes() == b"previous-generation"
+    assert source_video.read_bytes() == b"source-video"
 
 
 @pytest.mark.django_db

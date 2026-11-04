@@ -250,3 +250,214 @@ verifikation:
       Aktiver Video-Validierungspfad und Hash-Vertragstests ausgeführt; fehlgeschlagene
       Zustandsspeicherung propagiert vor Cleanup. Keine vollständige Helper-Zeilenabdeckung
       behauptet; der Trace erzeugte für storage.py selbst keine separate cover-Datei.
+
+handoff_video_streaming_20261102:
+  assessor: codex-gc10-video61-20261102
+  revision: 22a5cccf19e02dc556e709c383258d1b2cebbc6d
+  bezug: Arbeitsbaum einschließlich nicht committeter Videoänderungen; Zeilen sind Momentaufnahmen.
+  autoritaet:
+    - feature-tracking/CodeQuality.yml
+    - feature-tracking/ImportPipelineRobustness.yml
+    - feature-tracking/VideoStorageNormalization.yml
+  umfang: >-
+    Übergabe wahrscheinlicher Altpfade neben Videoimport und HTTP Live Streaming (HLS).
+    Keine Löschfreigabe und keine neue Readiness-Bewertung. Frühere Abschnitte dieses
+    Dokuments sind historische Evidenz vom Oktober, keine aktuellen Testergebnisse.
+  methode:
+    kommando: >-
+      rg -n 'ensure_processed_video_hls|nuke_transcoding_dir|transcode_streamable_mp4|is_faststart_mp4'
+      endoreg_db tests workflow docs scripts feature-tracking
+    downstream: >-
+      Dieselben Symbolnamen sowie _is_faststart_mp4 in /home/admin/dev/lx-annotate,
+      /home/admin/luxnix, /home/admin/lx-data-models und /home/admin/lx-anonymizer
+      mit rg in Python-, Nix-, YAML-, Shell- und Markdown-Dateien gesucht: keine Treffer.
+    grenzen: >-
+      Kein vollständiger Repository-Audit, keine Analyse installierter Consumer oder
+      Produktionsskripte, kein neuer Laufzeit-Trace. Dynamisch zusammengesetzte Namen,
+      ignorierte Dateien und andere Sprachen sind nicht ausgeschlossen. Keine neue
+      Vulture-Konfidenz pro Kandidat erhoben; fehlende Aufrufer sind kein Löschbeweis.
+  bestaetigte_neue_loeschungen: []
+  priorisierte_kandidaten:
+    - symbol: nuke_transcoding_dir
+      pfad: endoreg_db/import_files/file_storage/state_management.py
+      zeile: 530
+      klassifikation: compatibility_contract
+      prioritaet: hoch
+      beleg: >-
+        Kein Produktionsaufruf in der Symbolsuche. Direkte Tests in
+        tests/import_files/test_storage_state_management.py; Finalisierungstests
+        ersetzen den Helper ausdrücklich durch einen Fehler, um seinen Aufruf zu verhindern.
+        Löscht einen ganzen Transcoding-Verzeichnisinhalt ohne Versuchsbesitzprüfung.
+        Fehler einzelner Einträge werden abgefangen; anschließend kann True zurückkommen.
+      risiko: Gemeinsame Arbeitsdateien paralleler Imports; boolescher Erfolg kann Teilfehler verdecken.
+      aktion: >-
+        Als erste eigenständige Entfernungskohorte prüfen. Öffentlichen Vertrag und
+        Betriebsskripte klären; ausschließlich versuchseigene Cleanup-Pfade erhalten.
+        Nicht als allgemeine Recovery-Funktion wiederverwenden. Tests gegen globale
+        Löschung auf den verbleibenden Cleanup-Vertrag umstellen, nicht ersatzlos streichen.
+      verifikation: >-
+        Pyright, danach tests/import_files/test_storage_state_management.py und
+        tests/import_files/test_video_finalize_success.py; Besitzverlust, Teilfehler
+        und parallele Versuche müssen fremde Dateien erhalten.
+    - symbol: ensure_processed_video_hls
+      pfad: endoreg_db/import_files/file_storage/state_management.py
+      zeile: 222
+      klassifikation: compatibility_contract
+      prioritaet: mittel
+      beleg: >-
+        Nur Definition und ältere Inventare gefunden; explizit als Kompatibilitätswrapper
+        dokumentiert. Delegiert unverändert an ensure_video_hls, das erforderliche rohe
+        und verarbeitete Derivate behandelt. Der alte Name suggeriert einen engeren Vertrag.
+      risiko: Nicht erfasste externe Imports; Entfernung spart nur einen kleinen Wrapper.
+      aktion: >-
+        Consumer auf ensure_video_hls migrieren und öffentlichen Importpfad kontrolliert
+        auslaufen lassen. Keinen neuen processed-only Ablauf schaffen.
+      verifikation: Pyright, danach tests/import_files/test_video_finalize_success.py und Consumer-Importtests.
+    - symbol: transcode_streamable_mp4 und is_faststart_mp4
+      pfad: endoreg_db/services/streaming/streamable_media_transcoding.py
+      zeile: 37
+      klassifikation: uncertain
+      prioritaet: mittel
+      beleg: >-
+        transcode_streamable_mp4 beginnt in Zeile 50. Kein Produktionsaufruf gefunden;
+        streamable_media.py importiert und aliasiert beide Symbole. Direkter Encoder-Test
+        in tests/utils/test_encryption_streaming.py; Monkeypatch-Verträge in
+        tests/services/test_streamable_media_contract.py. is_faststart_mp4 wird vom
+        alten Encoder verwendet. Die verarbeitete Streaming-Materialisierung nutzt HLS.
+      risiko: >-
+        Exportierte Typen und Aliaszugriffe können externe Verträge sein. Das gesamte
+        Modul ist nicht tot: is_encrypted_file wird über _is_encrypted_file bei der
+        Reconciliation referenzierter Altdateien aktiv verwendet.
+      aktion: >-
+        Nur Encoder, dessen exklusiven Atom-Scanner und tatsächlich exklusive Profile,
+        Imports und Test-Seams als Kohorte prüfen. Verschlüsselungsprüfung und
+        Reconciliation nicht mit entfernen. _is_faststart_mp4-Alias gesondert prüfen.
+      verifikation: >-
+        Pyright, danach tests/services/test_streamable_media_contract.py,
+        tests/utils/test_encryption_streaming.py und tests/services/test_canonical_playback_selection.py;
+        Consumer-Importtests sowie HLS-Publikation und Altdatei-Reconciliation prüfen.
+  zu_erhaltende_vertraege:
+    - pfad: endoreg_db/services/__init__.py
+      klassifikation: compatibility_contract
+      grund: Alte flache Service-Importpfade erhalten bewusst dieselbe Modulidentität; kein pauschales Löschen der Aliase.
+    - pfad: endoreg_db/services/video_files/direct_import.py
+      grund: Aktiver Adapter für UploadJob, Besitzprüfung und Lease; keine redundante Kopie des Importkoordinators.
+    - pfad: endoreg_db/services/streaming/seekable_media_input.py
+      grund: Aktive Aufrufe in Frame-Export und endoreg_db/utils/frame_stream.py; nicht wegen HLS-Umstellung entfernen.
+    - pfad: endoreg_db/services/streaming/streamable_media.py
+      grund: Persistierte Altpfade und verschlüsselte Referenzen benötigen weiterhin sichere Reconciliation.
+    - pfad: endoreg_db/services/imports/processing.py
+      grund: Persistiert Rust-Übergänge; Python-Transaktionen und Ownership-Prüfungen sind keine zweite Zustandsmaschine.
+    - pfad: endoreg_db/services/streaming/hls_media.py
+      grund: >-
+        Quellidentität, genaue Präsentationszeitstempel, Encoder-Provenienz, Lease-Prüfungen
+        und atomare Publikation bleiben erforderlich. routing_key am Dispatcher ist ein
+        Protokollvertrag. Boolesche Ergebnisse ersetzen keine Integritätsfehler.
+  veraltete_architekturaussage:
+    pfad: docs/report_import_concurrency_implementation.md
+    zeile: 20
+    beleg: Die Aussage, Rust besitze keine Domain-Zustandsübergänge, widerspricht dem nativen Import-Stack.
+    aktion: >-
+      Bei der nächsten Dokumentationskorrektur Zustandsübergänge in Rust von
+      Datenbanktransaktionen und Publikationsnebenwirkungen in Python unterscheiden.
+      Bericht-spezifische Receipts nicht ungeprüft auf Videos übertragen.
+  anschluss_an_lokale_aenderungen:
+    - Gemeinsame Vorbereitung und Wiederaufnahme von Import und Reanonymisierung nutzen bereits den Rust-Stack.
+    - Bereite quellgleiche HLS-Derivate werden wiederverwendet; alte nominelle Bildratenablehnung nicht wieder einführen.
+    - Entfernte Präfixleser und doppelte HLS-Prüfpfade sind keine noch offenen Löschkandidaten.
+    - Lokale Änderungen sind nicht als auf gc-10 ausgerollt bestätigt; Deployment separat prüfen.
+  pruefung_dieser_uebergabe:
+    art: Nur Inventar und Navigation geändert; keine neue Codeentfernung und keine neuen pytest-Läufe.
+    ergebnisse:
+      - "devenv tasks run quality:dead-code: bestanden; kein Nachweis globaler Nichtverwendung."
+      - "scripts/lint_structure.py: 67 Manifeste gültig; Handoff-YAML parsebar; scoped git diff --check bestanden."
+      - "tracker.py validate: 40 Features gültig; show code_quality: 16/23 Pflichtkriterien."
+      - "tracker.py check code_quality: Exit 1, weiterhin nicht produktionsreif; keine Statusänderung."
+    naechste_kohorte: >-
+      Vor jedem Codeeingriff Consumer-Prüfung aktualisieren, Feature-Lock erwerben,
+      Video-Runbook lesen, Pyright vor fokussierten Tests ausführen, anschließend
+      quality:dead-code und Struktur-/Feature-Validierung prüfen.
+
+removal_video_streaming_20261102:
+  assessor: codex-import-dead-code-20261102
+  autorisierung: Expliziter Nutzerauftrag zur Löschung der drei Übergabekandidaten.
+  basis: Arbeitsbaum vor dieser Kohorte; fremde Änderungen bleiben erhalten.
+  klassifikation: confirmed_dead
+  entfernt:
+    - state_management.nuke_transcoding_dir samt exklusiven Imports und zwei direkten Tests
+    - state_management.ensure_processed_video_hls
+    - streamable_media_transcoding.transcode_streamable_mp4, is_faststart_mp4 und _first_atom_offset
+    - StreamableTranscodeProfile und DEFAULT_STREAMABLE_TRANSCODE_PROFILE
+    - Exklusive Encoder-Aliase, ffmpeg_wrapper-Reexport, Test-Seams und Encoder-Test
+  aufruferbelege:
+    lokal: >-
+      Symbolsuche über endoreg_db, tests, workflow, scripts, docs und quality findet vor
+      Entfernung nur Definitionen, Aliase, direkte Tests und historische Inventare.
+      Keine Registrierung oder dynamische Auflösung in den betroffenen Modulen.
+    downstream: >-
+      Erneute rg-Suche in lx-annotate, LuxNix, lx-data-models und lx-anonymizer nach
+      allen drei Kandidaten, is_faststart_mp4 und StreamableTranscodeProfile ohne Treffer.
+    grenze: Nicht verfügbare externe Betriebsskripte sind nicht geprüft.
+  abloesung:
+    ensure_processed_video_hls: >-
+      Historischer Wrapper war bereits auf ensure_video_hls umgestellt; bekannte Verbraucher
+      nutzen den kanonischen Einstieg. Entfernten Import durch ensure_video_hls ersetzen.
+    nuke_transcoding_dir: >-
+      Kein globaler Ersatz. Ausschließlich explizite versuchseigene Staging-Pfade über
+      cleanup_staging_files mit bestehenden Besitzprüfungen bereinigen.
+    transcode_streamable_mp4: >-
+      Kein separater Vollvideo-Encoder. Aktive Streaming-Materialisierung verwendet
+      materialize_video_hls; bestehende kanonische Transcodes bleiben unverändert.
+  erhalten:
+    - is_encrypted_file und _is_encrypted_file für Legacy-Reconciliation
+    - Aktive Streamable-Typen, Dateimodi, Pfadkonstanten und Verschlüsselungsformat-Export
+    - Importfinalisierung, HLS-Publikation, kanonische Master und besitzgebundener Cleanup
+  metriken:
+    methode: radon.raw.analyze und radon.complexity.cc_visit auf gesichertem Vorhertext und Arbeitsbaum
+    produktionszeilen: '1177 -> 996; 181 Zeilen entfernt'
+    entfernte_komplexitaet: 'nuke=10, wrapper=1, encoder=6, faststart=5, scanner=1, profile.extra_args=2'
+    ast: Alle verbleibenden Top-Level-Funktionen und Klassen der vier Produktionsmodule unverändert.
+  tests:
+    - Fremde Staging-Dateien bleiben bei Cleanup und erfolgreicher Finalisierung erhalten.
+    - Parametrisierter Teilfehler prüft Besitzverlust und fehlgeschlagenes Unlink; fremde Dateien bleiben unverändert.
+    - Bestehende Import-, HLS- und Reconciliation-Verträge bleiben im Testumfang.
+  verifikation:
+    revision: 22a5cccf19e02dc556e709c383258d1b2cebbc6d
+    arbeitsverzeichnis: /home/admin/endoreg-db
+    protokollverzeichnis: /tmp/codex-import-dead-code-20261102
+    pyright:
+      gesamt: '4 Fehler in fremder tests/dataloader/test_load_base_db_data_repeat.py; 2 Warnungen außerhalb der Kohorte.'
+      fokussiert: 'Alle acht geänderten Python-Dateien: 0 Fehler, 0 Warnungen.'
+      umgebung: Erster Lauf durch parallelen uv sync unterbrochen; vollständiger Lauf nach Wiederherstellung wiederholt.
+    dead_code: 'devenv tasks run quality:dead-code bestanden; 31 geprüfte Funde, keine neuen/veralteten/abgelaufenen Einträge.'
+    boundaries: >-
+      quality:boundaries fehlgeschlagen: broad_exception 348 statt 354,
+      type_suppression 73 statt 107. Diese Kohorte entfernt genau zwei broad_exception
+      aus nuke_transcoding_dir und fügt keine hinzu; übrige Drift außerhalb der Kohorte.
+      Bestehende Baseline nicht pauschal angepasst.
+    struktur: '67 gültige structure.yml-Manifeste; semantische Export- und Cleanup-Beschreibungen aktualisiert.'
+    yaml: '40 gültige Feature-Definitionen; show code_quality erfolgreich.'
+    produktionsfreigabe: 'check code_quality bleibt NICHT PRODUKTIONSREIF (16/23); Assessment unverändert.'
+    lint: 'Ruff check für die acht Python-Dateien und git diff --check bestanden.'
+    regression_kommando: >-
+      RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+      tests/import_files/test_storage_state_management.py tests/import_files/test_video_finalize_success.py
+      tests/services/test_streamable_media_contract.py tests/utils/test_encryption_streaming.py
+      tests/services/test_canonical_playback_selection.py tests/services/test_hls_media.py
+      tests/contracts/test_media_centralization.py tests/utils/test_paths.py
+      tests/utils/test_file_operations.py tests/services/test_video_source_hash.py -q --tb=short
+    regression_ergebnis: '238 passed, 1 warning in 83.42s; Exit-Code 0. Anschließend Warnungen beim Entfernen älterer pytest-Temporärverzeichnisse.'
+    trace_kommando: >-
+      RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/python
+      -m trace --count -C /tmp/codex-import-dead-code-20261102/trace
+      --ignore-dir '/nix/store:/home/admin/endoreg-db/.devenv:/home/admin/lx-anonymizer:/home/admin/lx-data-models:/home/admin/.cache'
+      --module pytest
+      tests/import_files/test_storage_state_management.py::test_staging_cleanup_partial_failure_preserves_other_attempt
+      tests/services/test_streamable_media_contract.py -q --tb=short
+    trace_ergebnis: '8 passed, 1 warning in 162.71s; Exit-Code 0.'
+    trace_beobachtung: >-
+      Aktiver is_encrypted_file-Aufruf einmal ausgeführt; cleanup_staging_files zweimal,
+      Besitzprüfung viermal und Unlink dreimal erreicht. Teilfehler propagieren; fremde
+      Dateien bleiben erhalten. Artefakte im trace-Unterverzeichnis des Protokollverzeichnisses.
+      Kein Nachweis globaler Nichtverwendung oder vollständiger Testabdeckung behauptet.
+    smoke: 'devenv tasks run agent:smoke bestanden (27.9s), Exit-Code 0; Django-Start-/Importprüfung und Deployment-Vertrag.'

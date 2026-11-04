@@ -1,5 +1,7 @@
 # Release notes: 1.2.1
 
+> **Current operator action (2026-11-02, unreleased):** Before upgrading a v1 machine or resuming media migration, read the [LXENC v2 changes](../changelog.md) and [upgrade/resume procedure](../docs/secret_rotation.md#v1-machines-and-interrupted-media-migrations). Preserve existing keys and backups; deploy compatible readers before v2 writes. The historical release content below is unchanged.
+
 > **Scope:** changes committed after `v1.0.13.0` (11 August 2026) through
 > `15a3750a` (9 September 2026). This document describes the implementation in
 > this repository. It does not assert that any change has been deployed or that

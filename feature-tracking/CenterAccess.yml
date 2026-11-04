@@ -301,6 +301,11 @@ definition_of_done:
     category: testing
     title: Deployment, identity, artifact, and negative authorization paths are regression tested
     acceptance:
+      - Video listing uses limit 50 and offset 0 for malformed or out-of-range pagination
+        (limit is capped at 100); unused technical metadata cannot block discovery, and
+        internal validation failures are never reported as invalid query parameters.
+      - Pagination links preserve scalar search and status filters without converting
+        them into stringified lists.
       - Tests cover zero, one, and multiple center memberships, replacement on reauthentication, malformed
         group paths, unknown centers, and legacy membership migration.
       - Central-hub tests cover authenticated ordinary users from another center and users without memberships
@@ -357,6 +362,14 @@ definition_of_done:
       evidence:
         - kind: command
           reference: Extended center/hub/FHIR/patient/report regression suite (80 passed)
+        - kind: command
+          reference: '2026-11-04: Video-Liste und Center-Scope: 17 Tests und 13 Subtests
+            bestanden. Vollständiger Pyright vor Implementierung der parallelen
+            Timestamp-Arbeiten: 0 Fehler, 2 Warnungen; finaler gezielter Pyright:
+            0 Fehler, 0 Warnungen. Ruff, 67 Strukturmanifeste und Tracker-Validierung
+            bestanden. Pagination normalisiert ungültige Werte, erhält Filterlinks
+            und meldet interne ValueError-Ausnahmen nicht als Query-Fehler.
+            Keine Bereitstellung dieser Codeänderung auf gc-10.'
         - kind: test
           reference:
             "2026-09-07: Pyright 0 errors; 41 backend regressions passed across central-hub raw-deletion

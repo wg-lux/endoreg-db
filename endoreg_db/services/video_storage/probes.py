@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import math
 import subprocess
 import time
@@ -24,6 +25,9 @@ from endoreg_db.services.video_storage.contracts import (
 )
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
+from endoreg_db.utils.structured_logging import emit_structured_event
+
+logger = logging.getLogger(__name__)
 
 # Bound decoder parallelism per probe; every frame is still decoded and checked.
 _FRAME_PROBE_DECODE_ARGS = ("-threads", "4")
@@ -467,19 +471,30 @@ def _parse_frame_timestamp_rows(
 def probe_video_frame_timestamps(
     path: Path, *, require_original_pts: bool = False
 ) -> list[FramePresentationTimestamp]:
-    """Return exact timestamp ticks and seconds for every decoded video frame."""
+    """Return decoded ticks, preferring original ticks when requested.
+
+    ``require_original_pts`` is retained for caller compatibility. Missing
+    original fields use the decoder's validated best-effort timestamps; no
+    frame-rate-derived coordinates are synthesized.
+    """
     ffprobe = _require_ffprobe_executable()
     command = _build_frame_timestamp_probe_command(ffprobe, path)
     stdout = _run_frame_timestamp_probe(command, path=path)
     payload = _parse_frame_probe_payload(stdout, path=path)
     if require_original_pts:
+        recovered = 0
         for frame in payload.frames:
             if frame.pts is None or frame.pts_time is None:
-                raise VideoStorageNormalizationError(
-                    "Frame provenance requires original presentation timestamps"
-                )
-            frame.best_effort_timestamp = frame.pts
-            frame.best_effort_timestamp_time = frame.pts_time
+                recovered += 1
+            else:
+                frame.best_effort_timestamp = frame.pts
+                frame.best_effort_timestamp_time = frame.pts_time
+        timestamps = _parse_frame_timestamp_rows(payload)
+        if recovered:
+            emit_structured_event(
+                logger, "video_original_timestamps_recovered", frame_count=recovered
+            )
+        return timestamps
     return _parse_frame_timestamp_rows(payload)
 
 

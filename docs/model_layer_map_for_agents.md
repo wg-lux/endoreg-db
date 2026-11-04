@@ -297,7 +297,7 @@ in the service until the lx-data-models contract provides database choices
 | Segment annotations | segment lifecycle, validation, frame extraction/deletion, generated annotations | `endoreg_db/models/label/label_video_segment/label_video_segment.py` |
 | Frame annotation queue | task queueing, selection, serialization, annotation sync | `endoreg_db/models/state/frame_annotation.py` |
 | AI datasets | active learning, manifests, frame buckets, export artifacts | `endoreg_db/models/aidataset/aidataset.py` |
-| Sensitive metadata | patient and examination identity, hashes, pseudo-patient creation | `endoreg_db/models/metadata/sensitive_meta.py:27`, `endoreg_db/models/metadata/sensitive_meta_logic.py:153` |
+| Sensitive metadata | patient and examination identity, hashes, pseudo-patient creation; dictionary ingestion moved to `endoreg_db/services/patient_identity/sensitive_meta_ingestion.py` | `endoreg_db/models/metadata/sensitive_meta.py:27`, `endoreg_db/models/metadata/sensitive_meta_logic.py:441` |
 | Hub uploads/transfers | persisted provenance JSON, transfer status, raw-transfer policy surface | `endoreg_db/models/hub/upload_job.py:149`, `endoreg_db/models/hub/transfer_job.py:17` |
 
 ## Model Files Importing Services, Utils, Import Files, Helpers
@@ -320,7 +320,7 @@ thin callers only where backward compatibility requires it.
 | `media/video/storage_mode.py` | utils | `endoreg_db/models/media/video/storage_mode.py:5` |
 | `media/video/video_file.py` | services, utils | `endoreg_db/models/media/video/video_file.py:17`, `:21`, `:37`, `:200` through `:739` |
 | `metadata/model_meta_logic.py` | utils | `endoreg_db/models/metadata/model_meta_logic.py:13` |
-| `metadata/sensitive_meta_logic.py` | utils | `endoreg_db/models/metadata/sensitive_meta_logic.py:12`, `:15` |
+| `metadata/sensitive_meta_logic.py` | services (secret_rotation), utils; lazy aliases to services/patient_identity | `endoreg_db/models/metadata/sensitive_meta_logic.py:14`, `:21`, `:25`, `:28` |
 | `metadata/video_prediction_meta.py` | services | `endoreg_db/models/metadata/video_prediction_meta.py:9` |
 | `state/frame_annotation.py` | services, utils | `endoreg_db/models/state/frame_annotation.py:14`, `:15`, `:156` |
 | `state/video_segment_validation.py` | services | `endoreg_db/models/state/video_segment_validation.py:10` |
@@ -444,7 +444,7 @@ This ranking is based on workflow responsibility, not just line count.
 5. `endoreg_db/models/label/label_video_segment/label_video_segment.py` - segment lifecycle, validation, frame actions, generated annotations.
 6. `endoreg_db/services/video_files/_anonymization.py` - anonymized artifact generation and raw cleanup.
 7. `endoreg_db/services/video_files/_frames/_extract_frames.py` - frame extraction and cache integrity.
-8. `endoreg_db/models/metadata/sensitive_meta_logic.py:153` - patient identity and pseudonymization workflow logic.
+8. `endoreg_db/models/metadata/sensitive_meta_logic.py:441` - patient identity hashing and save-time pseudonymization logic (dictionary ingestion already extracted).
 9. `endoreg_db/models/state/video.py:19` - video processing state transitions and export readiness.
 10. `endoreg_db/models/hub/transfer_job.py:17` - transfer policy/status model and provenance validation boundary.
 

@@ -948,6 +948,85 @@ def test_load_preanonymized_sidecar_errors_redact_missing_and_invalid_paths(
         assert "path_sha256=" in message
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("suffix", "content", "reason"),
+    [
+        (".yaml", "a: &x ext-42\nexternal_id: *x\n", "aliases are not supported"),
+        (".yml", "external_id: a\nexternal_id: b\n", "must not repeat keys"),
+        (".json", '{"external_id": "a", "external_id": "b"}', "must not repeat keys"),
+        (".json", "{", "Cannot import json content"),
+    ],
+)
+def test_load_preanonymized_sidecar_rejects_ambiguous_or_expanding_content(
+    tmp_path: Path, suffix: str, content: str, reason: str
+) -> None:
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(suffix).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a mapping") as error:
+        ingest._load_preanonymized_sidecar(watched_file)
+
+    assert reason in str(error.value)
+    assert watched_file.stem not in str(error.value)
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_errors_omit_sidecar_content(tmp_path: Path) -> None:
+    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    sidecar = watched_file.with_suffix(".yaml")
+    sidecar.write_text("patient_last_name: Mustermann\n  broken: [\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a mapping") as malformed:
+        ingest._load_preanonymized_sidecar(watched_file)
+
+    sidecar.write_text(
+        "patient_last_name: Mustermann\npatient_dob: not-a-date\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Invalid preanonymized sidecar") as invalid:
+        ingest._load_preanonymized_sidecar(watched_file)
+
+    assert "patient_dob" in str(invalid.value)
+    for error in (malformed.value, invalid.value):
+        assert "Mustermann" not in str(error)
+        assert "not-a-date" not in str(error)
+        assert error.__cause__ is None and error.__suppress_context__
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_rejects_oversized_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ingest, "_PREANONYMIZED_SIDECAR_MAX_BYTES", 16)
+    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(".json").write_text(
+        '{"external_id": "ext-42", "external_id_origin": "hospital"}', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="16 byte import limit"):
+        ingest._load_preanonymized_sidecar(watched_file)
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_format_follows_sidecar_suffix(
+    tmp_path: Path,
+) -> None:
+    # "report.fhir.json" would otherwise be detected as FHIR JSON.
+    watched_file = tmp_path / "report.fhir.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(".json").write_text(
+        '{"external_id": "ext-42", "external_id_origin": "hospital"}', encoding="utf-8"
+    )
+
+    payload, _ = ingest._load_preanonymized_sidecar(watched_file)
+
+    assert payload is not None
+    assert payload.external_id == "ext-42"
+
+
 @pytest.mark.django_db
 def test_preanonymized_quarantine_logs_use_opaque_path_references(
     tmp_path: Path,

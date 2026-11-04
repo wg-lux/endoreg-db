@@ -1,4 +1,4 @@
-"""Read-only browser exports of accepted processed media and annotations."""
+"""Browser exports of accepted media, recovering wholly absent timestamps."""
 
 from __future__ import annotations
 
@@ -60,6 +60,11 @@ def annotation_csv(video: VideoFile, *, use_export_flags: bool) -> Iterator[str]
 
 def timestamp_csv(video: VideoFile, *, original: bool) -> Iterator[str]:
     """Keep canonical sequence indices separate from persisted annotation frames."""
+    from endoreg_db.services.video_files.timestamp_backfill import (
+        backfill_missing_video_timestamps,
+    )
+
+    backfill_missing_video_timestamps(video)
     history = (video.meta or {}).get("canonical_timeline_history")
     if not isinstance(history, list):
         raise ValueError("Keine gespeicherte kanonische Zeitstempelhistorie vorhanden.")

@@ -1,60 +1,93 @@
-# Audit Ledger: Contract and Operations
+# Audit ledger operations
 
-This document describes the binding application and operational contract
-of the persisted `AuditLedger` in `endoreg_db`. Implementation and
-approval status is maintained exclusively in
-[`feature-tracking/AuditLedger.yml`](../feature-tracking/AuditLedger.yml).
+Use this runbook to check integrity and respond to ledger incidents.
+[AuditLedger.yml](../feature-tracking/AuditLedger.yml) owns readiness evidence.
+
+## Operation and Alerting
+
+Run a lock-aware check in the installed runtime:
+
+```sh
+/opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py \
+  refresh_audit_ledger_integrity --once --fail-on-non-verified
+```
+
+Output is JSON; add `--pretty` for readability. `--fail-on-non-verified` exits
+non-zero unless the result is `verified`. Use it for deployment and recovery gates.
+Then inspect cached system health:
+
+```sh
+/opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py \
+  check_system_health --json
+```
+
+An unverified ledger fails health checks on `local_study_server`.
+`audit_ledger.integrity_failed` and `audit_ledger.integrity_error` log the head
+hash, last entry ID and, when available, entry count. Never log ledger payloads
+or patient data.
+
+## Integrity States and Check Frequency
+
+| Status | Operator action |
+| --- | --- |
+| `verified` | All rows, predecessor links and the head match; continue operation. |
+| `failed` | Treat as a tampering or corruption incident; do not repair or overwrite. |
+| `error` | Resolve the runtime or infrastructure cause and check again. |
+| `unknown` | No valid cached result exists; run a background or operator check. |
+
+Celery Beat runs `endoreg_db.refresh_audit_ledger_integrity_status` on the
+maintenance queue every 300 seconds. Configure the interval with
+`CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS` (minimum 60 seconds).
+Disabling `CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED` in production requires
+a documented equivalent external invocation.
+
+A 30-minute cache lock prevents parallel full scans. A competing check retains
+the previous status with source `skipped_locked`. Missing or unreadable cache
+objects yield `unknown` and `verified=false`.
+
+## Incident Procedure
+
+For `failed`, `error`, or unexpectedly old `unknown`:
+
+1. Stop write-capable approval, administration and migration workflows.
+2. Preserve the database snapshot, ledger rows, `LedgerHead`, structured logs,
+   task ID, host time and deployment version.
+3. Run the lock-aware check once more; compare JSON, exit code and head.
+   Do not start parallel scans or manually mark the ledger verified.
+4. For `error`, resolve cache, database, migration or worker faults.
+   For `failed`, involve Security and Operations.
+5. Preserve raw rows and backups. Never rehash, truncate, auto-repair or merge
+   partially matching sources.
+6. Restore a matching verified database backup, check the complete chain, and
+   obtain documented approval before reopening writes.
 
 ## Purpose and Trust Boundary
 
-The ledger demonstrates that selected security- and approval-relevant
-actions were persisted in a particular order and were not subsequently
-changed without detection. Each entry contains the hash of its predecessor.
-The `LedgerHead` singleton is locked during append within the same database
-transaction and set to the new entry.
+Each `AuditLedger` entry hashes its predecessor. Appending locks the singleton
+`LedgerHead` in the same database transaction. Verification walks backwards from
+that head, checks each row once and validates the last-entry pointer. It does
+not sort by timestamp or UUID. The head remains locked during the scan, blocking
+appends; memory use grows with ledger size. Existing hashes are not rewritten.
 
-Verification follows the persisted predecessor hashes backwards from the head,
-checking every row exactly once and checking the head's last-entry pointer. It
-does not sort by timestamp or UUID: timestamps may be equal or assigned before
-the append lock is acquired. Verification holds the head lock, so appends wait
-until the scan completes. The scan uses memory proportional to ledger size.
-There is no hash-format change or rewrite of existing records.
+This detects tampering but provides neither digital signatures nor external
+timestamps. Control of the rows, head and all backups defeats this trust model;
+protect the database, permissions, backups and encrypted storage separately.
 
-The ledger detects tampering, but it is neither a digital signature nor an
-external timestamping service. Anyone who controls both ledger rows and the
-ledger head, as well as all backups, is outside the demonstrated trust model.
-The database, its permissions, backups, and the encrypted storage area must
-therefore be protected independently.
-
-The integrity status is global for the local ledger chain. It does not return
-ledger rows and is not a center-filtered event search. The
-production-authenticated status endpoint
-`GET /endoreg-api/audit-ledger/integrity/` returns only the result of the
-most recent background check. A full chain check in the web process is
-excluded.
-
-Structured hub events under the logger `endoreg_db.hub.audit` are a
-separate operational log channel. They do not automatically become
-`AuditLedger` rows and do not have its hash-chain proof.
+Production-authenticated `GET /endoreg-api/audit-ledger/integrity/` returns only
+the latest cached global result, never ledger rows or a center-filtered search.
+Web requests do not run full scans. The `endoreg_db.hub.audit` log channel is
+separate and does not acquire ledger hash-chain proof.
 
 ## Persisted Event Format
 
-A ledger row consists of:
-
-- immutable UUID and server-side timestamp;
-- optional authenticated Django user;
-- `object_type`, `object_pk`, and stable `action` code;
-- a canonical JSON object `data`;
-- `prev_hash` and `hash` as SHA-256 hexadecimal values.
-
-The hash payload is defined by
+Rows contain an immutable UUID, server timestamp, optional authenticated Django
+user, `object_type`, `object_pk`, stable `action`, canonical JSON `data`, and
+SHA-256 `prev_hash`/`hash`. The hash contract is
 `lx_dtypes.models.contracts.audit_ledger.AuditLedgerHashPayload`.
-`data` accepts only finite, JSON-compatible values with string keys.
-Existing rows must not be updated through the model path.
+Data keys must be strings and values finite and JSON-compatible. Model updates
+to existing rows are prohibited.
 
 ## Actions Requiring Auditing
-
-The currently intentional persisted producers are:
 
 | Action | Business rationale | Required evidence | Error behavior |
 | --- | --- | --- | --- |
@@ -63,113 +96,32 @@ The currently intentional persisted producers are:
 | `center_admin_bootstrapped` | Promotion of an already Keycloak-synchronized member from `center_scope:admin` | Target user, required group, previous and new roles, and initiator | A missing ledger proof aborts the promotion and rolls back the transaction |
 | `media_storage_migrated` / `media_storage_failed` | Idempotent media storage migration or its classified failure | Object reference and migration evidence from the management command | Audit writes propagate database errors; the migration command manages its own failure decision |
 
-New actions requiring auditing need a stable action code, a named producer, a
-minimal typed payload, a clear transaction boundary, and negative tests for
-ledger failure before their introduction. A general request, ORM, or debug
-capture does not belong in the ledger.
+
+New actions require a named producer, stable code, minimal typed payload,
+transaction boundary and ledger-failure tests. Request, ORM and debug captures
+do not belong in the ledger.
 
 ## Data Minimization and Known Limit
 
-Raw media, file content, Large-Language-Model prompts, complete request
-payloads, plaintext secrets, the master key, passwords, tokens, private keys,
-stack traces, and direct patient identifiers not required for the proof are
-intentionally excluded. Pseudonymous IDs and hash values may be included only
-when necessary for the specific correlation. The ledger must never be used as
-a substitute for primary clinical data.
-
-The `ready_for_export` event persists only the relative managed storage name
-and content hash, not the absolute resolved path. New events must likewise not
-include absolute paths. The global integrity endpoint returns neither this
-payload nor individual ledger rows, requires authentication in production
-mode, and provides only a `GET` operation.
-
-## Integrity States and Check Frequency
-
-The background check distinguishes the following states:
-
-| Status | Meaning | Operational decision |
-| --- | --- | --- |
-| `verified` | Every row, every predecessor link, and the ledger head match | Regular operation may continue |
-| `failed` | The chain or head does not match the persisted hash values | Fail-closed incident; no repair or overwrite |
-| `error` | The check could not be completed because of a runtime or infrastructure error | Resolve the cause and check again; until then, do not treat it as verified |
-| `unknown` | No valid cached check result is available | Do not treat it as verified; perform a background or operator check |
-
-By default, Celery Beat schedules the task
-`endoreg_db.refresh_audit_ledger_integrity_status` every 300 seconds on the
-separate maintenance queue. The value is configurable through
-`CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_INTERVAL_SECONDS`, but must be at least 60
-seconds. Scheduling is enabled by default and can be disabled through
-`CELERY_BEAT_AUDIT_LEDGER_INTEGRITY_ENABLED`; a production profile then
-requires an equivalent documented external invocation.
-
-A cache lock with a 30-minute lifetime prevents parallel full checks. If the
-lock is already held, the last status remains visible and receives the source
-`skipped_locked`. Missing cache content, or cache content that cannot be read
-as an object, results in `unknown` and `verified=false` fail-closed.
-
-## Operation and Alerting
-
-An explicit lock-aware check is run in the installed runtime environment:
-
-```sh
-/opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py \
-  refresh_audit_ledger_integrity --once --fail-on-non-verified
-```
-
-Machine-readable output is JSON. `--pretty` formats it for manual
-diagnostics. `--fail-on-non-verified` returns an error code for every status
-other than `verified` and is required for deployment and recovery gates.
-
-The general health check then checks the cached state:
-
-```sh
-/opt/endoreg-db/venv/bin/python /opt/endoreg-db/manage.py \
-  check_system_health --json
-```
-
-In the `local_study_server` profile, an unverified ledger causes the health
-check to fail. `audit_ledger.integrity_failed` and
-`audit_ledger.integrity_error` are emitted as structured error events with
-head hash, last entry ID, and—where available—entry count. Error output must
-not contain ledger payloads or patient data.
-
-## Incident Procedure
-
-For `failed`, `error`, or an unexpectedly old `unknown`, the following applies:
-
-1. Stop write-capable approval, admin, and migration workflows; do not
-   manually set the state to `verified`.
-2. Capture the database snapshot, ledger tables, `LedgerHead`, relevant
-   structured logs, task ID, host time, and deployment version for evidentiary
-   preservation.
-3. Run the lock-aware management command exactly once more and compare the
-   JSON, exit code, and ledger head. Do not start parallel full scans.
-4. For `error`, first resolve the cache, database, migration, or worker cause.
-   For `failed`, assume tampering or corruption and involve Security and
-   Operations.
-5. Do not automatically repair, rehash, truncate, or merge the database and
-   ledger from a partially matching source. Preserve raw rows and previous
-   backups unchanged.
-6. Restore only from a matching, verified database backup. Then check the
-   complete chain and reopen write-capable workflows only after documented
-   approval.
+Exclude raw media, file contents, model prompts, full requests, secrets, keys,
+passwords, tokens, stack traces and unnecessary direct patient identifiers.
+Use pseudonymous IDs and hashes only when the proof requires them; the ledger
+is not clinical data storage. `ready_for_export` stores a relative managed
+name and content hash. New events must also exclude absolute paths.
 
 ## Retention and Change Control
 
-There is currently no automatic retention or deletion path for
-`AuditLedger` rows. They are backed up together with the database. A future
-retention or archival rule requires a versioned chain/checkpoint concept,
-Security and Operations approval, and a restoration test; ordinary data
-cleanup must not delete ledger rows.
+Back up ledger rows with the database; there is no automatic deletion or
+retention path. Archival requires versioned chain/checkpoint design, Security
+and Operations approval, and a restore test. Ordinary cleanup must preserve rows.
 
-Changes to the hash format, action codes, or existing payload fields are
-persistence contract changes. They require an lx-dtypes compatibility
-strategy, migration tests, forward/rollback evidence, and an update to this
-document and the feature evidence.
+Hash formats, action codes and payload fields are persistence contracts.
+Changes require lx-dtypes compatibility, migration and rollback tests, and
+updated documentation and feature evidence.
 
 ## Verification
 
-From `/home/admin/endoreg-db`:
+From the repository root:
 
 ```sh
 .devenv/state/venv/bin/pytest \

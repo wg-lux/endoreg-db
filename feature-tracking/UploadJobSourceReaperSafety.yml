@@ -362,6 +362,53 @@ definition_of_done:
       exercise and operational threshold approval remain outstanding, so this criterion stays in_progress.
     assessed_by: codex-feature-advance
     assessed_at: '2026-09-02T13:51:00Z'
+- id: orphaned_upload_staging_reclamation
+  category: operations
+  title: Verwaiste UploadJob-Verzeichnisse werden periodisch und belegt bereinigt
+  acceptance:
+  - Ein periodischer Lauf prüft unter upload_jobs/api, watcher und preanonymized ausschließlich Verzeichnisse
+    im Layout <Tier>/<UUID-Präfix>/<UploadJob-UUID>/. Gelöscht wird nur, wenn zu dieser UUID kein UploadJob
+    existiert, keine Inventar-, Provenienz-, UploadJob-Datei- oder Mediendatei-Referenz in das Verzeichnis
+    zeigt, keine Übergabe- oder symbolische Link-Datei enthalten ist und die jüngste Änderung älter als
+    die konfigurierte Karenzzeit ist.
+  - Dateien außerhalb dieses Layouts und Verzeichnisse mit bestehendem UploadJob werden nur mit Bytes
+    gemeldet, nie gelöscht; Letztere bleiben dem bestehenden Ledger-Reaper vorbehalten.
+  - Die Bereinigung folgt dem einzigen Apply-Schalter des periodischen Tasks (UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED,
+    standardmäßig aktiv; false erzwingt Dry-Run). Jede Löschung prüft Referenzen und Änderungszeit unmittelbar
+    vor der Mutation erneut, verwendet die typisierten Dateisystem-Wrapper und erzeugt strukturierte JSON-Ereignisse;
+    Batches sind begrenzt.
+  - Parametrisierte Tests decken gültige Löschung, jede Referenzart, junge Dateien, Übergabedateien, symbolische
+    Links, fremde Layouts, Dry-Run und Karenzzeit-Untergrenze ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright und fokussierte Tests ausführen; danach Dry-Run auf dem Zielhost prüfen, bevor
+      Apply freigegeben wird.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_staging_orphans.py; endoreg_db/tasks.py::_cleanup_media_sources;
+        endoreg_db/config/env.py (staging_cleanup_apply_enabled, staging_cleanup_grace_seconds)
+    - kind: test
+      reference: tests/services/test_upload_staging_orphans.py
+    - kind: command
+      reference: 'Pyright 0 errors on changed files; test_upload_staging_orphans + test_transient_artifact_cleanup
+        + test_periodic_media_cleanup + test_upload_job_files + test_import_file_locks + test_disk_pressure_cleanup_contract:
+        75 passed; hub fast lane 14 passed; Ruff and 67 structure manifests passed.'
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md#uploadjob-source-reaper
+    - kind: command
+      reference: 'endoreg-db: Pyright 0 errors; orphan, transient, periodic, reconciliation, disk-pressure,
+        reap command and upload-job-file tests 97 passed; Ruff and 67 manifests passed.'
+    - kind: command
+      reference: Orphan, transient and periodic cleanup tests 55 passed; Pyright 0 errors.
+    note: '2026-11-03: reap_upload_staging_orphan is the single verified per-unit deletion, used by the
+      periodic loop and the lx-annotate storage monitor; both share list_upload_staging_units. Not yet
+      assessed on a host.'
+    assessed_by: claude-hub-staging-cleanup
+    assessed_at: '2026-11-03T13:03:47.762100Z'
 - id: cleanup_runbook
   category: documentation
   title: Diagnose, Freigabe, Apply und Recovery sind betrieblich dokumentiert

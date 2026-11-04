@@ -568,7 +568,7 @@ def test_cleaner_factory_passes_attempt_local_hooks(
     assert first_arguments["execution_hooks"] is not second_arguments["execution_hooks"]
 
 
-def test_original_frame_timestamps_cannot_fall_back_to_estimates(
+def test_missing_original_timestamps_use_decoded_coordinates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     import json
@@ -596,10 +596,12 @@ def test_original_frame_timestamps_cannot_fall_back_to_estimates(
         )
 
     monkeypatch.setattr(probes.subprocess, "run", fake_probe)
-    with pytest.raises(probes.VideoStorageNormalizationError, match="original"):
-        probes.probe_video_frame_timestamps(
-            Path("video.mp4"), require_original_pts=True
-        )
+    result = probes.probe_video_frame_timestamps(
+        Path("video.mp4"), require_original_pts=True
+    )
+    assert len(result) == 1
+    assert result[0].presentation_timestamp == 0
+    assert result[0].presentation_time_seconds == 0.0
 
 
 def _timeline(time_base: tuple[int, int], ticks: list[int]) -> VideoFrameTimeline:

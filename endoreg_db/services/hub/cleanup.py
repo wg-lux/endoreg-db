@@ -404,11 +404,37 @@ def _source_still_referenced(upload_job: UploadJob, name: str | None = None) -> 
             UploadJobFile.Role.RETAINED,
             UploadJobFile.Role.QUARANTINE,
         } or has_other_file_owner(upload_job, Path(inventory_name))
+    return stored_media_name_referenced(name, exclude_upload_job_id=upload_job.pk)
+
+
+def stored_media_name_referenced(
+    name: str,
+    *,
+    prefix: bool = False,
+    exclude_upload_job_id: uuid.UUID | None = None,
+) -> bool:
+    """Whether an upload, media file or HLS source uses a storage name.
+
+    With ``prefix`` the name is a directory prefix ending in ``/``.
+    """
+    if prefix and not name.endswith("/"):
+        raise ValueError("A storage name prefix must end with '/'")
+    lookup = "startswith" if prefix else "exact"
+
+    def _q(*fields: str) -> Q:
+        query = Q()
+        for field in fields:
+            query |= Q(**{f"{field}__{lookup}": name})
+        return query
+
+    uploads = UploadJob.objects.filter(_q("file"))
+    if exclude_upload_job_id is not None:
+        uploads = uploads.exclude(pk=exclude_upload_job_id)
     return (
-        UploadJob.objects.filter(file=name).exclude(pk=upload_job.pk).exists()
-        or VideoFile.objects.filter(Q(raw_file=name) | Q(processed_file=name)).exists()
-        or RawPdfFile.objects.filter(Q(file=name) | Q(processed_file=name)).exists()
-        or VideoHlsArtifact.objects.filter(source_file_name=name).exists()
+        uploads.exists()
+        or VideoFile.objects.filter(_q("raw_file", "processed_file")).exists()
+        or RawPdfFile.objects.filter(_q("file", "processed_file")).exists()
+        or VideoHlsArtifact.objects.filter(_q("source_file_name")).exists()
     )
 
 
@@ -950,4 +976,5 @@ __all__ = [
     "inspect_upload_job_source",
     "reap_upload_job_sources",
     "run_upload_job_source_reaper",
+    "stored_media_name_referenced",
 ]

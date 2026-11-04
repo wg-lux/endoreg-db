@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 import hashlib
 import uuid
 from dataclasses import dataclass
@@ -702,7 +704,6 @@ def test_producer_extraction_reaches_native_fenced_host(
         ReportProcessResult,
     )
     from lx_anonymizer.report_reader import reader as producer_module
-    from endoreg_db.import_files.report_import_service import ReportImportService
     from endoreg_db.services.imports.execution import ImportExecutionFence
     from endoreg_db.services.reports.import_fencing import (
         acquire_report_import_fence,
@@ -748,9 +749,7 @@ def test_producer_extraction_reaches_native_fenced_host(
         output = request.anonymized_pdf_output_path
         assert output is not None
         output = Path(output)
-        output.write_bytes(
-            ReportImportService._render_single_page_pdf("synthetic report")  # pyright: ignore[reportPrivateUsage]
-        )
+        output.write_bytes(render_single_page_pdf("synthetic report"))
         return ReportProcessResult(
             text="synthetic report",
             anonymized_text="synthetic report",
@@ -773,7 +772,7 @@ def test_producer_extraction_reaches_native_fenced_host(
 
     monkeypatch.setattr(host, "persist_sensitive_meta_candidate", persist_meta)
     source = tmp_path / "source.pdf"
-    source.write_bytes(ReportImportService._render_single_page_pdf("synthetic source"))  # pyright: ignore[reportPrivateUsage]
+    source.write_bytes(render_single_page_pdf("synthetic source"))
     digest = hashlib.sha256(source.read_bytes()).hexdigest()
     report = _create_report_for_tests(pdf_hash=digest, raw_meta={"source": "preserved"})
     fence = acquire_report_import_fence(digest)

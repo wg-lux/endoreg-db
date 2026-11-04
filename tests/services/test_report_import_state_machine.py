@@ -9,6 +9,8 @@ from endoreg_db.services.reports.import_state_machine import (
     validate_report_import_success,
 )
 
+pytestmark = pytest.mark.no_db
+
 
 @pytest.mark.parametrize(
     ("current_status", "interrupted"),

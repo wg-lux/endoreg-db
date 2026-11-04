@@ -8,7 +8,12 @@ from types import ModuleType
 
 import pytest
 
-from endoreg_db.services.hub import ingest, ingest_provenance, preanonymized_metadata
+from endoreg_db.services.hub import (
+    ingest,
+    ingest_provenance,
+    preanonymized_metadata,
+    upload_center_resolution,
+)
 
 
 @pytest.mark.parametrize(
@@ -33,6 +38,7 @@ from endoreg_db.services.hub import ingest, ingest_provenance, preanonymized_met
                 "_apply_preanonymized_metadata",
             ),
         ),
+        (upload_center_resolution, ("resolve_declared_upload_center",)),
     ],
 )
 def test_historical_helper_imports_are_the_canonical_objects(
@@ -45,7 +51,9 @@ def test_historical_helper_imports_are_the_canonical_objects(
         assert canonical.__module__ == owner.__name__
 
 
-@pytest.mark.parametrize("owner", [ingest_provenance, preanonymized_metadata])
+@pytest.mark.parametrize(
+    "owner", [ingest_provenance, preanonymized_metadata, upload_center_resolution]
+)
 def test_helper_modules_do_not_import_the_orchestrator(owner: ModuleType) -> None:
     for node in ast.walk(ast.parse(inspect.getsource(owner))):
         if isinstance(node, ast.Import):

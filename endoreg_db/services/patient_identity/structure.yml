@@ -41,6 +41,8 @@ files:
   role: Patientenkennungen und verifizierte sensible Metadaten.
 - file: external_ids.py
   role: Exports split_patient_external_id, assign_patient_external_id.
+- file: sensitive_meta_ingestion.py
+  role: SensitiveMeta create, update and update-or-create from dictionaries, moved unchanged from models; hashing stays in SensitiveMeta.save.
 - file: update.py
   role: Exports update_sensitive_meta.
 - file: validated_media_identity.py
@@ -77,3 +79,4 @@ tests:
   - tests/services/test_patient_matching_workflow.py
   - tests/services/test_sensitive_meta_update.py
   - tests/services/test_sensitive_meta_verification.py
+  - tests/services/test_sensitive_meta_ingestion.py

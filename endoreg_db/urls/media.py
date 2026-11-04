@@ -36,6 +36,7 @@ from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsVie
 from endoreg_db.views.media.study_cohort import StudyCohortPreviewView
 from endoreg_db.views.media.studies import StudiesView, StudyDetailView
 from endoreg_db.views.media.table_mappings import (
+    TableMappingInspectionView,
     TableMappingsView,
     TableMappingDetailView,
 )
@@ -536,6 +537,11 @@ STUDY_TABLE_URLPATTERNS: list[URLPattern] = [
         "media/studies/table-mappings/",
         TableMappingsView.as_view(),
         name="study-table-mappings",
+    ),
+    path(
+        "media/studies/table-mappings/inspect/",
+        TableMappingInspectionView.as_view(),
+        name="study-table-mapping-inspect",
     ),
     path(
         "media/studies/table-mappings/<uuid:mapping_id>/",

@@ -14,8 +14,8 @@ from endoreg_db.models import Center, VideoFile
 from endoreg_db.utils import paths as paths_module
 
 
-def _deny_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
-    raise AssertionError("delete_associated_files must not nuke global transcoding")
+def _deny_artifact_cleanup(*args: object, **kwargs: object) -> NoReturn:
+    raise AssertionError("artifact cleanup must not run after state persistence fails")
 
 
 def _audio_only_stream_info(path: Path) -> dict[str, list[dict[str, str]]]:
@@ -160,6 +160,8 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     import_file.write_bytes(b"import")
     anonymized_path.write_bytes(b"anon")
     sensitive_path.write_bytes(b"sensitive")
+    other_attempt = tmp_path / "other-attempt.mp4"
+    other_attempt.write_bytes(b"other attempt")
     ctx = ImportContext(
         mutation_guard=nullcontext,
         file_path=import_file,
@@ -169,12 +171,6 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     ctx.anonymized_path = anonymized_path
     ctx.sensitive_path = sensitive_path
 
-    monkeypatch.setattr(
-        state_management,
-        "nuke_transcoding_dir",
-        _deny_nuke_transcoding_dir,
-        raising=True,
-    )
     monkeypatch.setattr(
         cleanup_module,
         "staging_cleanup_roots",
@@ -188,6 +184,7 @@ def test_delete_associated_files_removes_anonymized_and_sensitive_paths(
     assert ctx.sensitive_path is None
     assert not anonymized_path.exists()
     assert not sensitive_path.exists()
+    assert other_attempt.read_bytes() == b"other attempt"
 
 
 @pytest.mark.unit
@@ -221,36 +218,6 @@ def test_delete_associated_files_preserves_active_sensitive_snapshot(
 
     assert ctx.sensitive_path == sensitive_path
     assert sensitive_path.read_bytes() == b"sensitive"
-
-
-@pytest.mark.unit
-def test_nuke_transcoding_dir_removes_files_symlinks_and_directories(
-    tmp_path: Path,
-) -> None:
-    transcoding_dir = tmp_path / "transcoding"
-    nested_dir = transcoding_dir / "nested"
-    nested_dir.mkdir(parents=True)
-    file_path = transcoding_dir / "artifact.tmp"
-    target_path = transcoding_dir / "target.tmp"
-    symlink_path = transcoding_dir / "artifact.link"
-    file_path.write_bytes(b"artifact")
-    target_path.write_bytes(b"target")
-    symlink_path.symlink_to(target_path)
-    (nested_dir / "child.tmp").write_bytes(b"child")
-
-    result = state_management.nuke_transcoding_dir(transcoding_dir)
-
-    assert result is True
-    assert list(transcoding_dir.iterdir()) == []
-
-
-@pytest.mark.unit
-def test_nuke_transcoding_dir_returns_false_for_file_path(tmp_path: Path) -> None:
-    not_a_dir = tmp_path / "not-a-dir"
-    not_a_dir.write_bytes(b"payload")
-
-    assert state_management.nuke_transcoding_dir(not_a_dir) is False
-    assert not_a_dir.exists()
 
 
 @pytest.mark.unit
@@ -353,7 +320,7 @@ def test_failure_state_save_error_propagates_before_cleanup(
 
     monkeypatch.setattr(VideoState, "mark_processing_failed", reject_save)
     monkeypatch.setattr(
-        state_management, "delete_associated_files", _deny_nuke_transcoding_dir
+        state_management, "delete_associated_files", _deny_artifact_cleanup
     )
     with pytest.raises(RuntimeError, match="state persistence unavailable"):
         state_management.finalize_failure(ctx)
@@ -442,6 +409,43 @@ def test_failed_staging_cleanup_retains_context_paths(
         state_management.delete_associated_files(ctx)
     assert ctx.anonymized_path == ctx.sensitive_path == path
     assert path.exists()
+
+
+@pytest.mark.parametrize("failure", ["ownership", "unlink"])
+def test_staging_cleanup_partial_failure_preserves_other_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    from endoreg_db.import_files.file_storage import cleanup
+
+    completed = tmp_path / "completed.mp4"
+    pending = tmp_path / "pending.mp4"
+    other_attempt = tmp_path / "other-attempt.mp4"
+    for path in (completed, pending, other_attempt):
+        path.write_bytes(path.name.encode())
+    original_unlink = cleanup.safe_unlink_file
+
+    def validate_owner(path: Path) -> None:
+        if failure == "ownership" and path == pending:
+            raise RuntimeError("ownership lost")
+
+    def unlink(path: Path, *, missing_ok: bool = True) -> None:
+        if failure == "unlink" and path == pending:
+            raise PermissionError("unlink denied")
+        original_unlink(path, missing_ok=missing_ok)
+
+    monkeypatch.setattr(cleanup, "validate_registered_staging_cleanup", validate_owner)
+    monkeypatch.setattr(cleanup, "safe_unlink_file", unlink)
+
+    with pytest.raises(
+        (RuntimeError, PermissionError), match="ownership lost|unlink denied"
+    ):
+        cleanup.cleanup_staging_files(
+            (completed, pending), label="attempt", allowed_roots=(tmp_path,)
+        )
+
+    assert not completed.exists()
+    assert pending.read_bytes() == b"pending.mp4"
+    assert other_attempt.read_bytes() == b"other-attempt.mp4"
 
 
 @pytest.mark.django_db(transaction=True)

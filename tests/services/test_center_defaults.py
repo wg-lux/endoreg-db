@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 # pyright: reportPrivateUsage=false
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
@@ -229,9 +231,7 @@ def test_report_pipeline_persists_selected_key_with_duplicate_names(
     Center.objects.create(name="Shared", center_key="unrelated")
     selected = Center.objects.create(name="Shared", center_key="selected")
     source = tmp_path / "report.pdf"
-    source.write_bytes(
-        ReportImportService._render_single_page_pdf("Center identity test")
-    )
+    source.write_bytes(render_single_page_pdf("Center identity test"))
     with override_settings(LX_ANNOTATE_DEFAULT_CENTER="selected"):
         context = ReportImportService()._create_import_context(source, "")
     # Changing the default after context creation must not reroute this import.

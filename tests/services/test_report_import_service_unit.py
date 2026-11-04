@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import escape_pdf_text, render_single_page_pdf
+
 # Direct private-method coverage is intentional in this focused unit suite.
 # pyright: reportPrivateUsage=false, reportMissingTypeStubs=false
 from collections.abc import Generator, Callable
@@ -54,7 +56,7 @@ def service(monkeypatch: pytest.MonkeyPatch) -> ReportImportService:
 @pytest.fixture
 def pdf_path(tmp_path: Path) -> Path:
     path = tmp_path / "report.pdf"
-    path.write_bytes(ReportImportService._render_single_page_pdf("test report"))
+    path.write_bytes(render_single_page_pdf("test report"))
     return path
 
 
@@ -167,36 +169,14 @@ class TestTextAndPdfHelpers:
 
     def test_escapes_pdf_control_characters(self) -> None:
         # Arrange / Act
-        result = ReportImportService._escape_pdf_text("a\\b(c)\r\nd")
+        result = escape_pdf_text("a\\b(c)\r\nd")
 
         # Assert
         assert result == r"a\\b\(c\)  d"
 
-    def test_uses_native_pdf_renderer_when_available(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Arrange
-        native_payload = b"native-pdf"
-        monkeypatch.setattr(
-            report_import_module, "rust_render_pdf", Mock(return_value=native_payload)
-        )
-
+    def test_fixture_renderer_creates_valid_single_page_pdf(self) -> None:
         # Act
-        result = ReportImportService._render_single_page_pdf("report")
-
-        # Assert
-        assert result is native_payload
-
-    def test_fallback_renderer_creates_valid_single_page_pdf(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Arrange
-        monkeypatch.setattr(
-            report_import_module, "rust_render_pdf", Mock(return_value=None)
-        )
-
-        # Act
-        payload = ReportImportService._render_single_page_pdf("line one\nline two")
+        payload = render_single_page_pdf("line one\nline two")
         document = cast(
             PdfDocument,
             pymupdf.open(stream=payload, filetype="pdf"),
@@ -209,20 +189,15 @@ class TestTextAndPdfHelpers:
         finally:
             document.close()
 
-    def test_fallback_renderer_limits_content_to_65_lines(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fixture_renderer_limits_content_to_65_lines(self) -> None:
         # Arrange
-        monkeypatch.setattr(
-            report_import_module, "rust_render_pdf", Mock(return_value=None)
-        )
         text = "\n".join(f"line {index}" for index in range(70))
 
         # Act
         document = cast(
             PdfDocument,
             pymupdf.open(
-                stream=ReportImportService._render_single_page_pdf(text),
+                stream=render_single_page_pdf(text),
                 filetype="pdf",
             ),
         )
@@ -533,7 +508,8 @@ def test_failure_cleanup_rechecks_owner_after_renewal(
 
     def replace_owner(_fence: ReportImportFence) -> None:
         ReportImportAttempt.objects.filter(content_hash=CONTENT_HASH).update(
-            lease_expires_at=timezone.now() - timedelta(seconds=1),
+            # Far beyond application/database clock skew.
+            lease_expires_at=timezone.now() - timedelta(hours=1),
         )
         acquire_report_import_fence(CONTENT_HASH)
 

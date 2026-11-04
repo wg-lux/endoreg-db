@@ -20,14 +20,6 @@ def _app_encrypted_policy(_payload_kind: object) -> StoragePolicy:
     return StoragePolicy.APP_ENCRYPTED
 
 
-def _copy_streamable_transcode(
-    source_path: Path, target_path: Path, **_: object
-) -> Path:
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_bytes(source_path.read_bytes())
-    return target_path
-
-
 class FakeEncryptedStorage:
     def __init__(self, payload: bytes):
         self.payload = payload
@@ -188,11 +180,6 @@ def test_sync_video_streamable_artifacts_removes_legacy_streamable_paths(
         "resolve_storage_policy",
         _streamable_policy,
     )
-    monkeypatch.setattr(
-        streamable_media,
-        "_transcode_streamable_mp4",
-        _copy_streamable_transcode,
-    )
 
     update_fields = streamable_media.sync_video_streamable_artifacts(
         cast(VideoFile, video)
@@ -247,11 +234,6 @@ def test_sync_video_streamable_artifacts_does_not_materialize_from_local_plainte
         lambda: processed_legacy.parent,
     )
     monkeypatch.setattr(streamable_media, "resolve_storage_policy", policy)
-    monkeypatch.setattr(
-        streamable_media,
-        "_transcode_streamable_mp4",
-        _copy_streamable_transcode,
-    )
 
     update_fields = streamable_media.sync_video_streamable_artifacts(
         cast(VideoFile, video)
@@ -366,11 +348,6 @@ def test_sync_video_streamable_artifacts_is_idempotent(
         streamable_media,
         "resolve_storage_policy",
         _streamable_policy,
-    )
-    monkeypatch.setattr(
-        streamable_media,
-        "_transcode_streamable_mp4",
-        _copy_streamable_transcode,
     )
 
     # first run

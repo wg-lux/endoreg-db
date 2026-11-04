@@ -79,9 +79,6 @@ from endoreg_db.services.reports.import_fencing import (
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.services.raw_pdf_files.types import PdfDocument
 from endoreg_db.utils.paths import get_runtime_paths
-from endoreg_db.utils.rust_backend import (
-    render_single_page_pdf as rust_render_pdf,
-)
 from endoreg_db.utils.workload_timing import (
     WorkloadOperation,
     WorkloadOutcome,
@@ -485,60 +482,6 @@ class ReportImportService:
             except UnicodeDecodeError:
                 continue
         raise InvalidReportDocumentError("TXT report cannot be decoded losslessly.")
-
-    @staticmethod
-    def _escape_pdf_text(value: str) -> str:
-        return (
-            value.replace("\\", "\\\\")
-            .replace("(", "\\(")
-            .replace(")", "\\)")
-            .replace("\r", " ")
-            .replace("\n", " ")
-        )
-
-    @classmethod
-    def _render_single_page_pdf(cls, text: str) -> bytes:
-        rust_pdf = rust_render_pdf(text)
-        if isinstance(rust_pdf, bytes):
-            return rust_pdf
-
-        normalized_lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
-        lines = normalized_lines[:65] if normalized_lines else [""]
-        commands = ["BT", "/F1 10 Tf", "36 806 Td"]
-        for idx, raw_line in enumerate(lines):
-            safe_line = raw_line.encode("latin-1", "replace").decode("latin-1")
-            commands.append(f"({cls._escape_pdf_text(safe_line)}) Tj")
-            if idx < len(lines) - 1:
-                commands.append("0 -12 Td")
-        commands.append("ET")
-        stream = "\n".join(commands).encode("latin-1")
-
-        objects = [
-            b"<< /Type /Catalog /Pages 2 0 R >>",
-            b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
-            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>",
-            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>",
-            b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream),
-        ]
-
-        payload = b"%PDF-1.4\n"
-        offsets = [0]
-        for obj_index, obj_payload in enumerate(objects, start=1):
-            offsets.append(len(payload))
-            payload += f"{obj_index} 0 obj\n".encode("ascii")
-            payload += obj_payload
-            payload += b"\nendobj\n"
-
-        startxref = len(payload)
-        payload += f"xref\n0 {len(objects) + 1}\n".encode("ascii")
-        payload += b"0000000000 65535 f \n"
-        for offset in offsets[1:]:
-            payload += f"{offset:010d} 00000 n \n".encode("ascii")
-        payload += (
-            f"trailer\n<< /Size {len(objects) + 1} /Root 1 0 R >>\n"
-            f"startxref\n{startxref}\n%%EOF\n".encode("ascii")
-        )
-        return payload
 
     @staticmethod
     def _validate_pdf_document(file_path: Path) -> None:

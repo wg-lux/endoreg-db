@@ -1,0 +1,33 @@
+# Default prefill rules for the study table mapping assistant.
+# Header names are compared case-insensitively after collapsing spaces, "_" and
+# "-"; a dotted header such as "Patient.Vorname" also matches its last part.
+# Suggestions only prefill the editor; the saved mapping is validated as usual.
+schema_version: '1.0'
+fields:
+  row_id: [record_id, id, row_id, fallnummer, fall nr, fallnr, fall, casenumber, case number, case id, untersuchungsnummer, untersuchungs id, befundnummer]
+  first_name: [vorname, first name, firstname, given name, rufname]
+  last_name: [nachname, familienname, last name, lastname, surname, name]
+  dob: [geburtsdatum, geb datum, geb, geboren, dob, birthdate, birth date, date of birth]
+  gender: [geschlecht, sex, gender]
+  examination_date: [untersuchungsdatum, u datum, datum, date, examination date, exam date, untersuchungstag]
+  examination: [untersuchung, untersuchungsart, examination, exam]
+  finding: [befund, befunde, diagnose, finding, findings]
+# Table spellings for genders, matched case-insensitively against read values.
+# Keys must be gender names of the endoreg_reference catalogue.
+gender_values:
+  female: [w, weiblich, f, female, frau]
+  male: [m, männlich, maennlich, male, mann]
+  other: [d, divers, diverse, x]
+  unknown: [u, unbekannt, unknown]
+# Tried in order on sampled cells; ISO and native Excel dates need no format.
+date_formats: ['%d.%m.%Y', '%d.%m.%y', '%d/%m/%Y', '%m/%d/%Y']
+# A free-text column such as "Mustermann, Erika, geb. 01.02.1980" is detected
+# with the spacy_patient extractor when no name columns were found by header.
+patient_line:
+  extractor: spacy_patient
+  sample_cells: 5
+  min_recognized: 2
+  min_cell_chars: 8
+  max_columns: 10
+  # Guessed from the first name by lx-anonymizer, so never prefilled.
+  outputs: [first_name, last_name, dob]

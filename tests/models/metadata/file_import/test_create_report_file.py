@@ -1,3 +1,4 @@
+from tests.helpers.pdf import render_single_page_pdf
 from pathlib import Path
 from typing import Protocol
 from unittest.mock import Mock
@@ -10,7 +11,6 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.services.reports.import_service import ReportImportService
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -41,9 +41,7 @@ def _configure_storage_layout(mock_paths: _MockStorageLayout) -> tuple[Path, Pat
 
 def _write_minimal_pdf(path: Path) -> None:
     """Write a parseable report with the existing PDF renderer."""
-    content = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
-        "Report import fixture"
-    )
+    content = render_single_page_pdf("Report import fixture")
     ensure_directory(path.parent)
     atomic_write_file(
         destination=path,

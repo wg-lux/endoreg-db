@@ -14,7 +14,9 @@ files:
 - file: video_stream.py
   role: Canonical video stream endpoint.
 - file: hls_stream.py
-  role: HTTP Live Streaming (HLS) playlist, key and segment endpoints.
+  role: HTTP Live Streaming (HLS) playlist, key and segment endpoints; defer timeline payloads while retaining authorization and generation checks.
+- file: lookups.py
+  role: Shared video lookup with opt-in metadata deferral for playback; authorization can still load required integrity metadata.
 - file: segments_crud.py
   role: Segment CRUD boundary; validation mutations and required operation audit commit together.
 - file: reimport.py

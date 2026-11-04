@@ -206,7 +206,6 @@ def delete_video_with_owned_files(
     type(video).objects.select_for_update().get(pk=video.pk)
     video.refresh_from_db()
     delete_recorded_video_copies(video)
-    video.delete_frames()
     for artifact_kind in ("raw", "processed"):
         delete_video_hls_artifacts(video, artifact_kind=artifact_kind)
 

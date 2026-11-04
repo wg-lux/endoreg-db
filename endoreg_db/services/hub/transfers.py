@@ -73,7 +73,7 @@ from endoreg_db.utils.file_operations import (
     safe_delete_field_file,
 )
 from endoreg_db.services.hub.payloads import reject_transferred_identity_hashes
-from endoreg_db.utils.hashs import get_bytes_hash, get_file_hash
+from endoreg_db.utils.hashs import get_file_hash
 from lx_dtypes.models.contracts.hub_transfer import (
     HubTransferSensitiveMetaPayload,
     HubTransferVideoSegmentPayload,
@@ -89,6 +89,12 @@ from endoreg_db.services.video_files.segment_coordinates import (
 )
 from endoreg_db.utils.storage import file_exists
 from endoreg_db.utils.structured_logging import hash_identifier
+from .hub_record_identity import (
+    assert_examination_matches_identity,
+    assert_existing_meta_matches_identity,
+    assert_patient_owned_by_source,
+    derive_hub_record_identity_hashes,
+)
 from .transfer_envelope import (
     HubMediaEnvelopeReplayConflict,
     prepare_inbound_hub_envelope,
@@ -112,7 +118,7 @@ class TransferOperationBusy(RuntimeError):
     pass
 
 
-def _transfer_operation_state(status: str) -> OperationLifecycleState:
+def transfer_operation_state(status: str) -> OperationLifecycleState:
     mapping = {
         TransferJob.TransferStatus.PENDING.value: OperationLifecycleState.QUEUED,
         TransferJob.TransferStatus.AWAITING_MEDIA.value: OperationLifecycleState.QUEUED,
@@ -160,7 +166,7 @@ def _claim_transfer_operation(
                 "inconsistent transfer cannot be reclaimed without explicit repair"
             )
         now = _transfer_database_now(transfer_job_id)
-        current = _transfer_operation_state(transfer_job.transfer_status)
+        current = transfer_operation_state(transfer_job.transfer_status)
         orphaned_candidate_name = transfer_job.operation_candidate_name
         claim_path = OperationClaimPath.INITIAL
         if current is OperationLifecycleState.RUNNING:
@@ -2185,70 +2191,45 @@ def _upsert_sensitive_meta(
         raise ValueError(
             "Hub identity requires the authenticated source node and its center"
         )
-    # These receiver-local identities contain no source demographic hash or salt.
-    # Hub-scoped pseudonyms (contract 6.0) are preserved; the authenticated
-    # namespace binds their source ownership. Local source UUIDs never arrive here.
-    namespace = f"hub-record-v5:{source_node.pk}:{center.pk}"
-    payload_patient_hash = get_bytes_hash(
-        f"{namespace}:patient:{identity.patient_uuid}".encode("utf-8")
+    # Local source UUIDs never arrive here; see hub_record_identity for the namespace.
+    hashes = derive_hub_record_identity_hashes(
+        source_node_pk=source_node.pk,
+        center_pk=center.pk,
+        patient_uuid=identity.patient_uuid,
+        examination_uuid=identity.examination_uuid,
     )
-    payload_examination_hash = get_bytes_hash(
-        f"{namespace}:examination:{identity.examination_uuid}".encode("utf-8")
-    )
+    payload_patient_hash = hashes.patient_hash
+    payload_examination_hash = hashes.examination_hash
 
     # Serialize hub identity creation within the authenticated center.
     Center.objects.select_for_update().get(pk=center.pk)
     patient = Patient.objects.filter(uuid=identity.patient_uuid).first()
-    if patient is not None and (
-        patient.center_id != center.pk or patient.patient_hash != payload_patient_hash
-    ):
-        raise ValueError("Hub patient UUID belongs to a different source owner.")
+    assert_patient_owned_by_source(
+        patient=patient, center_pk=center.pk, patient_hash=payload_patient_hash
+    )
     if existing is not None:
         existing = SensitiveMeta.objects.select_for_update().get(pk=existing.pk)
-        if existing.center_id != center.pk:
-            raise ValueError("Hub sensitive metadata belongs to a different center.")
-        if existing.pseudo_patient_id is not None and (
-            patient is None or existing.pseudo_patient_id != patient.pk
-        ):
-            raise ValueError("Hub sensitive metadata is linked to a different patient.")
-        if existing.patient_hash and existing.patient_hash != payload_patient_hash:
-            previous_patient = Patient.get_pseudo_patient_by_hash(
-                existing.patient_hash, center=center
-            )
-            if patient is None or previous_patient != patient:
-                raise ValueError(
-                    "Hub sensitive metadata has a different patient identity."
-                )
-        if (
-            existing.examination_hash
-            and existing.examination_hash != payload_examination_hash
-        ):
-            raise ValueError(
-                "Hub sensitive metadata has a different examination identity."
-            )
+        assert_existing_meta_matches_identity(
+            existing=existing,
+            center_pk=center.pk,
+            patient=patient,
+            hashes=hashes,
+            resolve_previous_patient=partial(
+                Patient.get_pseudo_patient_by_hash, center=center
+            ),
+        )
 
     patient_examination = (
         PatientExamination.objects.select_related("patient")
         .filter(uuid=identity.examination_uuid)
         .first()
     )
-    if patient_examination is not None and (
-        patient is None
-        or patient_examination.patient_id != patient.pk
-        or patient_examination.hash != payload_examination_hash
-    ):
-        raise ValueError(
-            "Hub examination_hash is already linked to a different patient_hash."
-        )
-    if (
-        existing is not None
-        and existing.pseudo_examination_id is not None
-        and (
-            patient_examination is None
-            or existing.pseudo_examination_id != patient_examination.pk
-        )
-    ):
-        raise ValueError("Hub sensitive metadata is linked to a different examination.")
+    assert_examination_matches_identity(
+        patient_examination=patient_examination,
+        existing=existing,
+        patient=patient,
+        examination_hash=payload_examination_hash,
+    )
     if patient is None:
         patient = Patient.objects.create(
             uuid=identity.patient_uuid,

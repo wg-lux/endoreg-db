@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -21,9 +23,7 @@ from endoreg_db.services.raw_pdf_files.types import PdfDocument
 from endoreg_db.utils.hashs import get_file_hash
 from tests.helpers.default_objects import DEFAULT_CENTER_NAME
 
-MINIMAL_PDF_BYTES = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
-    "Sample PDF"
-)
+MINIMAL_PDF_BYTES = render_single_page_pdf("Sample PDF")
 
 
 class PdfMediaTextVisibilityTests(TransactionTestCase):

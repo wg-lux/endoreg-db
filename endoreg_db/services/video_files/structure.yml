@@ -42,7 +42,7 @@ files:
 - file: clinical_contracts.py
   role: Build clinical ledger exports with batched exact segment coordinates bound to current provenance.
 - file: deletion.py
-  role: Explicit video deletion using persisted ownership, never filename searches.
+  role: Explicit video deletion using persisted ownership, with synchronous frame-directory removal and retryable failures, never filename searches.
 - file: direct_import.py
   role: Direct video imports bind the resolved center key and acquire the same durable ownership as queued imports.
 - file: frame_coordinates.py
@@ -80,9 +80,11 @@ files:
   role: Exports extract_temporal_options, normalize_temporal_options, build_lx_temporal_options.
 - file: timeline.py
   role: Exports frame_number_to_seconds, seconds_to_frame_number, validate_frame_number.
+- file: timestamp_backfill.py
+  role: Automatically recover wholly absent frame timestamps from hash-verified canonical media under the publication row lock.
 - file: timeline_index.py
   role: Request-scoped native TimelineIndex per video generation; one meta validation and one frame query for
-    many boundaries.
+    populated coordinates, with absent coordinates delegated to timestamp_backfill.
 - file: types.py
   role: Exports parse_video_artifact_kind.
 - file: validation.py
@@ -140,8 +142,9 @@ tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_file_services_contract.py tests/services/test_canonical_playback_selection.py
     tests/services/test_segment_frame_extraction.py tests/services/test_segment_coordinates.py
-    tests/rust_backend/test_timeline_index.py
+    tests/rust_backend/test_timeline_index.py tests/services/test_video_owned_deletion.py
   files:
+  - tests/services/test_video_owned_deletion.py
   - tests/services/test_lx_video_contracts.py
   - tests/services/test_video_file_services_contract.py
   - tests/services/test_canonical_playback_selection.py

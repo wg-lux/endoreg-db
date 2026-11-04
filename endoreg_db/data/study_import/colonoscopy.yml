@@ -21,7 +21,7 @@ gender:
   values:
     w: female
     m: male
-    d: diverse
+    d: other
     unbekannt: unknown
 examination_date:
   columns: [Untersuchungsdatum]

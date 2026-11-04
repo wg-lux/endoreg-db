@@ -1036,6 +1036,7 @@ class TestImportOrchestration:
         video = SimpleNamespace(
             raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
+            processed_file="",
             state=SimpleNamespace(anonymization_validated=False),
         )
         events: list[str] = []
@@ -1149,6 +1150,7 @@ class TestImportOrchestration:
         video = SimpleNamespace(
             raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
+            processed_file="",
             state=SimpleNamespace(anonymization_validated=False),
         )
         _patch_import_boundaries(monkeypatch, tmp_path)
@@ -1305,6 +1307,7 @@ class TestImportOrchestration:
         video = SimpleNamespace(
             raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
+            processed_file="",
             state=SimpleNamespace(anonymization_validated=False),
         )
         _patch_import_boundaries(monkeypatch, tmp_path)
@@ -1373,6 +1376,12 @@ class TestReanonymizationOrchestration:
             lambda _video: ("test-center", "test-processor"),
         )
         monkeypatch.setattr(sut, "mark_instance_processing_started", Mock())
+        monkeypatch.setattr(
+            sut,
+            "prepared_import_artifact",
+            lambda ctx, prepare: nullcontext(prepare(ctx)),
+        )
+        monkeypatch.setattr(sut, "clear_import_checkpoint", Mock())
         normalize = Mock()
         success = Mock()
         failure = Mock()

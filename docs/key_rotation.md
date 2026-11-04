@@ -70,6 +70,10 @@ fabricate a review mapping from guesses.
 
 Media rotation uses its own preview and application command:
 
+For LXENC v1 files or an interrupted rotation, first follow
+[v1 upgrade and resume](secret_rotation.md#v1-machines-and-interrupted-media-migrations).
+It covers reader rollout, unchanged-key upgrades and retained recovery keys.
+
 ```bash
 python -m django rotate_storage_secrets --include-hls
 python -m django rotate_storage_secrets --include-hls --apply

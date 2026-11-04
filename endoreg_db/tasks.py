@@ -533,11 +533,20 @@ def _cleanup_media_sources() -> dict[str, int]:
     """Revisit recorded cleanup work under the existing operator apply gate."""
     import logging
     from django.db.models import Q
-    from endoreg_db.config.env import upload_job_source_reaper_apply_enabled
+    from endoreg_db.config.env import (
+        staging_cleanup_grace_seconds,
+        upload_job_source_reaper_apply_enabled,
+    )
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.schemas.processed_video_cleanup import PeriodicMediaCleanupCursor
     from endoreg_db.services.hub.cleanup import run_upload_job_source_reaper
+    from endoreg_db.services.hub.upload_staging_orphans import (
+        run_upload_staging_orphan_cleanup,
+    )
+    from endoreg_db.services.runtime.transient_artifact_cleanup import (
+        run_transient_artifact_cleanup,
+    )
     from endoreg_db.services.video_storage.generation_cleanup import (
         cleanup_processed_video_generations,
         cleanup_superseded_hls,
@@ -554,15 +563,54 @@ def _cleanup_media_sources() -> dict[str, int]:
     )
     apply = upload_job_source_reaper_apply_enabled()
     sources = run_upload_job_source_reaper(apply=apply, limit=25)
+    grace_seconds = staging_cleanup_grace_seconds()
     counts = {
         "sources_cleaned": sources.cleaned,
         "source_bytes_freed": sources.freed_bytes,
+        "orphaned_upload_dirs_cleaned": 0,
+        "orphaned_upload_bytes_freed": 0,
+        "orphaned_upload_bytes_reclaimable": 0,
+        "transient_artifacts_cleaned": 0,
+        "transient_bytes_freed": 0,
+        "transient_bytes_reclaimable": 0,
+        "staging_cleanup_failures": 0,
         "generations_cleaned": 0,
         "generations_pending": 0,
         "generation_failures": 0,
         "hls_artifacts_cleaned": 0,
         "hls_artifacts_pending": 0,
     }
+    # A failing staging scan must not stop generation cleanup below.
+    try:
+        orphans = run_upload_staging_orphan_cleanup(
+            apply=apply, grace_seconds=grace_seconds, limit=25
+        )
+        counts["orphaned_upload_dirs_cleaned"] = orphans.deleted_count
+        counts["orphaned_upload_bytes_freed"] = orphans.freed_bytes
+        counts["orphaned_upload_bytes_reclaimable"] = orphans.reclaimable_bytes
+    except OSError as exc:
+        counts["staging_cleanup_failures"] += 1
+        emit_structured_event(
+            logging.getLogger(__name__),
+            "upload_staging_orphan_cleanup_failed",
+            level=logging.ERROR,
+            error_type=type(exc).__name__,
+        )
+    try:
+        transients = run_transient_artifact_cleanup(
+            apply=apply, grace_seconds=grace_seconds, limit=25
+        )
+        counts["transient_artifacts_cleaned"] = transients.deleted_count
+        counts["transient_bytes_freed"] = transients.freed_bytes
+        counts["transient_bytes_reclaimable"] = transients.reclaimable_bytes
+    except OSError as exc:
+        counts["staging_cleanup_failures"] += 1
+        emit_structured_event(
+            logging.getLogger(__name__),
+            "transient_artifact_cleanup_failed",
+            level=logging.ERROR,
+            error_type=type(exc).__name__,
+        )
     candidates = (
         VideoFile.objects.filter(
             (

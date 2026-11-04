@@ -21,6 +21,8 @@ from endoreg_db.utils.workload_timing import (
     WorkloadTaskFamily,
 )
 
+pytestmark = pytest.mark.no_db
+
 
 def _result(status: str) -> hls_media.HlsMaterializationResult:
     return hls_media.HlsMaterializationResult(
@@ -104,6 +106,8 @@ def test_materialize_hls_emits_one_bounded_total_outcome(
             WorkloadOutcome.VALIDATION_FAILED,
         ),
         (lambda: RuntimeError("encoder failed"), WorkloadOutcome.FAILED),
+        (lambda: ValueError("invalid provenance"), WorkloadOutcome.VALIDATION_FAILED),
+        (lambda: KeyboardInterrupt("cancelled"), WorkloadOutcome.FAILED),
     ],
 )
 def test_materialize_hls_emits_total_outcome_when_work_raises(
@@ -139,6 +143,9 @@ def test_materialize_hls_emits_total_outcome_when_work_raises(
             WorkloadOutcome.VALIDATION_FAILED,
         ),
         (RuntimeError("preflight failed"), WorkloadOutcome.FAILED),
+        (MediaOperationDeferred("busy"), WorkloadOutcome.DEFERRED),
+        (ValueError("invalid provenance"), WorkloadOutcome.VALIDATION_FAILED),
+        (KeyboardInterrupt("cancelled"), WorkloadOutcome.FAILED),
     ],
 )
 def test_hls_phase_timer_preserves_outcome_and_uses_fixed_dimensions(

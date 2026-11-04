@@ -37,12 +37,17 @@ files:
   role: Exports should_run_startup_reconciliation.
 - file: runtime_wheel_staging.py
   role: Exports reap_runtime_wheel_staging.
+- file: transient_artifact_cleanup.py
+  role: Periodic reclamation of abandoned attempt artifacts in the transcoding root; deletes only owner-terminal
+    entries past the grace period and reports process-scoped or unknown entries; reap_transient_artifact is the
+    verified single-unit deletion shared by the periodic run and the lx-annotate storage monitor.
 dependencies:
   internal:
   - endoreg_db/config
   - endoreg_db/import_files/context
   - endoreg_db/models
   - endoreg_db/schemas
+  - endoreg_db/services/hub
   - endoreg_db/services/media
   - endoreg_db/services/reference_data
   - endoreg_db/services/streaming
@@ -65,6 +70,7 @@ tests:
     tests/services/test_deployment_setup.py
   files:
   - tests/services/test_reconciliation_service.py
+  - tests/services/test_transient_artifact_cleanup.py
   - tests/services/test_disk_pressure_cleanup_contract.py
   - tests/services/test_deployment_setup.py
   - tests/rust_backend/test_state_enum_parity.py

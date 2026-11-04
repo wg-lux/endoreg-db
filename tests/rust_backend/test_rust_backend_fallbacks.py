@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 # pyright: reportPrivateUsage=false
 
 from pathlib import Path
@@ -7,7 +9,6 @@ from typing import NoReturn
 
 import pytest
 
-from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.utils.rust_backend import (
     parse_extracted_frame_numbers,
 )
@@ -18,9 +19,7 @@ def raise_bad_frame_count(*args: object, **kwargs: object) -> NoReturn:
 
 
 def test_render_single_page_pdf_returns_valid_pdf_bytes() -> None:
-    pdf_bytes = ReportImportService._render_single_page_pdf(
-        "txt_sha256:abc123\nFirst line\nSecond line"
-    )
+    pdf_bytes = render_single_page_pdf("txt_sha256:abc123\nFirst line\nSecond line")
 
     assert pdf_bytes.startswith(b"%PDF-1.4\n")
     assert b"First line" in pdf_bytes

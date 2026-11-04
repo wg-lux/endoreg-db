@@ -731,8 +731,21 @@ def video_storage_destructive_migration_enabled() -> bool:
 
 
 def upload_job_source_reaper_apply_enabled() -> bool:
-    """Require explicit operator rollout authorization for source deletion."""
-    return env_bool("UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED", False)
+    """Apply gate of the periodic media cleanup task; ``false`` forces dry runs."""
+    return env_bool("UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED", True)
+
+
+# A staging entry younger than this may still belong to a running attempt; the
+# floor exceeds the six-hour hard worker time limit.
+STAGING_CLEANUP_MINIMUM_GRACE_SECONDS = 6 * 60 * 60
+
+
+def staging_cleanup_grace_seconds() -> int:
+    return env_int(
+        "ENDOREG_STAGING_CLEANUP_GRACE_SECONDS",
+        24 * 60 * 60,
+        minimum=STAGING_CLEANUP_MINIMUM_GRACE_SECONDS,
+    )
 
 
 def get_ffmpeg_env_candidates() -> list[str]:

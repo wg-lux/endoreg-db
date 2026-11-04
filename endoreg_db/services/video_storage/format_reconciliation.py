@@ -12,6 +12,7 @@ from typing import Any, cast
 from collections.abc import Iterable
 from uuid import uuid4
 
+from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
     ensure_disk_capacity,
@@ -370,7 +371,7 @@ def _repair_file(
             destination_dir=input_path.parent,
             required_bytes=report.bytes_before or input_path.stat().st_size,
         )
-    except OSError as exc:
+    except (OSError, InsufficientStorageError) as exc:
         report.status = VideoFormatStatus.REPAIR_FAILED
         report.action = VideoFormatAction.REPAIR_IN_PLACE
         report.error = str(exc)

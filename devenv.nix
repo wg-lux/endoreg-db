@@ -426,7 +426,7 @@ in
         python - <<'PY'
         from pathlib import Path
 
-        from endoreg_db.utils.filesystem.file_operations import safe_rmtree, safe_unlink_file
+        from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
 
         root = Path("data/tests")
         for path in (root / "workers", root / "tmp"):

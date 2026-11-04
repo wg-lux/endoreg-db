@@ -381,15 +381,20 @@ def validate_registered_staging_cleanup(path: Path) -> None:
     if any(entry.role not in DISPOSABLE_ROLES for entry in entries):
         raise ValueError("Staging inventory role does not permit deletion")
     job = entries[0].upload_job
-    if current_job is None and (
+    if current_job is None and upload_job_owns_active_attempt(job):
+        raise ValueError("An active upload job owns the staging file")
+
+
+def upload_job_owns_active_attempt(job: UploadJob) -> bool:
+    """An attempt is running, may still be retried, or holds an unexpired lease."""
+    return (
         job.status in {UploadJob.Status.PROCESSING, UploadJob.Status.RETRYING}
         or job.retryable
         or (
             job.processing_lease_expires_at is not None
             and job.processing_lease_expires_at > timezone.now()
         )
-    ):
-        raise ValueError("An active upload job owns the staging file")
+    )
 
 
 def _registered_entries(path: Path) -> QuerySet[UploadJobFile]:
@@ -414,6 +419,7 @@ __all__ = [
     "mark_inventory_file_removed",
     "record_media_files",
     "record_working_file",
+    "upload_job_owns_active_attempt",
     "register_upload_job_file",
     "register_upload_job_sources",
     "track_upload_job_files",

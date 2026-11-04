@@ -19,6 +19,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoState,
 )
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 class VideoMediaViewTests(TestCase):
@@ -51,12 +52,59 @@ class VideoMediaViewTests(TestCase):
         assert payload["results"][0]["id"] == self.video.pk
         assert payload["results"][0]["original_file_name"] == f"video-{self.video.pk}"
 
+    def test_list_tolerates_malformed_pagination(self) -> None:
+        self.client.force_login(self.user)
+        for value in ("", "undefined", "null", "NaN", "1.5", "-1", " ", "9" * 5000):
+            with self.subTest(value=value[:20]):
+                response = self.client.get(
+                    "/api/media/videos/", {"limit": value, "offset": value}
+                )
+                assert response.status_code == 200, response.content
+                assert response.json()["results"][0]["id"] == self.video.pk
+
+    def test_list_normalizes_limit_and_preserves_pagination_filters(self) -> None:
+        self.client.force_login(self.user)
+        for limit, expected in (("0", "50"), ("500", "100"), ("2", "2")):
+            with self.subTest(limit=limit):
+                response = self.client.get(
+                    "/api/media/videos/",
+                    {"limit": limit, "offset": "1", "search": "video-media"},
+                )
+                assert response.status_code == 200, response.content
+                payload = response.json()
+                assert payload["count"] == 1
+                assert payload["results"] == []
+                assert payload["next"] is None
+                assert f"limit={expected}" in payload["previous"]
+                assert "offset=0" in payload["previous"]
+                assert "search=video-media" in payload["previous"]
+
+    def test_list_does_not_validate_unused_technical_metadata(self) -> None:
+        self.client.force_login(self.user)
+        VideoFile.objects.filter(pk=self.video.pk).update(fps=0, width=0, height=0)
+        response = self.client.get("/api/media/videos/")
+        assert response.status_code == 200, response.content
+        assert response.json()["results"][0]["id"] == self.video.pk
+
+    def test_list_internal_value_error_is_not_a_query_error(self) -> None:
+        self.client.force_login(self.user)
+        with patch(
+            "endoreg_db.views.media.video_media.VideoFileListSerializer",
+            side_effect=ValueError("internal metadata failure"),
+        ):
+            response = self.client.get("/api/media/videos/")
+        assert response.status_code == 500
+        assert response.json() == {"error": "Failed to retrieve video list"}
+
     def test_list_segments_reuse_one_video_and_metadata_without_extra_queries(
         self,
     ) -> None:
         self.client.force_login(self.user)
         VideoFile.objects.filter(pk=self.video.pk).update(
-            fps=25.0, frame_count=100, duration=4.0
+            fps=25.0,
+            frame_count=100,
+            duration=4.0,
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         )
         label = Label.objects.create(name=f"list-segments-{uuid4().hex}")
         original_from_db = VideoFile.from_db
