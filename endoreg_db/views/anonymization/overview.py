@@ -50,7 +50,6 @@ from endoreg_db.serializers.misc.file_overview import (
     CrossCenterProcessedOverviewSerializer,
     FileOverviewSerializer,
     overview_upload_job_summary,
-    overview_upload_job_is_superseded,
     overview_upload_job_retry_summary,
     safe_upload_job_original_filename,
     overview_upload_job_media_type,
@@ -73,6 +72,24 @@ from lx_dtypes.models.contracts.anonymization_overview import (
 
 logger = logging.getLogger(__name__)
 PERMS = DEBUG_PERMISSIONS  # shorten
+
+# Attempts still doing or awaiting work stay visible so operators can act on them.
+_ACTIVE_UPLOAD_JOB_STATUSES = frozenset(
+    {
+        UploadJob.Status.PENDING,
+        UploadJob.Status.PROCESSING,
+        UploadJob.Status.RETRYING,
+        UploadJob.Status.CANCEL_REQUESTED,
+    }
+)
+# Finished attempts are history once another row represents the same source.
+_FINISHED_UPLOAD_JOB_STATUSES = frozenset(
+    {
+        UploadJob.Status.ERROR,
+        UploadJob.Status.LOST,
+        UploadJob.Status.CANCELLED,
+    }
+)
 
 
 # ---------- overview ----------------------------------------------------
@@ -99,6 +116,10 @@ def _overview_content_hash(item: VideoFile | RawPdfFile) -> str:
     if isinstance(item, VideoFile):
         return getattr(item, "raw_video_hash", "") or ""
     return getattr(item, "pdf_hash", "") or ""
+
+
+def _overview_media_type(item: VideoFile | RawPdfFile) -> str:
+    return "video" if isinstance(item, VideoFile) else "pdf"
 
 
 def _attach_overview_upload_jobs(
@@ -142,17 +163,21 @@ def _attach_overview_upload_jobs(
             by_sensitive_meta_id.setdefault(
                 (center_id, media_type, upload_job_like.sensitive_meta_id), []
             ).append(upload_job)
-        if (
-            content_hash
-            and (center_id, media_type, content_hash) not in by_content_hash
-        ):
-            by_content_hash[(center_id, media_type, content_hash)] = upload_job
+        if content_hash:
+            identity = (center_id, media_type, content_hash)
+            attached = by_content_hash.get(identity)
+            # Jobs arrive newest first; an active attempt outranks a newer finished one.
+            if attached is None or (
+                upload_job.status in _ACTIVE_UPLOAD_JOB_STATUSES
+                and attached.status not in _ACTIVE_UPLOAD_JOB_STATUSES
+            ):
+                by_content_hash[identity] = upload_job
 
     for item in items:
         overview_item = cast(_OverviewItem, item)
         sensitive_meta_id = overview_item.sensitive_meta_id
         content_hash = _overview_content_hash(item)
-        media_type = "video" if isinstance(item, VideoFile) else "pdf"
+        media_type = _overview_media_type(item)
         upload_job = by_content_hash.get(
             (overview_item.center_id, media_type, content_hash)
         )
@@ -244,13 +269,8 @@ class AnonymizationOverviewView(APIView):
             UploadJob.objects.select_related("source_center")
             .filter(
                 status__in=(
-                    UploadJob.Status.PENDING,
-                    UploadJob.Status.PROCESSING,
-                    UploadJob.Status.RETRYING,
-                    UploadJob.Status.ERROR,
-                    UploadJob.Status.LOST,
-                    UploadJob.Status.CANCEL_REQUESTED,
-                    UploadJob.Status.CANCELLED,
+                    *_ACTIVE_UPLOAD_JOB_STATUSES,
+                    *_FINISHED_UPLOAD_JOB_STATUSES,
                 )
             )
             .exclude(pk__in=attached_job_ids)
@@ -260,24 +280,37 @@ class AnonymizationOverviewView(APIView):
         if allowed_center_ids is not None:
             retry_jobs = retry_jobs.filter(source_center_id__in=allowed_center_ids)
 
-        by_source = {
-            (item.center_id, _overview_content_hash(item)): item
+        def _job_identity(job: UploadJob) -> tuple[int | None, str, str]:
+            return (
+                cast(_OverviewUploadJobLike, job).source_center_id,
+                overview_upload_job_media_type(job.content_type),
+                import_source_hash(job),
+            )
+
+        # One source gets one row. A finished attempt only needs its own row while
+        # nothing else represents that source; jobs without a digest cannot be matched.
+        jobs = list(retry_jobs)
+        represented = {
+            (item.center_id, _overview_media_type(item), _overview_content_hash(item))
             for item in items
             if _overview_content_hash(item)
         }
+        represented.update(
+            _job_identity(job)
+            for job in jobs
+            if job.status in _ACTIVE_UPLOAD_JOB_STATUSES and import_source_hash(job)
+        )
         used_ids = {int(item.pk) for item in items}
         rows: list[dict[str, object]] = []
-        for upload_job in retry_jobs:
-            existing = by_source.get(
-                (
-                    cast(_OverviewUploadJobLike, upload_job).source_center_id,
-                    upload_job.content_hash,
-                )
-            )
-            if existing is not None and overview_upload_job_is_superseded(
-                upload_job, existing
+        for upload_job in jobs:
+            if (
+                upload_job.status in _FINISHED_UPLOAD_JOB_STATUSES
+                and import_source_hash(upload_job)
             ):
-                continue
+                identity = _job_identity(upload_job)
+                if identity in represented:
+                    continue
+                represented.add(identity)
             synthetic_id = -(upload_job.id.int % 2_000_000_000 + 1)
             while synthetic_id in used_ids:
                 synthetic_id -= 1

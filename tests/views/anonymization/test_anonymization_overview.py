@@ -16,6 +16,9 @@ from rest_framework import status
 from django.core.files.uploadedfile import SimpleUploadedFile  # <--- Import this
 import json
 
+from endoreg_db.schemas.import_processing import ImportProcessingEvent
+from endoreg_db.services.imports.processing import update_import_processing_stack
+
 # Import your models
 from endoreg_db.models import (
     VideoFile,
@@ -830,6 +833,178 @@ def test_overview_never_attaches_foreign_center_upload_with_same_hash() -> None:
     assert str(foreign_job.pk) not in json.dumps(rows)
 
 
+def _overview_rows(center: Center, username: str) -> list[dict[str, Any]]:
+    user = User.objects.create_user(username=username)
+    PortalUserInfo.objects.create(user=user).centers.add(center)
+    request = APIRequestFactory().get("/api/anonymization/items/overview/")
+    force_authenticate(request, user=user)
+    response = AnonymizationOverviewView.as_view(permission_classes=[])(request)
+    assert response.status_code == status.HTTP_200_OK
+    return json.loads(response.content)
+
+
+@pytest.mark.django_db
+def test_overview_matches_older_failure_through_bound_source_hash() -> None:
+    center = Center.objects.create(name="Bound Source Center")
+    source_hash = "a" * 64
+    video = VideoFile.objects.create(center=center, raw_video_hash=source_hash)
+    older = UploadJob.objects.create(
+        source_center=center,
+        content_hash="b" * 64,
+        content_type="video/mp4",
+        file="upload_jobs/source",
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+    )
+    update_import_processing_stack(
+        older.pk, ImportProcessingEvent.BIND_SOURCE, source_sha256=source_hash
+    )
+    newer = UploadJob.objects.create(
+        source_center=center,
+        content_hash=source_hash,
+        content_type="video/mp4",
+    )
+
+    rows = _overview_rows(center, "bound-source-reader")
+
+    assert [row["id"] for row in rows] == [video.pk]
+    assert rows[0]["upload_job"]["id"] == str(newer.pk)
+    assert UploadJob.objects.filter(pk=older.pk).exists()
+
+
+@pytest.mark.django_db
+def test_overview_hides_older_cancelled_attempt_for_existing_media() -> None:
+    center = Center.objects.create(name="Cancelled Attempt Center")
+    source_hash = "c" * 64
+    video = VideoFile.objects.create(center=center, raw_video_hash=source_hash)
+    UploadJob.objects.create(
+        source_center=center,
+        content_hash=source_hash,
+        content_type="video/quicktime",
+        status=UploadJob.Status.CANCELLED,
+    )
+    newer = UploadJob.objects.create(
+        source_center=center, content_hash=source_hash, content_type="video/mp4"
+    )
+
+    rows = _overview_rows(center, "cancelled-attempt-reader")
+
+    assert [row["id"] for row in rows] == [video.pk]
+    assert rows[0]["upload_job"]["id"] == str(newer.pk)
+
+
+@pytest.mark.django_db
+def test_overview_attaches_active_attempt_ahead_of_newer_failure() -> None:
+    center = Center.objects.create(name="Active Attempt Center")
+    source_hash = "d" * 64
+    video = VideoFile.objects.create(center=center, raw_video_hash=source_hash)
+    active = UploadJob.objects.create(
+        source_center=center,
+        content_hash=source_hash,
+        content_type="video/quicktime",
+        status=UploadJob.Status.PROCESSING,
+    )
+    UploadJob.objects.create(
+        source_center=center,
+        content_hash=source_hash,
+        content_type="video/mp4",
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+    )
+
+    rows = _overview_rows(center, "active-attempt-reader")
+
+    assert [row["id"] for row in rows] == [video.pk]
+    assert rows[0]["upload_job"]["id"] == str(active.pk)
+
+
+@pytest.mark.django_db
+def test_overview_keeps_every_active_attempt_visible() -> None:
+    center = Center.objects.create(name="Parallel Attempt Center")
+    source_hash = "e" * 64
+    video = VideoFile.objects.create(center=center, raw_video_hash=source_hash)
+    jobs = [
+        UploadJob.objects.create(
+            source_center=center,
+            content_hash=source_hash,
+            content_type=content_type,
+            status=UploadJob.Status.PROCESSING,
+        )
+        for content_type in ("video/mp4", "video/quicktime")
+    ]
+
+    rows = _overview_rows(center, "parallel-attempt-reader")
+
+    assert {row["upload_job"]["id"] for row in rows} == {str(job.pk) for job in jobs}
+    assert len([row for row in rows if row["id"] == video.pk]) == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("newest_status", ["error", "processing"])
+def test_import_only_attempts_for_one_source_share_one_row(newest_status: str) -> None:
+    center = Center.objects.create(name="Repeated Import Center")
+    source_hash = "f" * 64
+    for _ in range(2):
+        UploadJob.objects.create(
+            source_center=center,
+            content_hash=source_hash,
+            content_type="video/mp4",
+            status=UploadJob.Status.ERROR,
+            error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+        )
+    newest = UploadJob.objects.create(
+        source_center=center,
+        content_hash=source_hash,
+        content_type="video/mp4",
+        status=newest_status,
+        error_code=(
+            UploadJob.ErrorCode.PROCESSING_FAILED if newest_status == "error" else ""
+        ),
+    )
+
+    rows = _overview_rows(center, f"repeated-import-{newest_status}")
+
+    assert [row["upload_job"]["id"] for row in rows] == [str(newest.pk)]
+    assert UploadJob.objects.filter(content_hash=source_hash).count() == 3
+
+
+@pytest.mark.django_db
+def test_failed_imports_without_a_source_hash_are_not_merged() -> None:
+    center = Center.objects.create(name="Unhashed Import Center")
+    jobs = [
+        UploadJob.objects.create(
+            source_center=center,
+            content_type="video/mp4",
+            status=UploadJob.Status.ERROR,
+            error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+        )
+        for _ in range(2)
+    ]
+
+    rows = _overview_rows(center, "unhashed-import-reader")
+
+    assert {row["upload_job"]["id"] for row in rows} == {str(job.pk) for job in jobs}
+
+
+@pytest.mark.django_db
+def test_failed_import_in_other_center_is_not_hidden_by_shared_hash() -> None:
+    own = Center.objects.create(name="Own Hash Center")
+    other = Center.objects.create(name="Other Hash Center")
+    source_hash = "9" * 64
+    VideoFile.objects.create(center=other, raw_video_hash=source_hash)
+    job = UploadJob.objects.create(
+        source_center=own,
+        content_hash=source_hash,
+        content_type="video/mp4",
+        status=UploadJob.Status.ERROR,
+        error_code=UploadJob.ErrorCode.PROCESSING_FAILED,
+    )
+
+    rows = _overview_rows(own, "own-hash-reader")
+
+    assert [row["upload_job"]["id"] for row in rows] == [str(job.pk)]
+
+
 @pytest.mark.django_db
 def test_retry_view_recovers_legacy_terminal_storage_failure() -> None:
     center = Center.objects.create(name="Retry Center")
@@ -1004,7 +1179,8 @@ def test_failed_duplicates_do_not_overlay_completed_media(
     media_row = next(row for row in rows if row["id"] == item.pk)
     superseded = completed and job_status in {"error", "lost"}
     assert (media_row["upload_job"] is None) is superseded
-    assert len(rows) == (1 if superseded else len(jobs))
+    # Repeated attempts for one source are history, not additional media.
+    assert len(rows) == 1
     assert UploadJob.objects.filter(pk__in=[job.pk for job in jobs]).count() == len(
         jobs
     )
