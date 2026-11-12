@@ -19,6 +19,25 @@ from lx_dtypes.packages import load_package
 from lx_dtypes.models.contracts.package_snapshot import build_package_snapshot
 from lx_dtypes.models.knowledge_base.pydantic_main import KB_MODEL_NAMES_ORDERED
 from lx_dtypes.models.knowledge_base.study_preset import StudyPreset
+from lx_dtypes.models.knowledge_base.electrical_curve_profile import (
+    ElectricalCurveProfile,
+)
+from lx_dtypes.models.knowledge_base.time_reference import TimeReference
+from lx_dtypes.models.contracts.time import (
+    ElectrosurgeryTimestamp,
+    PtsTimestamp,
+    TimeOffset,
+)
+from lx_dtypes.models.contracts.time_reference import (
+    TimeOffsetEvidence,
+    TimeOffsetExample,
+    TimeVideoReference,
+)
+from lx_dtypes.models.contracts.video_segment_timeline import (
+    VideoSegmentGenerationCoordinates,
+    VideoSegmentTimelineCoordinates,
+)
+from lx_dtypes.models.ledger.p_time_offset import PTimeOffset
 
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.examination.examination_indication import (
@@ -263,13 +282,84 @@ def test_historical_graph_receipt_requires_explicit_complete_package_migration()
         load_imported_package("clinical_test", "1.0.0")
 
 
+@pytest.mark.parametrize(
+    "redefined_family", ["study_preset", "time_reference", "electrical_curve_profile"]
+)
 def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinition(
-    tmp_path: Path,
+    tmp_path: Path, redefined_family: str
 ) -> None:
+    evidence = TimeOffsetEvidence(
+        offset=TimeOffset(
+            reference=PtsTimestamp(
+                kind="pts",
+                clock_id="video",
+                ticks=180_000,
+                time_base_num=1,
+                time_base_den=90_000,
+            ),
+            target=ElectrosurgeryTimestamp(
+                kind="electrosurgery",
+                clock_id="generator",
+                ticks=2250,
+                time_base_num=1,
+                time_base_den=1000,
+            ),
+        ),
+        video_references={
+            "video": TimeVideoReference(
+                coordinates=VideoSegmentTimelineCoordinates(
+                    generation=VideoSegmentGenerationCoordinates(
+                        content_hash="a" * 64,
+                        time_base_num=1,
+                        time_base_den=90_000,
+                        first_frame_number=0,
+                        last_frame_number=1,
+                        first_presentation_timestamp=180_000,
+                        last_presentation_timestamp=183_600,
+                    ),
+                    recording_mapping_status="unresolved",
+                )
+            )
+        },
+    )
+    create_package(
+        tmp_path / "timing_terms",
+        name="timing_terms",
+        version="1.0.0",
+        records=[
+            TimeReference(
+                name="video_to_generator",
+                reference_kind="pts",
+                target_kind="electrosurgery",
+                examples=[
+                    TimeOffsetExample(
+                        example_id="recorded_event",
+                        role="validation",
+                        evidence=evidence,
+                    )
+                ],
+            ),
+            ElectricalCurveProfile(
+                name="power_response",
+                curve_quantities=["power", "voltage_peak"],
+                response_quantities=["power"],
+                predictor_quantities=["voltage_peak"],
+                phase_bins=8,
+                min_duration_num=1,
+                min_duration_den=20,
+                max_duration_num=30,
+                max_duration_den=1,
+                max_sample_gap_num=1,
+                max_sample_gap_den=100,
+                max_mean_mahalanobis_squared=2.5,
+            ),
+        ],
+    )
     manifest = create_package(
         tmp_path / "preset",
         name="preset",
         version="1.0.0",
+        depends_on=["timing_terms"],
         records=[StudyPreset(name="collection")],
     )
     kb = load_package(manifest)
@@ -278,9 +368,31 @@ def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinitio
     assert restored.study_preset["collection"].model_dump(
         exclude={"source_file"}
     ) == kb.study_preset["collection"].model_dump(exclude={"source_file"})
+    assert restored.time_reference["video_to_generator"].model_dump() == (
+        kb.time_reference["video_to_generator"].model_dump()
+    )
+    assert restored.electrical_curve_profile["power_response"].model_dump() == (
+        kb.electrical_curve_profile["power_response"].model_dump()
+    )
+    observation = PTimeOffset(
+        patient_examination="test_examination",
+        time_reference="video_to_generator",
+        knowledge_base_module="timing_terms",
+        knowledge_base_version="1.0.0",
+        evidence=evidence,
+    )
+    reloaded_observation = PTimeOffset.model_validate_json(
+        observation.model_dump_json()
+    )
+    restored.validate_time_offset(reloaded_observation)
+    assert reloaded_observation.evidence == evidence
     assert import_clinical_package(load_package(manifest)).unchanged
     changed = load_package(manifest)
-    changed.study_preset["collection"].description = "Changed collection"
+    {
+        "study_preset": changed.study_preset["collection"],
+        "time_reference": changed.time_reference["video_to_generator"],
+        "electrical_curve_profile": changed.electrical_curve_profile["power_response"],
+    }[redefined_family].description = "Changed definition"
     assert clinical_snapshot(changed) == clinical_snapshot(kb)
     with pytest.raises(ValueError, match="conflicts"):
         import_clinical_package(changed)

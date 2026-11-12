@@ -29,7 +29,7 @@ files:
 - file: materialize_training_frames.py
   role: Exports materialize_frames_for_annotation_ids.
 - file: training_images.py
-  role: Read validated processed training frames without requiring a raw-video cache.
+  role: Read validated processed training frames through central persisted-row and canonical-coordinate verification without requiring a raw-video cache.
 dependencies:
   internal:
   - endoreg_db/export/frames

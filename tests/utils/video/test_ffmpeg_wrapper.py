@@ -894,6 +894,33 @@ def test_extract_frames_by_presentation_timestamp_rejects_unknown_container_star
     assert captured_commands == []
 
 
+@pytest.mark.parametrize(
+    ("timestamps", "numerator", "denominator"),
+    [([-1], 1, 90_000), ([True, 1], 1, 90_000), ([1], True, 90_000), ([1], 1, 0)],
+)
+def test_sparse_extraction_rejects_invalid_coordinates_before_media_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    timestamps: list[int],
+    numerator: int,
+    denominator: int,
+) -> None:
+    commands = _patch_presentation_timestamp_tools(
+        monkeypatch, tmp_path / "frames", container_start="0"
+    )
+    with pytest.raises(ValueError):
+        ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+            tmp_path / "input.mp4",
+            tmp_path / "frames",
+            timestamps,
+            numerator,
+            denominator,
+            quality=2,
+        )
+    assert commands == []
+    assert not (tmp_path / "frames").exists()
+
+
 def _rgb_frame_digests(executable: str, source: Path) -> list[str]:
     completed = subprocess.run(
         [

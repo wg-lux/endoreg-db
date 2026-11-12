@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import timedelta
-from pathlib import Path
 from typing import cast
 
 from django.db import transaction
@@ -54,6 +53,7 @@ from endoreg_db.services.video_files.temporal_inference import (
     dispatch_deferred_temporal_inference_after_rebuild,
     fail_deferred_temporal_inference_for_rebuild,
 )
+from endoreg_db.utils.frame_stream import FrameSample, read_video_file_frame_sample
 
 logger = logging.getLogger(__name__)
 
@@ -70,27 +70,10 @@ RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
 
 
-def _capture_frame(video_path: Path, frame_number: int):
-    import cv2
-
-    capture = cv2.VideoCapture(video_path.as_posix())
-    try:
-        if not capture.isOpened():
-            raise RuntimeError(
-                f"Could not open rebuilt video for sampling: {video_path}"
-            )
-        if not capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_number)):
-            raise RuntimeError(
-                f"Could not seek rebuilt video to frame {frame_number}: {video_path}"
-            )
-        ok, frame = capture.read()
-        if not ok:
-            raise RuntimeError(
-                f"Could not decode rebuilt video frame {frame_number}: {video_path}"
-            )
-        return frame
-    finally:
-        capture.release()
+def _capture_frame(video: VideoFile, frame_number: int) -> FrameSample:
+    return read_video_file_frame_sample(
+        video, frame_number=frame_number, file_type="processed"
+    )
 
 
 def _verify_processed_video_contract(
@@ -155,8 +138,8 @@ def _verify_processed_video_contract(
                 break
 
         for frame_number in inside_sample_frames[:3]:
-            frame = _capture_frame(processed_path, frame_number)
-            maximum_channel_value = int(frame.max())
+            sample = _capture_frame(video, frame_number)
+            maximum_channel_value = int(sample.rgb_frame.max())
             if maximum_channel_value > tolerance:
                 logger.warning(
                     "Post-validation processed-video outside-frame sample exceeds "
@@ -169,8 +152,8 @@ def _verify_processed_video_contract(
                 )
 
         for frame_number in outside_sample_frames[:3]:
-            frame = _capture_frame(processed_path, frame_number)
-            if int(frame.max()) <= tolerance:
+            sample = _capture_frame(video, frame_number)
+            if int(sample.rgb_frame.max()) <= tolerance:
                 raise RuntimeError(
                     "Post-validation rebuild unexpectedly blackened non-outside frames for "
                     f"video {video.pk}: frame_number={frame_number}"

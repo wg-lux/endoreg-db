@@ -630,7 +630,7 @@ class VideoFile(models.Model):
         n_test_frames: int = 10,
         return_frame_scores: bool = False,
         frame_source_mode: "FrameSourceMode" = "stream",
-        frame_source_file_type: str = "raw",
+        frame_source_file_type: str | None = None,
     ) -> "dict[str, list[tuple[int, int]]] | VideoFrameScoreResult":
         from endoreg_db.services.video_files import predict_video
 

@@ -88,9 +88,17 @@ def validate_canonical_output(
 
 
 def capture_canonical_timeline(
-    path: Path, probe: VideoArtifactProbe, *, require_original_pts: bool = False
+    path: Path,
+    probe: VideoArtifactProbe,
+    *,
+    require_original_pts: bool = False,
+    imported_content_hash: str | None = None,
 ) -> CanonicalFrameTimeline:
-    """Read actual decoded coordinates, never estimates derived from frame rate."""
+    """Decode coordinates, optionally reusing identity verified during import.
+
+    Timestamp-only legacy recovery supplies the imported identity; normal
+    generation publication continues hashing the actual bytes by default.
+    """
     timeline = probe.timeline
     if timeline.time_base_num is None or timeline.time_base_den is None:
         raise VideoStorageNormalizationError(
@@ -103,7 +111,11 @@ def capture_canonical_timeline(
         else probe_video_frame_timestamps(path)
     )
     result = CanonicalFrameTimeline(
-        content_hash=get_file_hash(path),
+        content_hash=(
+            imported_content_hash
+            if imported_content_hash is not None
+            else get_file_hash(path)
+        ),
         time_base_num=timeline.time_base_num,
         time_base_den=timeline.time_base_den,
         presentation_timestamps=[frame.presentation_timestamp for frame in frames],

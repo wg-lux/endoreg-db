@@ -174,6 +174,70 @@ def test_native_index_rejects_invalid_persisted_coordinates(
 @pytest.mark.parametrize(
     ("frame_number", "timestamp", "message"),
     [
+        (0, 1.9, "precedes timeline origin"),
+        (2, 2.4, "exclusive timeline end"),
+        (2, 2.5, "exclusive timeline end"),
+        (3, 2.3, "terminal PTS"),
+        (3, 2.5, "terminal PTS"),
+    ],
+)
+def test_native_and_reference_reject_coordinates_outside_the_generation(
+    frame_number: int, timestamp: float, message: str
+) -> None:
+    mapping = VideoTimelineMapping(
+        fps=25.0,
+        frame_count=3,
+        duration_seconds=0.4,
+        requires_persisted_pts=True,
+        first_timestamp_seconds=2.0,
+    )
+    with pytest.raises(ValueError, match=message):
+        _native(mapping, [(frame_number, timestamp)])
+    with pytest.raises(VideoTimelineMappingError):
+        frame_number_to_seconds(mapping, frame_number, persisted_timestamp=timestamp)
+
+
+@pytest.mark.unit
+def test_native_reference_terminal_and_unknown_duration_parity() -> None:
+    for duration, rows in (
+        (0.4, [(0, 2.0), (2, 2.3), (3, 2.4)]),
+        (None, [(0, 2.0), (2, 10.0)]),
+    ):
+        mapping = VideoTimelineMapping(
+            fps=25.0,
+            frame_count=3,
+            duration_seconds=duration,
+            requires_persisted_pts=True,
+            first_timestamp_seconds=2.0,
+        )
+        native = _native(mapping, rows)
+        for frame_number, timestamp in rows:
+            assert native.frame_number_to_seconds(
+                frame_number
+            ) == frame_number_to_seconds(
+                mapping, frame_number, persisted_timestamp=timestamp
+            )
+
+
+@pytest.mark.unit
+def test_known_duration_bounds_frames_without_a_frame_count() -> None:
+    mapping = VideoTimelineMapping(
+        fps=25.0,
+        frame_count=None,
+        duration_seconds=0.4,
+        requires_persisted_pts=True,
+        first_timestamp_seconds=2.0,
+    )
+    with pytest.raises(ValueError, match="exclusive timeline end"):
+        _native(mapping, [(0, 2.4)])
+    with pytest.raises(VideoTimelineMappingError):
+        frame_number_to_seconds(mapping, 0, persisted_timestamp=2.4)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("frame_number", "timestamp", "message"),
+    [
         (-1, None, "must be non-negative"),
         (11, None, "exceeds frame count"),
         (4, None, "no persisted PTS"),

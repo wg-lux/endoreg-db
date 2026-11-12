@@ -23,6 +23,13 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     VideoStorageProfile,
 )
+from endoreg_db.services.video_files.timeline import (
+    VideoTimelineMapping,
+    VideoTimelineMappingError,
+    frame_number_to_seconds,
+    presentation_timestamp_seconds,
+    validate_persisted_frame_timestamp,
+)
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 if TYPE_CHECKING:
@@ -33,7 +40,9 @@ logger = logging.getLogger(__name__)
 
 def timestamp_seconds(timeline: CanonicalFrameTimeline) -> list[float]:
     return [
-        tick * timeline.time_base_num / timeline.time_base_den
+        presentation_timestamp_seconds(
+            tick, timeline.time_base_num, timeline.time_base_den
+        )
         for tick in timeline.presentation_timestamps
     ]
 
@@ -41,12 +50,21 @@ def timestamp_seconds(timeline: CanonicalFrameTimeline) -> list[float]:
 def frame_boundaries(
     timeline: CanonicalFrameTimeline, probe: VideoArtifactProbe
 ) -> list[float]:
-    timestamps = timestamp_seconds(timeline)
-    terminal = timestamps[0] + probe.timeline.duration_seconds
-    if terminal <= timestamps[-1]:
-        raise VideoStorageNormalizationError(
-            "Processed duration does not cover the last decoded frame"
+    try:
+        timestamps = timestamp_seconds(timeline)
+        mapping = VideoTimelineMapping(
+            fps=None,
+            frame_count=len(timestamps),
+            duration_seconds=probe.timeline.duration_seconds,
+            requires_persisted_pts=True,
+            first_timestamp_seconds=timestamps[0],
         )
+        validate_persisted_frame_timestamp(mapping, len(timestamps) - 1, timestamps[-1])
+        terminal = frame_number_to_seconds(
+            mapping, len(timestamps), persisted_timestamp=None
+        )
+    except VideoTimelineMappingError as exc:
+        raise VideoStorageNormalizationError(str(exc)) from exc
     return [*timestamps, terminal]
 
 
@@ -85,7 +103,9 @@ def validate_processed_coordinates(
         raise VideoStorageNormalizationError(
             "Processed duration changed beyond the storage profile"
         )
-    tick = timestamps.after.time_base_num / timestamps.after.time_base_den
+    tick = presentation_timestamp_seconds(
+        1, timestamps.after.time_base_num, timestamps.after.time_base_den
+    )
     for index in range(len(before) - 1):
         local_interval = max(
             before[index + 1] - before[index], before[index] - before[max(0, index - 1)]

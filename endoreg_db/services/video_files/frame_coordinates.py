@@ -9,6 +9,14 @@ import numpy as np
 import numpy.typing as npt
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from endoreg_db.schemas.video_storage import CanonicalFrameTimeline
+from endoreg_db.services.video_files.timeline import (
+    VideoTimelineMappingError,
+    frame_number_to_seconds,
+    presentation_timestamp_seconds,
+    validate_display_frame_number,
+    validate_presentation_timestamp_seconds,
+)
 from endoreg_db.services.video_files.source_hash import verified_video_source_hash
 from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.utils.hashs import get_file_hash
@@ -20,6 +28,50 @@ if TYPE_CHECKING:
 def artifact_frame_timestamps(
     video: VideoFile, *, file_type: str, source_path: Path | None = None
 ) -> tuple[float, ...]:
+    timeline = artifact_frame_timeline(
+        video, file_type=file_type, source_path=source_path
+    )
+    return tuple(
+        presentation_timestamp_seconds(
+            tick, timeline.time_base_num, timeline.time_base_den
+        )
+        for tick in timeline.presentation_timestamps
+    )
+
+
+def annotation_artifact_kind(video: VideoFile) -> VideoArtifactKind:
+    """Select the artifact whose frame coordinates own the clinical annotations."""
+    from endoreg_db.services.video_files._time import require_video_source_timeline
+
+    source = require_video_source_timeline(video)
+    if source.artifact_kind is not None:
+        return VideoArtifactKind(source.artifact_kind)
+    return (
+        VideoArtifactKind.PROCESSED if video.processed_file else VideoArtifactKind.RAW
+    )
+
+
+def validate_frame_timeline_coordinate(
+    timeline: CanonicalFrameTimeline,
+    frame_number: int,
+    tick: int,
+    seconds: float,
+) -> float:
+    """Bind a persisted frame to its actual ordinal on one canonical artifact."""
+    validate_display_frame_number(frame_number, len(timeline.presentation_timestamps))
+    if tick != timeline.presentation_timestamps[frame_number]:
+        raise VideoTimelineMappingError(
+            "Frame presentation timestamp differs from its canonical ordinal."
+        )
+    return validate_presentation_timestamp_seconds(
+        tick, timeline.time_base_num, timeline.time_base_den, seconds
+    )
+
+
+def artifact_frame_timeline(
+    video: VideoFile, *, file_type: str, source_path: Path | None = None
+) -> CanonicalFrameTimeline:
+    """Return complete exact coordinates bound to the authenticated canonical source."""
     kind = VideoArtifactKind(file_type.strip().lower())
     field = video.raw_file if kind == VideoArtifactKind.RAW else video.processed_file
     digest = verified_video_source_hash(field)
@@ -56,18 +108,14 @@ def artifact_frame_timestamps(
         previous_meta = video.meta
         backfill_missing_video_timestamps(video, payload=payload)
         if video.meta is not previous_meta:
-            return artifact_frame_timestamps(
+            return artifact_frame_timeline(
                 video, file_type=file_type, source_path=source_path
             )
     if not candidates or any(item != candidates[0] for item in candidates):
         raise ValueError(
             "Selected media requires an unambiguous canonical timestamp sequence."
         )
-    timeline = candidates[0]
-    return tuple(
-        tick * timeline.time_base_num / timeline.time_base_den
-        for tick in timeline.presentation_timestamps
-    )
+    return candidates[0]
 
 
 def prediction_frame_boundaries(video: VideoFile, count: int) -> tuple[float, ...]:
@@ -84,10 +132,17 @@ def prediction_frame_boundaries(video: VideoFile, count: int) -> tuple[float, ..
         )
     ):
         raise ValueError("Predictions require complete persisted frame timestamps.")
-    # The shared mapper also checks the selected processed generation.
-    terminal = video.frame_number_to_s(count)
+    from endoreg_db.services.video_files._time import resolve_video_timeline_mapping
+
+    mapping = resolve_video_timeline_mapping(video)
+    if mapping.frame_count != count:
+        raise VideoTimelineMappingError(
+            "Prediction frame count differs from the annotation generation."
+        )
+    terminal = frame_number_to_seconds(mapping, count, persisted_timestamp=None)
     times = tuple(
-        float(timestamp) for _, timestamp in rows if timestamp is not None
+        frame_number_to_seconds(mapping, number, persisted_timestamp=timestamp)
+        for number, timestamp in rows
     ) + (terminal,)
     if (
         not np.isfinite(times).all()

@@ -358,13 +358,21 @@ def extract_frames_by_presentation_timestamp(
     ext: str = "jpg",
 ) -> list[Path]:
     """Extract sparse frames by exact video-stream presentation timestamp."""
-    timestamps = sorted(set(presentation_timestamps))
-    if not timestamps:
+    from endoreg_db.utils.video.timeline import (
+        presentation_timestamp_fraction,
+        validate_stream_time_base,
+    )
+
+    if not presentation_timestamps:
         return []
-    if timestamps[0] < 0:
-        raise ValueError("presentation timestamps must be non-negative")
-    if time_base_num <= 0 or time_base_den <= 0:
-        raise ValueError("stream time base must be positive")
+    validate_stream_time_base(time_base_num, time_base_den)
+    instants = {
+        timestamp: presentation_timestamp_fraction(
+            timestamp, time_base_num, time_base_den
+        )
+        for timestamp in presentation_timestamps
+    }
+    timestamps = sorted(instants)
 
     ffmpeg_executable = _resolve_ffmpeg_executable()
     if not ffmpeg_executable:
@@ -378,8 +386,7 @@ def extract_frames_by_presentation_timestamp(
     for index, presentation_timestamp in enumerate(timestamps):
         seek_seconds = max(
             Fraction(0),
-            Fraction(presentation_timestamp * time_base_num, time_base_den)
-            - container_start_seconds,
+            instants[presentation_timestamp] - container_start_seconds,
         )
         output_path = output_dir / f"frame_{index:07d}.{ext}"
         command = [

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import subprocess
 
 # pyright: reportPrivateUsage=false
 from collections.abc import Generator, Iterator
@@ -17,6 +18,7 @@ from unittest.mock import patch
 import pytest
 from django.db import OperationalError, close_old_connections, connection, transaction
 from django.db.models import QuerySet
+from django.core.files.base import ContentFile
 from django.test.utils import override_settings
 from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonValue
 from lx_dtypes.models.contracts.video_provenance import (
@@ -48,6 +50,11 @@ from endoreg_db.schemas.video_storage import (
 from endoreg_db.services.media import export_policy
 from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.services.video_storage.contracts import evidence_as_json
+from endoreg_db.services.video_storage.canonical_timelines import (
+    capture_canonical_timeline,
+)
+from endoreg_db.services.video_storage.probes import probe_video_artifact
+from endoreg_db.utils.video.executable_discovery import _resolve_ffmpeg_executable
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.hashs import get_file_hash
 
@@ -87,6 +94,7 @@ class _FakeFrameRows:
         assert fields in {
             ("pk", "frame_number"),
             ("pk", "frame_number", "presentation_timestamp"),
+            ("pk", "frame_number", "presentation_timestamp", "timestamp"),
             ("pk", "presentation_timestamp"),
         }
         return self._frames
@@ -298,9 +306,11 @@ def test_segment_export_filters_nullable_provenance(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("approval_hash", ["a" * 64, "b" * 64, ""])
+@pytest.mark.parametrize("later_timestamp", [1.602488, 1.62])
 def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     tmp_path: Path,
     approval_hash: str,
+    later_timestamp: float,
 ) -> None:
     center = Center.objects.create(name="pts-export-center")
     state = VideoState.objects.create(
@@ -344,7 +354,7 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
         video=video,
         frame_number=1,
         relative_path="frame_0000001.jpg",
-        timestamp=1.602488,
+        timestamp=later_timestamp,
         presentation_timestamp=144_224,
     )
     earlier_frame = Frame.objects.create(
@@ -379,6 +389,19 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     output_path = tmp_path / "annotations.json"
     if approval_hash == "b" * 64:
         with pytest.raises(ValueError, match="readiness proof|Videogeneration"):
+            export_module.export_frames_with_labels_to_json(
+                output_path,
+                export_profile="pts_dataset_v1",
+                video_id=video.pk,
+                information_source_name=source.name,
+                only_validated=False,
+                use_export_flags=False,
+                export_frames=False,
+            )
+        assert not output_path.exists()
+        return
+    if later_timestamp == 1.62:
+        with pytest.raises(ValueError, match="[Tt]imestamp"):
             export_module.export_frames_with_labels_to_json(
                 output_path,
                 export_profile="pts_dataset_v1",
@@ -583,7 +606,9 @@ def test_pts_transcode_uses_seekable_encrypted_processed_input(
         frame_pks: set[int] | None,
     ) -> export_module._RequestedFrameCoordinates:
         assert frame_pks == {1}
-        return export_module._RequestedFrameCoordinates({1}, [0], [(0, 1)], False)
+        return export_module._RequestedFrameCoordinates(
+            {1}, [0], [(0, 1)], False, {1: (0, 0, 0.0)}
+        )
 
     monkeypatch.setattr(
         export_module, "_requested_frame_coordinates", exact_coordinates
@@ -741,18 +766,61 @@ def test_legacy_transcode_fps_cannot_reindex_annotation_frames(
     assert (tmp_path / "frames" / "frame_41.jpg").read_bytes() == b"frame-10"
 
 
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("corruption", [None, "swapped_tick", "time_base"])
 def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    corruption: str | None,
 ) -> None:
+    ffmpeg = _resolve_ffmpeg_executable()
+    if ffmpeg is None:
+        pytest.skip("ffmpeg is unavailable")
     source_path = tmp_path / "processed.mp4"
-    source_path.write_bytes(b"processed")
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=30",
+            "-frames:v",
+            "4",
+            "-vf",
+            "settb=1/90000,setpts='if(eq(N,0),45000,if(eq(N,1),60000,if(eq(N,2),90000,144224)))'",
+            "-copyts",
+            "-fps_mode",
+            "passthrough",
+            "-video_track_timescale",
+            "90000",
+            "-enc_time_base",
+            "1:90000",
+            "-c:v",
+            "libx264",
+            "-y",
+            str(source_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    probe = probe_video_artifact(source_path)
+    canonical = capture_canonical_timeline(source_path, probe)
+    assert canonical.presentation_timestamps[0] == 45_000
+    assert canonical.presentation_timestamps[3] == 144_224
+    stored_video = VideoFile()
+    stored_video.processed_file.save(
+        "export-coordinate-source.mp4",
+        ContentFile(source_path.read_bytes()),
+        save=False,
+    )
     first = _FrameDouble(
         pk=51,
         video=cast(VideoFile, None),
         relative_path="frame_0000010.jpg",
         file_path="frame_0000010.jpg",
-        frame_number=10,
+        frame_number=0,
         timestamp=0.5,
         presentation_timestamp=45_000,
     )
@@ -761,34 +829,46 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
         video=cast(VideoFile, None),
         relative_path="frame_0001000.jpg",
         file_path="frame_0001000.jpg",
-        frame_number=1000,
+        frame_number=3,
         timestamp=1.602488,
         presentation_timestamp=144_224,
     )
-    video = _VideoDouble(pk=22, frames=_FakeFrameRows([first, second]))
+    if corruption == "swapped_tick":
+        first.presentation_timestamp, second.presentation_timestamp = (
+            second.presentation_timestamp,
+            first.presentation_timestamp,
+        )
+        first.timestamp, second.timestamp = second.timestamp, first.timestamp
+    video = _VideoDouble(
+        pk=22,
+        frames=_FakeFrameRows([first, second]),
+        processed_video_hash=canonical.content_hash,
+        processed_file=cast(_NamedFile, stored_video.processed_file),
+    )
+    source_probe = probe
+    if corruption == "time_base":
+        source_probe = probe.model_copy(
+            update={
+                "timeline": probe.timeline.model_copy(update={"time_base_den": 1000})
+            }
+        )
     video.meta = {
         "source_timeline": evidence_as_json(
             VideoSourceTimelineEvidence(
                 persisted_at=datetime.now(UTC),
-                source=VideoArtifactProbe(
-                    codec_name="h264",
-                    pixel_format="yuv420p",
-                    width=640,
-                    height=480,
-                    size_bytes=1024,
-                    timeline=VideoTimelineContract(
-                        fps_num=30_000,
-                        fps_den=1_001,
-                        duration_seconds=2.0,
-                        frame_count=2,
-                        variable_frame_rate=True,
-                        time_base_num=1,
-                        time_base_den=90_000,
-                    ),
-                ),
+                source=source_probe,
+                artifact_kind="processed",
+                content_hash=canonical.content_hash,
                 timestamp_mapping="ffprobe_pts",
             )
-        )
+        ),
+        "canonical_timeline_history": [
+            {
+                "artifact_kind": "processed",
+                "before": canonical.model_dump(mode="json"),
+                "after": canonical.model_dump(mode="json"),
+            }
+        ],
     }
     first.video = cast(VideoFile, video)
     second.video = cast(VideoFile, video)
@@ -822,6 +902,20 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     )
     monkeypatch.setattr(export_module, "ffmpeg_extract_frame_range", reject_range)
 
+    if corruption is not None:
+        with pytest.raises(ValueError, match="[Tt]ime base|[Tt]imestamp"):
+            export_module._extract_and_move_transcoded_frames(
+                cast(VideoFile, video),
+                source_path=source_path,
+                frame_dir=tmp_path / "frames",
+                frame_pks={51, 52},
+                fps=50.0,
+                quality=2,
+                ext="jpg",
+                overwrite=True,
+            )
+        assert captured_pts == []
+        return
     export_module._extract_and_move_transcoded_frames(
         cast(VideoFile, video),
         source_path=source_path,
@@ -976,7 +1070,8 @@ def test_export_shares_video_metadata_and_validates_timeline_once(
 
     def load_video(db: str, field_names: list[str], values: list[object]) -> VideoFile:
         result = original_from_db(db, field_names, values)
-        result.meta = CountedMeta(result.meta or {})
+        if "meta" in field_names:
+            result.meta = CountedMeta(result.meta or {})
         return result
 
     with patch.object(VideoFile, "from_db", side_effect=load_video) as loaded:

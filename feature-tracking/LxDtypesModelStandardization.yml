@@ -171,6 +171,10 @@ definition_of_done:
         werden laut und ohne stillen Fallback abgelehnt.
       - Öffentliche API-Felder bleiben snake_case; Kompatibilitätsnormalisierung findet ausschließlich in
         einem benannten Boundary-Adapter statt.
+      - Die veröffentlichte lx-dtypes-Version 0.6.5 wird über den Projekt-Lock installiert; strikte
+        Typprüfung und Laufzeit-Importtests verwenden dieselbe Distribution ohne vorgelagerte
+        lx-data-models-Quellkopie. Bestehende Uhrzeit-Zuordnungen delegieren die Ankerinterpolation
+        an lx_dtypes.evaluation.electrical und bewahren Fehlerbudget, Unsicherheit und Provenienz.
     required: true
     verification:
       kind: manual

@@ -7,6 +7,7 @@ import pytest
 from django.contrib.auth.models import User
 from rest_framework.test import APIRequestFactory, force_authenticate
 from lx_dtypes.models.contracts.finding_review import AnnotationFindingMappings
+from pydantic import ValidationError
 
 from endoreg_db.models import (
     Center,
@@ -24,6 +25,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
 )
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
+from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
 from endoreg_db.services.annotations.comparisons import (
     compare_annotations,
     compare_findings,
@@ -33,6 +35,7 @@ from endoreg_db.services.annotations.segment_annotations import (
     ensure_segment_annotations,
 )
 from endoreg_db.views.media.annotation_comparisons import AnnotationComparisonsView
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 @pytest.mark.parametrize(
@@ -495,3 +498,79 @@ def test_prediction_runs_stay_separate_and_conflicts_are_excluded(
         )
     assert result.predictions[0].overlap == 0
     assert result.predictions[1].overlap == 100
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("timeline_kind", ["missing", "current", "stale"])
+@pytest.mark.parametrize("terminal_timestamp", [None, 2.8])
+def test_terminal_comparison_uses_central_generation_timeline_without_recovery(
+    annotated_video: VideoFile, timeline_kind: str, terminal_timestamp: float | None
+) -> None:
+    ImageClassificationAnnotation.objects.all().delete()
+    for frame in annotated_video.frames.all():
+        assert frame.timestamp is not None
+        frame.timestamp += 2.0
+        frame.save(update_fields=["timestamp"])
+    frame = annotated_video.frames.get(frame_number=2)
+    for author in ("me", "peer"):
+        ImageClassificationAnnotation.objects.create(
+            frame=frame,
+            label=Label.objects.get(name="polyp"),
+            annotator=author,
+            information_source=InformationSource.objects.get(name="manual_annotation"),
+            value=True,
+        )
+    annotated_video.processed_video_hash = "a" * 64
+    if timeline_kind != "missing":
+        metadata = constant_rate_video_metadata(
+            fps_num=25, frame_count=3, duration_seconds=0.7
+        )
+        evidence = VideoSourceTimelineEvidence.model_validate(
+            metadata["source_timeline"]
+        ).model_copy(
+            update={
+                "first_timestamp_seconds": 2.0,
+                "artifact_kind": "processed",
+                "content_hash": ("b" if timeline_kind == "stale" else "a") * 64,
+                "end_timestamp_seconds": terminal_timestamp,
+            }
+        )
+        annotated_video.meta = {"source_timeline": evidence.model_dump(mode="json")}
+    with (
+        patch(
+            "endoreg_db.services.video_files.timestamp_backfill.backfill_missing_video_timestamps",
+            side_effect=AssertionError("Comparison must remain read-only"),
+        ),
+        patch(
+            "endoreg_db.services.annotations.comparisons._mapping", return_value=None
+        ),
+    ):
+        result = video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )
+    comparison = result.annotations[0]
+    if timeline_kind == "current":
+        assert comparison.union is not None and isclose(
+            comparison.union, 0.3 if terminal_timestamp is None else 0.4
+        )
+        assert comparison.overlap == 100
+        assert comparison.missing == 0
+    else:
+        assert comparison.union is None
+        assert comparison.overlap is None
+        assert comparison.missing == 1
+
+
+@pytest.mark.django_db
+def test_malformed_comparison_timeline_is_not_silently_unavailable(
+    annotated_video: VideoFile,
+) -> None:
+    annotated_video.meta = {"source_timeline": "invalid"}
+    with pytest.raises(ValidationError):
+        video_comparisons(
+            annotated_video,
+            principal="me",
+            reports=PatientExaminationReport.objects.none(),
+        )

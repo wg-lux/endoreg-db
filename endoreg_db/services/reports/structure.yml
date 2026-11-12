@@ -33,7 +33,7 @@ files:
 - file: finding_sync.py
   role: Exports parse_report_date, sync_report_findings.
 - file: frame_export.py
-  role: Materialize only a selected processed frame for the duration of PDF rendering.
+  role: Materialize only a centrally verified canonical processed-frame identity for the duration of PDF rendering.
 - file: frame_selection.py
   role: Canonical report frame queries and locked selection persistence.
 - file: history.py
@@ -87,8 +87,9 @@ contracts:
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_report_llm_jobs.py tests/services/test_report_persistence_service.py
-    tests/services/test_finding_extraction.py
+    tests/services/test_finding_extraction.py tests/services/test_frame_file_permissions.py
   files:
   - tests/services/test_report_llm_jobs.py
   - tests/services/test_report_persistence_service.py
   - tests/services/test_finding_extraction.py
+  - tests/services/test_frame_file_permissions.py

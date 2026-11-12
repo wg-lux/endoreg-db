@@ -14,7 +14,7 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
 from lx_dtypes.models.contracts.study_collection import StudyCollectionRecord
 from lx_dtypes.models.contracts.study import StudyDefinition
 from lx_dtypes.models.contracts.cohort_definition import CohortDefinition
-from lx_dtypes.validation import assess_examination
+from lx_dtypes.evaluation import assess_examination
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport

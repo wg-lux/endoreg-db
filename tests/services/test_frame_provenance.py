@@ -194,6 +194,7 @@ def test_persistence_is_idempotent_and_conflicts_fail() -> None:
         row.save()
 
 
+@pytest.mark.no_db
 def test_electrical_alignment_uses_selected_source_frames_and_measured_drift() -> None:
     bundle = synchronized_bundle()
     assert electrical_sample_indices(
@@ -209,9 +210,95 @@ def test_electrical_alignment_uses_selected_source_frames_and_measured_drift() -
     ) == [0, 2, 3]
 
 
+@pytest.mark.no_db
+@pytest.mark.parametrize("budget", [Fraction(5, 4000), Fraction(1, 1000)])
+def test_electrical_alignment_preserves_piecewise_fractional_budget(
+    budget: Fraction,
+) -> None:
+    bundle = synchronized_bundle()
+    assert bundle.synchronization is not None
+    synchronization = bundle.synchronization.model_copy(
+        update={
+            "anchors": [
+                SynchronizationAnchor(video_timestamp=100, electrical_timestamp=1000),
+                SynchronizationAnchor(video_timestamp=140, electrical_timestamp=1081),
+                SynchronizationAnchor(video_timestamp=180, electrical_timestamp=1160),
+            ]
+        }
+    )
+    bundle = bundle.model_copy(update={"synchronization": synchronization})
+    samples = ElectricalTimestampSeries(
+        session_id="1" * 32,
+        clock_id="3" * 32,
+        time_base_num=1,
+        time_base_den=1000,
+        presentation_timestamps=[1000, 1081, 1101, 1160],
+    )
+    # Recording tick 150 maps to 1100.75 device ticks. The nearest sample is
+    # 0.25 ticks away, plus one millisecond of measured synchronization uncertainty.
+    if budget < Fraction(5, 4000):
+        with pytest.raises(ValueError, match="error budget"):
+            electrical_sample_indices(bundle, samples=samples, max_error_seconds=budget)
+    else:
+        assert electrical_sample_indices(
+            bundle, samples=samples, max_error_seconds=budget
+        ) == [0, 2, 3]
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("first_anchor,last_anchor", [(101, 180), (100, 179)])
+def test_electrical_alignment_rejects_recording_anchor_extrapolation(
+    first_anchor: int, last_anchor: int
+) -> None:
+    bundle = synchronized_bundle()
+    assert bundle.synchronization is not None
+    bundle = bundle.model_copy(
+        update={
+            "synchronization": bundle.synchronization.model_copy(
+                update={
+                    "anchors": [
+                        SynchronizationAnchor(
+                            video_timestamp=first_anchor, electrical_timestamp=1000
+                        ),
+                        SynchronizationAnchor(
+                            video_timestamp=last_anchor, electrical_timestamp=1160
+                        ),
+                    ]
+                }
+            )
+        }
+    )
+    with pytest.raises(
+        ValueError, match="outside the measured synchronization interval"
+    ):
+        electrical_sample_indices(
+            bundle,
+            samples=ElectricalTimestampSeries(
+                session_id="1" * 32,
+                clock_id="3" * 32,
+                time_base_num=1,
+                time_base_den=1000,
+                presentation_timestamps=[1000, 1040, 1100, 1160],
+            ),
+            max_error_seconds=Fraction(1, 1),
+        )
+
+
+@pytest.mark.no_db
 @pytest.mark.parametrize(
     "failure",
-    ["session", "clock", "unsynchronized", "budget", "outside", "ties", "reset"],
+    [
+        "session",
+        "clock",
+        "units",
+        "unsynchronized",
+        "budget",
+        "negative_budget",
+        "outside",
+        "ties",
+        "uncertainty",
+        "reset",
+    ],
 )
 def test_electrical_alignment_rejects_unproven_associations(failure: str) -> None:
     bundle = synchronized_bundle()
@@ -222,6 +309,8 @@ def test_electrical_alignment_rejects_unproven_associations(failure: str) -> Non
         samples = [1040, 1100, 1160]
     if failure == "ties":
         samples = [1000, 1090, 1110, 1160]
+    if failure == "uncertainty":
+        samples = [1000, 1099, 1102, 1160]
     if failure == "reset":
         samples = [1000, 1100, 900]
     with pytest.raises(ValueError):
@@ -231,10 +320,13 @@ def test_electrical_alignment_rejects_unproven_associations(failure: str) -> Non
                 session_id=("4" if failure == "session" else "1") * 32,
                 clock_id=("4" if failure == "clock" else "3") * 32,
                 time_base_num=1,
-                time_base_den=1000,
+                time_base_den=100 if failure == "units" else 1000,
                 presentation_timestamps=samples,
             ),
-            max_error_seconds=Fraction(0 if failure == "budget" else 1, 1),
+            max_error_seconds=Fraction(
+                -1 if failure == "negative_budget" else 0 if failure == "budget" else 1,
+                1,
+            ),
         )
 
 

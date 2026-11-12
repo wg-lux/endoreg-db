@@ -48,7 +48,7 @@ files:
 - file: endoreg_rust_backend/src/frames.rs
   role: Extracted frame number parsing and frame record construction.
 - file: endoreg_rust_backend/src/timeline_index.rs
-  role: Read-only TimelineIndex applying the canonical frame/time boundary rules
+  role: Read-only TimelineIndex applying canonical frame/time boundary rules and generation origin/exclusive-end invariants.
 - file: endoreg_rust_backend/src/frame_ancestry.rs
   role: Compose source_frame_indices from the recording to the final generation
 - file: endoreg_rust_backend/src/storage_profile.rs

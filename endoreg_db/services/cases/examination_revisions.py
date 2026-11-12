@@ -266,7 +266,7 @@ def finalize_examination_revision(
             PExamination.model_validate(clinical.model_dump())
         )
         if snapshot.evidence.report_template_name:
-            from lx_dtypes.validation import assess_examination
+            from lx_dtypes.evaluation import assess_examination
 
             assessment = assess_examination(
                 knowledge_base,

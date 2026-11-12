@@ -1256,23 +1256,20 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     )
     decoded: list[int] = []
 
-    def decode(
-        video: VideoFile, *, frame_number: int, file_type: str
-    ) -> EncodedFrameSample:
-        assert video.pk == export_context.video.pk
+    def decode(frame: Frame) -> EncodedFrameSample:
+        assert frame.video.pk == export_context.video.pk
         selected = selected_frames[len(decoded)]
-        assert frame_number == selected.frame_number
-        assert file_type == "processed"
-        decoded.append(frame_number)
+        assert frame.pk == selected.pk
+        decoded.append(frame.frame_number)
         return EncodedFrameSample(
-            frame_number=frame_number,
+            frame_number=frame.frame_number,
             timestamp=selected.timestamp,
             content_type="image/jpeg",
             image_bytes=b"jpeg",
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg", decode
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg", decode
     )
     temporary_paths: list[Path] = []
 
@@ -1539,7 +1536,7 @@ def test_report_export_rejects_stale_or_foreign_frame(
         pytest.fail("Invalid selection must not decode media")
 
     monkeypatch.setattr(
-        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg",
         unexpected_decode,
     )
     selected_video = export_context.video
@@ -1607,7 +1604,7 @@ def test_report_frame_candidates_filter_labels_and_paginate_without_extracting(
         pytest.fail("Browsing frame identities must not decode media")
 
     monkeypatch.setattr(
-        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg",
         unexpected_decode,
     )
     url = f"{API_PREFIX}/frame-candidates"

@@ -30,6 +30,7 @@ from endoreg_db.models.media.video.video_processing import VideoProcessingHistor
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from tests.helpers.video_timeline import constant_rate_video_metadata
 
 jobs = import_module("endoreg_db.services.video_files.temporal_inference")
@@ -414,6 +415,214 @@ def test_resolve_score_timeline_rejects_non_increasing_timestamps(tmp_path: Path
         match="strictly increasing",
     ):
         jobs._resolve_score_timeline(video, score_result)
+
+
+def _processed_annotation_video(tmp_path: Path) -> VideoFile:
+    video = _create_video(tmp_path)
+    Frame.objects.filter(video=video, frame_number=3).delete()
+    for number, timestamp in enumerate((2.0, 2.04, 2.11)):
+        Frame.objects.filter(video=video, frame_number=number).update(
+            timestamp=timestamp
+        )
+    payload = VideoFileMetaPayload.model_validate(
+        constant_rate_video_metadata(fps_num=25, frame_count=3, duration_seconds=0.16)
+    )
+    assert payload.source_timeline is not None
+    payload.source_timeline = payload.source_timeline.model_copy(
+        update={
+            "artifact_kind": "processed",
+            "content_hash": "b" * 64,
+            "first_timestamp_seconds": 2.0,
+        }
+    )
+    video.meta = payload.model_dump(mode="json", exclude_none=True)
+    video.processed_video_hash = "b" * 64
+    video.processed_file.name = "processed.mp4"
+    video.raw_file.name = "raw.mp4"
+    video.frame_count = 3
+    video.save()
+    return video
+
+
+@pytest.mark.django_db
+def test_temporal_prediction_uses_processed_annotation_generation(
+    monkeypatch: MonkeyPatch, tmp_path: Path
+) -> None:
+    video = _processed_annotation_video(tmp_path)
+    model_meta, _label_a, _label_b = _create_model_meta()
+
+    def predict_processed(
+        video_obj: VideoFile, **kwargs: Unpack[_PredictVideoKwargs]
+    ) -> VideoFrameScoreResult:
+        assert kwargs.get("frame_source_file_type") == "processed"
+        return VideoFrameScoreResult(
+            labels=["finding"],
+            frame_scores=_score_array([[0.1], [0.9]]),
+            device="cpu",
+            frame_count=2,
+            frame_numbers=[0, 1],
+            timestamps=[2.0, 2.04],
+            terminal_boundary=(2, 2.11),
+        )
+
+    monkeypatch.setattr(jobs, "predict_video", predict_processed)
+    monkeypatch.setattr(jobs, "_run_lx_ai_core_temporal_inference", _lx_core_empty)
+    prepared = jobs._PreparedTemporalRun(
+        video=video,
+        model_meta=model_meta,
+        temporal_options=jobs.normalize_temporal_options(
+            {"temporal_smoothing_enabled": False}
+        ),
+        requested_frame_source_mode="stream",
+        resolved_frame_source_mode="stream",
+        frames_touched=False,
+    )
+
+    result = jobs._predict_temporal_segments(
+        prepared, history=None, test_run=True, n_test_frames=2
+    )
+
+    assert result.score_result.frame_numbers == [0, 1]
+    assert result.score_result.timestamps == [2.0, 2.04]
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+        status=VideoProcessingHistory.STATUS_RUNNING,
+        config={"kind": jobs.TEMPORAL_INFERENCE_KIND},
+    )
+    jobs._record_temporal_history_success(
+        history,
+        prepared=prepared,
+        prediction=result,
+        before_count=0,
+        current_count=0,
+        deleted_prediction_segments=0,
+    )
+    assert _history_result(history).source_video_kind == "processed"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("timestamps", "terminal_boundary", "message"),
+    [
+        ([0.0, 0.04], (2, 0.08), "presentation timestamps differ"),
+        ([2.0, 2.04], (2, 0.08), "terminal score boundary differs"),
+        ([2.0, 2.04], (3, 2.16), "terminal score boundary differs"),
+    ],
+)
+def test_temporal_prediction_rejects_other_generation_coordinates(
+    tmp_path: Path,
+    timestamps: list[float],
+    terminal_boundary: tuple[int, float],
+    message: str,
+) -> None:
+    video = _processed_annotation_video(tmp_path)
+    score_result = VideoFrameScoreResult(
+        labels=["finding"],
+        frame_scores=_score_array([[0.1], [0.9]]),
+        device="cpu",
+        frame_count=2,
+        frame_numbers=[0, 1],
+        timestamps=timestamps,
+        terminal_boundary=terminal_boundary,
+    )
+
+    with pytest.raises(jobs.TemporalInferenceConfigError, match=message):
+        jobs._resolve_score_timeline(video, score_result)
+
+
+@pytest.mark.django_db
+def test_temporal_prediction_rejects_replaced_processed_generation(
+    tmp_path: Path,
+) -> None:
+    video = _processed_annotation_video(tmp_path)
+    video.processed_video_hash = "c" * 64
+    score_result = VideoFrameScoreResult(
+        labels=["finding"],
+        frame_scores=_score_array([[0.1]]),
+        device="cpu",
+        frame_count=1,
+        frame_numbers=[0],
+        timestamps=[2.0],
+    )
+
+    with pytest.raises(ValueError, match="another generation"):
+        jobs._resolve_score_timeline(video, score_result)
+
+
+@pytest.mark.django_db
+def test_temporal_score_sampling_preserves_canonical_frame_numbers(
+    tmp_path: Path,
+) -> None:
+    video = _processed_annotation_video(tmp_path)
+    score_result = VideoFrameScoreResult(
+        labels=["finding"],
+        frame_scores=_score_array([[0.1], [0.9]]),
+        device="cpu",
+        frame_count=2,
+        frame_numbers=[0, 2],
+        timestamps=[2.0, 2.11],
+        terminal_boundary=(3, 2.16),
+    )
+
+    timeline = jobs._resolve_score_timeline(video, score_result)
+
+    assert timeline.frame_numbers == (0, 2)
+    assert timeline.timestamps == (2.0, 2.11)
+    assert timeline.terminal_frame_number == 3
+    assert timeline.terminal_timestamp == 2.16
+
+
+@pytest.mark.django_db
+def test_temporal_publication_rejects_generation_replaced_after_scoring(
+    tmp_path: Path,
+) -> None:
+    video = _processed_annotation_video(tmp_path)
+    model_meta, label, _label_b = _create_model_meta()
+    prediction_meta = VideoPredictionMeta.objects.create(
+        video_file=video, model_meta=model_meta
+    )
+    original_segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        label=label,
+        prediction_meta=prediction_meta,
+        start_frame_number=0,
+        end_frame_number=1,
+    )
+    prepared = jobs._PreparedTemporalRun(
+        video=video,
+        model_meta=model_meta,
+        temporal_options=jobs.normalize_temporal_options({}),
+        requested_frame_source_mode="stream",
+        resolved_frame_source_mode="stream",
+        frames_touched=False,
+    )
+    prediction = jobs._TemporalPrediction(
+        score_result=VideoFrameScoreResult(
+            labels=[label.name],
+            frame_scores=_score_array([[0.1]]),
+            device="cpu",
+            frame_count=1,
+        ),
+        inference_result=jobs._coerce_lx_temporal_inference_result(_lx_core_empty()),
+        sequences={},
+    )
+    replacement = VideoFileMetaPayload.model_validate(video.meta)
+    assert replacement.source_timeline is not None
+    replacement.source_timeline = replacement.source_timeline.model_copy(
+        update={"content_hash": "c" * 64}
+    )
+    VideoFile.objects.filter(pk=video.pk).update(
+        processed_video_hash="c" * 64,
+        meta=replacement.model_dump(mode="json", exclude_none=True),
+    )
+
+    with pytest.raises(jobs.TemporalInferenceConfigError, match="generation changed"):
+        jobs._persist_temporal_prediction(
+            prepared, prediction, history=None, replace_prediction_segments=True
+        )
+
+    assert LabelVideoSegment.objects.filter(pk=original_segment.pk).exists()
 
 
 def test_coerce_lx_temporal_inference_result_rejects_missing_segments():

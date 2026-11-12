@@ -34,6 +34,7 @@ from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
+from .types import VideoArtifactKind
 
 GLOBAL_TEST_RUN: bool = _GLOBAL_TEST_RUN
 
@@ -400,16 +401,15 @@ def _normalize_video_metadata_ocr_value(field_name: str, value: str) -> str | No
 
 
 def _extract_video_metadata_from_frame(
-    frame_path: Path,
+    rgb_frame: NDArray[np.uint8],
     configured_rois: _VideoMetadataOcrRois,
     frame_ocr: _LxFrameOcr,
 ) -> _VideoMetadataOcrResult:
-    raw_frame = cast(object, cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE))
-    if raw_frame is None:
-        raise ValueError(f"Video metadata OCR frame is unreadable: {frame_path}")
-    if not isinstance(raw_frame, np.ndarray):
-        raise TypeError(f"Video metadata OCR frame has an invalid type: {frame_path}")
-    frame = cast(NDArray[np.uint8], raw_frame)
+    if rgb_frame.dtype != np.uint8 or rgb_frame.ndim != 3 or rgb_frame.shape[2] != 3:
+        raise ValueError(
+            "Video metadata recognition requires an unsigned-byte RGB frame."
+        )
+    frame = np.asarray(cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2GRAY), dtype=np.uint8)
 
     result: _VideoMetadataOcrResult = {}
     for field_name, roi in configured_rois.items():
@@ -425,13 +425,16 @@ def _extract_video_metadata_from_frame(
 def _extract_text_from_video_frames(
     video: VideoFile, frame_fraction: float = 0.001, cap: int = 15
 ) -> Optional[dict[str, str | None]]:
-    """Extracts text from a sample of video frames using OCR based on processor ROIs."""
+    """Recognize metadata in canonical raw frames selected by ordinal stride."""
     from lx_anonymizer.ocr.ocr_frame import FrameOCR
+    from endoreg_db.services.video_files.frame_coordinates import (
+        artifact_frame_timestamps,
+    )
+    from endoreg_db.utils.frame_stream import read_video_file_frame_sample
 
-    state: Any = video.get_or_create_state()
-    if not state.frames_extracted:
+    if not np.isfinite(frame_fraction) or frame_fraction <= 0 or cap <= 0:
         raise ValueError(
-            f"Frames not extracted for video {video.raw_video_hash}. Cannot extract text."
+            "Frame fraction must be finite and positive and cap must be positive."
         )
 
     processor: Optional[EndoscopyProcessor] = video.processor
@@ -440,23 +443,11 @@ def _extract_text_from_video_frames(
             f"Processor not set for video {video.raw_video_hash}. Cannot extract text."
         )
 
-    try:
-        frame_paths = video.get_frame_paths()
-    except Exception as e:
-        logger.exception(
-            "Error getting frame paths for video %s: %s",
-            video.raw_video_hash,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError(
-            f"Could not get frame paths for video {video.raw_video_hash}"
-        ) from e
-
-    n_frames = len(frame_paths)
+    timestamps = artifact_frame_timestamps(video, file_type="raw")
+    n_frames = len(timestamps)
     if n_frames == 0:
         logger.warning(
-            "No frame paths found for video %s during text extraction.",
+            "No canonical frames found for video %s during text extraction.",
             video.raw_video_hash,
         )
         return None
@@ -472,7 +463,7 @@ def _extract_text_from_video_frames(
     )
 
     step = max(1, n_frames // n_frames_to_process)
-    selected_frame_paths = frame_paths[::step][:n_frames_to_process]
+    selected_frame_numbers = range(0, n_frames, step)[:n_frames_to_process]
 
     configured_rois = _video_metadata_ocr_rois(processor)
     if not configured_rois:
@@ -485,10 +476,15 @@ def _extract_text_from_video_frames(
     ocr = cast(_LxFrameOcr, FrameOCR())
     rois_texts: dict[str, list[str]] = {roi_name: [] for roi_name in configured_rois}
     errors_encountered = False
-    for frame_path in selected_frame_paths:
+    for frame_number in selected_frame_numbers:
+        sample = read_video_file_frame_sample(video, frame_number=frame_number)
+        if sample.timestamp != timestamps[frame_number]:
+            raise ValueError(
+                "Recognition frame differs from the selected canonical timeline."
+            )
         try:
             extracted_texts = _extract_video_metadata_from_frame(
-                Path(frame_path),
+                sample.rgb_frame,
                 configured_rois,
                 ocr,
             )
@@ -498,7 +494,7 @@ def _extract_text_from_video_frames(
         except Exception as e:
             logger.exception(
                 "Error extracting text from frame %s for video %s: %s",
-                frame_path,
+                frame_number,
                 video.raw_video_hash,
                 e,
                 exc_info=True,
@@ -534,7 +530,9 @@ def _extract_text_from_video_frames(
         return None
 
     logger.info(
-        "Extracted text for video %s: %s", video.raw_video_hash, most_frequent_texts
+        "Recognized %s metadata regions for video %s",
+        len(most_frequent_texts),
+        video.raw_video_hash,
     )
     return most_frequent_texts
 
@@ -632,7 +630,7 @@ class _AiPipelineComponents:
 @dataclass(frozen=True)
 class _PredictionSource:
     mode: FrameSourceMode
-    file_type: str
+    file_type: VideoArtifactKind
     frame_dir: Path | None
 
 
@@ -702,14 +700,20 @@ def _prediction_source(
     *,
     video: VideoFile,
     frame_source_mode: FrameSourceMode,
-    frame_source_file_type: str,
+    frame_source_file_type: str | None,
 ) -> _PredictionSource:
+    from .frame_coordinates import annotation_artifact_kind
+
     state: Any = video.get_or_create_state()
     mode = _resolve_frame_source_mode(
         frame_source_mode,
         frames_extracted=bool(state.frames_extracted),
     )
-    file_type = _normalized_frame_source_file_type(frame_source_file_type)
+    file_type = (
+        annotation_artifact_kind(video)
+        if frame_source_file_type is None
+        else _normalized_frame_source_file_type(frame_source_file_type)
+    )
     if mode != "cache":
         return _PredictionSource(mode=mode, file_type=file_type, frame_dir=None)
     return _PredictionSource(
@@ -721,11 +725,10 @@ def _prediction_source(
     )
 
 
-def _normalized_frame_source_file_type(frame_source_file_type: str) -> str:
-    file_type = str(frame_source_file_type).strip().lower()
-    if file_type in {"raw", "processed"}:
-        return file_type
-    raise ValueError("frame_source_file_type must be one of: 'raw' or 'processed'.")
+def _normalized_frame_source_file_type(
+    frame_source_file_type: str,
+) -> VideoArtifactKind:
+    return VideoArtifactKind(frame_source_file_type.strip().lower())
 
 
 def _cache_frame_dir(*, video: VideoFile, frames_extracted: bool) -> Path:
@@ -1466,7 +1469,7 @@ def _predict_video_pipeline(
     n_test_frames: int = 10,
     return_frame_scores: bool = False,
     frame_source_mode: FrameSourceMode = "stream",
-    frame_source_file_type: str = "raw",
+    frame_source_file_type: str | None = None,
 ) -> dict[str, list[tuple[int, int]]] | VideoFrameScoreResult:
     """Execute frame-indexed video inference and optional sequence derivation."""
     components = _load_ai_pipeline_components()

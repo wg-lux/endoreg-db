@@ -69,6 +69,11 @@ from endoreg_db.services.runtime.lifecycle_state_machine import (
     reduce_operation_lifecycle,
 )
 from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.timeline import (
+    presentation_timestamp_seconds,
+    validate_presentation_timestamp_seconds,
+)
+from endoreg_db.services.video_storage.frame_provenance import resolve_video_provenance
 from endoreg_db.utils.file_operations import (
     safe_delete_field_file,
 )
@@ -1660,6 +1665,12 @@ def _apply_frame_annotation_rows(
     if not rows:
         return
 
+    provenance = resolve_video_provenance(video)
+    timeline = (
+        provenance.processed_timeline
+        if isinstance(provenance, VideoProvenanceRecovery)
+        else provenance.transformations[-1].output
+    )
     for row in rows:
         row_video_hash = str(row.get("raw_video_hash") or "").strip()
         if row_video_hash and row_video_hash != video.raw_video_hash:
@@ -1678,22 +1689,55 @@ def _apply_frame_annotation_rows(
             row.get("frame_timestamp"),
             field_name="resource_rows.frame_annotations.frame_timestamp",
         )
+        if not 0 <= frame_number < len(timeline.presentation_timestamps):
+            raise ValueError(
+                "Transferred annotation frame exceeds the processed presentation timeline"
+            )
+        presentation_timestamp = timeline.presentation_timestamps[frame_number]
+        canonical_timestamp = presentation_timestamp_seconds(
+            presentation_timestamp, timeline.time_base_num, timeline.time_base_den
+        )
+        if frame_timestamp is not None:
+            validate_presentation_timestamp_seconds(
+                presentation_timestamp,
+                timeline.time_base_num,
+                timeline.time_base_den,
+                frame_timestamp,
+            )
 
         frame, _ = Frame.objects.get_or_create(
             video=video,
             frame_number=frame_number,
             defaults={
                 "relative_path": relative_path,
-                "timestamp": frame_timestamp,
+                "timestamp": canonical_timestamp,
+                "presentation_timestamp": presentation_timestamp,
             },
         )
+        if frame.timestamp is not None:
+            validate_presentation_timestamp_seconds(
+                presentation_timestamp,
+                timeline.time_base_num,
+                timeline.time_base_den,
+                frame.timestamp,
+            )
+        if (
+            frame.presentation_timestamp is not None
+            and frame.presentation_timestamp != presentation_timestamp
+        ):
+            raise ValueError(
+                "Existing annotation frame coordinates disagree with the processed presentation timeline"
+            )
         frame_update_fields: list[str] = []
         if frame.relative_path != relative_path:
             frame.relative_path = relative_path
             frame_update_fields.append("relative_path")
-        if frame.timestamp != frame_timestamp:
-            frame.timestamp = frame_timestamp
+        if frame.timestamp is None:
+            frame.timestamp = canonical_timestamp
             frame_update_fields.append("timestamp")
+        if frame.presentation_timestamp is None:
+            frame.presentation_timestamp = presentation_timestamp
+            frame_update_fields.append("presentation_timestamp")
         if frame_update_fields:
             frame.save(update_fields=frame_update_fields)
 

@@ -38,7 +38,7 @@ files:
 - file: video_fps_normalization_jobs.py
   role: Exports normalization_status, dispatch_video_fps_normalization.
 - file: video_post_validation_jobs.py
-  role: Exports dispatch_video_post_validation_rebuild.
+  role: Post-validation rebuild admission and lossless processed-frame checks through the shared generation-bound decoder.
 - file: video_reimport_budget.py
   role: Bounded admission budgets for exhaustive video re-import.
 - file: video_reimport_jobs.py

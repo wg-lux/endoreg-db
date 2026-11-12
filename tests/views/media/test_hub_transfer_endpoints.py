@@ -212,6 +212,25 @@ class HubTransferEndpointTests(TestCase):
         return hashlib.sha256(content).hexdigest()
 
     @staticmethod
+    def _frame_annotation_row(
+        raw_video_hash: str,
+        *,
+        frame_timestamp: float | None = 0.2,
+        frame_number: int = 5,
+    ) -> dict[str, object]:
+        return {
+            "annotation_id": 42,
+            "raw_video_hash": raw_video_hash,
+            "frame_number": frame_number,
+            "frame_relative_path": "frames/frame_000005.jpg",
+            "frame_timestamp": frame_timestamp,
+            "label_name": "lesion_visible",
+            "value": True,
+            "float_value": 0.91,
+            "information_source_name": "manual_annotation",
+        }
+
+    @staticmethod
     def _processed_timeline(payload: dict[str, Any]) -> dict[str, object]:
         video_file = payload["resource_rows"]["video_file"]
         return {
@@ -872,17 +891,7 @@ class HubTransferEndpointTests(TestCase):
             raw_video_hash=_ANNOTATIONS_HASH,
         )
         payload["resource_rows"]["frame_annotations"] = [
-            {
-                "annotation_id": 42,
-                "raw_video_hash": _ANNOTATIONS_HASH,
-                "frame_number": 5,
-                "frame_relative_path": "frames/frame_000005.jpg",
-                "frame_timestamp": 0.2,
-                "label_name": "lesion_visible",
-                "value": True,
-                "float_value": 0.91,
-                "information_source_name": "manual_annotation",
-            }
+            self._frame_annotation_row(_ANNOTATIONS_HASH)
         ]
         self._attach_verified_provenance(payload)
         payload["resource_rows"]["video_segments"] = [
@@ -929,6 +938,7 @@ class HubTransferEndpointTests(TestCase):
         frame = Frame.objects.get(video=video, frame_number=5)
         assert frame.relative_path == "frames/frame_000005.jpg"
         assert frame.timestamp == 0.2
+        assert frame.presentation_timestamp == 200
 
         annotation = ImageClassificationAnnotation.objects.select_related(
             "label",
@@ -1016,6 +1026,118 @@ class HubTransferEndpointTests(TestCase):
         assert report.title == ""
         assert report.editor_payload == {}
         assert report.rendered_text == ""
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_frame_annotations_use_received_variable_rate_timestamps(self):
+        for verified in (False, True):
+            for supplied_timestamp in (None, 2.21):
+                with self.subTest(verified=verified, timestamp=supplied_timestamp):
+                    key = f"frame-pts-{verified}-{supplied_timestamp}"
+                    raw_hash = self._sha256(key.encode())
+                    payload = self._video_transfer_payload(
+                        transfer_key=key, raw_video_hash=raw_hash
+                    )
+                    if verified:
+                        self._attach_verified_provenance(payload)
+                        timeline = payload["provenance"]["video_frame_provenance"][
+                            "transformations"
+                        ][-1]["output"]
+                    else:
+                        self._attach_unresolved_provenance(payload)
+                        timeline = payload["provenance"]["video_provenance_recovery"][
+                            "processed_timeline"
+                        ]
+                    timeline["presentation_timestamps"] = [
+                        2000 + index * 40 + (index % 3) * 5 for index in range(300)
+                    ]
+                    payload["resource_rows"]["frame_annotations"] = [
+                        self._frame_annotation_row(
+                            raw_hash, frame_timestamp=supplied_timestamp
+                        )
+                    ]
+                    response = self._secure_post(
+                        "/api/media/hub/transfers/",
+                        data=payload,
+                        content_type="application/json",
+                        headers=self._auth_headers(),
+                    )
+                    assert response.status_code == 201, response.content
+                    frame = Frame.objects.get(video__raw_video_hash=raw_hash)
+                    assert frame.timestamp == 2.21
+                    assert frame.presentation_timestamp == 2210
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_frame_annotations_reject_unproven_coordinates_atomically(self):
+        for frame_number, timestamp, with_provenance in (
+            (5, 0.201, True),
+            (300, None, True),
+            (5, 0.2, False),
+        ):
+            with self.subTest(frame=frame_number, timestamp=timestamp):
+                key = f"frame-invalid-{frame_number}-{timestamp}-{with_provenance}"
+                raw_hash = self._sha256(key.encode())
+                payload = self._video_transfer_payload(
+                    transfer_key=key, raw_video_hash=raw_hash
+                )
+                if with_provenance:
+                    self._attach_unresolved_provenance(payload)
+                payload["resource_rows"]["frame_annotations"] = [
+                    self._frame_annotation_row(
+                        raw_hash, frame_timestamp=timestamp, frame_number=frame_number
+                    )
+                ]
+                response = self._secure_post(
+                    "/api/media/hub/transfers/",
+                    data=payload,
+                    content_type="application/json",
+                    headers=self._auth_headers(),
+                )
+                assert response.status_code == 400, response.content
+                assert not VideoFile.objects.filter(raw_video_hash=raw_hash).exists()
+                assert not TransferJob.objects.filter(transfer_key=key).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_frame_annotations_preserve_conflicting_existing_coordinates(self):
+        for timestamp, tick in ((0.21, 200), (0.2, 201)):
+            with self.subTest(timestamp=timestamp, tick=tick):
+                key = f"frame-conflict-{timestamp}-{tick}"
+                raw_hash = self._sha256(key.encode())
+                payload = self._video_transfer_payload(
+                    transfer_key=key, raw_video_hash=raw_hash
+                )
+                self._attach_unresolved_provenance(payload)
+                video = VideoFile.objects.create(
+                    center=self.center,
+                    raw_video_hash=raw_hash,
+                    processed_video_hash=payload["resource_rows"]["video_file"][
+                        "processed_video_hash"
+                    ],
+                )
+                frame = Frame.objects.create(
+                    video=video,
+                    frame_number=5,
+                    relative_path="frame_0000005.jpg",
+                    timestamp=timestamp,
+                    presentation_timestamp=tick,
+                )
+                payload["resource_rows"]["frame_annotations"] = [
+                    self._frame_annotation_row(raw_hash)
+                ]
+                response = self._secure_post(
+                    "/api/media/hub/transfers/",
+                    data=payload,
+                    content_type="application/json",
+                    headers=self._auth_headers(),
+                )
+                assert response.status_code == 400, response.content
+                frame.refresh_from_db()
+                assert (frame.timestamp, frame.presentation_timestamp) == (
+                    timestamp,
+                    tick,
+                )
+                assert not ImageClassificationAnnotation.objects.filter(
+                    frame=frame
+                ).exists()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_video_transfer_rejects_segment_beyond_transferred_frame_count(self):

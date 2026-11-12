@@ -55,6 +55,15 @@ from endoreg_db.services.video_files.segment_coordinates import (
     SegmentCoordinateError,
     bundle_frame_ancestry,
 )
+from endoreg_db.services.video_files._time import video_source_timeline
+from endoreg_db.services.video_files.frame_coordinates import (
+    artifact_frame_timeline,
+    validate_frame_timeline_coordinate,
+)
+from endoreg_db.services.video_files.timeline import (
+    validate_presentation_timestamp_seconds,
+    validate_stream_time_base,
+)
 from endoreg_db.services.video_storage.frame_provenance import (
     VideoProvenanceBundle,
     presentation_timestamp_identity,
@@ -267,6 +276,7 @@ class _RequestedFrameCoordinates:
     requested_frame_numbers: list[int]
     frames_by_presentation_timestamp: list[tuple[int, int]] | None
     extract_all_frames: bool
+    persisted_coordinates: dict[int, tuple[int, int | None, float | None]]
 
 
 DEFAULT_TRANSCODE_FPS = 50.0
@@ -1261,9 +1271,13 @@ def _requested_frame_coordinates(
     frame_pks: set[int] | None,
 ) -> _RequestedFrameCoordinates:
     persisted_coordinates = {
-        int(frame.pk): (int(frame.frame_number), frame.presentation_timestamp)
+        int(frame.pk): (
+            int(frame.frame_number),
+            frame.presentation_timestamp,
+            frame.timestamp,
+        )
         for frame in cast(_VideoFramesExportModel, video).frames.only(
-            "pk", "frame_number", "presentation_timestamp"
+            "pk", "frame_number", "presentation_timestamp", "timestamp"
         )
     }
     all_frame_pks = set(persisted_coordinates)
@@ -1289,6 +1303,7 @@ def _requested_frame_coordinates(
         requested_frame_numbers=requested_frame_numbers,
         frames_by_presentation_timestamp=frames_by_presentation_timestamp,
         extract_all_frames=frame_pks is None,
+        persisted_coordinates=persisted_coordinates,
     )
 
 
@@ -1297,7 +1312,7 @@ def _ordered_presentation_timestamps(
     *,
     frame_pks: set[int] | None,
     requested_frame_pks: set[int],
-    persisted_coordinates: dict[int, tuple[int, int | None]],
+    persisted_coordinates: dict[int, tuple[int, int | None, float | None]],
 ) -> list[tuple[int, int]] | None:
     if frame_pks is None:
         return None
@@ -1336,6 +1351,7 @@ def _extract_requested_frames(
             frames_by_presentation_timestamp=(
                 coordinates.frames_by_presentation_timestamp
             ),
+            persisted_coordinates=coordinates.persisted_coordinates,
             quality=quality,
             ext=ext,
             overwrite=overwrite,
@@ -1370,11 +1386,29 @@ def _extract_sparse_presentation_timestamp_frames(
     tmp_dir: Path,
     frame_dir: Path,
     frames_by_presentation_timestamp: list[tuple[int, int]],
+    persisted_coordinates: dict[int, tuple[int, int | None, float | None]],
     quality: int,
     ext: str,
     overwrite: bool,
 ) -> set[int]:
     time_base_num, time_base_den = _required_video_time_base(video)
+    timeline = artifact_frame_timeline(
+        video,
+        file_type="processed",
+        source_path=source_path if isinstance(source_path, Path) else None,
+    )
+    if (time_base_num, time_base_den) != (
+        timeline.time_base_num,
+        timeline.time_base_den,
+    ):
+        raise ValueError("Annotation time base differs from the processed generation.")
+    for tick, frame_pk in frames_by_presentation_timestamp:
+        frame_number, _, seconds = persisted_coordinates[frame_pk]
+        if seconds is None:
+            raise ValueError(
+                f"Frame {frame_pk} has no persisted presentation timestamp"
+            )
+        validate_frame_timeline_coordinate(timeline, frame_number, tick, seconds)
     extracted_paths = ffmpeg_extract_frames_by_pts(
         source_path,
         tmp_dir,
@@ -1466,6 +1500,7 @@ def _required_video_time_base(video: VideoFile) -> tuple[int, int]:
     denominator = evidence.source.timeline.time_base_den
     if numerator is None or denominator is None:
         raise ValueError(f"Video {video.pk} has no stream time base")
+    validate_stream_time_base(numerator, denominator)
     return numerator, denominator
 
 
@@ -1723,15 +1758,22 @@ def _annotation_to_row(
         timeline.source.timeline.time_base_den if timeline is not None else None
     )
     artifact_sha256 = video.processed_video_hash or None
-    if export_profile == "pts_dataset_v1" and (
-        presentation_timestamp is None
-        or presentation_time_seconds is None
-        or time_base_num is None
-        or time_base_den is None
-        or artifact_sha256 is None
-    ):
-        raise ValueError(
-            f"Frame {frame.pk} has no complete pts_v1 timeline and processed-artifact identity"
+    if export_profile == "pts_dataset_v1":
+        if (
+            presentation_timestamp is None
+            or presentation_time_seconds is None
+            or time_base_num is None
+            or time_base_den is None
+            or artifact_sha256 is None
+        ):
+            raise ValueError(
+                f"Frame {frame.pk} has no complete pts_v1 timeline and processed-artifact identity"
+            )
+        validate_presentation_timestamp_seconds(
+            presentation_timestamp,
+            time_base_num,
+            time_base_den,
+            presentation_time_seconds,
         )
 
     return {
@@ -1768,18 +1810,7 @@ def _annotation_to_row(
 def _video_timeline_evidence(
     video: _VideoHashExportModel,
 ) -> VideoSourceTimelineEvidence | None:
-    meta = video.meta
-    if not isinstance(meta, dict):
-        return None
-    payload = meta.get("source_timeline")
-    if payload is None:
-        return None
-    try:
-        return VideoSourceTimelineEvidence.model_validate(payload)
-    except ValueError as exc:
-        raise ValueError(
-            f"Video {video.pk} has invalid source timeline evidence"
-        ) from exc
+    return video_source_timeline(cast(VideoFile, video))
 
 
 def _build_annotation_rows(
@@ -1908,6 +1939,12 @@ def _manifest_segments(
             segment_id=segment.pk,
             video_id=video_id,
             frame_number=segment.end_frame_number - 1,
+        )
+        validate_presentation_timestamp_seconds(
+            start_pts, time_base_num, time_base_den, start_seconds
+        )
+        validate_presentation_timestamp_seconds(
+            end_pts, time_base_num, time_base_den, end_seconds
         )
         entries.append(
             FrameAnnotationExportSegment(

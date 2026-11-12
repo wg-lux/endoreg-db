@@ -26,7 +26,14 @@ from endoreg_db.schemas.annotation_comparisons import (
     FindingComparison,
     VideoComparison,
 )
-from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from endoreg_db.services.video_files._time import (
+    timeline_mapping_from_source,
+    video_source_timeline,
+)
+from endoreg_db.services.video_files.timeline import (
+    VideoTimelineMappingError,
+    frame_durations,
+)
 from endoreg_db.services.annotations.segment_identity import (
     PREDICTION_INFORMATION_SOURCE_NAMES,
     is_segment_derived_external_annotation_id,
@@ -103,26 +110,18 @@ def _durations(video: VideoFile) -> dict[int, float]:
             timestamp__isnull=False
         ).values_list("frame_number", "timestamp")
     }
-    payload = VideoFileMetaPayload.model_validate(video.meta or {})
-    timeline = payload.source_timeline
+    try:
+        timeline = video_source_timeline(video)
+    except VideoTimelineMappingError:
+        return {}
     if timeline is not None:
-        if (
-            timeline.artifact_kind == "processed"
-            and timeline.content_hash != video.processed_video_hash
-        ):
-            return {}
-        source = timeline.source.timeline
-        timestamps[source.frame_count] = (
-            timeline.first_timestamp_seconds + source.duration_seconds
+        mapping = timeline_mapping_from_source(timeline)
+        return frame_durations(
+            timestamps,
+            terminal_frame_number=mapping.frame_count,
+            terminal_timestamp=mapping.end_timestamp_seconds,
         )
-    return {
-        number: timestamps[number + 1] - timestamp
-        for number, timestamp in timestamps.items()
-        if number + 1 in timestamps
-        and isfinite(timestamp)
-        and isfinite(timestamps[number + 1])
-        and timestamps[number + 1] > timestamp
-    }
+    return frame_durations(timestamps)
 
 
 def _mapping(module: str, version: str) -> AnnotationFindingMappings | None:

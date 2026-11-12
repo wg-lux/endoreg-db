@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import subprocess
+from fractions import Fraction
 from pathlib import Path
 from unittest.mock import patch
 from typing import NoReturn, Protocol, cast
@@ -40,6 +41,9 @@ from endoreg_db.services.video_storage.canonical_timelines import (
     capture_canonical_timeline,
 )
 from endoreg_db.services.video_storage.probes import probe_video_artifact
+from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
+from endoreg_db.services.video_files.frame_coordinates import artifact_frame_timeline
+from endoreg_db.services.video_files.timeline import presentation_timestamp_seconds
 
 pytestmark = pytest.mark.django_db
 
@@ -55,7 +59,11 @@ class _OptimizerStep(Protocol):
 @pytest.fixture
 def retained_video(
     monkeypatch: pytest.MonkeyPatch,
+    request: pytest.FixtureRequest,
 ) -> tuple[VideoFile, AIDataSet, LabelSet, int]:
+    frame_rate: object = getattr(request, "param", "25")
+    assert isinstance(frame_rate, str)
+    rate = Fraction(frame_rate)
     monkeypatch.setenv("DJANGO_DEBUG", "false")
     monkeypatch.setenv(
         "LX_ANNOTATE_MASTER_KEY", base64.urlsafe_b64encode(b"0" * 32).decode()
@@ -70,7 +78,7 @@ def retained_video(
             "-f",
             "lavfi",
             "-i",
-            "color=c=black:s=64x48:r=25",
+            f"color=c=black:s=64x48:r={frame_rate}",
             "-frames:v",
             "2",
             "-c:v",
@@ -110,9 +118,9 @@ def retained_video(
     center = Center.objects.create(name="Hub source", center_key="hub-source")
     video = VideoFile(
         center=center,
-        fps=25.0,
+        fps=float(rate),
         frame_count=2,
-        duration=0.08,
+        duration=2 / float(rate),
         width=64,
         height=48,
     )
@@ -137,13 +145,26 @@ def retained_video(
     video.state = state
     video.save()
     with video.ensure_local_processed_file() as path:
-        timeline = capture_canonical_timeline(path, probe_video_artifact(path))
+        processed_probe = probe_video_artifact(path)
+        timeline = capture_canonical_timeline(path, processed_probe)
     with video.ensure_local_raw_file() as path:
         raw_timeline = capture_canonical_timeline(path, probe_video_artifact(path))
     snapshot = timeline.model_dump(mode="json")
     raw_snapshot = raw_timeline.model_dump(mode="json")
     video.meta = {
         "integrity_status": "ok",
+        "source_timeline": VideoSourceTimelineEvidence(
+            persisted_at=timezone.now(),
+            source=processed_probe,
+            timestamp_mapping="ffprobe_pts",
+            artifact_kind="processed",
+            content_hash=video.processed_video_hash,
+            first_timestamp_seconds=presentation_timestamp_seconds(
+                timeline.presentation_timestamps[0],
+                timeline.time_base_num,
+                timeline.time_base_den,
+            ),
+        ).model_dump(mode="json"),
         "canonical_timeline_history": [
             {"artifact_kind": "raw", "before": raw_snapshot, "after": raw_snapshot},
             {"artifact_kind": "processed", "before": snapshot, "after": snapshot},
@@ -163,9 +184,12 @@ def retained_video(
     frame = Frame.objects.create(
         video=video,
         frame_number=0,
-        timestamp=timeline.presentation_timestamps[0]
-        * timeline.time_base_num
-        / timeline.time_base_den,
+        presentation_timestamp=timeline.presentation_timestamps[0],
+        timestamp=presentation_timestamp_seconds(
+            timeline.presentation_timestamps[0],
+            timeline.time_base_num,
+            timeline.time_base_den,
+        ),
         relative_path="frame_0000000.jpg",
     )
     label = Label.objects.create(name="hub-training-label")
@@ -494,10 +518,7 @@ def test_training_rejects_encrypted_media_damage_without_plaintext_leaks(
         damaged = ciphertext[:-1] + bytes([ciphertext[-1] ^ 1])
         atomic_write_file(destination=encrypted_path, content=[damaged])
     before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
-    with pytest.raises(
-        InvalidTag if damage == "wrong_key" else (ValueError, OSError, RuntimeError),
-        match=None if damage == "wrong_key" else "authentication|decrypt|key",
-    ):
+    with pytest.raises(InvalidTag):
         if consumer == "image":
             read_processed_training_image(frame)
         elif consumer == "report":
@@ -540,18 +561,14 @@ def test_training_decoder_failure_does_not_materialize_plaintext(
     seen: list[int] = []
 
     def fail_decoder(
-        video: VideoFile,
-        *,
-        frame_number: int,
-        file_type: str,
+        selected: Frame,
     ) -> EncodedFrameSample:
-        assert frame_number == 0
-        assert file_type == "processed"
+        assert selected.pk == frame.pk and selected.frame_number == 0
         assert set(Path("/tmp").glob("endoreg-fieldfile-*")) == before
-        seen.append(int(video.pk))
+        seen.append(int(selected.video.pk))
         raise RuntimeError("decoder failure")
 
-    monkeypatch.setattr(training_images, "read_video_file_frame_jpeg", fail_decoder)
+    monkeypatch.setattr(training_images, "read_processed_frame_jpeg", fail_decoder)
     with pytest.raises(RuntimeError, match="decoder failure"):
         if consumer == "image":
             training_images.read_processed_training_image(frame)
@@ -580,7 +597,7 @@ def test_core_training_streams_encrypted_retained_frames(
         build_frame_multilabel_training_manifest,
     )
     from endoreg_db.services.frames.training_images import streamed_training_dataset
-    from endoreg_db.utils.frame_stream import read_video_file_frame_jpeg
+    from endoreg_db.utils.frame_stream import read_processed_frame_jpeg
 
     video, dataset, label_set, annotation_id = retained_video
     frame_id = int(ImageClassificationAnnotation.objects.get(pk=annotation_id).frame.pk)
@@ -590,8 +607,8 @@ def test_core_training_streams_encrypted_retained_frames(
     manifest = TrainingDatasetManifest.model_validate(exported.to_lx_ai_core_dict())
     before = set(Path("/tmp").glob("endoreg-fieldfile-*"))
     with patch(
-        "endoreg_db.services.frames.training_images.read_video_file_frame_jpeg",
-        wraps=read_video_file_frame_jpeg,
+        "endoreg_db.services.frames.training_images.read_processed_frame_jpeg",
+        wraps=read_processed_frame_jpeg,
     ) as decode:
         training = streamed_training_dataset(manifest, allowed_frame_ids=[frame_id])
         decode.assert_not_called()
@@ -679,7 +696,7 @@ def test_stream_provider_does_not_yield_after_decode_failure(
     def failed_decode(*args: object, **kwargs: object) -> NoReturn:
         raise OSError("decode failure")
 
-    monkeypatch.setattr(training_images, "read_video_file_frame_jpeg", failed_decode)
+    monkeypatch.setattr(training_images, "read_processed_frame_jpeg", failed_decode)
     provider = training_images.ProcessedTrainingFrameProvider(
         allowed_frame_ids=[frame_id]
     )
@@ -719,3 +736,73 @@ def test_report_frame_export_decrypts_and_cleans_up(
     assert set(Path("/tmp").glob("endoreg-report-frame-*")) == before
     frame.refresh_from_db()
     assert not frame.is_extracted
+
+
+@pytest.mark.parametrize("consumer", ["image", "stream", "report"])
+def test_processed_frame_consumers_reject_coordinates_from_another_ordinal(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int], consumer: str
+) -> None:
+    from lx_ai_core.training import ProcessedFrameReference
+    from endoreg_db.services.frames.training_images import (
+        ProcessedTrainingFrameProvider,
+        read_processed_training_frame_bytes,
+    )
+    from endoreg_db.services.reports.frame_export import materialized_report_frame
+
+    video, _, _, annotation_id = retained_video
+    frame = ImageClassificationAnnotation.objects.get(pk=annotation_id).frame
+    timeline = artifact_frame_timeline(video, file_type="processed")
+    frame.presentation_timestamp = timeline.presentation_timestamps[1]
+    frame.timestamp = presentation_timestamp_seconds(
+        frame.presentation_timestamp, timeline.time_base_num, timeline.time_base_den
+    )
+    frame.save(update_fields=["presentation_timestamp", "timestamp"])
+    with (
+        patch(
+            "endoreg_db.utils.frame_stream._read_video_input_frame_image",
+            side_effect=AssertionError("Invalid selected frame must not decode pixels"),
+        ),
+        pytest.raises(ValueError, match="canonical ordinal"),
+    ):
+        if consumer == "image":
+            read_processed_training_frame_bytes(frame)
+        elif consumer == "stream":
+            provider = ProcessedTrainingFrameProvider(allowed_frame_ids=[int(frame.pk)])
+            with provider.open_frame(
+                ProcessedFrameReference(video_id=video.pk, frame_number=0)
+            ):
+                pytest.fail("Stale frame was streamed")
+        else:
+            with materialized_report_frame(frame):
+                pytest.fail("Stale frame was rendered")
+
+
+@pytest.mark.parametrize("retained_video", ["30000/1001"], indirect=True)
+def test_report_frame_accepts_rounded_persisted_seconds(
+    retained_video: tuple[VideoFile, AIDataSet, LabelSet, int],
+) -> None:
+    from endoreg_db.services.reports.frame_export import materialized_report_frame
+
+    video, _, _, _ = retained_video
+    timeline = artifact_frame_timeline(video, file_type="processed")
+    number, tick, seconds = next(
+        (number, tick, seconds)
+        for number, tick in enumerate(timeline.presentation_timestamps)
+        if (
+            seconds := presentation_timestamp_seconds(
+                tick, timeline.time_base_num, timeline.time_base_den
+            )
+        )
+        != round(seconds, 6)
+    )
+    frame, _ = Frame.objects.update_or_create(
+        video=video,
+        frame_number=number,
+        defaults={"presentation_timestamp": tick, "timestamp": round(seconds, 6)},
+    )
+    assert frame.timestamp != seconds
+    with materialized_report_frame(frame) as path:
+        assert path.read_bytes().startswith(b"\xff\xd8")
+    assert not path.exists()
+    frame.refresh_from_db()
+    assert frame.timestamp == round(seconds, 6) and not frame.is_extracted

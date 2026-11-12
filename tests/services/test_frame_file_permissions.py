@@ -30,7 +30,7 @@ def test_report_frame_export_is_protected_and_always_removed(
     )
     paths: list[Path] = []
     with patch(
-        "endoreg_db.services.reports.frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg",
         return_value=sample,
     ):
         try:

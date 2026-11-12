@@ -23,6 +23,20 @@ introduced. Regression evidence belongs to `browser_video_annotation_downloads`
 in the feature definition linked above. Deploy a backend wheel containing this
 response before claiming that LX-Annotate's installed runtime has this fix.
 
+## Recover missing frame timestamps
+
+`backfill_video_timelines --apply` decodes missing presentation timestamps from
+the current processed video, or retained raw media when no processed video is
+published. It does not probe an original merely to recover processed coordinates.
+Identity is inherited from import, without rehashing media or comparing legacy
+frame counts during this timestamp-only recovery. The decoded sequence determines
+the current frame count; unannotated, unextracted rows are reconciled atomically,
+preserving existing primary keys in the retained range. Saved annotations or
+extracted images require explicit timestamp remapping if frame numbers would change.
+Authenticated decryption, existing coordinates and publication locking remain
+enforced. Processed timestamps are recorded as processed evidence;
+they do not establish original frame ancestry or original timestamp history.
+
 ## Recover usable media with unresolved frame mapping
 
 Use **Frame-Herkunft reparieren** in Hub Export or **Video für Transfer reparieren**
@@ -487,6 +501,10 @@ use the existing validated generation-publication workflow with fresh content ke
 
 - **Joint Photographic Experts Group (JPEG):** the encoded image format used
   for in-memory annotation responses and explicit frame exports.
+- **Portable Network Graphics (PNG):** the lossless image format used in memory
+  when decoded pixels must be preserved for frame validation or text recognition.
+- **Red, green and blue (RGB):** the decoded pixel channel order exposed by the
+  shared lossless frame reader; it is distinct from OpenCV's default channel order.
 - **Container start time:** the earliest presentation time across all streams
   of a media container, as reported by ffprobe `format=start_time`. FFmpeg
   offsets every input seek by this value; it is not the video stream origin.
@@ -851,6 +869,14 @@ training uses the existing processed-frame stream provider. The retired `cache`
 inference option and frame-cache extraction/repair entry points fail explicitly;
 operators must select streaming or invoke an explicit export. Existing frame
 identities, timestamps, and legacy files are preserved.
+
+Canonical single-frame readers share exact integer presentation-timestamp
+selection for JPEG and lossless PNG output. Selected processed frame rows are
+validated against their generation's ordinal, integer timestamp and rational
+time base before decoding; rounded persisted seconds use the shared microsecond
+serialization tolerance. Post-validation and text recognition consume lossless
+RGB pixels. Clinical inference uses the central annotation-artifact selector
+and rechecks its generation under the publication lock before writing segments.
 
 Single-frame annotation requests must not materialize the complete encrypted
 video as a temporary plaintext file. The backend resolves the requested frame

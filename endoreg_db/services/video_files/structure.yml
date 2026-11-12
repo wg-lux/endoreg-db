@@ -25,7 +25,7 @@ files:
 - file: __init__.py
   role: Package imports and compatibility exports.
 - file: _ai.py
-  role: Streaming frame scores and observed exclusive score boundaries.
+  role: Streaming frame scores with observed exclusive score boundaries and canonical raw-frame metadata recognition.
 - file: _anonymization.py
   role: 'Internal helpers: _LocalRawFileProvider, _video_integrity_failure_detail, _video_has_integrity_failure.'
 - file: _imports.py
@@ -33,8 +33,7 @@ files:
 - file: _segments.py
   role: Exports get_outside_frames, get_outside_segments, convert_sequences_to_db_segments.
 - file: _time.py
-  role: 'Per-boundary helpers _frame_number_to_s, _seconds_to_frame_number; resolve_video_timeline_mapping validates
-    VideoFile.meta once.'
+  role: Shared generation-bound source evidence, canonical mapping construction and per-boundary/neighborhood coordinate resolution.
 - file: ai.py
   role: Exports predict_video, extract_text_from_video_frames.
 - file: anonymization.py
@@ -46,7 +45,7 @@ files:
 - file: direct_import.py
   role: Direct video imports bind the resolved center key and acquire the same durable ownership as queued imports.
 - file: frame_coordinates.py
-  role: Generation-bound decoded timestamps from canonical history or received verified/unresolved provenance, and persisted prediction windows.
+  role: Exact generation-bound artifact timelines, annotation artifact selection and persisted prediction windows.
 - file: frames.py
   role: Exports extract_video_frames, initialize_video_frames, delete_video_frames.
 - file: imports.py
@@ -77,11 +76,13 @@ files:
 - file: streaming.py
   role: Exports get_active_raw_video_file, get_active_video_file, get_active_video_file_path.
 - file: temporal_inference.py
-  role: Exports extract_temporal_options, normalize_temporal_options, build_lx_temporal_options.
+  role: Generation-bound clinical score timelines, presentation-time windows and fenced prediction publication.
 - file: timeline.py
-  role: Exports frame_number_to_seconds, seconds_to_frame_number, validate_frame_number.
+  role: Identity-preserving compatibility imports for the pure canonical rules in utils/video/timeline.py.
 - file: timestamp_backfill.py
   role: Automatically recover wholly absent frame timestamps from hash-verified canonical media under the publication row lock.
+- file: timeline_backfill.py
+  role: Read-only classification of video timelines plus operator-applied recovery through timestamp_backfill; unverifiable media is reported, never estimated.
 - file: timeline_index.py
   role: Request-scoped native TimelineIndex per video generation; one meta validation and one frame query for
     populated coordinates, with absent coordinates delegated to timestamp_backfill.

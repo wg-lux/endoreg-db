@@ -62,8 +62,20 @@ from endoreg_db.services.video_files import (
 from endoreg_db.services.video_files._ai import (
     VideoFrameScoreResult,
 )
+from endoreg_db.services.video_files._time import (
+    require_video_source_timeline,
+    video_source_timeline,
+)
 from endoreg_db.services.video_files._segments import (
     convert_sequences_to_db_segments,
+)
+from endoreg_db.services.video_files.frame_coordinates import (
+    annotation_artifact_kind,
+    prediction_frame_boundaries,
+)
+from endoreg_db.services.video_files.timeline import (
+    VideoTimelineMappingError,
+    validate_timestamp_seconds,
 )
 from endoreg_db.services.annotations.segment_validation_workflow import (
     is_outside_frame_blackening_history,
@@ -554,11 +566,13 @@ def _validated_score_frame_numbers(
 ) -> tuple[int, ...]:
     source_numbers = score_result.frame_numbers
     frame_numbers = (
-        tuple(range(row_count))
-        if source_numbers is None
-        else tuple(map(int, source_numbers))
+        tuple(range(row_count)) if source_numbers is None else tuple(source_numbers)
     )
-    if len(frame_numbers) != row_count or not _strictly_increasing(frame_numbers):
+    if (
+        len(frame_numbers) != row_count
+        or any(type(number) is not int or number < 0 for number in frame_numbers)
+        or not _strictly_increasing(frame_numbers)
+    ):
         raise TemporalInferenceConfigError(
             "Frame-score frame numbers must be complete and strictly increasing."
         )
@@ -572,52 +586,29 @@ def _strictly_increasing(values: Sequence[int | float]) -> bool:
     return True
 
 
-def _persisted_score_timestamps(
-    video: VideoFile,
-    *,
-    frame_numbers: tuple[int, ...],
-) -> tuple[float, ...]:
-    persisted_rows = video.frames.filter(
-        frame_number__in=frame_numbers,
-        timestamp__isnull=False,
-    ).values_list("frame_number", "timestamp")
-    persisted_by_frame: dict[int, float] = {}
-    for frame_number, timestamp in persisted_rows:
-        persisted_by_frame[int(frame_number)] = float(timestamp)
-    missing = tuple(
-        filter(lambda number: number not in persisted_by_frame, frame_numbers)
-    )
-    if missing:
-        raise TemporalInferenceConfigError(
-            "Temporal inference requires persisted presentation timestamps "
-            f"for every scored frame; missing frames: {missing[:10]}."
-        )
-    return tuple(map(persisted_by_frame.__getitem__, frame_numbers))
-
-
 def _validate_timestamp_values(timestamps: tuple[float, ...]) -> None:
     for timestamp in timestamps:
-        if not math.isfinite(timestamp) or timestamp < 0:
+        try:
+            validate_timestamp_seconds(timestamp)
+        except VideoTimelineMappingError as exc:
             raise TemporalInferenceConfigError(
                 "Frame-score presentation timestamps must be complete, finite, "
                 "and non-negative."
-            )
+            ) from exc
 
 
 def _validated_score_timestamps(
-    video: VideoFile,
     score_result: VideoFrameScoreResult,
     *,
     frame_numbers: tuple[int, ...],
     row_count: int,
+    boundaries: tuple[float, ...],
 ) -> tuple[float, ...]:
+    canonical_timestamps = tuple(boundaries[number] for number in frame_numbers)
     if score_result.timestamps is not None:
         timestamps = tuple(map(float, score_result.timestamps))
     else:
-        timestamps = _persisted_score_timestamps(
-            video,
-            frame_numbers=frame_numbers,
-        )
+        timestamps = canonical_timestamps
     if len(timestamps) != row_count:
         raise TemporalInferenceConfigError(
             "Frame-score presentation timestamps must be complete, finite, and non-negative."
@@ -627,38 +618,14 @@ def _validated_score_timestamps(
         raise TemporalInferenceConfigError(
             "Frame-score presentation timestamps must be strictly increasing."
         )
-    return timestamps
-
-
-def _terminal_score_boundary(
-    video: VideoFile,
-    *,
-    final_frame_number: int,
-) -> tuple[int, float]:
-    next_boundary = (
-        video.frames.filter(
-            frame_number__gt=final_frame_number,
-            timestamp__isnull=False,
-        )
-        .order_by("frame_number")
-        .values_list("frame_number", "timestamp")
-        .first()
-    )
-    if next_boundary is not None:
-        terminal_frame_number = int(next_boundary[0])
-        terminal_timestamp = float(next_boundary[1])
-    elif (
-        video.frame_count is not None
-        and int(video.frame_count) == final_frame_number + 1
+    if any(
+        not math.isclose(observed, canonical, rel_tol=0, abs_tol=1e-6)
+        for observed, canonical in zip(timestamps, canonical_timestamps, strict=True)
     ):
-        terminal_frame_number = int(video.frame_count)
-        terminal_timestamp = float(video.frame_number_to_s(terminal_frame_number))
-    else:
         raise TemporalInferenceConfigError(
-            "Temporal inference cannot resolve the exclusive presentation-time "
-            "boundary after the final scored frame."
+            "Frame-score presentation timestamps differ from the annotation generation."
         )
-    return terminal_frame_number, terminal_timestamp
+    return canonical_timestamps
 
 
 def _resolve_score_timeline(
@@ -673,26 +640,31 @@ def _resolve_score_timeline(
         score_result,
         row_count=row_count,
     )
+    if video.frame_count is None or video.frame_count <= 0:
+        raise TemporalInferenceConfigError(
+            "Temporal inference requires a complete canonical frame count."
+        )
+    boundaries = prediction_frame_boundaries(video, video.frame_count)
+    if frame_numbers[0] < 0 or frame_numbers[-1] >= len(boundaries) - 1:
+        raise TemporalInferenceConfigError(
+            "Frame-score frame numbers exceed the annotation generation."
+        )
     timestamps = _validated_score_timestamps(
-        video,
         score_result,
         frame_numbers=frame_numbers,
         row_count=row_count,
+        boundaries=boundaries,
     )
-    terminal_frame_number, terminal_timestamp = (
-        score_result.terminal_boundary
-        if score_result.terminal_boundary is not None
-        else _terminal_score_boundary(video, final_frame_number=frame_numbers[-1])
-    )
-    if (
-        terminal_frame_number <= frame_numbers[-1]
-        or not math.isfinite(terminal_timestamp)
-        or terminal_timestamp <= timestamps[-1]
-    ):
-        raise TemporalInferenceConfigError(
-            "The terminal score boundary must follow the final scored frame in "
-            "both frame number and presentation time."
-        )
+    terminal_frame_number = frame_numbers[-1] + 1
+    terminal_timestamp = boundaries[terminal_frame_number]
+    if score_result.terminal_boundary is not None:
+        observed_frame, observed_timestamp = score_result.terminal_boundary
+        if observed_frame != terminal_frame_number or not math.isclose(
+            observed_timestamp, terminal_timestamp, rel_tol=0, abs_tol=1e-6
+        ):
+            raise TemporalInferenceConfigError(
+                "The terminal score boundary differs from the annotation generation."
+            )
     return TemporalScoreTimeline(
         frame_numbers=frame_numbers,
         timestamps=timestamps,
@@ -1693,7 +1665,7 @@ def _predict_temporal_segments(
         n_test_frames=n_test_frames,
         return_frame_scores=True,
         frame_source_mode=prepared.resolved_frame_source_mode,
-        frame_source_file_type="raw",
+        frame_source_file_type=annotation_artifact_kind(prepared.video).value,
     )
     if not isinstance(score_result, VideoFrameScoreResult):
         raise RuntimeError("Video prediction did not return frame scores.")
@@ -1821,9 +1793,7 @@ def _record_temporal_history_success(
                 "frame_source_mode": resolved_mode,
                 "requested_frame_source_mode": prepared.requested_frame_source_mode,
                 "resolved_frame_source_mode": resolved_mode,
-                "source_video_kind": (
-                    "frame_cache" if resolved_mode == "cache" else "raw"
-                ),
+                "source_video_kind": (annotation_artifact_kind(prepared.video).value),
                 "temporal_segment_count": len(result.temporal_segments),
                 "materialized_segment_count": current_count,
                 "created_segment_count": max(current_count - before_count, 0),
@@ -1844,7 +1814,7 @@ def _persist_temporal_prediction(
     replace_prediction_segments: bool,
 ) -> None:
     with transaction.atomic():
-        VideoFile.objects.select_for_update().get(pk=prepared.video.pk)
+        current_video = VideoFile.objects.select_for_update().get(pk=prepared.video.pk)
         if history is not None:
             current_history = VideoProcessingHistory.objects.select_for_update().get(
                 pk=history.pk,
@@ -1857,6 +1827,18 @@ def _persist_temporal_prediction(
                 raise TemporalInferenceOwnershipLost(
                     "Prediction publication requires a running operation."
                 )
+        if (
+            current_video.raw_video_hash != prepared.video.raw_video_hash
+            or current_video.processed_video_hash != prepared.video.processed_video_hash
+            or video_source_timeline(current_video)
+            != require_video_source_timeline(prepared.video)
+            or annotation_artifact_kind(current_video)
+            != annotation_artifact_kind(prepared.video)
+        ):
+            raise TemporalInferenceConfigError(
+                "Annotation generation changed during temporal inference."
+            )
+        prepared = replace(prepared, video=current_video)
         prediction_meta, _ = VideoPredictionMeta.objects.get_or_create(
             video_file=prepared.video,
             model_meta=prepared.model_meta,

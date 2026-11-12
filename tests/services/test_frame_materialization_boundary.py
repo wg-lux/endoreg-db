@@ -6,6 +6,7 @@ from pathlib import Path
 from datetime import timedelta
 from django.utils import timezone
 from unittest.mock import patch
+from types import SimpleNamespace
 
 import pytest
 from django.contrib.auth.models import User
@@ -19,6 +20,7 @@ from endoreg_db.services.video_files import (
 )
 from endoreg_db.utils.frame_stream import EncodedFrameSample
 from endoreg_db.views.media.frame_media import FrameStreamView, DecodedFrameStreamView
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 def test_frame_file_encoder_calls_are_export_owned() -> None:
@@ -139,3 +141,58 @@ def test_annotation_selection_never_falls_back_to_raw(requested: str | None) -> 
         _resolve_task_artifact_kind(video=video, requested_frame_file_type=selection)
         is None
     )
+
+
+@pytest.mark.parametrize(
+    "processed,requested,expected",
+    [
+        (True, None, "processed"),
+        (False, None, "raw"),
+        (True, "raw", "raw"),
+        (True, "processed", "processed"),
+    ],
+)
+def test_prediction_source_uses_annotation_generation_unless_explicit(
+    processed: bool, requested: str | None, expected: str
+) -> None:
+    from endoreg_db.services.video_files._ai import _prediction_source
+
+    video = VideoFile(
+        raw_file="raw/source.mp4",
+        processed_file="processed/master.mp4" if processed else "",
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=10),
+    )
+    with patch.object(
+        video,
+        "get_or_create_state",
+        return_value=SimpleNamespace(frames_extracted=False),
+    ):
+        source = _prediction_source(
+            video=video, frame_source_mode="stream", frame_source_file_type=requested
+        )
+    assert source.file_type == expected
+
+
+@pytest.mark.parametrize("model_wrapper", [False, True])
+@pytest.mark.parametrize("requested", [None, "raw"])
+def test_prediction_wrappers_preserve_unspecified_or_explicit_artifact(
+    model_wrapper: bool, requested: str | None
+) -> None:
+    from endoreg_db.models.metadata.model_meta import ModelMeta
+    from endoreg_db.services.video_files.ai import predict_video
+
+    video = VideoFile()
+    with patch(
+        "endoreg_db.services.video_files._ai._predict_video_pipeline", return_value={}
+    ) as pipeline:
+        if model_wrapper:
+            if requested is None:
+                video.predict_video(ModelMeta())
+            else:
+                video.predict_video(ModelMeta(), frame_source_file_type=requested)
+        else:
+            if requested is None:
+                predict_video(video, ModelMeta())
+            else:
+                predict_video(video, ModelMeta(), frame_source_file_type=requested)
+    assert pipeline.call_args.kwargs["frame_source_file_type"] == requested

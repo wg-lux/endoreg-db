@@ -23,6 +23,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
 )
 from endoreg_db.services.video_storage.processed_timelines import (
+    frame_boundaries,
     publish_processed_coordinates,
     nearest_boundary,
 )
@@ -79,6 +80,28 @@ def reference(
         start_timestamp_seconds=1.4 + start * 0.04,
         end_timestamp_seconds=1.4 + end * 0.04,
     )
+
+
+@pytest.mark.parametrize("origin", [0, 1400, 7300])
+def test_processed_boundaries_use_the_canonical_exclusive_end(origin: int) -> None:
+    timeline = snapshot([origin, origin + 40, origin + 80, origin + 120], "a")
+    boundaries = frame_boundaries(timeline, probe())
+    expected = [(origin + offset) / 1000 for offset in (0, 40, 80, 120, 160)]
+    assert all(
+        abs(actual - timestamp) < 1e-12
+        for actual, timestamp in zip(boundaries, expected, strict=True)
+    )
+
+
+@pytest.mark.parametrize("last_tick", [1560, 1600])
+def test_processed_boundaries_reject_display_frames_at_or_after_end(
+    last_tick: int,
+) -> None:
+    timeline = snapshot([1400, 1440, 1480, last_tick], "a")
+    with pytest.raises(
+        VideoStorageNormalizationError, match="precede the timeline end"
+    ):
+        frame_boundaries(timeline, probe())
 
 
 @pytest.mark.parametrize("nominal", [25, 50, 1000])

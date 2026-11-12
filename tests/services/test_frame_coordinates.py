@@ -51,6 +51,12 @@ def test_selected_generation_uses_its_own_origin(
 
     monkeypatch.setattr(service, "verified_video_source_hash", verified_hash)
     assert service.artifact_frame_timestamps(_video(), file_type=kind) == expected
+    exact = service.artifact_frame_timeline(_video(), file_type=kind)
+    assert exact.content_hash == digest
+    assert exact.presentation_timestamps == [
+        int(seconds * 1000) for seconds in expected
+    ]
+    assert (exact.time_base_num, exact.time_base_den) == (1, 1000)
 
 
 @pytest.mark.parametrize("kind", ["raw", "processed"])
@@ -150,6 +156,25 @@ def test_missing_canonical_coordinates_are_not_inferred_from_rate(
 def test_invalid_artifact_kind_is_not_raw() -> None:
     with pytest.raises(ValueError):
         service.artifact_frame_timestamps(_video(), file_type="unknown")
+
+
+@pytest.mark.parametrize(
+    "number,tick,seconds",
+    [(0, 3040, 3.04), (1, 3000, 3.0), (3, 3200, 3.2), (1, 3040, 3.05)],
+)
+def test_other_frame_coordinates_cannot_replace_selected_identity(
+    number: int, tick: int, seconds: float
+) -> None:
+    from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+
+    history = VideoFileMetaPayload.model_validate(
+        _video().meta
+    ).canonical_timeline_history
+    assert history
+    with pytest.raises(ValueError):
+        service.validate_frame_timeline_coordinate(
+            history[-1].after, number, tick, seconds
+        )
 
 
 def test_centered_smoothing_preserves_irregular_frame_positions() -> None:

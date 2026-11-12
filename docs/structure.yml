@@ -39,7 +39,7 @@ files:
 - file: wiki/reference_catalog_migration.md
   role: Bounded legacy colorectal catalogue reconciliation runbook.
 - file: video_pts_fps_callsite_inventory.md
-  role: Frame-rate, presentation-timestamp and decoder ancestry call-site review.
+  role: Backend/frontend frame-operation inventory, presentation-timestamp skipping/export contracts and decoder ancestry review.
 - file: video_frame_extraction_contract.md
   role: In-memory frame decoding, export-only materialization and legacy cache diagnostics.
 - file: secret_rotation.md

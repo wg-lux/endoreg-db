@@ -84,6 +84,40 @@ impl TimelineRules {
         Ok(())
     }
 
+    fn validate_persisted_timestamp(
+        &self,
+        frame_number: i64,
+        timestamp: f64,
+    ) -> Result<(), InvalidInput> {
+        validated_timestamp(
+            timestamp,
+            &format!("Persisted PTS for frame {frame_number}"),
+        )?;
+        if timestamp < self.first_timestamp_seconds {
+            return Err(InvalidInput(format!(
+                "Persisted PTS for frame {frame_number} precedes timeline origin."
+            )));
+        }
+        if let Some(duration) = self.duration_seconds {
+            if duration > 0.0 {
+                let end = self.first_timestamp_seconds + duration;
+                if Some(frame_number) == self.frame_count {
+                    if !is_terminal(timestamp, end) {
+                        return Err(InvalidInput(
+                            "Persisted terminal PTS differs from the exclusive timeline end."
+                                .to_owned(),
+                        ));
+                    }
+                } else if timestamp >= end {
+                    return Err(InvalidInput(format!(
+                        "Persisted PTS for display frame {frame_number} must precede the exclusive timeline end."
+                    )));
+                }
+            }
+        }
+        Ok(())
+    }
+
     fn require_fps(&self) -> Result<f64, InvalidInput> {
         self.fps
             .ok_or_else(|| InvalidInput("FPS must be set and greater than zero.".to_owned()))
@@ -124,10 +158,7 @@ impl TimelineCore {
                     )));
                 }
             }
-            validated_timestamp(
-                timestamp,
-                &format!("Persisted PTS for frame {frame_number}"),
-            )?;
+            rules.validate_persisted_timestamp(frame_number, timestamp)?;
             if position > 0
                 && (frame_number <= frame_numbers[position - 1]
                     || timestamp <= timestamps[position - 1])
@@ -369,6 +400,29 @@ mod tests {
         assert!(TimelineCore::new(rules.clone(), vec![0, 4], vec![0.0, 0.1]).is_err());
         assert!(TimelineCore::new(rules.clone(), vec![0], vec![f64::NAN]).is_err());
         assert!(TimelineCore::new(rules, vec![0], vec![]).is_err());
+    }
+
+    #[test]
+    fn persisted_rows_stay_inside_the_generation_timeline() {
+        let rules = TimelineRules::new(Some(25.0), Some(3), Some(0.4), true, 2.0).unwrap();
+        for (frame_number, timestamp) in [(0, 1.9), (2, 2.4), (2, 2.5), (3, 2.3), (3, 2.5)] {
+            assert!(TimelineCore::new(rules.clone(), vec![frame_number], vec![timestamp]).is_err());
+        }
+        let core = TimelineCore::new(rules, vec![0, 2, 3], vec![2.0, 2.3, 2.4]).unwrap();
+        assert_eq!(core.frame_number_to_seconds(3).unwrap(), 2.4);
+    }
+
+    #[test]
+    fn absent_duration_does_not_invent_a_terminal_boundary() {
+        let rules = TimelineRules::new(Some(25.0), Some(3), None, true, 2.0).unwrap();
+        let core = TimelineCore::new(rules, vec![0, 2], vec![2.0, 10.0]).unwrap();
+        assert_eq!(core.frame_number_to_seconds(2).unwrap(), 10.0);
+    }
+
+    #[test]
+    fn known_duration_bounds_frames_even_without_a_count() {
+        let rules = TimelineRules::new(Some(25.0), None, Some(0.4), true, 2.0).unwrap();
+        assert!(TimelineCore::new(rules, vec![0], vec![2.4]).is_err());
     }
 
     #[test]

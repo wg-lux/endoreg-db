@@ -16,7 +16,7 @@ from lx_ai_core.training import (
 from PIL import Image
 
 from endoreg_db.models.media.frame.frame import Frame
-from endoreg_db.utils.frame_stream import read_video_file_frame_jpeg
+from endoreg_db.utils.frame_stream import read_processed_frame_jpeg
 
 if TYPE_CHECKING:
     from lx_ai_core.backends.torch_training import StreamedFrameDataset
@@ -50,11 +50,7 @@ def validate_processed_training_frame(frame: Frame) -> None:
 def read_processed_training_frame_bytes(frame: Frame) -> bytes:
     """Decode the persisted frame identity through seekable input without frame files."""
     validate_processed_training_frame(frame)
-    video = frame.video
-    sample = read_video_file_frame_jpeg(
-        video, frame_number=frame.frame_number, file_type="processed"
-    )
-    return sample.image_bytes
+    return read_processed_frame_jpeg(frame).image_bytes
 
 
 def read_processed_training_image(frame: Frame) -> Image.Image:

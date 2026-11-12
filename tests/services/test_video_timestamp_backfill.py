@@ -119,7 +119,8 @@ def test_mapping_backfills_exact_generation_coordinates_once(
         video, file_type="raw" if kind == "raw" else "processed"
     ) == (origin, origin + 0.15, origin + 0.4, origin + 0.75)
     if kind == "both":
-        assert artifact_frame_timestamps(video, file_type="raw") == (2, 2.15, 2.4, 2.75)
+        with pytest.raises(ValueError, match="unambiguous canonical timestamp"):
+            artifact_frame_timestamps(video, file_type="raw")
     field = video.raw_file if kind == "raw" else video.processed_file
     assert Path(field.path).read_bytes().startswith(MAGIC)
     probe = Mock(side_effect=AssertionError("Repeated reads must not probe"))
@@ -128,21 +129,11 @@ def test_mapping_backfills_exact_generation_coordinates_once(
     probe.assert_not_called()
 
 
-@pytest.mark.parametrize("failure", ["hash", "count", "gap", "segments", "probe"])
+@pytest.mark.parametrize("failure", ["segments", "probe"])
 def test_failed_backfill_is_atomic(
     video: VideoFile, failure: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    if failure == "hash":
-        video.processed_video_hash = "f" * 64
-        video.save()
-    elif failure in {"count", "gap"}:
-        Frame.objects.bulk_create(
-            [
-                Frame(video=video, frame_number=i)
-                for i in ([0, 1] if failure == "count" else [0, 1, 2, 4])
-            ]
-        )
-    elif failure == "segments":
+    if failure == "segments":
         LabelVideoSegment.objects.create(
             video_file=video, start_frame_number=0, end_frame_number=2
         )
@@ -158,6 +149,45 @@ def test_failed_backfill_is_atomic(
     video.refresh_from_db()
     assert not (video.meta or {}).get("source_timeline")
     assert list(video.frames.values_list("pk", "frame_number", "timestamp")) == before
+
+
+@pytest.mark.parametrize("processed", [False, True])
+def test_legacy_recording_hash_does_not_block_current_media_timestamps(
+    video: VideoFile, processed: bool
+) -> None:
+    video.raw_video_hash = "f" * 64
+    if not processed:
+        video.processed_file.name = ""
+        video.processed_video_hash = None
+    video.save()
+    Frame.objects.bulk_create(
+        [Frame(video=video, frame_number=index) for index in range(4)]
+    )
+    identities = list(
+        video.frames.order_by("frame_number").values_list("pk", flat=True)
+    )
+    service.backfill_missing_video_timestamps(video)
+    assert (
+        list(video.frames.order_by("frame_number").values_list("pk", flat=True))
+        == identities
+    )
+    assert load_video_timeline_index(video).frame_number_to_seconds(1) == (
+        4.15 if processed else 2.15
+    )
+    payload = VideoFileMetaPayload.model_validate(video.meta)
+    assert payload.source_timeline is not None
+    kind = "processed" if processed else "raw"
+    assert payload.source_timeline.artifact_kind == kind
+    assert payload.source_timeline.content_hash == (
+        video.processed_video_hash if processed else video.raw_video_hash
+    )
+    assert video.raw_video_hash == "f" * 64
+    assert {
+        entry.artifact_kind for entry in payload.canonical_timeline_history or []
+    } == {kind}
+    if processed:
+        with pytest.raises(ValueError, match="unambiguous canonical timestamp"):
+            artifact_frame_timestamps(video, file_type="raw")
 
 
 def test_partial_timestamps_are_not_overwritten(
@@ -178,12 +208,61 @@ def test_partial_timestamps_are_not_overwritten(
     probe.assert_not_called()
 
 
+@pytest.mark.parametrize("numbers", [[0, 1], [0, 1, 2, 3, 4, 5], [0, 1, 2, 4]])
+def test_decoded_pts_reconciles_unannotated_legacy_frame_count(
+    video: VideoFile, numbers: list[int]
+) -> None:
+    Frame.objects.bulk_create([Frame(video=video, frame_number=i) for i in numbers])
+    kept = dict(
+        video.frames.filter(frame_number__lt=4).values_list("frame_number", "pk")
+    )
+    service.backfill_missing_video_timestamps(video)
+    assert video.frame_count == 4
+    assert list(
+        video.frames.order_by("frame_number").values_list("timestamp", flat=True)
+    ) == [4, 4.15, 4.4, 4.75]
+    assert all(video.frames.get(frame_number=n).pk == pk for n, pk in kept.items())
+
+
+def test_count_reconciliation_preserves_annotated_coordinates(video: VideoFile) -> None:
+    Frame.objects.create(video=video, frame_number=0, is_extracted=True)
+    with pytest.raises(service.VideoTimelineMappingError, match="timestamp remapping"):
+        service.backfill_missing_video_timestamps(video)
+    assert video.frames.count() == 1
+    assert video.frames.get().timestamp is None
+
+
+def test_timestamp_only_recovery_still_rejects_tampered_ciphertext(
+    video: VideoFile,
+) -> None:
+    from endoreg_db.utils.file_operations import atomic_write_file
+    from endoreg_db.utils.paths import get_runtime_paths
+
+    path = Path(video.processed_file.path)
+    ciphertext = path.read_bytes()
+    atomic_write_file(
+        destination=path,
+        content=(ciphertext[:-1] + bytes([ciphertext[-1] ^ 1]),),
+        file_mode=0o600,
+    )
+    temporary_before = set(get_runtime_paths().transcoding.iterdir())
+    with pytest.raises(Exception):
+        service.backfill_missing_video_timestamps(video)
+    video.refresh_from_db()
+    assert not video.frames.exists()
+    assert not (video.meta or {}).get("source_timeline")
+    assert set(get_runtime_paths().transcoding.iterdir()) == temporary_before
+
+
 @pytest.mark.parametrize("entrypoint", ["decoder", "download"])
 @pytest.mark.parametrize("raw_history", [False, True])
 def test_missing_timestamps_recover_at_read_entrypoints(
     video: VideoFile, entrypoint: str, raw_history: bool
 ) -> None:
     if raw_history:
+        processed_name = video.processed_file.name
+        video.processed_file.name = ""
+        video.save(update_fields=["processed_file"])
         load_video_timeline_index(video)
         payload = VideoFileMetaPayload.model_validate(video.meta)
         video.meta = {
@@ -193,14 +272,19 @@ def test_missing_timestamps_recover_at_read_entrypoints(
                 if entry.artifact_kind == "raw"
             ]
         }
-        video.save(update_fields=["meta"])
+        video.processed_file.name = processed_name
+        video.save(update_fields=["meta", "processed_file"])
         video.frames.all().delete()
     if entrypoint == "decoder":
         assert artifact_frame_timestamps(video, file_type="processed")[0] == 4.0
     else:
         assert len(list(timestamp_csv(video, original=False))) == 5
     assert video.frames.count() == 4
-    assert len(list(timestamp_csv(video, original=True))) == 5
+    if raw_history:
+        assert len(list(timestamp_csv(video, original=True))) == 5
+    else:
+        with pytest.raises(ValueError, match="Zeitstempelfolge"):
+            list(timestamp_csv(video, original=True))
 
 
 def test_stale_reader_reuses_completed_backfill(
@@ -285,5 +369,5 @@ def test_concurrent_readers_capture_each_generation_once(
         first = executor.submit(resolve)
         second = executor.submit(resolve)
         assert first.result(timeout=30) == second.result(timeout=30) == 4.15
-    assert probe.call_count == 2
+    assert probe.call_count == 1
     assert video.frames.count() == 4

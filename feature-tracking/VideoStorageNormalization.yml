@@ -809,18 +809,17 @@ definition_of_done:
         Working-Inventare unter processed_videos_final nach Einzelpruefung von Pfad und Fremdreferenzen
         bereinigt, darunter 5482448003 Bytes vorhandene Datei. Standardloeschung entfernte 153873 Zeilen;
         Video-Datensatz und kanonische Dateien fehlen. Alle sechs zugeordneten Import-Auditdatensaetze
-        melden completed und null verbleibende inventarisierte Dateien. Inneres Dateisystem danach
-        50 GiB frei, aeusseres 62 GiB frei. Assessor codex-video-list-20261104-a.'
+        melden completed und null verbleibende inventarisierte Dateien. Inneres Dateisystem danach 50
+        GiB frei, aeusseres 62 GiB frei. Assessor codex-video-list-20261104-a.'
     - kind: command
       reference: '2026-11-04: Folgefehler nach Loeschung 59: Overview-Schema lehnt cancelled zusammen
         mit cleanup_status completed ab. Betroffenen abgeschlossenen Import-Auditdatensatz nach erneuter
-        Abwesenheitspruefung aller Dateien entfernt (19 Zeilen inklusive Inventar); strukturierter
-        Abschluss-Event erhalten. Nutzerangeforderter App-Neustart erfolgreich; App, PostgreSQL und
-        nginx aktiv, HTTPS 302, authentifizierter Anonymisierungs-Overview-Test HTTP 200. Fehlendes
-        Logo ColoReg.png ist ein separater statischer Asset-Fehler. Backfill nun fuer zehn Videos mit
-        insgesamt 1220679 persistierten Frame-Zeitstempeln abgeschlossen; keine vorhandenen Segmentindizes
-        geaendert. Abschliessender authentifizierter Video-Listen-Test HTTP 200, count 30, kein Fehler.
-        Assessor codex-video-list-20261104-a.'
+        Abwesenheitspruefung aller Dateien entfernt (19 Zeilen inklusive Inventar); strukturierter Abschluss-Event
+        erhalten. Nutzerangeforderter App-Neustart erfolgreich; App, PostgreSQL und nginx aktiv, HTTPS
+        302, authentifizierter Anonymisierungs-Overview-Test HTTP 200. Fehlendes Logo ColoReg.png ist
+        ein separater statischer Asset-Fehler. Backfill nun fuer zehn Videos mit insgesamt 1220679 persistierten
+        Frame-Zeitstempeln abgeschlossen; keine vorhandenen Segmentindizes geaendert. Abschliessender
+        authentifizierter Video-Listen-Test HTTP 200, count 30, kein Fehler. Assessor codex-video-list-20261104-a.'
     note: '2026-11-02: Fehlende Quell-Timeline blockiert klinische Koordinaten; explizite konstante Timeline
       bleibt zulässig. REST-framework-Validierung übersetzt den Mappingfehler ohne Koordinatenmutation.
       Keine Produktionsfreigabe.'
@@ -2234,15 +2233,18 @@ definition_of_done:
   category: data_integrity
   title: Every frame decoder exposes authoritative generation-bound presentation timestamps
   acceptance:
-  - Clinical coordinate resolution automatically backfills wholly absent frame timestamps from the hash-verified
-    active canonical media using available decoded presentation timestamps. Publication locking serializes
-    fallback requests; partial coordinates, mismatched frame identities and changed content are never
-    overwritten. Backfill preserves annotations, import states and provenance approvals, and repeated
-    reads do not probe again.
-  - Retained raw and processed media are captured separately. Missing original presentation timestamp
-    fields use validated decoder timestamps throughout shared probing, including import, transcoding,
-    streaming and hub validation; missing original fields alone never reject a video. No nominal-rate
-    coordinates are invented.
+  - Clinical coordinate resolution automatically backfills wholly absent frame timestamps from the active
+    canonical media using decoded presentation timestamps. Identity verification belongs to import; timestamp-only
+    recovery reuses its identity without rehashing media or requiring the legacy frame count to match.
+    The decoded sequence determines the frame count and reconciles unannotated, unextracted rows atomically,
+    preserving retained primary keys. Partial coordinates and saved annotations are never overwritten.
+    Publication locking serializes recovery; import states and provenance approvals remain unchanged and
+    repeated reads do not probe again.
+  - Processed media supplies its own presentation timestamps without probing retained raw media first.
+    Existing original timestamp history remains separate; processed evidence does not claim original transformation
+    ancestry. Missing original presentation timestamp fields use validated decoder timestamps throughout
+    shared probing, including import, transcoding, streaming and hub validation; missing original fields
+    alone never reject a video. No nominal-rate coordinates are invented.
   - iter_video_path_frame_samples exposes independently observed presentation timestamps with passthrough
     decoding and exact decoded counts; unused single-frame array APIs are removed.
   - iter_video_file_frame_samples and read_video_file_frame_jpeg use the selected canonical generation
@@ -2260,6 +2262,17 @@ definition_of_done:
   - Prediction smoothing and minimum durations use persisted presentation-time windows without shifting
     frame identities; duration, metadata initialization and profiling do not reconstruct clinical coordinates
     from average frame rates. Duplicate prediction workflows are removed.
+  - Shared timeline helpers own exact integer-tick/time-base conversion, persisted-second consistency,
+    generation-bound source evidence and observed frame durations. Export, hub receipt application, annotation
+    comparisons, decoder consumers and clinical inference delegate to these helpers rather than defining
+    independent clinical coordinate rules.
+  - Canonical frame decoding selects exact stream ticks for both JPEG and lossless image reads. Clinical
+    inference uses the annotation generation and rejects score or terminal coordinates from another generation.
+    Hub frame annotations cannot overwrite conflicting persisted coordinates.
+  - Native and scalar timeline helpers reject display timestamps before the origin or at/after a known
+    exclusive terminal boundary and reject conflicting persisted terminal rows. Frontend frame stepping
+    and bounded frame offsets use fresh backend neighborhoods through one validated helper, without frame-rate
+    arithmetic or reuse across an unobserved generation replacement.
   required: true
   verification:
     kind: manual
@@ -2322,8 +2335,27 @@ definition_of_done:
         subtests. Abschließender Backfill-/Index-/Query-Budget-Lauf: 57 passed, 2 subtests. Gesamt-Pyright:
         0 Fehler, 2 bestehende Warnungen; finale geänderte Dateien: 0 Fehler, 0 Warnungen. Ruff, 67 Strukturmanifeste
         und git diff --check bestanden. Keine Bereitstellung oder Produktionsabnahme.'
-    assessed_by: codex-pts-backfill-20261104
-    assessed_at: '2026-11-04T09:41:09.286036Z'
+    - kind: test
+      reference: '2026-11-11: Pyright 0 errors/0 warnings; backfill/command 36 passed; processed timelines/frame
+        coordinates 47 passed. Encrypted real VFR media, changed legacy counts, retained IDs, import identity
+        reuse, concurrent/idempotent recovery, tamper rejection and scoped cleanup.'
+    - kind: command
+      reference: '2026-11-11: live gc-10 migration backfilled=8, blocked=0, failed=0; 30/30 PTS index
+        audits passed, 3731878/3731878 PTS and timestamps; video 41 authenticated timeline API 200; acceptance
+        service exited 0.'
+    - kind: code
+      reference: endoreg_db/utils/video/timeline.py
+    - kind: test
+      reference: '2026-11-11: affected backend integration: 534 passed and 44 subtests passed; two query-count
+        instrumentation failures fixed without changing assertions or lease locking, focused rerun 2 passed.
+        Independent selected-frame consumers: 37 training/permission and 59 report API tests passed. Rust
+        timeline tests 9 passed; full Pyright 0 errors, 2 existing warnings. Frontend final 4-file Vitest
+        run 39 passed; application and test TypeScript checks passed. Real variable-rate/nonzero-origin
+        pixels, exact sparse ticks, hostile transfer coordinates, processed inference and publication
+        fencing covered. No deployment or production approval; browser/HLS player-clock mapping remains
+        unresolved.'
+    assessed_by: codex-pts-audit-20261111
+    assessed_at: '2026-11-11T12:48:39.301065Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request

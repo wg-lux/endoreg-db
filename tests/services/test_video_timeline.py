@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 from datetime import UTC, datetime
 from typing import Literal
+from fractions import Fraction
 from unittest.mock import patch
 
 import pytest
@@ -13,13 +14,21 @@ from endoreg_db.schemas.video_storage import (
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services.video_files._time import resolve_video_timeline_mapping
+from endoreg_db.services.video_files._time import (
+    resolve_video_timeline_mapping,
+    video_source_timeline,
+)
 from endoreg_db.services.video_files.timeline_index import load_video_timeline_index
 from endoreg_db.services.video_files.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,
     seconds_to_frame_number,
+    frame_durations,
+    presentation_timestamp_fraction,
+    presentation_timestamp_seconds,
+    validate_presentation_timestamp_seconds,
+    validate_display_frame_number,
 )
 
 
@@ -37,6 +46,104 @@ def test_missing_source_timeline_rejects_rate_based_coordinate_mapping(
             VideoTimelineMappingError, match="requires a persisted source timeline"
         ):
             load_video_timeline_index(video)
+
+
+def test_optional_source_timeline_read_never_attempts_recovery() -> None:
+    video = VideoFile(pk=1, meta={})
+    with patch(
+        "endoreg_db.services.video_files.timestamp_backfill.backfill_missing_video_timestamps",
+        side_effect=AssertionError("read-only evidence must not recover media"),
+    ):
+        assert video_source_timeline(video) is None
+
+
+@pytest.mark.parametrize(
+    ("tick", "numerator", "denominator", "expected"),
+    [
+        (144_224, 1, 90_000, Fraction(9014, 5625)),
+        (2000, 1, 1000, Fraction(2)),
+        (7, 1001, 30_000, Fraction(7007, 30_000)),
+    ],
+)
+def test_tick_conversion_keeps_exact_clock_arithmetic(
+    tick: int, numerator: int, denominator: int, expected: Fraction
+) -> None:
+    assert presentation_timestamp_fraction(tick, numerator, denominator) == expected
+    assert presentation_timestamp_seconds(tick, numerator, denominator) == float(
+        expected
+    )
+
+
+@pytest.mark.parametrize(
+    ("tick", "numerator", "denominator"),
+    [
+        (-1, 1, 1000),
+        (True, 1, 1000),
+        (1, True, 1000),
+        (1, 0, 1000),
+        (1, 1, 0),
+        (1, 1, -1000),
+    ],
+)
+def test_tick_conversion_rejects_invalid_identity_or_clock(
+    tick: int, numerator: int, denominator: int
+) -> None:
+    with pytest.raises(VideoTimelineMappingError):
+        presentation_timestamp_fraction(tick, numerator, denominator)
+
+
+@pytest.mark.parametrize("seconds", [1.602488, 144_224 / 90_000])
+def test_decimal_decoder_rounding_preserves_exact_tick_identity(seconds: float) -> None:
+    assert (
+        validate_presentation_timestamp_seconds(144_224, 1, 90_000, seconds) == seconds
+    )
+
+
+@pytest.mark.parametrize("seconds", [1.61, -1.0, math.nan, math.inf, True])
+def test_decimal_seconds_cannot_reidentify_a_frame(seconds: float) -> None:
+    with pytest.raises(VideoTimelineMappingError):
+        validate_presentation_timestamp_seconds(144_224, 1, 90_000, seconds)
+
+
+@pytest.mark.parametrize(
+    ("frame_number", "frame_count"),
+    [(True, 3), (-1, 3), (3, 3), (0, 0), (0, True)],
+)
+def test_display_frame_validation_rejects_terminal_and_invalid_counts(
+    frame_number: int, frame_count: int
+) -> None:
+    with pytest.raises(VideoTimelineMappingError):
+        validate_display_frame_number(frame_number, frame_count)
+
+
+def test_partial_frame_durations_do_not_bridge_missing_or_invalid_timing() -> None:
+    durations = frame_durations(
+        {0: 2.0, 1: 2.04, 3: 2.2, 4: math.nan, 5: 2.4, 6: 2.4, 7: 2.5},
+        terminal_frame_number=8,
+        terminal_timestamp=2.7,
+    )
+    expected = {0: 0.04, 6: 0.1, 7: 0.2}
+    assert durations.keys() == expected.keys()
+    assert all(
+        math.isclose(durations[number], value) for number, value in expected.items()
+    )
+
+
+@pytest.mark.parametrize(
+    ("frame_number", "timestamp"), [(0, 1.99), (3, 2.2), (3, 2.3), (4, 2.1), (4, 2.3)]
+)
+def test_persisted_coordinates_respect_nonzero_origin_and_exclusive_terminal(
+    frame_number: int, timestamp: float
+) -> None:
+    mapping = VideoTimelineMapping(
+        fps=25,
+        frame_count=4,
+        duration_seconds=0.2,
+        requires_persisted_pts=True,
+        first_timestamp_seconds=2.0,
+    )
+    with pytest.raises(VideoTimelineMappingError):
+        frame_number_to_seconds(mapping, frame_number, persisted_timestamp=timestamp)
 
 
 @pytest.mark.parametrize("timestamp_mapping", ["rational_cfr", "ffprobe_pts"])

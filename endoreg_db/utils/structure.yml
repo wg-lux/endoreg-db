@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: video/timeline.py
+  role: Initialization-free canonical frame/time rules, exact rational timestamp conversion and persisted-coordinate validation.
 - file: operation_log.py
   role: Required operation audit persistence; save failures propagate to caller-owned clinical transactions.
 - file: verify_salt.py
@@ -20,7 +22,9 @@ files:
 - file: storage_streaming.py
   role: Protected streaming adapters.
 - file: frame_stream.py
-  role: Timestamp-preserving streaming decoder and generation-bound JPEG reads.
+  role: Shared exact-timestamp JPEG and lossless pixel decoding, including persisted-frame identity validation and authenticated ranges.
+- file: video/frame_extraction.py
+  role: Sparse exact-timestamp frame extraction using shared rational timeline validation and container-relative seek translation.
 - file: profiling.py
   role: Opt-in function profiling.
 - file: encryption/__init__.py

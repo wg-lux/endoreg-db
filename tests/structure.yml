@@ -10,10 +10,18 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: app/test_lx_dtypes_import_boundary.py
+  role: Declared-version and installed-distribution identity checks plus URL import isolation from sibling checkouts.
+- file: services/test_video_timeline.py
+  role: Central exact tick conversion, decoder-second identity, display/terminal bounds and read-only source evidence.
+- file: rust_backend/test_timeline_index.py
+  role: Native/scalar timeline parity for irregular coordinates, origins, missing boundaries and exclusive terminal invariants.
 - file: services/test_video_owned_deletion.py
   role: Full video deletion removes owned assets synchronously, retains ownership on failure and rejects shared or aliased paths.
 - file: services/test_video_timestamp_backfill.py
   role: Automatic canonical timestamp backfill, identity preservation, idempotence and rejection regressions.
+- file: management/commands/test_backfill_video_timelines.py
+  role: Timeline backfill command dry-run, apply, idempotence, blocked-media reporting and hash-mismatch rejection.
 - file: helpers/pdf.py
   role: Independent single-page synthetic PDF fixture/reference shared by report tests and native-renderer parity; no clinical renderer fallback.
 - file: services/test_shared_video_helpers.py

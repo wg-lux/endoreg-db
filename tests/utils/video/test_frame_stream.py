@@ -13,6 +13,44 @@ from pytest import MonkeyPatch
 
 import endoreg_db.utils.frame_stream as frame_stream
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from endoreg_db.schemas.video_storage import CanonicalFrameTimeline
+
+
+@pytest.mark.no_db
+def test_path_decoder_and_pure_coordinates_do_not_require_django_setup() -> None:
+    import os
+    import subprocess
+    import sys
+
+    code = """
+import sys
+from pathlib import Path
+from django.apps import apps
+from endoreg_db.utils.video.timeline import presentation_timestamp_seconds
+assert presentation_timestamp_seconds(2000, 1, 1000) == 2.0
+assert 'endoreg_db.models' not in sys.modules and not apps.ready
+from endoreg_db.utils.frame_stream import read_video_path_frame_jpeg
+assert 'endoreg_db.models' not in sys.modules and not apps.ready
+try:
+    read_video_path_frame_jpeg(Path('unused.mp4'), frame_number=0, timestamp=float('nan'))
+except ValueError as error:
+    assert 'finite and non-negative' in str(error)
+else:
+    raise AssertionError('Invalid timestamp was accepted')
+assert 'endoreg_db.models' not in sys.modules and not apps.ready
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        env={
+            key: value
+            for key, value in os.environ.items()
+            if key not in {"DJANGO_SETTINGS_MODULE", "LX_RUNTIME_ROOT"}
+        },
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 @pytest.fixture
@@ -167,11 +205,16 @@ def test_read_video_file_frame_jpeg_uses_authoritative_pts_and_seekable_ranges(
 
     from endoreg_db.services.video_files import frame_coordinates
 
-    def persisted_timestamps(video: object, *, file_type: str) -> tuple[float, ...]:
-        return (123.456789123,)
+    def persisted_timeline(video: object, *, file_type: str) -> CanonicalFrameTimeline:
+        return CanonicalFrameTimeline(
+            content_hash="a" * 64,
+            time_base_num=1,
+            time_base_den=1_000_000_000,
+            presentation_timestamps=[123_456_789_123],
+        )
 
     monkeypatch.setattr(
-        frame_coordinates, "artifact_frame_timestamps", persisted_timestamps
+        frame_coordinates, "artifact_frame_timeline", persisted_timeline
     )
     field_file = SimpleNamespace(name="processed/video.mp4", storage=object())
 
@@ -234,14 +277,78 @@ def test_read_video_file_frame_jpeg_uses_authoritative_pts_and_seekable_ranges(
     assert command[command.index("-ss") + 1] == "123.456789123"
     assert command[command.index("-seekable") + 1] == "1"
     assert command[command.index("-i") + 1].startswith("http://127.0.0.1:")
+    assert command[command.index("-vf") + 1] == "select='eq(pts\\,123456789123)'"
+    assert "-copyts" in command
+
+
+@pytest.mark.parametrize("frame_number", [-1, 1, True, 0.5])
+def test_canonical_image_read_rejects_invalid_display_frame_before_decoding(
+    monkeypatch: MonkeyPatch, frame_number: int | float
+) -> None:
+    from endoreg_db.services.video_files import frame_coordinates
+
+    def canonical_timeline(*args: object, **kwargs: object) -> CanonicalFrameTimeline:
+        return CanonicalFrameTimeline(
+            content_hash="a" * 64,
+            time_base_num=1,
+            time_base_den=1000,
+            presentation_timestamps=[2000],
+        )
+
+    monkeypatch.setattr(
+        frame_coordinates, "artifact_frame_timeline", canonical_timeline
+    )
+    video = SimpleNamespace(raw_file=SimpleNamespace(name="canonical.mp4"))
+    with pytest.raises(ValueError, match="Display frame number"):
+        frame_stream.read_video_file_frame_sample(
+            cast(Any, video), frame_number=cast(int, frame_number)
+        )
+
+
+@pytest.mark.parametrize(
+    "tick,seconds",
+    [(None, 2.0), (2000, None), (2001, 2.001), (2000, 2.1)],
+)
+def test_selected_processed_frame_rejects_missing_or_stale_row_coordinates(
+    monkeypatch: MonkeyPatch, tick: int | None, seconds: float | None
+) -> None:
+    from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.video_files import frame_coordinates
+
+    def canonical_timeline(*args: object, **kwargs: object) -> CanonicalFrameTimeline:
+        return CanonicalFrameTimeline(
+            content_hash="a" * 64,
+            time_base_num=1,
+            time_base_den=1000,
+            presentation_timestamps=[2000],
+        )
+
+    def forbidden_decode(*args: object, **kwargs: object) -> None:
+        raise AssertionError("Stale frame rows must fail before pixel decoding")
+
+    monkeypatch.setattr(
+        frame_coordinates, "artifact_frame_timeline", canonical_timeline
+    )
+    monkeypatch.setattr(frame_stream.subprocess, "Popen", forbidden_decode)
+    frame = Frame(
+        video=VideoFile(processed_file="processed/master.mp4"),
+        frame_number=0,
+        presentation_timestamp=tick,
+        timestamp=seconds,
+    )
+    with pytest.raises(ValueError):
+        frame_stream.read_processed_frame_jpeg(frame)
 
 
 @pytest.mark.ffmpeg
 @pytest.mark.video
 @pytest.mark.integration
+@pytest.mark.parametrize("lossless", [False, True])
 def test_read_video_file_frame_jpeg_decodes_from_encrypted_ranges(
     tmp_path: Path,
     real_video_probe: None,
+    lossless: bool,
 ) -> None:
     from endoreg_db.services.video_storage.canonical_timelines import (
         capture_canonical_timeline,
@@ -303,15 +410,23 @@ def test_read_video_file_frame_jpeg_decodes_from_encrypted_ranges(
             ]
         }
 
-    sample = frame_stream.read_video_file_frame_jpeg(
-        cast(Any, FakeVideo()),
-        frame_number=5,
-        file_type="processed",
-    )
+    if lossless:
+        import numpy as np
 
-    assert sample.frame_number == 5
-    assert sample.timestamp == 0.5
-    assert sample.image_bytes.startswith(b"\xff\xd8")
+        sample = frame_stream.read_video_file_frame_sample(
+            cast(Any, FakeVideo()), frame_number=5, file_type="processed"
+        )
+        reference = list(frame_stream.iter_video_path_frame_samples(source_path))[5]
+        assert sample.frame_number == reference.frame_number
+        assert sample.timestamp == reference.timestamp
+        np.testing.assert_array_equal(sample.rgb_frame, reference.rgb_frame)
+    else:
+        encoded = frame_stream.read_video_file_frame_jpeg(
+            cast(Any, FakeVideo()), frame_number=5, file_type="processed"
+        )
+        assert encoded.frame_number == 5
+        assert encoded.timestamp == 0.5
+        assert encoded.image_bytes.startswith(b"\xff\xd8")
 
 
 @pytest.mark.unit
@@ -397,6 +512,7 @@ def test_real_irregular_decode_preserves_pixels_and_nonzero_origin(
     real_video_probe: None,
     time_base: str,
     expression: str,
+    monkeypatch: MonkeyPatch,
 ) -> None:
     import numpy as np
     from PIL import Image
@@ -435,6 +551,26 @@ def test_real_irregular_decode_preserves_pixels_and_nonzero_origin(
         sample.timestamp for sample in samples
     ] == frame_stream.probe_video_frame_pts(path)
     assert [sample.frame_number for sample in samples] == [0, 1, 2, 3]
+    from endoreg_db.services.video_files import frame_coordinates
+
+    from endoreg_db.services.video_storage.canonical_timelines import (
+        capture_canonical_timeline,
+    )
+    from endoreg_db.services.video_storage.probes import probe_video_artifact
+
+    timeline = capture_canonical_timeline(path, probe_video_artifact(path))
+
+    def canonical_timeline(*args: object, **kwargs: object) -> CanonicalFrameTimeline:
+        return timeline
+
+    def plaintext_path(field: object) -> Path:
+        return path
+
+    monkeypatch.setattr(
+        frame_coordinates, "artifact_frame_timeline", canonical_timeline
+    )
+    monkeypatch.setattr(frame_stream, "maybe_local_plaintext_path", plaintext_path)
+    video = SimpleNamespace(raw_file=SimpleNamespace(name="irregular.mp4"))
     for sample in samples:
         jpeg = frame_stream.read_video_path_frame_jpeg(
             path, frame_number=sample.frame_number, timestamp=sample.timestamp
@@ -446,3 +582,13 @@ def test_real_irregular_decode_preserves_pixels_and_nonzero_origin(
             np.abs(pixels - candidate.rgb_frame).mean() for candidate in samples
         ]
         assert int(np.argmin(distances)) == sample.frame_number
+        lossless = frame_stream.read_video_file_frame_sample(
+            cast(Any, video),
+            frame_number=sample.frame_number,
+        )
+        np.testing.assert_array_equal(lossless.rgb_frame, sample.rgb_frame)
+
+    # A nonexistent tick must fail instead of returning the nearest displayed frame.
+    timeline.presentation_timestamps[1] += 1
+    with pytest.raises(RuntimeError, match="no encoded frame"):
+        frame_stream.read_video_file_frame_sample(cast(Any, video), frame_number=1)

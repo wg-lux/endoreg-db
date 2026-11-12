@@ -7,6 +7,7 @@ from fractions import Fraction
 from typing import TYPE_CHECKING
 
 from django.db import transaction
+from lx_dtypes.evaluation.electrical import recording_to_electrical_ticks
 from lx_dtypes.models.contracts.video_provenance import (
     RecordingSynchronization,
     ElectricalTimestampSeries,
@@ -204,8 +205,6 @@ def electrical_sample_indices(
     for edge in reversed(proof.transformations):
         source_indices = [edge.source_frame_indices[index] for index in source_indices]
     source_ticks = proof.transformations[0].source.presentation_timestamps
-    anchors = sync.anchors
-    video_anchors = [anchor.video_timestamp for anchor in anchors]
     electrical_base = Fraction(
         sync.electrical_time_base_num, sync.electrical_time_base_den
     )
@@ -213,17 +212,7 @@ def electrical_sample_indices(
     selected: list[int] = []
     for source_index in source_indices:
         tick = source_ticks[source_index]
-        if not video_anchors[0] <= tick <= video_anchors[-1]:
-            raise ValueError(
-                "Video frame lies outside the measured synchronization interval"
-            )
-        right = min(max(1, bisect_left(video_anchors, tick)), len(anchors) - 1)
-        before, after = anchors[right - 1], anchors[right]
-        target = before.electrical_timestamp + Fraction(
-            (tick - before.video_timestamp)
-            * (after.electrical_timestamp - before.electrical_timestamp),
-            after.video_timestamp - before.video_timestamp,
-        )
+        target = recording_to_electrical_ticks(sync, tick)
         if not electrical_timestamps[0] <= target <= electrical_timestamps[-1]:
             raise ValueError("Synchronized frame lies outside the electrical recording")
         position = bisect_left(electrical_timestamps, target)

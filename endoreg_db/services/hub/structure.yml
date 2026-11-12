@@ -86,7 +86,7 @@ files:
 - file: transfer_logging.py
   role: Exports enabled, sanitize, section.
 - file: transfers.py
-  role: Version 7 pseudonymous identity linkage, segment timeline coordinates recomputed from received provenance, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
+  role: Version 7 pseudonymous identity linkage, segment and frame annotation coordinates bound to received presentation timelines, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
 - file: upload_center_resolution.py
   role: Declared center_key/center_name lookup and pure center-or-error decision; ingest.py re-exports it.
 - file: upload_job_cancellation.py
@@ -103,7 +103,7 @@ files:
 - file: upload_job_state_machine.py
   role: Native-validated status transitions and canonical recovery admission predicates shared by overview and fenced coordinators.
 - file: video_provenance.py
-  role: Validate and lease privacy-limited ancestry exports through the shared resolver; explicit independent-clock joins.
+  role: Validate and lease privacy-limited ancestry exports through the shared resolver; independent-clock sample selection delegates exact anchor interpolation to lx-dtypes.
 - file: watcher_handoff.py
   role: Exports watcher_path_reference_text, is_in_progress_handoff_path, reject_in_progress_handoff_path.
 dependencies:
@@ -147,7 +147,9 @@ contracts:
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_unit.py tests/services/test_ingest_helper_compatibility.py
+    tests/views/media/test_hub_transfer_endpoints.py
   files:
+  - tests/views/media/test_hub_transfer_endpoints.py
   - tests/services/test_study_hub_transfer.py
   - tests/hub/test_ingest_postgresql_policy.py
   - tests/management/commands/test_import_sap_ish_txt.py

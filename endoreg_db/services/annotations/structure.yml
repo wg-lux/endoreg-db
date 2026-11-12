@@ -20,7 +20,7 @@ entrypoints:
   purpose: Validate and apply a batch of clinical segment mutations.
 files:
 - file: comparisons.py
-  role: Read-only named practitioner overlap and finalized report snapshot comparisons.
+  role: Read-only named practitioner overlap and finalized report snapshot comparisons using central generation-bound timeline durations.
 - file: __init__.py
   role: Frame- und Segmentannotation, Auswahl und Validierungsabläufe.
 - file: annotation_access.py

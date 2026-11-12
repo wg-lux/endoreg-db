@@ -23,6 +23,7 @@ from endoreg_db.models import (
     VideoFile,
     VideoProcessingHistory,
 )
+from endoreg_db.utils.frame_stream import FrameSample
 
 temporal_jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from endoreg_db.services.jobs import video_post_validation_jobs as jobs
@@ -750,8 +751,12 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
         extracted_state.save(update_fields=["frame_count", "frames_extracted"])
         return True
 
-    def fake_capture_frame(_path: Path, _frame_number: int) -> object:
-        return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
+    def fake_capture_frame(_video: VideoFile, frame_number: int) -> FrameSample:
+        return FrameSample(
+            frame_number,
+            float(frame_number),
+            __import__("numpy").zeros((4, 4, 3), dtype="uint8"),
+        )
 
     monkeypatch.setattr(
         jobs,
@@ -857,9 +862,13 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     )
     sampled_frame_numbers: list[int] = []
 
-    def fake_capture_frame(_path: Path, frame_number: int):
+    def fake_capture_frame(_video: VideoFile, frame_number: int) -> FrameSample:
         sampled_frame_numbers.append(frame_number)
-        return __import__("numpy").full((4, 4, 3), sample_value, dtype="uint8")
+        return FrameSample(
+            frame_number,
+            float(frame_number),
+            __import__("numpy").full((4, 4, 3), sample_value, dtype="uint8"),
+        )
 
     monkeypatch.setattr(jobs, "_capture_frame", fake_capture_frame)
 
