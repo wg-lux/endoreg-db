@@ -52,6 +52,40 @@ class VideoMediaViewTests(TestCase):
         assert payload["results"][0]["id"] == self.video.pk
         assert payload["results"][0]["original_file_name"] == f"video-{self.video.pk}"
 
+    def test_list_isolates_missing_processed_generation(self) -> None:
+        self.client.force_login(self.user)
+        VideoFile.objects.filter(pk=self.video.pk).update(
+            processed_file="processed_videos_final/.generations/missing.mp4",
+            processed_video_hash="a" * 64,
+        )
+        segment = LabelVideoSegment.objects.create(
+            video_file=self.video, start_frame_number=0, end_frame_number=1
+        )
+        healthy = VideoFile.objects.create(
+            center=self.center,
+            raw_video_hash=f"healthy-{uuid4().hex}",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
+        )
+        LabelVideoSegment.objects.create(
+            video_file=healthy, start_frame_number=0, end_frame_number=1
+        )
+
+        response = self.client.get("/api/media/videos/")
+
+        assert response.status_code == 200, response.content
+        rows = {row["id"]: row for row in response.json()["results"]}
+        assert rows[self.video.pk]["status"] == "failed"
+        assert rows[self.video.pk]["anonymized"] is False
+        assert rows[self.video.pk]["segments"] is None
+        assert "Canonical media is missing" in rows[self.video.pk]["timeline_error"]
+        assert ".generations" not in rows[self.video.pk]["timeline_error"]
+        assert rows[healthy.pk]["timeline_error"] is None
+        assert rows[healthy.pk]["segments"][0]["start_time"] == 0.0
+        segment.refresh_from_db()
+        assert (segment.start_frame_number, segment.end_frame_number) == (0, 1)
+        self.video.refresh_from_db()
+        assert not (self.video.meta or {}).get("source_timeline")
+
     def test_list_tolerates_malformed_pagination(self) -> None:
         self.client.force_login(self.user)
         for value in ("", "undefined", "null", "NaN", "1.5", "-1", " ", "9" * 5000):

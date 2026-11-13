@@ -37,6 +37,14 @@ Authenticated decryption, existing coordinates and publication locking remain
 enforced. Processed timestamps are recorded as processed evidence;
 they do not establish original frame ancestry or original timestamp history.
 
+Video discovery returns `segments: null`, `timeline_error` and `status: failed`
+when a video's clinical timeline cannot be resolved, keeping other videos
+available. A healthy row has `timeline_error: null`. Missing canonical media
+must be restored at its published generation before timestamps can be recovered;
+retained raw media cannot replace a missing published processed generation.
+Discovery does not mark persistent integrity state or change annotations. Run
+the documented integrity reconciliation to assess missing media separately.
+
 ## Recover usable media with unresolved frame mapping
 
 Use **Frame-Herkunft reparieren** in Hub Export or **Video für Transfer reparieren**

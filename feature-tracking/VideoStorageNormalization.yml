@@ -2240,6 +2240,10 @@ definition_of_done:
     preserving retained primary keys. Partial coordinates and saved annotations are never overwritten.
     Publication locking serializes recovery; import states and provenance approvals remain unchanged and
     repeated reads do not probe again.
+  - Video discovery isolates unavailable clinical timelines per video, returning null segments, an explicit
+    timeline_error and failed status while healthy videos remain discoverable. Missing canonical media
+    raises a path-free timeline error; recovery never substitutes raw media for a published processed
+    generation or changes existing annotations.
   - Processed media supplies its own presentation timestamps without probing retained raw media first.
     Existing original timestamp history remains separate; processed evidence does not claim original transformation
     ancestry. Missing original presentation timestamp fields use validated decoder timestamps throughout
@@ -2354,8 +2358,17 @@ definition_of_done:
         pixels, exact sparse ticks, hostile transfer coordinates, processed inference and publication
         fencing covered. No deployment or production approval; browser/HLS player-clock mapping remains
         unresolved.'
-    assessed_by: codex-pts-audit-20261111
-    assessed_at: '2026-11-11T12:48:39.301065Z'
+    - kind: test
+      reference: '2026-11-13: focused Pyright 0 errors/0 warnings; devenv shell -- env RUN_VIDEO_TESTS=true
+        SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_video_timestamp_backfill.py
+        tests/management/commands/test_backfill_video_timelines.py tests/views/media/test_video_media_view.py
+        -q --tb=short: 49 passed, 13 subtests passed, 1 existing plugin warning. Missing raw/processed
+        media leaves coordinates and metadata unchanged; missing processed generation does not probe retained
+        raw media. Discovery returns explicit per-video timeline errors while healthy segments remain
+        available. Ruff, formatting, diff and 67 structure manifests pass. No deployment or production
+        approval.'
+    assessed_by: codex-lx-local-20261113
+    assessed_at: '2026-11-13T18:40:27.613946Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request

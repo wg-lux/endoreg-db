@@ -49,11 +49,17 @@ def _capture_generation(
         raise VideoTimelineMappingError(
             "Timestamp backfill requires canonical media and its content hash."
         )
-    with ensure_local_file(field) as path:
-        probe = probe_video_artifact(path)
-        captured = capture_canonical_timeline(
-            path, probe, require_original_pts=True, imported_content_hash=digest
-        )
+    try:
+        with ensure_local_file(field) as path:
+            probe = probe_video_artifact(path)
+            captured = capture_canonical_timeline(
+                path, probe, require_original_pts=True, imported_content_hash=digest
+            )
+    except FileNotFoundError as exc:
+        raise VideoTimelineMappingError(
+            "Canonical media is missing; restore the published generation before "
+            "recovering timestamps."
+        ) from exc
     candidates = [
         timeline
         for entry in history

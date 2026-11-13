@@ -371,3 +371,39 @@ def test_concurrent_readers_capture_each_generation_once(
         assert first.result(timeout=30) == second.result(timeout=30) == 4.15
     assert probe.call_count == 1
     assert video.frames.count() == 4
+
+
+@pytest.mark.parametrize("processed", [False, True])
+def test_missing_canonical_media_raises_timeline_error_without_writes(
+    video: VideoFile, processed: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if processed:
+        video.processed_file.name = ".generations/missing-processed.mp4"
+    else:
+        video.processed_file.name = ""
+        video.processed_video_hash = None
+        video.raw_file.name = ".generations/missing-raw.mp4"
+    video.save()
+    Frame.objects.create(video=video, frame_number=0)
+    before = list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+    metadata = video.meta
+    count = video.frame_count
+    probe = Mock(
+        side_effect=AssertionError("Missing media must not probe another generation")
+    )
+    monkeypatch.setattr(service, "probe_video_artifact", probe)
+
+    with pytest.raises(
+        service.VideoTimelineMappingError, match="Canonical media is missing"
+    ) as error:
+        load_video_timeline_index(video)
+
+    assert ".generations" not in str(error.value)
+    video.refresh_from_db()
+    assert video.meta == metadata
+    assert video.frame_count == count
+    assert (
+        list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+        == before
+    )
+    probe.assert_not_called()
