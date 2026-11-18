@@ -60,6 +60,9 @@ from endoreg_db.serializers.report.patient_examination_report import (
     PatientExaminationReportSchema,
     SegmentFrameSelectorResponseSchema,
 )
+from endoreg_db.services.runtime.status_writers import (
+    set_patient_examination_report_status,
+)
 from endoreg_db.services.reports.history import get_patient_examination_history_context
 from endoreg_db.services.reports.persistence import (
     ReportKnowledgeBaseRegistryUnavailableError,
@@ -1136,8 +1139,9 @@ def make_report(
             )
             report.runtime_validation_snapshot = runtime_validation
             user = _authenticated_user_from_request(request)
-            if _report_status(report) != "final":
-                report.status = "final"
+            if set_patient_examination_report_status(
+                report, PatientExaminationReport.Status.FINAL.value
+            ):
                 report.finalized_at = timezone.now()
                 _assign_report_user_fields(
                     report,

@@ -15,6 +15,7 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.upload_job_state_machine import (
     mark_upload_job_integrity_lost,
 )
@@ -212,9 +213,9 @@ def _apply_migration_job_update(
             ),
         )
     if source_exists:
-        _mark_source_cleanup_eligible(upload_job, update_fields=update_fields)
+        _mark_source_cleanup_eligible(locked_job, update_fields=update_fields)
         return MigrationUpdateResult(True, marked_lost, False)
-    _repair_orphaned_source(upload_job, update_fields=update_fields)
+    _repair_orphaned_source(locked_job, update_fields=update_fields)
     return MigrationUpdateResult(False, marked_lost, True)
 
 
@@ -251,16 +252,19 @@ def _lost_detail(*, source_exists: bool) -> str:
 
 
 def _mark_source_cleanup_eligible(
-    upload_job: MigrationUploadJob,
+    upload_job: UploadJob,
     *,
     update_fields: list[str],
 ) -> None:
-    upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE.value
-    upload_job.save(update_fields=update_fields)
+    with transaction.atomic():
+        set_upload_job_cleanup_status(
+            upload_job, UploadJob.CleanupStatus.ELIGIBLE.value
+        )
+        upload_job.save(update_fields=update_fields)
 
 
 def _repair_orphaned_source(
-    upload_job: MigrationUploadJob,
+    upload_job: UploadJob,
     *,
     update_fields: list[str],
 ) -> None:
@@ -272,10 +276,13 @@ def _repair_orphaned_source(
     ]
     if "source_file_delete_eligible_at" in update_fields:
         orphan_update_fields.append("source_file_delete_eligible_at")
-    upload_job.file.name = ""
-    upload_job.source_file_persisted = False
-    upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED.value
-    upload_job.save(update_fields=orphan_update_fields)
+    with transaction.atomic():
+        set_upload_job_cleanup_status(
+            upload_job, UploadJob.CleanupStatus.COMPLETED.value
+        )
+        upload_job.file.name = ""
+        upload_job.source_file_persisted = False
+        upload_job.save(update_fields=orphan_update_fields)
 
 
 def _source_file_exists(upload_job: MigrationUploadJob) -> bool:

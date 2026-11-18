@@ -22,6 +22,7 @@ from endoreg_db.import_files.file_storage.state_management import (
 )
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 from endoreg_db.services.video_files import _imports as video_create_module
+from endoreg_db.services.video_files import imports as video_imports_module
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import get_file_hash
@@ -103,7 +104,19 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
             ]
         }
 
+    def fake_initialize_video_file(
+        video: VideoFile, *, local_raw_path: Path | None = None
+    ) -> VideoFile:
+        return video
+
     monkeypatch.setattr(VideoFile, "initialize", fake_initialize, raising=True)
+    # create_from_file_initialized calls the service directly, not the model method.
+    monkeypatch.setattr(
+        video_imports_module,
+        "initialize_video_file",
+        fake_initialize_video_file,
+        raising=True,
+    )
     monkeypatch.setattr(
         video_create_module,
         "ensure_video_file_profile",

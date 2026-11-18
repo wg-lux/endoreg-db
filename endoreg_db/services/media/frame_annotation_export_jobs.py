@@ -50,6 +50,7 @@ from lx_dtypes.models.contracts.video_frame_export import (
 )
 from pydantic import ValidationError as PydanticValidationError
 
+from endoreg_db.services.runtime.status_writers import update_frame_export_job_status
 from endoreg_db.export.frames.export_frames_with_labels import (
     AnnotationExporterClient,
     ExportJobFailedError,
@@ -224,19 +225,21 @@ def recover_stale_frame_annotation_export_jobs() -> int:
     needs the run lock, which a living worker keeps holding.
     """
     now = timezone.now()
-    running = FrameAnnotationExportJob.objects.filter(
-        status=FrameAnnotationExportJob.Status.RUNNING,
-        heartbeat_at__lt=now - FRAME_ANNOTATION_EXPORT_RUNNING_STALE_AFTER,
-    ).update(
-        status=FrameAnnotationExportJob.Status.LOST,
+    running = update_frame_export_job_status(
+        FrameAnnotationExportJob.objects.filter(
+            heartbeat_at__lt=now - FRAME_ANNOTATION_EXPORT_RUNNING_STALE_AFTER,
+        ),
+        expected=FrameAnnotationExportJob.Status.RUNNING,
+        target=FrameAnnotationExportJob.Status.LOST,
         error="Worker stopped sending heartbeats; start a new export.",
         finished_at=now,
     )
-    queued = FrameAnnotationExportJob.objects.filter(
-        status=FrameAnnotationExportJob.Status.QUEUED,
-        created_at__lt=now - FRAME_ANNOTATION_EXPORT_QUEUED_STALE_AFTER,
-    ).update(
-        status=FrameAnnotationExportJob.Status.LOST,
+    queued = update_frame_export_job_status(
+        FrameAnnotationExportJob.objects.filter(
+            created_at__lt=now - FRAME_ANNOTATION_EXPORT_QUEUED_STALE_AFTER,
+        ),
+        expected=FrameAnnotationExportJob.Status.QUEUED,
+        target=FrameAnnotationExportJob.Status.LOST,
         error="No worker started the export; start a new export.",
         finished_at=now,
     )
@@ -386,10 +389,10 @@ def _job_result(result: export_result) -> FrameAnnotationExportJobResult:
 
 def _run_lock_busy(job: FrameAnnotationExportJob) -> FrameAnnotationExportJob:
     if job.status == FrameAnnotationExportJob.Status.QUEUED.value:
-        updated = FrameAnnotationExportJob.objects.filter(
-            pk=job.pk, status=FrameAnnotationExportJob.Status.QUEUED
-        ).update(
-            status=FrameAnnotationExportJob.Status.FAILED,
+        updated = update_frame_export_job_status(
+            FrameAnnotationExportJob.objects.filter(pk=job.pk),
+            expected=FrameAnnotationExportJob.Status.QUEUED,
+            target=FrameAnnotationExportJob.Status.FAILED,
             error=(
                 "A previous export still writes this run directory; "
                 "start the export under a new run name."
@@ -414,8 +417,10 @@ def _claim(job: FrameAnnotationExportJob) -> UUID | None:
     with transaction.atomic():
         current = FrameAnnotationExportJob.objects.select_for_update().get(pk=job.pk)
         if current.status == FrameAnnotationExportJob.Status.QUEUED.value:
-            FrameAnnotationExportJob.objects.filter(pk=job.pk).update(
-                status=FrameAnnotationExportJob.Status.RUNNING,
+            update_frame_export_job_status(
+                FrameAnnotationExportJob.objects.filter(pk=job.pk),
+                expected=FrameAnnotationExportJob.Status.QUEUED,
+                target=FrameAnnotationExportJob.Status.RUNNING,
                 claim_token=token,
                 started_at=now,
                 heartbeat_at=now,
@@ -425,8 +430,10 @@ def _claim(job: FrameAnnotationExportJob) -> UUID | None:
         if current.status == FrameAnnotationExportJob.Status.RUNNING.value:
             # The run lock was free, so the worker that claimed this job died;
             # its partial output is not trustworthy.
-            FrameAnnotationExportJob.objects.filter(pk=job.pk).update(
-                status=FrameAnnotationExportJob.Status.LOST,
+            update_frame_export_job_status(
+                FrameAnnotationExportJob.objects.filter(pk=job.pk),
+                expected=FrameAnnotationExportJob.Status.RUNNING,
+                target=FrameAnnotationExportJob.Status.LOST,
                 error="Worker was lost during the export; start a new export.",
                 finished_at=now,
                 updated_at=now,
@@ -443,10 +450,10 @@ def _finish(
     error: str = "",
 ) -> FrameAnnotationExportJob:
     now = timezone.now()
-    updated = FrameAnnotationExportJob.objects.filter(
-        pk=job.pk, claim_token=token, status=FrameAnnotationExportJob.Status.RUNNING
-    ).update(
-        status=status,
+    updated = update_frame_export_job_status(
+        FrameAnnotationExportJob.objects.filter(pk=job.pk, claim_token=token),
+        expected=FrameAnnotationExportJob.Status.RUNNING,
+        target=status,
         result=dump_frame_annotation_export_job_result(result),
         error=error,
         finished_at=now,
@@ -496,10 +503,10 @@ def _dispatch(job: FrameAnnotationExportJob) -> None:
     except (RuntimeError, BrokerOperationalError, OSError) as exc:
         # A job no worker will ever see must not stay queued.
         logger.exception("Dispatch of frame annotation export job %s failed", job.pk)
-        FrameAnnotationExportJob.objects.filter(
-            pk=job.pk, status=FrameAnnotationExportJob.Status.QUEUED
-        ).update(
-            status=FrameAnnotationExportJob.Status.FAILED,
+        update_frame_export_job_status(
+            FrameAnnotationExportJob.objects.filter(pk=job.pk),
+            expected=FrameAnnotationExportJob.Status.QUEUED,
+            target=FrameAnnotationExportJob.Status.FAILED,
             error=f"Export could not be queued: {exc}",
             finished_at=timezone.now(),
         )

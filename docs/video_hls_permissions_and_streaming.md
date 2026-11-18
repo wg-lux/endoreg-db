@@ -172,9 +172,31 @@ caller time including waits for FFmpeg; they do not profile the encoder internal
 The durable artifact states are:
 
 ```text
-queued -> materializing -> ready
-                       \-> failed
+queued -> materializing -> validated -> ready -> superseded
+   \            \               \          \
+    `------------`---------------`----------`-> failed
 ```
+
+Every status change goes through `set_hls_artifact_status` in
+`endoreg_db/services/streaming/hls_artifact_state.py`, the only writer of
+`VideoHlsArtifact.status`. It asks the native table
+`decide_hls_artifact_transition` (capability `hls_artifact_transition_v1`),
+which has three outcomes:
+
+| Current | Applied targets | Ignored (no write) |
+| --- | --- | --- |
+| new row | `queued`, `materializing` | |
+| `queued` | `materializing`, `failed` | `queued` |
+| `materializing` | `materializing` (same-attempt reclaim), `validated`, `failed` | |
+| `validated` | `ready`, `failed` | `validated` |
+| `ready` | `superseded`, `failed` | `ready` |
+| `superseded` | | `superseded`, `failed` |
+| `failed` | | `failed` |
+
+Every other pair raises `ValueError`: `ready` is reachable only from
+`validated`, and final artifacts are never revived. Callers hold the artifact
+row lock and save only when the writer returns `True`. Writer ownership across
+the project is described in [state_mutation_ownership.md](state_mutation_ownership.md).
 
 `queued` as a dispatch result means only that the broker accepted a task. It
 does not mean that a ready artifact exists. Stale materialization is reconciled

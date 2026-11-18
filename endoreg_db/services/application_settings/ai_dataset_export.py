@@ -8,6 +8,7 @@ from typing import Any
 from collections.abc import Mapping
 from uuid import UUID
 
+from django.db import transaction
 from django.utils import timezone
 from pydantic import ValidationError as PydanticValidationError
 
@@ -20,6 +21,9 @@ from endoreg_db.schemas.aidataset_export import (
     parse_ai_dataset_export_request_payload,
 )
 from endoreg_db.services.datasets.exports import export_to_standardized_structure
+from endoreg_db.services.runtime.status_writers import (
+    set_ai_dataset_export_artifact_status,
+)
 from endoreg_db.services.hub import (
     local_study_server_mode_enabled,
 )
@@ -322,10 +326,15 @@ def _mark_artifact_failed(
     artifact: AIDataSetExportArtifact,
     error: str,
 ) -> AIDataSetExportArtifact:
-    artifact.status = AIDataSetExportArtifact.STATUS_FAILED
-    artifact.error = error
-    artifact.finished_at = timezone.now()
-    artifact.save(update_fields=["status", "error", "finished_at", "updated_at"])
+    with transaction.atomic():
+        if set_ai_dataset_export_artifact_status(
+            artifact, AIDataSetExportArtifact.STATUS_FAILED
+        ):
+            artifact.error = error
+            artifact.finished_at = timezone.now()
+            artifact.save(
+                update_fields=["status", "error", "finished_at", "updated_at"]
+            )
     return artifact
 
 
@@ -402,27 +411,31 @@ def create_ai_dataset_export(
             content=[json_bytes],
             required_bytes=len(json_bytes),
         )
-        artifact.status = AIDataSetExportArtifact.STATUS_COMPLETED
-        artifact.output_path = str(output_path)
-        artifact.download_filename = file_name
-        artifact.sha256 = get_file_hash(output_path)
-        artifact.byte_size = len(json_bytes)
-        artifact.summary = export_payload.get("summary", {})
-        artifact.error = ""
-        artifact.finished_at = timezone.now()
-        artifact.save(
-            update_fields=[
-                "status",
-                "output_path",
-                "download_filename",
-                "sha256",
-                "byte_size",
-                "summary",
-                "error",
-                "finished_at",
-                "updated_at",
-            ]
-        )
+        output_sha256 = get_file_hash(output_path)
+        with transaction.atomic():
+            set_ai_dataset_export_artifact_status(
+                artifact, AIDataSetExportArtifact.STATUS_COMPLETED
+            )
+            artifact.output_path = str(output_path)
+            artifact.download_filename = file_name
+            artifact.sha256 = output_sha256
+            artifact.byte_size = len(json_bytes)
+            artifact.summary = export_payload.get("summary", {})
+            artifact.error = ""
+            artifact.finished_at = timezone.now()
+            artifact.save(
+                update_fields=[
+                    "status",
+                    "output_path",
+                    "download_filename",
+                    "sha256",
+                    "byte_size",
+                    "summary",
+                    "error",
+                    "finished_at",
+                    "updated_at",
+                ]
+            )
     except Exception as exc:
         _mark_artifact_failed(artifact, str(exc))
         return ServiceResponse(

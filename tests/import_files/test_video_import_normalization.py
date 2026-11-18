@@ -126,10 +126,20 @@ def test_initialize_video_file_delegates_frame_creation_to_source_timeline(
         fake_persist_timeline,
     )
 
+    def fake_persist_recording_time(selected_video: VideoFile, path: Path) -> None:
+        assert selected_video == video
+        assert path == source_path
+        events.append("recording_time")
+
+    monkeypatch.setattr(
+        "endoreg_db.services.video_storage.recording_time.persist_video_recording_time",
+        fake_persist_recording_time,
+    )
+
     assert (
         video_imports.initialize_video_file(video, local_raw_path=source_path) == video
     )
-    assert events == ["timeline"]
+    assert events == ["timeline", "recording_time"]
 
 
 @override_settings(FFMPEG_TRANSCODE_QUALITY_MODE="quality")

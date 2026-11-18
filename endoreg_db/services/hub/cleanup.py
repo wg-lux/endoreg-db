@@ -18,6 +18,7 @@ from django.db.models.functions import Now
 from pydantic import ValidationError
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
@@ -750,7 +751,9 @@ def _authorize_cleanup(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
         if snapshot is None:
             raise RuntimeError("Fresh cleanup authorization requires a source snapshot")
 
-        upload_job.cleanup_status = UploadJob.CleanupStatus.DELETING.value
+        set_upload_job_cleanup_status(
+            upload_job, UploadJob.CleanupStatus.DELETING.value
+        )
         upload_job.cleanup_receipt_id = uuid.uuid4()
         upload_job.cleanup_started_at = database_now
         upload_job.cleanup_fencing_token = int(upload_job.processing_fencing_token)
@@ -851,7 +854,9 @@ def _delete_and_finalize(upload_job_id: uuid.UUID) -> UploadSourceCleanupItem:
                     freed_bytes += snapshot.size_bytes
             upload_job.file.name = ""
             upload_job.source_file_persisted = False
-            upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED.value
+            set_upload_job_cleanup_status(
+                upload_job, UploadJob.CleanupStatus.COMPLETED.value
+            )
             upload_job.cleanup_completed_at = database_now
             upload_job.cleanup_last_error_code = ""
             upload_job.save(

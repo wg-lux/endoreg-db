@@ -2,6 +2,7 @@
 use crate::state_token::Vocabulary;
 use crate::{
     hls_state, hub_transfer_state, import_processing, import_state, lifecycle_state, state_enums,
+    status_transition,
 };
 use pyo3::prelude::*;
 
@@ -13,6 +14,7 @@ fn all_vocabularies() -> Vec<Vocabulary> {
         hls_state::vocabularies(),
         state_enums::vocabularies(),
         hub_transfer_state::vocabularies(),
+        status_transition::vocabularies(),
     ]
     .into_iter()
     .flatten()

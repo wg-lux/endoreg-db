@@ -17,6 +17,7 @@ from endoreg_db.services.imports.lease import (
 )
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.upload_job_state_machine import (
     admit_upload_job_recovery,
     upload_job_recovery_filter,
@@ -378,7 +379,7 @@ def reconcile_expired_upload_job_import_leases(*, limit: int = 100) -> int:
             job.processing_lease_owner = ""
             job.processing_lease_expires_at = None
             job.processing_heartbeat_at = None
-            job.cleanup_status = UploadJob.CleanupStatus.SKIPPED
+            set_upload_job_cleanup_status(job, UploadJob.CleanupStatus.SKIPPED.value)
             job.save(
                 update_fields=[
                     "processing_fencing_token",

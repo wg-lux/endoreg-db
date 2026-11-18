@@ -1040,10 +1040,7 @@ def _active_temporal_request_status(
 
 
 def _mark_history_cancelled(history: VideoProcessingHistory, reason: str) -> None:
-    history.status = VideoProcessingHistory.STATUS_CANCELLED
-    history.completed_at = timezone.now()
-    history.details = reason
-    history.save(update_fields=["status", "completed_at", "details"])
+    history.mark_cancelled(reason)
 
 
 def _history_delete_frames_after(history: VideoProcessingHistory) -> bool:

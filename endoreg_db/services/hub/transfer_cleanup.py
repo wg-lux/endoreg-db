@@ -6,6 +6,7 @@ from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeReceip
 
 from endoreg_db.models.hub.outbound_hub_transfer_job import OutboundHubTransferJob
 from endoreg_db.models.hub.transfer_job import TransferJob
+from endoreg_db.services.runtime.status_writers import set_outbound_local_cleanup_status
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_transcode_job import VideoTranscodeJob
@@ -99,7 +100,9 @@ def cleanup_transferred_video_files(
             ]
         )
         Frame.objects.filter(video=video).update(is_extracted=False)
-        job.local_cleanup_status = OutboundHubTransferJob.LocalCleanupStatus.CLEANED
+        set_outbound_local_cleanup_status(
+            job, OutboundHubTransferJob.LocalCleanupStatus.CLEANED.value
+        )
         job.local_cleanup_completed_at = timezone.now()
         job.local_files_cleanup_completed_at = job.local_cleanup_completed_at
         job.save(

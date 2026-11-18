@@ -8,7 +8,7 @@ from typing import Any, TYPE_CHECKING, Protocol, TypeAlias, Unpack, cast
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
@@ -669,8 +669,15 @@ class UploadJob(models.Model):
             target_cleanup_status = self.CleanupStatus.SKIPPED.value
 
         if self.cleanup_status != target_cleanup_status:
-            self.cleanup_status = target_cleanup_status
-            update_fields.append("cleanup_status")
+            from endoreg_db.services.runtime.status_writers import (
+                set_upload_job_cleanup_status,
+            )
+
+            with transaction.atomic():
+                if set_upload_job_cleanup_status(self, target_cleanup_status):
+                    update_fields.append("cleanup_status")
+                self.save(update_fields=update_fields)
+            return
         self.save(update_fields=update_fields)
 
     def mark_error(

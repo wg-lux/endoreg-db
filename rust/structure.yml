@@ -34,7 +34,9 @@ files:
 - file: endoreg_rust_backend/src/lifecycle_state.rs
   role: Service and bounded-operation lifecycle reducers with idempotent redelivery.
 - file: endoreg_rust_backend/src/hls_state.rs
-  role: Streaming playlist reservation, publication and stale-attempt reconciliation decisions.
+  role: Streaming playlist reservation, publication and stale-attempt reconciliation decisions; exhaustive artifact status transition table.
+- file: endoreg_rust_backend/src/status_transition.rs
+  role: Per-machine status transition tables behind decide_status_transition (status_transition_v1) with shared finality and reachability tests.
 - file: endoreg_rust_backend/src/state_enums.rs
   role: Segment and frame annotation status derivation; frame task-mode and sampling tokens reject unknown input.
 - file: endoreg_rust_backend/src/encryption_state.rs

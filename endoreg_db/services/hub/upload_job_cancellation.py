@@ -10,6 +10,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLease
 from endoreg_db.services.hub.upload_job_state_machine import (
     validate_upload_job_status_transition,
@@ -100,7 +101,7 @@ def request_upload_job_cancellation(*, job_id: str, actor_id: int) -> UploadJob:
         job.cancellation_requested_by = User.objects.get(pk=actor_id)
         job.retryable = False
         job.next_retry_at = None
-        job.cleanup_status = UploadJob.CleanupStatus.SKIPPED
+        set_upload_job_cleanup_status(job, UploadJob.CleanupStatus.SKIPPED.value)
         fields = [
             "status",
             "cancellation_requested_at",

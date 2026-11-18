@@ -29,6 +29,7 @@ from kombu.exceptions import OperationalError as KombuOperationalError
 
 # Explicit re-exports preserve historical helper imports and object identity.
 from endoreg_db.services.hub import ingest_provenance, preanonymized_metadata
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.ingest_provenance import (
     UploadProvenance as UploadProvenance,
     upload_provenance as _upload_provenance,
@@ -235,10 +236,12 @@ def _cleanup_persisted_watcher_source(upload_job: UploadJob) -> bool:
     if upload_job.source_file_delete_eligible_at is None:
         upload_job.source_file_delete_eligible_at = timezone.now()
         update_fields.append("source_file_delete_eligible_at")
-    if upload_job.cleanup_status != UploadJob.CleanupStatus.ELIGIBLE.value:
-        upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE.value
-        update_fields.append("cleanup_status")
-    upload_job.save(update_fields=update_fields)
+    with transaction.atomic():
+        if set_upload_job_cleanup_status(
+            upload_job, UploadJob.CleanupStatus.ELIGIBLE.value
+        ):
+            update_fields.append("cleanup_status")
+        upload_job.save(update_fields=update_fields)
 
     try:
         return cleanup_upload_job_source(upload_job)

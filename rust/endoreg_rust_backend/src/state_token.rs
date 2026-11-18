@@ -38,10 +38,32 @@ macro_rules! state_tokens {
                 Self::ALL.iter().map(|value| value.as_str()).collect()
             }
         }
+
+        impl $crate::state_token::StateToken for $name {
+            fn all() -> &'static [Self] {
+                Self::ALL
+            }
+
+            fn parse_token(value: &str) -> Option<Self> {
+                Self::parse(value)
+            }
+
+            fn token(self) -> &'static str {
+                self.as_str()
+            }
+        }
     };
 }
 
 pub(crate) use state_tokens;
+
+/// Generic access to a `state_tokens!` enum for table-driven native code.
+#[allow(dead_code)]
+pub(crate) trait StateToken: Copy + Eq + std::fmt::Debug + 'static {
+    fn all() -> &'static [Self];
+    fn parse_token(value: &str) -> Option<Self>;
+    fn token(self) -> &'static str;
+}
 
 /// Exported vocabulary row: stable vocabulary name and its tokens in declaration order.
 pub(crate) type Vocabulary = (&'static str, Vec<&'static str>);

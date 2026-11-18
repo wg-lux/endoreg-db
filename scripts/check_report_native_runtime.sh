@@ -54,12 +54,16 @@ for required in (
     ("lifecycle_state_machine", "lifecycle_state_v3"),
     ("state_vocabulary", "state_vocabulary_v1"),
     ("hub_transfer_state_machine", "hub_transfer_state_v2"),
+    ("hls_artifact_transition", "hls_artifact_transition_v1"),
+    ("status_transition", "status_transition_v1"),
 ):
     assert required in contracts, required
 vocabularies = dict(native.native_state_vocabularies())
 assert "materializing" in vocabularies["hls_in_flight_status"]
 assert "transient_retry" in vocabularies["hub_failure_class"]
 assert native.reduce_hub_transfer_event("completed", None, "fail", None, "transient_retry") == ("completed", None, False)
+assert native.decide_hls_artifact_transition("validated", "ready") is True
+assert native.decide_status_transition("upload_job_source_cleanup", "completed", "skipped") is False
 assert native.reduce_hub_transfer_event("failed", "integrity_inconsistency", "retry") == ("failed", "integrity_inconsistency", False)
 assert native.transition_operation_lifecycle("queued", "claim") == "claimed"
 assert (

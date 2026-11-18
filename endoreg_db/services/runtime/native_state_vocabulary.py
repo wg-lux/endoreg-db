@@ -7,7 +7,7 @@ those mirrors and refuses startup when any mirror drifts in either direction.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from enum import Enum
 
 from django.core.exceptions import ImproperlyConfigured
@@ -20,10 +20,26 @@ def _enum_tokens(mirror: type[Enum]) -> frozenset[str]:
     return frozenset(str(member.value) for member in mirror)
 
 
+def _choice_tokens(choices: Iterable[tuple[str, str]]) -> frozenset[str]:
+    return frozenset(value for value, _label in choices)
+
+
 def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
     """Python mirror tokens keyed by native vocabulary name."""
     from endoreg_db.models.hub.outbound_hub_transfer_job import OutboundHubTransferJob
     from endoreg_db.models.hub.transfer_job import TransferJob
+    from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+    from endoreg_db.models import (
+        AIDataSetExportArtifact,
+        DicomExportJob,
+        FrameAnnotationExportJob,
+        PatientExaminationReport,
+        QuarantineItem,
+        ReportLlmInferenceJob,
+        UploadJob,
+        VideoProcessingHistory,
+    )
+    from endoreg_db.services.runtime.status_writers import StatusMachine
     from endoreg_db.models.state.hub_transfer import HubExportFailureClass
     from endoreg_db.models.state.anonymization import (
         AnonymizationPhase,
@@ -70,6 +86,33 @@ def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
         "service_lifecycle_event": _enum_tokens(ServiceLifecycleEvent),
         "operation_lifecycle_state": _enum_tokens(OperationLifecycleState),
         "operation_lifecycle_event": _enum_tokens(OperationLifecycleEvent),
+        "hls_artifact_status": _enum_tokens(VideoHlsArtifact.Status),
+        "status_machine": _enum_tokens(StatusMachine),
+        "report_llm_inference_job_status": _choice_tokens(
+            ReportLlmInferenceJob.STATUS_CHOICES
+        ),
+        "video_processing_history_status": _choice_tokens(
+            VideoProcessingHistory.STATUS_CHOICES
+        ),
+        "quarantine_item_status": _enum_tokens(QuarantineItem.Status),
+        "frame_annotation_export_job_status": _enum_tokens(
+            FrameAnnotationExportJob.Status
+        ),
+        "ai_dataset_export_artifact_status": _choice_tokens(
+            AIDataSetExportArtifact.STATUS_CHOICES
+        ),
+        "dicom_export_job_status": _enum_tokens(DicomExportJob.Status),
+        "patient_examination_report_status": _enum_tokens(
+            PatientExaminationReport.Status
+        ),
+        "hub_inbound_transfer_status": _enum_tokens(TransferJob.TransferStatus),
+        "hub_inbound_case_resolution_status": _enum_tokens(
+            TransferJob.CaseResolutionStatus
+        ),
+        "upload_job_source_cleanup_status": _enum_tokens(UploadJob.CleanupStatus),
+        "hub_outbound_local_cleanup_status": _enum_tokens(
+            OutboundHubTransferJob.LocalCleanupStatus
+        ),
         "hls_in_flight_status": frozenset(HLS_IN_FLIGHT_STATUSES),
         "hls_reservation_action": _enum_tokens(HlsReservationAction),
         "hls_publication_action": _enum_tokens(HlsPublicationAction),

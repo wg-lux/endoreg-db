@@ -42,6 +42,9 @@ from endoreg_db.schemas.report_persistence import (
     report_language_from_editor_payload,
     validate_report_editor_payload,
 )
+from endoreg_db.services.runtime.status_writers import (
+    set_patient_examination_report_status,
+)
 from endoreg_db.services.reports.structured_records import (
     persist_patient_examination_dtypes_record_from_ledger,
 )
@@ -515,7 +518,6 @@ def _apply_submission_report_fields(
     template_version: str,
     template_hash: str,
     title: str,
-    status: str,
     editor_payload: Mapping[str, object] | None,
     rendered_text: str,
     patient_data: Mapping[str, object] | None,
@@ -527,10 +529,6 @@ def _apply_submission_report_fields(
     report.template_version = _value_or_default(template_version, "")
     report.template_hash = _value_or_default(template_hash, "")
     report.title = _value_or_default(title, report.title)
-    report.status = _value_or_default(
-        status,
-        PatientExaminationReport.Status.DRAFT.value,
-    )
     canonical_editor_payload = validate_report_editor_payload(
         _mapping_or_empty(editor_payload),
         default_language="de",
@@ -684,6 +682,10 @@ def save_report_submission(
         if status == PatientExaminationReport.Status.FINAL.value
         else {}
     )
+    set_patient_examination_report_status(
+        report,
+        _value_or_default(status, PatientExaminationReport.Status.DRAFT.value),
+    )
     _apply_submission_report_fields(
         report_ref,
         created=created,
@@ -692,7 +694,6 @@ def save_report_submission(
         template_version=template_version,
         template_hash=template_hash,
         title=title,
-        status=status,
         editor_payload=editor_payload,
         rendered_text=rendered_text,
         patient_data=patient_data,

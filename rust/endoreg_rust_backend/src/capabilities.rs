@@ -31,6 +31,16 @@ pub(crate) fn native_capabilities() -> Vec<(String, String, String)> {
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),
         ),
         (
+            "hls_artifact_transition".to_owned(),
+            "hls_artifact_transition_v1".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
+            "status_transition".to_owned(),
+            "status_transition_v1".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
             "lifecycle_state_machine".to_owned(),
             "lifecycle_state_v3".to_owned(),
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),

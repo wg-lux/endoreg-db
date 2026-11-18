@@ -22,6 +22,8 @@ files:
   role: German scientific protocol, data dictionary, figure captions and reproduction instructions.
 - file: hub_transfer_state_machine.md
   role: Outbound hub transfer states, events, transition rules, guarantees and caller contract.
+- file: state_mutation_ownership.md
+  role: Writer kinds, single-writer rule and review workflow for quality/state_mutation_owners.yml.
 - file: report_import_concurrency_implementation.md
   role: Report ownership, publication, extraction receipts and native lifecycle contract.
 - file: implementation_standards_review.md

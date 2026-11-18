@@ -735,6 +735,42 @@ def derive_hls_reconciliation_action(
     return HlsReconciliationAction(action)
 
 
+def decide_hls_artifact_transition(*, current_status: str, target_status: str) -> bool:
+    """Native HLS artifact transition; True applies, False ignores.
+
+    An empty ``current_status`` is an unsaved row. Illegal transitions raise
+    ``ValueError``; the caller holds the artifact row lock.
+    """
+    if not has_native_capability(
+        "hls_artifact_transition", "hls_artifact_transition_v1"
+    ):
+        raise RuntimeError(
+            "Required Rust hls_artifact_transition_v1 capability is unavailable"
+        )
+    decide = cast(
+        Callable[[str, str], bool],
+        getattr(rust_backend, "decide_hls_artifact_transition"),
+    )
+    return decide(current_status, target_status)
+
+
+def decide_status_transition(*, machine: str, current: str, target: str) -> bool:
+    """Native lifecycle table decision; True applies, False ignores.
+
+    An empty ``current`` is an unsaved row. Unknown machines, unknown statuses
+    and illegal transitions raise ``ValueError``.
+    """
+    if not has_native_capability("status_transition", "status_transition_v1"):
+        raise RuntimeError(
+            "Required Rust status_transition_v1 capability is unavailable"
+        )
+    decide = cast(
+        Callable[[str, str, str], bool],
+        getattr(rust_backend, "decide_status_transition"),
+    )
+    return decide(machine, current, target)
+
+
 _LIFECYCLE_STATE_MACHINE_CAPABILITY = "lifecycle_state_machine"
 _LIFECYCLE_STATE_MACHINE_CONTRACT = "lifecycle_state_v3"
 

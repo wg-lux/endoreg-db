@@ -8,6 +8,7 @@ mod file_identity;
 mod frame_ancestry;
 mod frames;
 mod hls_state;
+mod status_transition;
 mod hub_transfer_state;
 mod import_processing;
 mod import_state;
@@ -79,6 +80,14 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         file_identity::stable_file_identity,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        hls_state::decide_hls_artifact_transition,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        status_transition::decide_status_transition,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(

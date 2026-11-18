@@ -29,6 +29,8 @@ files:
   role: Exports transition_service_lifecycle, transition_operation_lifecycle, reduce_operation_lifecycle.
 - file: native_state_vocabulary.py
   role: Registry of Python mirrors for every native Rust vocabulary; verify_native_state_vocabularies fails startup on drift.
+- file: status_writers.py
+  role: Single locked writers for lifecycle statuses decided by the native decide_status_transition tables (report LLM jobs, processing history, quarantine, exports, DICOM, reports, inbound transfers, upload and outbound cleanup).
 - file: offline_batch_runner.py
   role: Exports load_offline_batch_runner_config, run_offline_batch.
 - file: polling_coordinator.py
@@ -66,7 +68,7 @@ contracts:
   doc: docs/local_study_server_deployment.md
 tests:
   directory: tests
-  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_reconciliation_service.py tests/services/test_disk_pressure_cleanup_contract.py
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_reconciliation_service.py tests/services/test_disk_pressure_cleanup_contract.py tests/services/test_status_writers.py
     tests/services/test_deployment_setup.py
   files:
   - tests/services/test_reconciliation_service.py

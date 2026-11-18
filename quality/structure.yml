@@ -12,6 +12,8 @@ files:
   role: Reviewed shared clinical graph and catalogue fields with host bootstrap ownership.
 - file: lx_dtypes_model_inventory.yml
   role: Reviewed persistence model ownership, runtime shape and shared contract imports.
+- file: state_mutation_owners.yml
+  role: Reviewed writer module, state machine and safety kind for every status/state field write.
 - file: documentation_governance.yml
   role: Cross-repository documentation inventory policy
 - file: lx_dtypes_contract_policy.yml
@@ -25,4 +27,4 @@ contracts:
   doc: AGENTS.md
 tests:
   directory: tests/scripts
-  fast_lane_command: .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/scripts/test_check_quality_boundaries.py -q
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/scripts/test_check_quality_boundaries.py tests/scripts/test_state_mutation_owners.py -q

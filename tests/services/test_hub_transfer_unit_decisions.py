@@ -601,13 +601,26 @@ def test_optional_boolean_coercion_has_stable_wire_semantics(
     assert transfers._coerce_optional_bool(value) is expected
 
 
-def test_apply_metadata_rejects_unknown_resource_kind() -> None:
+def test_apply_metadata_rejects_unknown_resource_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     save = MagicMock()
     transfer_job = _transfer_job(resource_kind="unsupported", save=save)
+    targets: list[str] = []
+
+    # The locked native writer needs a persisted row; this unit test covers
+    # the decision, so record the requested status instead.
+    def record_status(job: object, target: str) -> bool:
+        targets.append(target)
+        setattr(job, "transfer_status", target)
+        return True
+
+    monkeypatch.setattr(transfers, "set_transfer_status", record_status)
 
     result = transfers.apply_transfer_metadata(transfer_job)
 
     assert result is transfer_job
+    assert targets == [TransferJob.TransferStatus.FAILED.value]
     assert transfer_job.transfer_status == TransferJob.TransferStatus.FAILED.value
     assert (
         transfer_job.processing_decision

@@ -22,6 +22,7 @@ from django.db import (
     models,
     transaction,
 )
+from django.db.models import QuerySet
 from django.db.models.functions import Now
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.hub_media_envelope import (
@@ -60,6 +61,12 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.cases.auto_resolution import auto_resolve_media_case
+from endoreg_db.services.runtime.status_writers import (
+    set_case_resolution_status,
+    set_patient_examination_report_status,
+    set_transfer_status,
+    update_transfer_status,
+)
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
 from endoreg_db.services.runtime.lifecycle_state_machine import (
@@ -193,25 +200,28 @@ def _claim_transfer_operation(
         current = reduce_operation_lifecycle(current, claim_path.events)
         if current is not OperationLifecycleState.RUNNING:
             raise RuntimeError("transfer claim did not reduce to RUNNING")
-        transfer_job.transfer_status = TransferJob.TransferStatus.RUNNING
-        transfer_job.attempt_id = attempt_id
-        transfer_job.operation_owner = owner_id
-        transfer_job.operation_fencing_token += 1
-        transfer_job.operation_heartbeat_at = now
-        transfer_job.operation_lease_expires_at = now + timedelta(seconds=lease_seconds)
-        transfer_job.operation_candidate_name = ""
-        transfer_job.save(
-            update_fields=[
-                "transfer_status",
-                "attempt_id",
-                "operation_owner",
-                "operation_fencing_token",
-                "operation_heartbeat_at",
-                "operation_lease_expires_at",
-                "operation_candidate_name",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            set_transfer_status(transfer_job, TransferJob.TransferStatus.RUNNING)
+            transfer_job.attempt_id = attempt_id
+            transfer_job.operation_owner = owner_id
+            transfer_job.operation_fencing_token += 1
+            transfer_job.operation_heartbeat_at = now
+            transfer_job.operation_lease_expires_at = now + timedelta(
+                seconds=lease_seconds
+            )
+            transfer_job.operation_candidate_name = ""
+            transfer_job.save(
+                update_fields=[
+                    "transfer_status",
+                    "attempt_id",
+                    "operation_owner",
+                    "operation_fencing_token",
+                    "operation_heartbeat_at",
+                    "operation_lease_expires_at",
+                    "operation_candidate_name",
+                    "updated_at",
+                ]
+            )
         return transfer_job, TransferOperationFence(
             transfer_job_id=transfer_job_id,
             attempt_id=attempt_id,
@@ -684,17 +694,20 @@ def _mark_transfer_ownership_inconsistent(
     transfer_job: TransferJob,
     status_detail: str,
 ) -> TransferJob:
-    transfer_job.transfer_status = TransferJob.TransferStatus.INCONSISTENT
-    transfer_job.processing_decision = TransferJob.ProcessingDecision.MARK_INCONSISTENT
-    transfer_job.status_detail = status_detail
-    transfer_job.save(
-        update_fields=[
-            "transfer_status",
-            "processing_decision",
-            "status_detail",
-            "updated_at",
-        ]
-    )
+    with transaction.atomic():
+        set_transfer_status(transfer_job, TransferJob.TransferStatus.INCONSISTENT)
+        transfer_job.processing_decision = (
+            TransferJob.ProcessingDecision.MARK_INCONSISTENT
+        )
+        transfer_job.status_detail = status_detail
+        transfer_job.save(
+            update_fields=[
+                "transfer_status",
+                "processing_decision",
+                "status_detail",
+                "updated_at",
+            ]
+        )
     emit_hub_audit_event(
         "hub.transfer_resource_ownership_conflict",
         transfer_job_id=str(transfer_job.id),
@@ -798,12 +811,35 @@ def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             raise ValueError(
                 "Study transfer is outside the authenticated source center"
             )
-        transfer_job.transfer_status = TransferJob.TransferStatus.APPLIED
+        with transaction.atomic():
+            set_transfer_status(transfer_job, TransferJob.TransferStatus.APPLIED)
+            transfer_job.processing_decision = (
+                TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
+            )
+            transfer_job.status_detail = (
+                "Study bundle archived; local researcher acceptance required"
+            )
+            transfer_job.save(
+                update_fields=[
+                    "transfer_status",
+                    "processing_decision",
+                    "status_detail",
+                    "updated_at",
+                ]
+            )
+        return transfer_job
+    if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
+        return _apply_video_transfer_metadata(transfer_job)
+    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
+        return _apply_report_transfer_metadata(transfer_job)
+
+    with transaction.atomic():
+        set_transfer_status(transfer_job, TransferJob.TransferStatus.FAILED)
         transfer_job.processing_decision = (
-            TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
+            TransferJob.ProcessingDecision.REJECT_TRANSFER
         )
         transfer_job.status_detail = (
-            "Study bundle archived; local researcher acceptance required"
+            f"resource_kind={transfer_job.resource_kind} is not implemented"
         )
         transfer_job.save(
             update_fields=[
@@ -813,25 +849,6 @@ def apply_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 "updated_at",
             ]
         )
-        return transfer_job
-    if transfer_job.resource_kind == TransferJob.ResourceKind.VIDEO.value:
-        return _apply_video_transfer_metadata(transfer_job)
-    if transfer_job.resource_kind == TransferJob.ResourceKind.REPORT.value:
-        return _apply_report_transfer_metadata(transfer_job)
-
-    transfer_job.transfer_status = TransferJob.TransferStatus.FAILED
-    transfer_job.processing_decision = TransferJob.ProcessingDecision.REJECT_TRANSFER
-    transfer_job.status_detail = (
-        f"resource_kind={transfer_job.resource_kind} is not implemented"
-    )
-    transfer_job.save(
-        update_fields=[
-            "transfer_status",
-            "processing_decision",
-            "status_detail",
-            "updated_at",
-        ]
-    )
     return transfer_job
 
 
@@ -937,22 +954,25 @@ def attach_enveloped_transfer_media(
                 prepared.accept_exact_replay()
                 if exact_replay:
                     return transfer_job
-                transfer_job.transfer_status = TransferJob.TransferStatus.INCONSISTENT
-                transfer_job.processing_decision = (
-                    TransferJob.ProcessingDecision.MARK_INCONSISTENT
-                )
-                transfer_job.status_detail = (
-                    "Applied Hub media transfer received a conflicting envelope replay; "
-                    "the previously authenticated artifact was preserved"
-                )
-                transfer_job.save(
-                    update_fields=[
-                        "transfer_status",
-                        "processing_decision",
-                        "status_detail",
-                        "updated_at",
-                    ]
-                )
+                with transaction.atomic():
+                    set_transfer_status(
+                        transfer_job, TransferJob.TransferStatus.INCONSISTENT
+                    )
+                    transfer_job.processing_decision = (
+                        TransferJob.ProcessingDecision.MARK_INCONSISTENT
+                    )
+                    transfer_job.status_detail = (
+                        "Applied Hub media transfer received a conflicting envelope replay; "
+                        "the previously authenticated artifact was preserved"
+                    )
+                    transfer_job.save(
+                        update_fields=[
+                            "transfer_status",
+                            "processing_decision",
+                            "status_detail",
+                            "updated_at",
+                        ]
+                    )
                 raise HubMediaEnvelopeReplayConflict(transfer_job.status_detail)
 
             if operation_fence is None:
@@ -1092,19 +1112,22 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     source_center = transfer_job.source_center
 
     if source_center is None:
-        transfer_job.transfer_status = TransferJob.TransferStatus.FAILED
-        transfer_job.processing_decision = (
-            TransferJob.ProcessingDecision.REJECT_TRANSFER
-        )
-        transfer_job.status_detail = "No source_center could be resolved for transfer"
-        transfer_job.save(
-            update_fields=[
-                "transfer_status",
-                "processing_decision",
-                "status_detail",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            set_transfer_status(transfer_job, TransferJob.TransferStatus.FAILED)
+            transfer_job.processing_decision = (
+                TransferJob.ProcessingDecision.REJECT_TRANSFER
+            )
+            transfer_job.status_detail = (
+                "No source_center could be resolved for transfer"
+            )
+            transfer_job.save(
+                update_fields=[
+                    "transfer_status",
+                    "processing_decision",
+                    "status_detail",
+                    "updated_at",
+                ]
+            )
         return transfer_job
 
     with transaction.atomic():
@@ -1211,21 +1234,22 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
         transfer_job.target_object_id = video.pk
         transfer_job.processing_decision = processing_decision
-        transfer_job.transfer_status = transfer_status
-        transfer_job.status_detail = status_detail
-        transfer_job.save(
-            update_fields=[
-                "target_object_id",
-                "processing_decision",
-                "transfer_status",
-                "status_detail",
-                "linked_patient_id",
-                "linked_patient_examination_id",
-                "case_resolution_status",
-                "provenance",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            set_transfer_status(transfer_job, transfer_status)
+            transfer_job.status_detail = status_detail
+            transfer_job.save(
+                update_fields=[
+                    "target_object_id",
+                    "processing_decision",
+                    "transfer_status",
+                    "status_detail",
+                    "linked_patient_id",
+                    "linked_patient_examination_id",
+                    "case_resolution_status",
+                    "provenance",
+                    "updated_at",
+                ]
+            )
 
     return transfer_job
 
@@ -1248,19 +1272,22 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     source_center = transfer_job.source_center
 
     if source_center is None:
-        transfer_job.transfer_status = TransferJob.TransferStatus.FAILED
-        transfer_job.processing_decision = (
-            TransferJob.ProcessingDecision.REJECT_TRANSFER
-        )
-        transfer_job.status_detail = "No source_center could be resolved for transfer"
-        transfer_job.save(
-            update_fields=[
-                "transfer_status",
-                "processing_decision",
-                "status_detail",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            set_transfer_status(transfer_job, TransferJob.TransferStatus.FAILED)
+            transfer_job.processing_decision = (
+                TransferJob.ProcessingDecision.REJECT_TRANSFER
+            )
+            transfer_job.status_detail = (
+                "No source_center could be resolved for transfer"
+            )
+            transfer_job.save(
+                update_fields=[
+                    "transfer_status",
+                    "processing_decision",
+                    "status_detail",
+                    "updated_at",
+                ]
+            )
         return transfer_job
 
     with transaction.atomic():
@@ -1336,23 +1363,35 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
         transfer_job.target_object_id = report.pk
         transfer_job.processing_decision = processing_decision
-        transfer_job.transfer_status = transfer_status
-        transfer_job.status_detail = status_detail
-        transfer_job.save(
-            update_fields=[
-                "target_object_id",
-                "processing_decision",
-                "transfer_status",
-                "status_detail",
-                "linked_patient_id",
-                "linked_patient_examination_id",
-                "case_resolution_status",
-                "provenance",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            set_transfer_status(transfer_job, transfer_status)
+            transfer_job.status_detail = status_detail
+            transfer_job.save(
+                update_fields=[
+                    "target_object_id",
+                    "processing_decision",
+                    "transfer_status",
+                    "status_detail",
+                    "linked_patient_id",
+                    "linked_patient_examination_id",
+                    "case_resolution_status",
+                    "provenance",
+                    "updated_at",
+                ]
+            )
 
     return transfer_job
+
+
+def _fenced_transfer(fence: TransferOperationFence) -> QuerySet[TransferJob]:
+    """The transfer row while the fenced operation still owns a live lease."""
+    return TransferJob.objects.filter(
+        pk=fence.transfer_job_id,
+        attempt_id=fence.attempt_id,
+        operation_owner=fence.owner_id,
+        operation_fencing_token=fence.fencing_token,
+        operation_lease_expires_at__gt=Now(),
+    )
 
 
 def _save_transfer_job_state(
@@ -1365,7 +1404,6 @@ def _save_transfer_job_state(
     operation_fence: TransferOperationFence | None = None,
 ) -> TransferJob:
     transfer_job.target_object_id = target_object_id
-    transfer_job.transfer_status = transfer_status
     transfer_job.processing_decision = processing_decision
     transfer_job.status_detail = status_detail
     update_fields = [
@@ -1380,7 +1418,9 @@ def _save_transfer_job_state(
         "updated_at",
     ]
     if operation_fence is None:
-        transfer_job.save(update_fields=update_fields)
+        with transaction.atomic():
+            set_transfer_status(transfer_job, transfer_status)
+            transfer_job.save(update_fields=update_fields)
         return transfer_job
 
     if transfer_status != TransferJob.TransferStatus.APPLIED.value:
@@ -1392,21 +1432,16 @@ def _save_transfer_job_state(
     if reduced is not OperationLifecycleState.SUCCEEDED:
         raise RuntimeError("transfer completion did not reduce to SUCCEEDED")
     transfer_job.clean()
-    updated = TransferJob.objects.filter(
-        pk=operation_fence.transfer_job_id,
-        transfer_status=TransferJob.TransferStatus.RUNNING,
-        attempt_id=operation_fence.attempt_id,
-        operation_owner=operation_fence.owner_id,
-        operation_fencing_token=operation_fence.fencing_token,
-        operation_lease_expires_at__gt=Now(),
-    ).update(
+    updated = update_transfer_status(
+        _fenced_transfer(operation_fence),
+        expected=TransferJob.TransferStatus.RUNNING,
+        target=transfer_status,
+        case_resolution_status=transfer_job.case_resolution_status,
         target_object_id=target_object_id,
-        transfer_status=transfer_status,
         processing_decision=processing_decision,
         status_detail=status_detail,
         linked_patient_id=transfer_job.linked_patient_id,
         linked_patient_examination_id=transfer_job.linked_patient_examination_id,
-        case_resolution_status=transfer_job.case_resolution_status,
         provenance=transfer_job.provenance,
         attempt_id=None,
         operation_owner="",
@@ -1435,21 +1470,16 @@ def _fail_transfer_operation(
     )
     if reduced is not OperationLifecycleState.FAILED:
         raise RuntimeError("transfer failure did not reduce to FAILED")
-    updated = TransferJob.objects.filter(
-        pk=operation_fence.transfer_job_id,
-        transfer_status=TransferJob.TransferStatus.RUNNING,
-        attempt_id=operation_fence.attempt_id,
-        operation_owner=operation_fence.owner_id,
-        operation_fencing_token=operation_fence.fencing_token,
-        operation_lease_expires_at__gt=Now(),
-    ).update(
+    updated = update_transfer_status(
+        _fenced_transfer(operation_fence),
+        expected=TransferJob.TransferStatus.RUNNING,
+        target=TransferJob.TransferStatus.FAILED,
+        case_resolution_status=transfer_job.case_resolution_status,
         target_object_id=target_object_id,
-        transfer_status=TransferJob.TransferStatus.FAILED,
         processing_decision=processing_decision,
         status_detail=status_detail,
         linked_patient_id=transfer_job.linked_patient_id,
         linked_patient_examination_id=transfer_job.linked_patient_examination_id,
-        case_resolution_status=transfer_job.case_resolution_status,
         provenance=transfer_job.provenance,
         attempt_id=None,
         operation_owner="",
@@ -2066,9 +2096,12 @@ def _upsert_patient_examination_report(
             version=version,
         )
 
-    report.status = PatientExaminationReport.Status.FINAL.value
-    report.is_active = True
-    report.save()
+    with transaction.atomic():
+        set_patient_examination_report_status(
+            report, PatientExaminationReport.Status.FINAL.value
+        )
+        report.is_active = True
+        report.save()
 
 
 # Sender-declared columns mirrored verbatim; frame_count is then bound to the
@@ -2259,6 +2292,7 @@ def _upsert_sensitive_meta(
     return sensitive_meta
 
 
+@transaction.atomic
 def _apply_case_resolution_for_media(
     *,
     transfer_job: TransferJob,
@@ -2266,8 +2300,8 @@ def _apply_case_resolution_for_media(
     media_type: Literal["video", "pdf"],
 ) -> None:
     if getattr(media_obj, "sensitive_meta", None) is None:
-        transfer_job.case_resolution_status = (
-            TransferJob.CaseResolutionStatus.UNRESOLVED
+        set_case_resolution_status(
+            transfer_job, TransferJob.CaseResolutionStatus.UNRESOLVED
         )
         transfer_job.linked_patient_id = None
         transfer_job.linked_patient_examination_id = None
@@ -2275,8 +2309,8 @@ def _apply_case_resolution_for_media(
 
     sensitive_meta = media_obj.sensitive_meta
     if not sensitive_meta:
-        transfer_job.case_resolution_status = (
-            TransferJob.CaseResolutionStatus.UNRESOLVED
+        set_case_resolution_status(
+            transfer_job, TransferJob.CaseResolutionStatus.UNRESOLVED
         )
         transfer_job.linked_patient_id = None
         transfer_job.linked_patient_examination_id = None
@@ -2285,15 +2319,15 @@ def _apply_case_resolution_for_media(
     if not getattr(sensitive_meta, "patient_hash", None) or not getattr(
         sensitive_meta, "examination_hash", None
     ):
-        transfer_job.case_resolution_status = (
-            TransferJob.CaseResolutionStatus.UNRESOLVED
+        set_case_resolution_status(
+            transfer_job, TransferJob.CaseResolutionStatus.UNRESOLVED
         )
         transfer_job.linked_patient_id = None
         transfer_job.linked_patient_examination_id = None
         return
 
     resolution = auto_resolve_media_case(media_type=media_type, media_obj=media_obj)
-    transfer_job.case_resolution_status = resolution.status
+    set_case_resolution_status(transfer_job, resolution.status)
     transfer_job.linked_patient_examination_id = (
         cast(int, resolution.patient_examination.pk)
         if resolution.patient_examination is not None

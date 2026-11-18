@@ -35,8 +35,21 @@ state_tokens! {
     }
 }
 
+state_tokens! {
+    /// Every persisted ``VideoHlsArtifact.status``.
+    enum ArtifactStatus {
+        Queued => "queued",
+        Materializing => "materializing",
+        Validated => "validated",
+        Ready => "ready",
+        Superseded => "superseded",
+        Failed => "failed",
+    }
+}
+
 pub(crate) fn vocabularies() -> Vec<Vocabulary> {
     vec![
+        ("hls_artifact_status", ArtifactStatus::tokens()),
         ("hls_in_flight_status", InFlightStatus::tokens()),
         ("hls_reservation_action", ReservationAction::tokens()),
         ("hls_publication_action", PublicationAction::tokens()),
@@ -89,6 +102,69 @@ fn reconciliation_action(status: Option<InFlightStatus>, is_stale: bool) -> Reco
     ReconciliationAction::Preserve
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ArtifactTransition {
+    /// Persist the target status.
+    Apply,
+    /// The artifact already reached or passed the target; write nothing.
+    Ignore,
+}
+
+/// Status transition table for one HLS artifact row; ``None`` is an unsaved row.
+///
+/// ``Err`` marks a transition that would skip validation or revive a final
+/// artifact, which indicates an ownership or integrity bug in the caller.
+fn artifact_transition(
+    current: Option<ArtifactStatus>,
+    target: ArtifactStatus,
+) -> Result<ArtifactTransition, ()> {
+    use ArtifactStatus::*;
+    use ArtifactTransition::*;
+    match (current, target) {
+        // A reservation or a claim creates the row.
+        (None, Queued | Materializing) => Ok(Apply),
+        (None, _) => Err(()),
+        (Some(Queued), Materializing | Failed) => Ok(Apply),
+        (Some(Queued), Queued) => Ok(Ignore),
+        // The same fenced attempt may refresh its claim after a stale heartbeat.
+        (Some(Materializing), Materializing | Validated | Failed) => Ok(Apply),
+        (Some(Validated), Ready | Failed) => Ok(Apply),
+        (Some(Validated), Validated) => Ok(Ignore),
+        (Some(Ready), Superseded | Failed) => Ok(Apply),
+        (Some(Ready), Ready) => Ok(Ignore),
+        // Final statuses: late failure reports are stale, everything else is a bug.
+        (Some(Superseded), Superseded | Failed) => Ok(Ignore),
+        (Some(Failed), Failed) => Ok(Ignore),
+        (Some(Queued | Materializing | Validated | Ready | Superseded | Failed), _) => Err(()),
+    }
+}
+
+fn parse_artifact_status(status: &str) -> PyResult<ArtifactStatus> {
+    ArtifactStatus::parse(status)
+        .ok_or_else(|| PyValueError::new_err(format!("unsupported HLS artifact status: {status}")))
+}
+
+/// True applies the target status, False ignores it; illegal transitions raise ValueError.
+#[pyfunction]
+pub(crate) fn decide_hls_artifact_transition(
+    current_status: &str,
+    target_status: &str,
+) -> PyResult<bool> {
+    let current = if current_status.is_empty() {
+        None
+    } else {
+        Some(parse_artifact_status(current_status)?)
+    };
+    let target = parse_artifact_status(target_status)?;
+    match artifact_transition(current, target) {
+        Ok(decision) => Ok(decision == ArtifactTransition::Apply),
+        Err(()) => Err(PyValueError::new_err(format!(
+            "illegal HLS artifact transition: {} -> {target_status}",
+            if current_status.is_empty() { "<new>" } else { current_status }
+        ))),
+    }
+}
+
 #[pyfunction]
 pub(crate) fn derive_hls_reservation_action(
     active_status: &str,
@@ -129,9 +205,85 @@ pub(crate) fn derive_hls_reconciliation_action(
 #[cfg(test)]
 mod tests {
     use super::{
-        derive_hls_publication_action, derive_hls_reconciliation_action,
-        derive_hls_reservation_action,
+        artifact_transition, decide_hls_artifact_transition, derive_hls_publication_action,
+        derive_hls_reconciliation_action, derive_hls_reservation_action, ArtifactStatus,
+        ArtifactTransition,
     };
+
+    /// The full table: every (current, target) pair that is not an error.
+    fn expected(current: Option<ArtifactStatus>, target: ArtifactStatus) -> Option<ArtifactTransition> {
+        use ArtifactStatus::*;
+        use ArtifactTransition::*;
+        match (current, target) {
+            (None, Queued | Materializing)
+            | (Some(Queued), Materializing | Failed)
+            | (Some(Materializing), Materializing | Validated | Failed)
+            | (Some(Validated), Ready | Failed)
+            | (Some(Ready), Superseded | Failed) => Some(Apply),
+            (Some(Queued), Queued)
+            | (Some(Validated), Validated)
+            | (Some(Ready), Ready)
+            | (Some(Superseded), Superseded | Failed)
+            | (Some(Failed), Failed) => Some(Ignore),
+            _ => None,
+        }
+    }
+
+    fn all_currents() -> Vec<Option<ArtifactStatus>> {
+        std::iter::once(None)
+            .chain(ArtifactStatus::ALL.iter().copied().map(Some))
+            .collect()
+    }
+
+    #[test]
+    fn artifact_transition_table_is_exhaustive() {
+        for current in all_currents() {
+            for &target in ArtifactStatus::ALL {
+                assert_eq!(
+                    artifact_transition(current, target).ok(),
+                    expected(current, target),
+                    "{current:?} -> {target:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn final_artifacts_are_never_revived_and_ready_requires_validation() {
+        use ArtifactStatus::*;
+        for current in [Some(Superseded), Some(Failed)] {
+            for &target in ArtifactStatus::ALL {
+                assert_ne!(artifact_transition(current, target), Ok(ArtifactTransition::Apply));
+            }
+        }
+        for current in all_currents() {
+            if current != Some(Validated) && current != Some(Ready) {
+                assert!(artifact_transition(current, Ready).is_err(), "{current:?} -> ready");
+            }
+        }
+    }
+
+    #[test]
+    fn applied_targets_are_idempotent_or_explicit_reclaims() {
+        for current in all_currents() {
+            for &target in ArtifactStatus::ALL {
+                if artifact_transition(current, target) == Ok(ArtifactTransition::Apply) {
+                    let again = artifact_transition(Some(target), target).unwrap();
+                    let reclaim = target == ArtifactStatus::Materializing;
+                    assert_eq!(again == ArtifactTransition::Apply, reclaim, "{target:?}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn artifact_transition_entry_point_fails_closed() {
+        assert!(decide_hls_artifact_transition("", "queued").unwrap());
+        assert!(!decide_hls_artifact_transition("failed", "failed").unwrap());
+        assert!(decide_hls_artifact_transition("queued", "ready").is_err());
+        assert!(decide_hls_artifact_transition("lost", "failed").is_err());
+        assert!(decide_hls_artifact_transition("queued", "").is_err());
+    }
 
     #[test]
     fn reservation_preserves_one_live_attempt_and_ready_generation() {

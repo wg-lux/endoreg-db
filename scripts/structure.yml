@@ -19,6 +19,8 @@ files:
   role: Rust unit tests, generated-stub parity and isolated wheel checks for report, lifecycle, streaming and hub native contracts.
 - file: run_rust_tests.sh
   role: Native crate cargo test with embedded-Python linkage; shared by the rust-tests pre-commit hook and check_report_native_runtime.sh.
+- file: check_state_mutation_owners.py
+  role: AST scan of status/state field writes in endoreg_db against quality/state_mutation_owners.yml; state-mutation-owners pre-commit hook.
 - file: evaluate_patient_hmac.py
   role: Synthetic complete candidate scans through production HMAC helpers with shared/local keys; exports measurements and scientific figures.
 - file: benchmark_sha256.py

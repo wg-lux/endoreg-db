@@ -7,6 +7,7 @@ from typing import Protocol
 
 from django.db import IntegrityError, transaction
 
+from endoreg_db.services.runtime.status_writers import set_dicom_export_job_status
 from endoreg_db.exceptions import (
     DicomArtifactIntegrityError,
     DicomConcurrentImportConflictError,
@@ -223,7 +224,9 @@ def import_dicom_export_manifest(
                             for item in series_item.instances
                         ]
                     )
-                export_job.status = DicomExportJob.Status.IMPORTED
+                set_dicom_export_job_status(
+                    export_job, DicomExportJob.Status.IMPORTED.value
+                )
                 export_job.save(update_fields=["status", "updated_at"])
                 result = DicomImportResult(
                     export_job=export_job,

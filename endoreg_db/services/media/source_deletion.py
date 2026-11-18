@@ -6,7 +6,10 @@ from pathlib import Path
 from django.db.models import Q
 from django.utils import timezone
 
+from django.db import transaction
+
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.models.hub.upload_job_file import UploadJobFile
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -104,16 +107,17 @@ def complete_source_deletion(jobs: list[UploadJob]) -> None:
             path = Path(entry.path)
             if not path.exists() and not path.is_symlink():
                 mark_inventory_file_removed(path)
-        job.file.name = ""
-        job.source_file_persisted = False
-        job.cleanup_status = UploadJob.CleanupStatus.COMPLETED
-        job.cleanup_completed_at = now
-        job.save(
-            update_fields=[
-                "file",
-                "source_file_persisted",
-                "cleanup_status",
-                "cleanup_completed_at",
-                "updated_at",
-            ]
-        )
+        with transaction.atomic():
+            set_upload_job_cleanup_status(job, UploadJob.CleanupStatus.COMPLETED.value)
+            job.file.name = ""
+            job.source_file_persisted = False
+            job.cleanup_completed_at = now
+            job.save(
+                update_fields=[
+                    "file",
+                    "source_file_persisted",
+                    "cleanup_status",
+                    "cleanup_completed_at",
+                    "updated_at",
+                ]
+            )

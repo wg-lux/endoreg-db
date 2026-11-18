@@ -24,6 +24,7 @@ from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.services.video_files import _imports as create_from_file_module
 from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files import imports as video_imports_module
 from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityError,
     MediaIntegrityResult,
@@ -107,10 +108,22 @@ def _patch_video_initialize(monkeypatch: pytest.MonkeyPatch) -> None:
         # just return self without touching metadata / frames
         return self
 
+    def fake_initialize_video_file(
+        video: VideoFile, *, local_raw_path: Path | None = None
+    ) -> VideoFile:
+        return video
+
     monkeypatch.setattr(
         video_file_module.VideoFile,
         "initialize",
         fake_initialize,
+        raising=True,
+    )
+    # create_from_file_initialized calls the service directly, not the model method.
+    monkeypatch.setattr(
+        video_imports_module,
+        "initialize_video_file",
+        fake_initialize_video_file,
         raising=True,
     )
 

@@ -289,6 +289,35 @@ inventory::submit! {
 
 inventory::submit! {
     PyFunctionInfo {
+        name: "decide_status_transition",
+        args: &[
+            ArgInfo { name: "machine", r#type: stub_type_str },
+            ArgInfo { name: "current", r#type: stub_type_str },
+            ArgInfo { name: "target", r#type: stub_type_str },
+        ],
+        r#return: stub_type_bool,
+        doc: "",
+        signature: Some("machine: str, current: str, target: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "decide_hls_artifact_transition",
+        args: &[
+            ArgInfo { name: "current_status", r#type: stub_type_str },
+            ArgInfo { name: "target_status", r#type: stub_type_str },
+        ],
+        r#return: stub_type_bool,
+        doc: "",
+        signature: Some("current_status: str, target_status: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
         name: "derive_hls_reservation_action",
         args: &[
             ArgInfo { name: "active_status", r#type: stub_type_str },

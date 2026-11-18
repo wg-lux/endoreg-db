@@ -92,6 +92,7 @@ from endoreg_db.utils.paths import (
     resolve_protected_media_path,
     to_protected_media_relative,
 )
+from endoreg_db.services.streaming.hls_artifact_state import set_hls_artifact_status
 from endoreg_db.utils.rust_backend import (
     HlsPublicationAction,
     HlsReconciliationAction,
@@ -517,7 +518,13 @@ def _mark_artifact_failed(
                 artifact.status,
             )
             return False
-        artifact.status = VideoHlsArtifact.Status.FAILED.value
+        if not set_hls_artifact_status(artifact, VideoHlsArtifact.Status.FAILED):
+            logger.warning(
+                "Ignored HLS failure update for final artifact: artifact=%s current_status=%s",
+                artifact_id,
+                artifact.status,
+            )
+            return False
         artifact.key_ciphertext = None
         artifact.key_nonce = None
         artifact.iv_hex = ""
@@ -854,10 +861,9 @@ def _prepare_reserved_artifact(
             artifact.pk,
         )
         # The same fenced attempt may resume after its heartbeat became
-        # stale. Normalize the in-memory state so the common claim path
-        # below refreshes its wrapped key material and timestamp instead
-        # of treating it as a competing active worker.
-        artifact.status = VideoHlsArtifact.Status.QUEUED.value
+        # stale: the common claim path refreshes its wrapped key material
+        # and timestamp (materializing -> materializing is a native reclaim).
+        return None
     if artifact.status == VideoHlsArtifact.Status.VALIDATED.value:
         return _PreparedArtifact.from_artifact(artifact)
     if artifact.status not in {
@@ -970,7 +976,9 @@ def _prepare_artifact_record(
                 and not claim_queued
             ):
                 return _PreparedArtifact.from_artifact(artifact)
-            if artifact.status in {
+            # A reserved attempt reaching this point is queued or a stale
+            # materialization of the same fenced attempt, so it is reclaimed.
+            if reserved_artifact_id is None and artifact.status in {
                 VideoHlsArtifact.Status.MATERIALIZING.value,
                 VideoHlsArtifact.Status.VALIDATED.value,
             }:
@@ -984,7 +992,7 @@ def _prepare_artifact_record(
             )
         selected_encoding_profile_name = str(artifact.encoding_profile_name)
         hls_encoding_profile_by_name(selected_encoding_profile_name)
-        artifact.status = VideoHlsArtifact.Status.MATERIALIZING.value
+        set_hls_artifact_status(artifact, VideoHlsArtifact.Status.MATERIALIZING)
         if reserved_artifact_id is None:
             artifact.key_id = key_id
         artifact.source_generation_id = source_generation_id
@@ -1022,7 +1030,7 @@ def _mark_artifact_validated(
                 f"artifact={artifact_id} expected_key={expected_key_id} "
                 f"current_key={artifact.key_id} current_status={artifact.status}"
             )
-        artifact.status = VideoHlsArtifact.Status.VALIDATED.value
+        set_hls_artifact_status(artifact, VideoHlsArtifact.Status.VALIDATED)
         artifact.segment_count = segment_count
         artifact.last_error = ""
         artifact.error_code = VideoHlsArtifact.ErrorCode.NONE.value
@@ -1097,12 +1105,13 @@ def _publish_validated_artifact(
                 f"expected={artifact.segment_count} actual={segment_count}"
             )
 
-        if superseded is not None:
-            superseded.status = VideoHlsArtifact.Status.SUPERSEDED.value
+        if superseded is not None and set_hls_artifact_status(
+            superseded, VideoHlsArtifact.Status.SUPERSEDED
+        ):
             superseded.error_code = VideoHlsArtifact.ErrorCode.NONE.value
             superseded.save(update_fields=["status", "error_code", "updated_at"])
 
-        artifact.status = VideoHlsArtifact.Status.READY.value
+        set_hls_artifact_status(artifact, VideoHlsArtifact.Status.READY)
         artifact.playlist_relative_path = to_protected_media_relative(playlist_path)
         artifact.segment_directory_relative_path = to_protected_media_relative(
             target_dir

@@ -21,6 +21,8 @@ entrypoints:
 files:
 - file: __init__.py
   role: HTTP Live Streaming, streambare Medien und seekbare Eingaben.
+- file: hls_artifact_state.py
+  role: Single writer of VideoHlsArtifact.status; native decide_hls_artifact_transition decides apply, ignore or reject.
 - file: hls_media.py
   role: Exports hls_result_is_ready, coerce_hls_artifact_kind, resolve_hls_source, and pre-lock playback
     source verification (ready_hls_artifact_kind_for_key, verify_ready_hls_source_before_lock); publication
