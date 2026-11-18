@@ -4,6 +4,11 @@ default_install_hook_types:
   - pre-commit
   - commit-msg
 repos:
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.13.9
+    hooks:
+      - id: uv-lock
   - repo: local
     hooks:
       - id: ruff-check
