@@ -28,7 +28,7 @@ jobs:
       - name: Sync locked dependencies
         shell: devenv shell bash -- -e {0}
         run: |
-          uv sync --locked --extra dev
+          uv sync --extra dev
 
       - name: Check types and formatting
         shell: devenv shell bash -- -e {0}

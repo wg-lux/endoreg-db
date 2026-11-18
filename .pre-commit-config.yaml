@@ -10,6 +10,11 @@ repos:
       - id: ruff-format
         args: ["endoreg_db", "tests"]
         pass_filenames: false
+  - repo: https://github.com/astral-sh/uv-pre-commit
+    # uv version.
+    rev: 0.13.9
+    hooks:
+      - id: uv-lock
   - repo: local
     hooks:
       - id: repository-structure
