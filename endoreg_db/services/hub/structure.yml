@@ -27,6 +27,10 @@ entrypoints:
   file: storage_placement.py
   purpose: Atomically reserve capacity and persist the primary placement intent.
 files:
+- file: outbound_transfer_state.py
+  role: Only Python writer of outbound local_status/failure_class; locks the row, applies the Rust hub_transfer_event decision and leaves saving to the caller.
+- file: transfer_cleanup.py
+  role: Fresh receiver master verification and restartable explicit site file reclamation with retained transfer and clinical records.
 - file: study_transfer.py
   role: Explicit owner-bound adoption of authenticated study archive receipts within source-center examination scope.
 - file: video_provenance_recovery.py
@@ -86,7 +90,7 @@ files:
 - file: transfer_logging.py
   role: Exports enabled, sanitize, section.
 - file: transfers.py
-  role: Version 7 pseudonymous identity linkage, segment and frame annotation coordinates bound to received presentation timelines, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
+  role: Version 7 pseudonymous identity linkage, received presentation timelines as the frame_count authority, typed segment and frame annotation coordinates bound to them, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
 - file: upload_center_resolution.py
   role: Declared center_key/center_name lookup and pure center-or-error decision; ingest.py re-exports it.
 - file: upload_job_cancellation.py
@@ -103,7 +107,7 @@ files:
 - file: upload_job_state_machine.py
   role: Native-validated status transitions and canonical recovery admission predicates shared by overview and fenced coordinators.
 - file: video_provenance.py
-  role: Validate and lease privacy-limited ancestry exports through the shared resolver; independent-clock sample selection delegates exact anchor interpolation to lx-dtypes.
+  role: Recording-bound ancestry exports check exclusive writers and content identity before reusing timestamp proof; receivers decode media, and electrical joins use lx-dtypes.
 - file: watcher_handoff.py
   role: Exports watcher_path_reference_text, is_in_progress_handoff_path, reject_in_progress_handoff_path.
 dependencies:
@@ -151,6 +155,9 @@ tests:
   files:
   - tests/views/media/test_hub_transfer_endpoints.py
   - tests/services/test_study_hub_transfer.py
+  - tests/services/test_transfer_job_contract.py
+  - tests/services/test_hub_transfer_cleanup.py
+  - tests/rust_backend/test_hub_transfer_state.py
   - tests/hub/test_ingest_postgresql_policy.py
   - tests/management/commands/test_import_sap_ish_txt.py
   - tests/management/commands/test_kcache_video_import.py

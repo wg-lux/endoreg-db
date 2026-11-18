@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import uuid
+from datetime import UTC, datetime
 from collections.abc import Iterator
 from typing import Any, Protocol, cast
 
@@ -12,9 +13,22 @@ from pytest import MonkeyPatch
 from django.core.files.base import ContentFile, File
 from lx_dtypes.models.contracts.ai_prediction import AiPredictionConfigPayload
 
-from endoreg_db.models import AiModel, Center, Label, LabelSet, ModelMeta, VideoFile
+from endoreg_db.models import (
+    AiModel,
+    Center,
+    Frame,
+    Label,
+    LabelSet,
+    ModelMeta,
+    VideoFile,
+)
 from endoreg_db.services.video_files import _ai as video_file_ai
 from endoreg_db.services.video_files._ai import VideoFrameScoreResult
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoSourceTimelineEvidence,
+    VideoTimelineContract,
+)
 
 
 class _WritableFieldFile(Protocol):
@@ -79,8 +93,42 @@ def test_predict_video_stream_returns_frame_scores_without_extracted_state(
         center=center,
         raw_video_hash=f"stream-predict-video-{uuid.uuid4().hex}",
         fps=25.0,
+        frame_count=13,
         width=2,
         height=1,
+        meta={
+            "source_timeline": VideoSourceTimelineEvidence(
+                persisted_at=datetime.now(UTC),
+                timestamp_mapping="ffprobe_pts",
+                source=VideoArtifactProbe(
+                    codec_name="synthetic",
+                    pixel_format="rgb24",
+                    width=2,
+                    height=1,
+                    size_bytes=1,
+                    timeline=VideoTimelineContract(
+                        fps_num=25,
+                        fps_den=1,
+                        frame_count=13,
+                        duration_seconds=0.57,
+                        variable_frame_rate=True,
+                        time_base_num=1,
+                        time_base_den=1000,
+                    ),
+                ),
+            ).model_dump(mode="json")
+        },
+    )
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video,
+                frame_number=index,
+                presentation_timestamp=tick,
+                timestamp=tick / 1000,
+            )
+            for index, tick in enumerate([*range(0, 480, 40), 530])
+        ]
     )
     state = video.get_or_create_state()
     assert state.frames_extracted is False
@@ -225,12 +273,21 @@ def test_stream_prediction_retains_only_observed_exclusive_boundary(
 @pytest.mark.parametrize("boundary", [(1, 0.6), (2, 0.4), (2, float("nan"))])
 def test_score_timeline_rejects_invalid_observed_terminal_boundary(
     boundary: tuple[int, float],
+    monkeypatch: MonkeyPatch,
 ) -> None:
+    from endoreg_db.services.video_files import temporal_inference
     from endoreg_db.services.video_files.temporal_inference import (
         TemporalInferenceConfigError,
         _resolve_score_timeline,
     )
 
+    def canonical_boundaries(video: VideoFile, count: int) -> tuple[float, ...]:
+        assert video.frame_count == count == 2
+        return (0.0, 0.4, 0.6)
+
+    monkeypatch.setattr(
+        temporal_inference, "prediction_frame_boundaries", canonical_boundaries
+    )
     scores = VideoFrameScoreResult(
         labels=["finding"],
         frame_scores=np.ones((2, 1)),
@@ -241,4 +298,4 @@ def test_score_timeline_rejects_invalid_observed_terminal_boundary(
         terminal_boundary=boundary,
     )
     with pytest.raises(TemporalInferenceConfigError, match="terminal score boundary"):
-        _resolve_score_timeline(VideoFile(), scores)
+        _resolve_score_timeline(VideoFile(frame_count=2), scores)

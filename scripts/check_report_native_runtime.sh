@@ -18,11 +18,8 @@ for linker_flag in $(python3-config --embed --ldflags); do
   python_embed_rustflags+=" -C link-arg=$linker_flag"
 done
 
-# PyO3's extension-module feature intentionally omits libpython from extension
-# linkage. Rust test binaries and the stub generator embed Python, so link those
-# two Cargo invocations explicitly while leaving the maturin wheel unchanged.
-RUSTFLAGS="$python_embed_rustflags" \
-  cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
+scripts/run_rust_tests.sh
+# The stub generator embeds Python like the test binaries; see run_rust_tests.sh.
 RUSTFLAGS="$python_embed_rustflags" \
   cargo run --manifest-path rust/endoreg_rust_backend/Cargo.toml --bin stub_gen
 cp endoreg_db/endoreg_rust_backend.pyi "$expected_stub"
@@ -56,10 +53,14 @@ for required in (
     ("hls_state_machine", "hls_state_v1"),
     ("lifecycle_state_machine", "lifecycle_state_v3"),
     ("state_vocabulary", "state_vocabulary_v1"),
+    ("hub_transfer_state_machine", "hub_transfer_state_v2"),
 ):
     assert required in contracts, required
 vocabularies = dict(native.native_state_vocabularies())
 assert "materializing" in vocabularies["hls_in_flight_status"]
+assert "transient_retry" in vocabularies["hub_failure_class"]
+assert native.reduce_hub_transfer_event("completed", None, "fail", None, "transient_retry") == ("completed", None, False)
+assert native.reduce_hub_transfer_event("failed", "integrity_inconsistency", "retry") == ("failed", "integrity_inconsistency", False)
 assert native.transition_operation_lifecycle("queued", "claim") == "claimed"
 assert (
     native.derive_hls_reservation_action("materializing", False, True, True)

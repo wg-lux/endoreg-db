@@ -16,7 +16,7 @@ maintainers = [
 ]
 name = "endoreg_db"
 readme = "README.md"
-version = "1.8.4"
+version = "1.8.5"
 
 requires-python = ">=3.12,<3.13"
 license = { file = "LICENSE" }
@@ -91,7 +91,7 @@ dependencies = [
   "lx-ai-core[torch]==0.0.4",
   "celery-types>=0.26.0",
   "lightning-fabric>=2.6.5",
-  "lx-dtypes>=0.6.6",
+  "lx-dtypes>=0.6.9",
   "snakemake==9.23.1",
 ]
 
@@ -193,12 +193,10 @@ explicit_package_bases = true
 follow_imports = "silent"
 disallow_untyped_defs = false
 disallow_untyped_calls = false
-disallow_untyped_globals = false
 check_untyped_defs = false
 allow_redefinition = true
 warn_return_any = false
 warn_unused_ignores = true
-show_error_codes = true
 
 [tool.django-stubs]
 django_settings_module = "endoreg_db.config.settings.test"

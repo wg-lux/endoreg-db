@@ -5,10 +5,13 @@ summary: Node, upload, transfer, quarantine and storage control-plane persistenc
 responsibilities:
 - Persist domain entities and enforce their constraints.
 boundaries:
+- Outbound local status is mirrored from Rust; failure choices reuse models/state/hub_transfer.py and an empty database value means absence of a failure.
 - Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
 - Preserve concurrent operation ownership and canonical media generation identity; raw media export is
   prohibited.
 files:
+- file: outbound_hub_transfer_job.py
+  role: Sender transfer identity, validated envelope receipts and separate processed-only/full-file cleanup evidence.
 - file: patient_matching.py
   role: Matching budgets, one-use worker claims, validated receipts and explicit UUID relationships.
 - file: network_node.py

@@ -50,6 +50,10 @@ def delete_recorded_video_copies(video: VideoFile) -> None:
     frame_directories = (
         _owned_path(frame_dir, paths.frame),
         _owned_path(get_temp_anonymized_video_frame_dir(video), paths.transcoding),
+        _owned_path(
+            paths.transcoding / "processed_storage_pressure" / str(video.uuid),
+            paths.transcoding,
+        ),
     )
     jobs = list(
         UploadJob.objects.select_for_update()

@@ -26,6 +26,130 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: devenv_precommit_runner
+  category: testing
+  title: Entwicklungsumgebung installiert und startet die konfigurierten Pre-Commit-Hooks
+  acceptance:
+  - Ein leer geerbtes PREK_HOME wird durch den absoluten projektlokalen Cache ersetzt; Hook-Installation
+    funktioniert nach dem Laden der Entwicklungsumgebung.
+  - Formatierungs- und Preflight-Tasks verwenden den deklarierten und installierten prek-Runner sowie
+    vorhandene Hook-IDs.
+  - Die Standard-Hooks werden vollständig ausgeführt; Ergebnisse und verbleibende fachliche Prüffehler
+    werden dokumentiert, ohne Hooks zu überspringen oder Abhängigkeiten automatisch neu zu synchronisieren.
+  - Installation ersetzt alle in default_install_hook_types deklarierten Hook-Typen einschließlich alter
+    commit-msg.legacy-Shims; der Commit-Message-Hook läuft ohne das entfernte Python-Modul pre_commit.
+  required: true
+  verification:
+    kind: manual
+    instructions: Leeres PREK_HOME beim Laden von devenv prüfen, mit prek install -f alle deklarierten
+      Hooks installieren und agent:pre-commit vollständig ausführen; Commit-Message-Hook direkt und bestehende
+      Umgebungstests prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-11-17: Leeres PREK_HOME reproduziert exakt cannot make an empty path absolute.
+        Nach Laden der korrigierten devenv-Konfiguration mit leer geerbtem PREK_HOME: absoluter Cache
+        .devenv/state/prek und prek install -f --hook-type pre-commit erfolgreich.'
+    - kind: command
+      reference: '2026-11-17: devenv tasks run agent:pre-commit: Exit 0, 241 s; alle acht Standard-Hooks
+        bestanden, einschließlich Pyright, Typverträgen, Routen, Dokumentation, Django-Startup und Deployment-Check.
+        Erster Lauf hatte saubere Prüfergebnisse, aber zwei Dateiänderungs-Meldungen durch gleichzeitig
+        aktualisierte Tracker-Evidenz; abschließender Lauf erfolgte ohne parallele Dateiänderungen.'
+    - kind: test
+      reference: '2026-11-17: Nach dem Pyright-Hook: .devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py
+        -q --tb=short: 6 bestanden, 1 bestehende Plugin-Warnung, 0,25 s. Keine neuen Spiegeltests für
+        reine Konfigurationsänderungen; tatsächlicher Shell-/Installations- und Task-Aufruf geprüft.'
+    - kind: test
+      reference: '2026-11-17: Tatsächlicher git hook run commit-msg mit temporärer Commit-Nachricht reproduziert
+        Exit 1 und No module named pre_commit. Nach Sicherung des alten generierten Shims außerhalb von
+        .git/hooks und prek install -f: beide Hook-Typen installiert, commit-msg.legacy entfernt, tatsächlicher
+        Commit-Message-Hook Exit 0. Nachricht und SHA-256 des Git-Index unverändert. README verwendet
+        nun die gemeinsame default_install_hook_types-Konfiguration. Strukturprüfung: 67 Manifeste; Dokumentationsprüfung:
+        0 Fehler/0 Warnungen; git diff --check bestanden. Standard-Pre-Commit-Suite bereits im vorherigen
+        Lauf und im vom Benutzer gezeigten Commit-Versuch erfolgreich; keine erneute Ausführung für reine
+        Dokumentations- und Hook-Installationskorrektur.'
+    note: 'Nachtrag: Die ursprüngliche Installation nur für pre-commit ließ einen alten commit-msg.legacy-Shim
+      aktiv. prek install -f ersetzt jetzt beide bereits deklarierten Hook-Typen und entfernt die Legacy-Verkettung.
+      Kein Commit erstellt, keine Abhängigkeit installiert und Git-Index unverändert.'
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T14:55:23.011603Z'
+- id: release_failure_cluster_regressions
+  category: testing
+  title: Fehlercluster aus dem Release-Testlauf sind reproduziert und an ihrer Ursache behoben
+  acceptance:
+  - Fehlende Paketdateien und kaskadierende Django-Registry- oder Datenbankfehler werden mit unverändertem
+    installiertem Paketbestand erneut geprüft; Umgebungswechsel laufen nicht parallel zu Tests.
+  - Migrationskopf und geprüfte Persistenz- sowie Referenzinventare stimmen mit dem tatsächlichen Modellbestand
+    überein.
+  - Videoimport, Publikation und Test-Fixtures bewahren kanonische Präsentationszeitstempel, Inhaltsidentität
+    und exklusive Medienoperationen; ungültige Eingaben erhalten keinen stillen Fallback.
+  - Synchrone Zeitstempelerfassung hinterlässt keine eigene Wiedergabesitzung; fremde Wiedergabe-Leases
+    bleiben unverändert, und exklusive Schreiber sowie autorisierte Speicherbereinigung blockieren den
+    Zugriff weiterhin.
+  - Modellabhängige Tests unterscheiden deterministische Vertragsprüfungen von explizit provisionierten
+    echten Modellen; fehlende Produktionsressourcen bleiben sichtbare Fehler.
+  - Reproduzierte lx-dtypes-Vertragsfehler werden in ihrem zuständigen Paket behoben und gegen betroffene
+    Endoreg-Verbraucher geprüft.
+  - Pyright vor pytest, fokussierte Clusterprüfungen und abschließende gemeinsame Regression dokumentieren
+    genaue Ergebnisse und verbleibende Grenzen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Betroffene Tests aus dem bereitgestellten Fehlerprotokoll zunächst gezielt reproduzieren;
+      nach Ursachenbehebung gemeinsame Regression in unveränderter Umgebung ausführen.
+    timeout_seconds: 3600
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-11-17: Endoreg-Gesamtlauf der 371 gemeldeten Fehlerfälle mit zwei Prozessen und
+        echten Videooperationen: 368 bestanden, 3 fehlgeschlagen, 42 Warnungen, 844,43 s. Die drei verbleibenden
+        Fehler waren unvollständige Test-Doubles für kanonische Publikation beziehungsweise Berichtsmetadaten
+        und Extraktionsbelege. Nach Korrektur ausschließlich dieser Fixtures bestanden beide vollständigen
+        Dateien tests/services/test_video_import_orchestration.py und tests/views/media/test_pdf_media_text_visibility.py:
+        11 bestanden, 2 Warnungen, 169,18 s. Kein erneuter Gesamtlauf nach diesen Fixture-Korrekturen.'
+    - kind: test
+      reference: '2026-11-17: lx-data-models: .venv/bin/pytest tests -q --tb=short: 2291 bestanden, 1
+        bestehender hostabhängiger Skip, 500,29 s. Zusätzliche Umgebungs- und Strukturprüfungen: 33 bestanden.
+        Vollständiger Pyright: lx-data-models 0 Fehler und 0 Warnungen; Endoreg 0 Fehler und 2 bestehende
+        Warnungen. Letzte geänderte Import-Fixtures zusätzlich mit Pyright ohne Fehler oder Warnungen
+        geprüft, jeweils vor pytest.'
+    - kind: test
+      reference: '2026-11-17: Automatisches direnv/devenv-Neuanlegen der gemeinsam verwendeten Python-Umgebung
+        reproduziert und in beiden Repositories durch explizite Synchronisierung ersetzt. Frühere dadurch
+        unterbrochene Läufe nicht als Nachweis gewertet. Vor der abschließenden Endoreg-Regression eingefrorene
+        Abhängigkeiten mit Python 3.12.14 wiederhergestellt; uv pip check bestätigt 331 kompatible Pakete.
+        Tatsächliche wiederholte Shell-Neuladungen verändern weder Umgebungsverzeichnis/Python-Verknüpfung
+        noch Inodes und Hashes der RECORD-Dateien: Endoreg 331, lx-data-models .venv 143 und .devenv/state/venv
+        142.'
+    - kind: test
+      reference: '2026-11-17: Installiertes lx-dtypes 0.6.8: 1332 RECORD-Hashes geprüft und 20 Katalogidentitäten
+        gültig. Kandidaten-Wheel, Paketquellen und Endoreg-Installation stimmen für 1318 Paketdateien
+        bytegenau überein; keine spekulative Bibliotheksänderung. Migration auf Kopf 0118, vorhandene
+        gender_alias-Felder und drei tatsächliche Service-Verbraucher in den geprüften Inventaren korrigiert;
+        alle 101 Fälle des Inventar-/Startup-Clusters über Haupt- und Nachlauf bestanden. Isolations-/Nebenläufigkeitscluster:
+        70 bestanden.'
+    - kind: test
+      reference: '2026-11-17: Kombinierte Prüfung von Medienoperationen, Zeitstempeln, Labeln, Video-Inferenz,
+        Umgebung und echtem Embedding-Modell: 100 bestanden; danach alle drei Aufrufer des korrigierten
+        Watcher-Testhelfers bestanden. Schneller Mock-Modus: 2 bestanden, 1 bestehender Policy-Skip. Neun
+        neue Lease-Fälle prüfen ausschließlich eigene Freigabe, unveränderte fremde Wiedergabe, Fehler-Rollback,
+        exklusive Schreiber und Speicherbereinigung einschließlich PostgreSQL-Sperre. Gepinntes de_core_news_lg
+        3.8.0 aus bestehender Nixpkgs-Quelle als reine Modelldaten provisioniert; alle 30 Dateien stimmen
+        mit dem kanonischen Manifest überein.'
+    - kind: test
+      reference: '2026-11-17: Ruff und Diff-Prüfungen für die Änderungen bestanden. Endoreg-Strukturprüfung:
+        67 gültige Manifeste; lx-data-models-Strukturprüfung bestanden. Feature-Tracker: 40 gültige Definitionen.
+        Bestehende Änderungen in beiden Arbeitsverzeichnissen erhalten; keine Serveränderung, kein Commit
+        und keine Bereitstellung.'
+    note: Alle 371 eindeutig identifizierten Fehlerfälle aus dem bereitgestellten Protokoll haben bestandene
+      Nachweise über den gemeinsamen Lauf und den abschließenden Nachlauf. Keine Rust-Zustands-, Präsentationszeitstempel-,
+      Integritäts- oder Importvalidierung abgeschwächt. Verifikation betrifft diese Regressionen, nicht
+      die vollständige Produktionsfreigabe; keine Veröffentlichung oder Bereitstellung durchgeführt.
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T14:08:39.773065Z'
 - id: retired_media_shadow_implementations
   category: functionality
   title: Stillgelegte Medienpfade bilden keine konkurrierenden Produktionsimplementierungen

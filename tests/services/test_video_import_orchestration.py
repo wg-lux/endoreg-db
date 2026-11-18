@@ -10,7 +10,10 @@ from django.db import OperationalError, transaction
 from endoreg_db.models import Center, UploadJob, VideoFile
 from endoreg_db.services.video_files import direct_import as sut
 from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLeaseLost
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.imports.execution import ImportExecutionFence
+from endoreg_db.services.imports.processing import record_published_import
+from endoreg_db.utils.hashs import get_file_hash
 
 
 @pytest.mark.django_db(transaction=True)
@@ -191,7 +194,15 @@ def test_direct_import_preserves_implicit_center_selection(
         )
         execution_fence.guard()
         with execution_fence.mutation_guard():
-            return VideoFile.objects.create(center=selected)
+            video = VideoFile.objects.create(center=selected)
+            upload_job_id = current_upload_job_id()
+            assert upload_job_id is not None
+            record_published_import(
+                upload_job_id,
+                media_id=int(video.pk),
+                source_sha256=get_file_hash(Path(file_path)),
+            )
+            return video
 
     monkeypatch.setattr(service, "import_and_anonymize_fenced", process)
     service.import_and_anonymize(source, "", "processor")

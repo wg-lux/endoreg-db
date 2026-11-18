@@ -15,7 +15,7 @@ entrypoints:
   purpose: Django management entrypoint.
 - name: devenv tasks
   file: devenv.nix
-  purpose: Development environment and named verification lanes.
+  purpose: Non-mutating shell activation, explicit dependency sync, prek hooks with project-local cache, verification lanes and provisioned report-embedding model.
 files:
 - file: AGENTS.md
   role: Binding agent instructions and map maintenance protocol

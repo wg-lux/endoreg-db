@@ -12,6 +12,7 @@ from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
     VideoArtifactProbe,
     MeasuredAverageFrameRate,
+    NominalFrameRate,
 )
 from endoreg_db.services.video_storage import canonical_timelines as service
 from endoreg_db.services.video_storage import workflow
@@ -76,8 +77,10 @@ def test_native_timestamp_equivalence_rejects_shift_drop_and_insertion(
 
 
 @pytest.mark.parametrize("proof_kind", ["valid", "missing", "shifted", "incomplete"])
-def test_average_rate_metadata_difference_requires_complete_native_proof(
+@pytest.mark.parametrize("rate_kind", ["nominal", "average", "both"])
+def test_rate_metadata_difference_requires_complete_native_proof(
     proof_kind: str,
+    rate_kind: str,
 ) -> None:
     source = probe()
     output = source.model_copy(
@@ -86,7 +89,12 @@ def test_average_rate_metadata_difference_requires_complete_native_proof(
                 update={
                     "measured_average_frame_rate": MeasuredAverageFrameRate(
                         numerator=249, denominator=10
-                    ),
+                    )
+                    if rate_kind in {"average", "both"}
+                    else None,
+                    "nominal_frame_rate": NominalFrameRate(numerator=30, denominator=1)
+                    if rate_kind in {"nominal", "both"}
+                    else None,
                 }
             )
         }
@@ -120,6 +128,78 @@ def test_average_rate_metadata_difference_requires_complete_native_proof(
     else:
         with pytest.raises(VideoStorageNormalizationError):
             validate()
+
+
+def test_decoded_proof_does_not_override_terminal_duration() -> None:
+    source = probe()
+    output = source.model_copy(
+        update={
+            "timeline": source.timeline.model_copy(update={"duration_seconds": 12.0})
+        }
+    )
+    timestamps = snapshot([index * 40 for index in range(250)])
+    with pytest.raises(VideoStorageNormalizationError, match="duration drifted"):
+        validate_normalized_output(
+            source=source,
+            output=output,
+            profile=configured_video_storage_profile(),
+            canonical_timestamps=CanonicalTimestampTransformation(
+                before=timestamps, after=timestamps
+            ),
+        )
+
+
+def test_rate_metadata_drift_reuses_compliant_video_on_repeated_normalization(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.mp4"
+    output = tmp_path / "output.mp4"
+    source.write_bytes(b"source")
+    output.write_bytes(b"existing canonical generation")
+    original_stat = output.stat()
+    source_probe = probe()
+    output_probe = source_probe.model_copy(
+        update={
+            "timeline": source_probe.timeline.model_copy(
+                update={
+                    "nominal_frame_rate": NominalFrameRate(numerator=30, denominator=1),
+                    "measured_average_frame_rate": MeasuredAverageFrameRate(
+                        numerator=249, denominator=10
+                    ),
+                }
+            )
+        }
+    )
+
+    def artifact_probe(path: Path) -> VideoArtifactProbe:
+        return source_probe if path == source else output_probe
+
+    def unexpected_transcode(**_kwargs: object) -> None:
+        pytest.fail("Matching decoded timestamps must not cause another encode")
+
+    monkeypatch.setattr(workflow, "probe_video_artifact", artifact_probe)
+    monkeypatch.setattr(
+        service, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
+    monkeypatch.setattr(
+        workflow.ffmpeg_wrapper, "transcode_video", unexpected_transcode
+    )
+    for _ in range(2):
+        evidence = workflow.normalize_video_file(
+            input_path=output,
+            reference_path=source,
+            quality_mode="balanced",
+        )
+        assert evidence.canonical_timestamps is not None
+        assert evidence.temporal_equivalent
+        assert output.stat().st_ino == original_stat.st_ino
+        assert output.stat().st_mtime_ns == original_stat.st_mtime_ns
+    assert output.read_bytes() == b"existing canonical generation"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "output.mp4",
+        "source.mp4",
+    ]
 
 
 def test_resampling_and_later_publication_preserve_both_sequences() -> None:

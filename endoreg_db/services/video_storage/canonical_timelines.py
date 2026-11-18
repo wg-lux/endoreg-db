@@ -18,7 +18,6 @@ from endoreg_db.schemas.video_storage import (
 from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     VideoStorageProfile,
-    MeasuredAverageFrameRateDriftError,
 )
 from endoreg_db.services.video_storage.probes import probe_video_frame_timestamps
 from endoreg_db.utils.hashs import get_file_hash
@@ -49,42 +48,23 @@ def validate_canonical_output(
     validate_output: ValidateOutput,
     artifact_kind: VideoArtifactKind = VideoArtifactKind.RAW,
 ) -> VideoStorageNormalizationEvidence:
-    """Validate metadata first; only decoded proof may resolve average-rate drift."""
-    if artifact_kind == VideoArtifactKind.PROCESSED:
-        from endoreg_db.services.video_storage.validation import (
-            assert_storage_compliance,
-        )
+    """Decode temporal evidence before judging container frame-rate estimates."""
+    from endoreg_db.services.video_storage.validation import assert_storage_compliance
 
-        assert_storage_compliance(output, profile=profile)
-        timestamps = CanonicalTimestampTransformation(
-            before=before,
-            after=capture_canonical_timeline(output_path, output),
-        )
-        return validate_output(
-            source=source,
-            output=output,
-            profile=profile,
-            segments=segments,
-            canonical_timestamps=timestamps,
-            artifact_kind=artifact_kind,
-        )
-    try:
-        evidence = validate_output(
-            source=source, output=output, profile=profile, segments=segments
-        )
-    except MeasuredAverageFrameRateDriftError:
-        timestamps = CanonicalTimestampTransformation(
-            before=before,
-            after=capture_canonical_timeline(output_path, output),
-        )
-        return validate_output(
-            source=source,
-            output=output,
-            profile=profile,
-            segments=segments,
-            canonical_timestamps=timestamps,
-        )
-    return with_canonical_timestamps(evidence, before, output_path)
+    # Avoid a complete decode when the candidate needs another bounded encode.
+    assert_storage_compliance(output, profile=profile)
+    timestamps = CanonicalTimestampTransformation(
+        before=before,
+        after=capture_canonical_timeline(output_path, output),
+    )
+    return validate_output(
+        source=source,
+        output=output,
+        profile=profile,
+        segments=segments,
+        canonical_timestamps=timestamps,
+        artifact_kind=artifact_kind,
+    )
 
 
 def capture_canonical_timeline(

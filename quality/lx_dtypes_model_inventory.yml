@@ -3356,7 +3356,9 @@ models:
   ownership_evidence:
   - endoreg_db/models/hub/outbound_hub_transfer_job.py:OutboundHubTransferJob
   - lx-dtypes:lx_dtypes.models.contracts.hub_media_envelope.HubMediaEnvelopeReceipt
-  boundary_consumers: []
+  boundary_consumers:
+  - service:endoreg_db/services/hub/transfer_cleanup.py
+  - service:endoreg_db/services/runtime/native_state_vocabulary.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
   - lx_dtypes.models.contracts.hub_media_envelope.HubMediaEnvelopeReceipt
@@ -6931,7 +6933,8 @@ models:
     remain in the consuming application.
   ownership_evidence:
   - endoreg_db/models/media/video/video_transcode_job.py:VideoTranscodeJob
-  boundary_consumers: []
+  boundary_consumers:
+  - service:endoreg_db/services/hub/transfer_cleanup.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []

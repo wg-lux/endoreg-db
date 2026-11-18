@@ -42,6 +42,9 @@ from endoreg_db.schemas.video_storage import (
 from endoreg_db.services.annotations.segment_validation_workflow import (
     blackening_history_config,
 )
+from endoreg_db.services.video_files.timestamp_backfill import (
+    backfill_missing_video_timestamps,
+)
 from endoreg_db.services.video_storage.contracts import evidence_as_json
 from endoreg_db.services.video_storage.recording_time import recording_time_evidence
 from endoreg_db.utils import ffmpeg_wrapper
@@ -920,19 +923,16 @@ class ExportAnnotatedPresentationTimestampEndToEndTests(TestCase):
         self.addCleanup(video.processed_file.storage.delete, stored_name)
         video.processed_video_hash = get_file_hash(video.processed_file)
         video.save()
+        # Capture the real generation before clinical annotations exist.
+        backfill_missing_video_timestamps(video)
 
         label = Label.objects.create(name=f"pts-e2e-label-{suffix}")
         source = InformationSource.objects.create(name=f"pts-e2e-source-{suffix}")
         selected_indices = [0, 5, 11, 12, 17, 23]
         frames: dict[int, Frame] = {}
         for index in selected_indices:
-            frames[index] = Frame.objects.create(
-                video=video,
-                frame_number=index,
-                relative_path=f"frame_{index:07d}.png",
-                timestamp=timestamps[index] / 90_000,
-                presentation_timestamp=timestamps[index],
-            )
+            frames[index] = video.frames.get(frame_number=index)
+            assert frames[index].presentation_timestamp == timestamps[index]
             ImageClassificationAnnotation.objects.create(
                 frame=frames[index],
                 label=label,

@@ -1,6 +1,8 @@
 //! Exports every native state vocabulary so Python mirrors are verified, never trusted.
 use crate::state_token::Vocabulary;
-use crate::{hls_state, import_processing, import_state, lifecycle_state, state_enums};
+use crate::{
+    hls_state, hub_transfer_state, import_processing, import_state, lifecycle_state, state_enums,
+};
 use pyo3::prelude::*;
 
 fn all_vocabularies() -> Vec<Vocabulary> {
@@ -10,6 +12,7 @@ fn all_vocabularies() -> Vec<Vocabulary> {
         lifecycle_state::vocabularies(),
         hls_state::vocabularies(),
         state_enums::vocabularies(),
+        hub_transfer_state::vocabularies(),
     ]
     .into_iter()
     .flatten()

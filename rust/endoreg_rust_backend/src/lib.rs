@@ -8,6 +8,7 @@ mod file_identity;
 mod frame_ancestry;
 mod frames;
 mod hls_state;
+mod hub_transfer_state;
 mod import_processing;
 mod import_state;
 mod lifecycle_state;
@@ -52,6 +53,14 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         module
     )?)?;
     module.add_function(wrap_pyfunction!(capabilities::native_capabilities, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        hub_transfer_state::reduce_hub_transfer_event,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        hub_transfer_state::hub_failure_is_retryable,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(
         encryption_state::encryption_status,
         module

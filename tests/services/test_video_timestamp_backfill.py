@@ -3,17 +3,23 @@ from __future__ import annotations
 import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
+from datetime import timedelta
 from pathlib import Path
-from threading import Barrier
+from threading import Barrier, Event
 from unittest.mock import Mock
 
 import pytest
 from django.core.files.base import ContentFile
-from django.db import close_old_connections, connection
+from django.db import OperationalError, close_old_connections, connection, transaction
 from django.test.utils import CaptureQueriesContext
+from django.utils import timezone
 
 from endoreg_db.models import Center, Frame, LabelVideoSegment, VideoFile
+from endoreg_db.models.hub.storage_placement import StorageRotationCleanupReceipt
+from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from endoreg_db.schemas.video_storage import VideoArtifactProbe
+from endoreg_db.services.media import operation_gate
 from endoreg_db.services.video_files import timestamp_backfill as service
 from endoreg_db.services.video_files.frame_coordinates import artifact_frame_timestamps
 from endoreg_db.services.video_files.timeline_index import load_video_timeline_index
@@ -151,6 +157,110 @@ def test_failed_backfill_is_atomic(
     assert list(video.frames.values_list("pk", "frame_number", "timestamp")) == before
 
 
+@pytest.mark.parametrize("playback", [False, True])
+@pytest.mark.parametrize("failure", [False, True])
+def test_backfill_releases_only_its_owned_lease(
+    video: VideoFile, monkeypatch: pytest.MonkeyPatch, playback: bool, failure: bool
+) -> None:
+    if playback:
+        operation_gate.create_video_stream_lease(video, file_type="processed")
+    previous = list(MediaOperationLease.objects.filter(video=video).values())
+    actual_probe = service.probe_video_artifact
+
+    def probe(path: Path) -> VideoArtifactProbe:
+        assert (
+            MediaOperationLease.objects.filter(video=video).count() == len(previous) + 1
+        )
+        if failure:
+            raise ValueError("capture failed")
+        return actual_probe(path)
+
+    monkeypatch.setattr(service, "probe_video_artifact", probe)
+    if failure:
+        with pytest.raises(ValueError, match="capture failed"):
+            service.backfill_missing_video_timestamps(video)
+        assert not video.frames.exists()
+    else:
+        service.backfill_missing_video_timestamps(video)
+        assert video.frames.count() == 4
+    assert list(MediaOperationLease.objects.filter(video=video).values()) == previous
+    if not playback:
+        with operation_gate.video_artifact_mutation(video_id=video.pk):
+            pass
+
+
+@pytest.mark.parametrize(
+    "blocker", ["transcode", "artifact_write", "expired_writer", "cleanup"]
+)
+def test_backfill_preserves_writer_and_cleanup_admission(
+    video: VideoFile, monkeypatch: pytest.MonkeyPatch, blocker: str
+) -> None:
+    if blocker == "cleanup":
+        monkeypatch.setattr(
+            StorageRotationCleanupReceipt.objects,
+            "filter",
+            Mock(return_value=Mock(exists=Mock(return_value=True))),
+        )
+    else:
+        MediaOperationLease.objects.create(
+            video=video,
+            lease_type="artifact_write" if blocker == "expired_writer" else blocker,
+            expires_at=timezone.now()
+            + timedelta(seconds=-1 if blocker == "expired_writer" else 120),
+        )
+    previous = list(MediaOperationLease.objects.filter(video=video).values())
+    probe = Mock(side_effect=AssertionError("Blocked recovery must not decode media"))
+    monkeypatch.setattr(service, "probe_video_artifact", probe)
+    with pytest.raises(operation_gate.MediaOperationDeferred):
+        service.backfill_missing_video_timestamps(video)
+    probe.assert_not_called()
+    assert list(MediaOperationLease.objects.filter(video=video).values()) == previous
+    assert not video.frames.exists()
+
+
+@pytest.mark.django_db(transaction=True)
+def test_backfill_row_lock_excludes_writer_until_capture_finishes(
+    video: VideoFile, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("Concurrent row-lock verification requires PostgreSQL")
+    capturing, finish = Event(), Event()
+    actual_probe = service.probe_video_artifact
+
+    def probe(path: Path) -> VideoArtifactProbe:
+        capturing.set()
+        assert finish.wait(timeout=10)
+        return actual_probe(path)
+
+    def recover() -> None:
+        close_old_connections()
+        try:
+            service.backfill_missing_video_timestamps(
+                VideoFile.objects.get(pk=video.pk)
+            )
+        finally:
+            close_old_connections()
+
+    monkeypatch.setattr(service, "probe_video_artifact", probe)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        recovery = executor.submit(recover)
+        try:
+            assert capturing.wait(timeout=10)
+            with (
+                pytest.raises(OperationalError, match="lock timeout"),
+                transaction.atomic(),
+            ):
+                with connection.cursor() as cursor:
+                    cursor.execute("SET LOCAL lock_timeout = '100ms'")
+                operation_gate.acquire_video_transcode_lease(video_id=video.pk)
+        finally:
+            finish.set()
+        recovery.result(timeout=30)
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+    claim = operation_gate.acquire_video_transcode_lease(video_id=video.pk)
+    operation_gate.release_video_transcode_lease(claim)
+
+
 @pytest.mark.parametrize("processed", [False, True])
 def test_legacy_recording_hash_does_not_block_current_media_timestamps(
     video: VideoFile, processed: bool
@@ -190,22 +300,115 @@ def test_legacy_recording_hash_does_not_block_current_media_timestamps(
             artifact_frame_timestamps(video, file_type="raw")
 
 
-def test_partial_timestamps_are_not_overwritten(
-    video: VideoFile, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("field", ["timestamp", "presentation_timestamp"])
+def test_conflicting_partial_timestamps_are_not_overwritten(
+    video: VideoFile, field: str
 ) -> None:
-    Frame.objects.create(video=video, frame_number=0, timestamp=9.0)
-    probe = Mock(
-        side_effect=AssertionError("Partial coordinates must not be backfilled")
-    )
-    monkeypatch.setattr(service, "probe_video_artifact", probe)
-    with pytest.raises(
-        service.VideoTimelineMappingError, match="persisted source timeline"
-    ):
+    Frame.objects.create(video=video, frame_number=0, **{field: 9})
+    with pytest.raises(service.VideoTimelineMappingError):
         load_video_timeline_index(video)
-    with pytest.raises(ValueError, match="unambiguous canonical timestamp sequence"):
+    with pytest.raises(ValueError):
         artifact_frame_timestamps(video, file_type="processed")
-    assert video.frames.get().timestamp == 9.0
-    probe.assert_not_called()
+    assert getattr(video.frames.get(), field) == 9
+    video.refresh_from_db()
+    assert not (video.meta or {}).get("source_timeline")
+
+
+@pytest.mark.parametrize("last_present", [False, True])
+def test_segment_end_clamping_reuses_index_and_requires_persisted_last_frame(
+    video: VideoFile, last_present: bool
+) -> None:
+    from endoreg_db.services.annotations.segment_validation_workflow import (
+        resolve_segment_validation_frames,
+    )
+
+    service.backfill_missing_video_timestamps(video)
+    if not last_present:
+        video.frames.filter(frame_number=3).update(timestamp=None)
+    index = load_video_timeline_index(video)
+    with CaptureQueriesContext(connection) as queries:
+        if last_present:
+            assert resolve_segment_validation_frames(
+                video, index, start_time=4.0, end_time=100.0
+            ) == (0, 3)
+        else:
+            with pytest.raises(
+                service.VideoTimelineMappingError, match="last persisted"
+            ):
+                resolve_segment_validation_frames(
+                    video, index, start_time=4.0, end_time=100.0
+                )
+    assert len(queries) == 0
+
+
+@pytest.mark.parametrize(
+    "missing", ["timestamp", "presentation_timestamp", "row", "source", "history"]
+)
+@pytest.mark.parametrize("processed", [False, True])
+def test_partial_coordinates_reconcile_without_changing_saved_values(
+    video: VideoFile, missing: str, processed: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.services.video_files.timeline_backfill import (
+        backfill_video_timelines,
+    )
+
+    if not processed:
+        video.processed_file.name = ""
+        video.processed_video_hash = None
+        video.save(update_fields=["processed_file", "processed_video_hash"])
+    service.backfill_missing_video_timestamps(video)
+    original = list(
+        video.frames.order_by("frame_number").values_list(
+            "pk", "frame_number", "timestamp", "presentation_timestamp"
+        )
+    )
+    if missing in {"source", "history"}:
+        metadata_field = (
+            "source_timeline" if missing == "source" else "canonical_timeline_history"
+        )
+        video.meta = {
+            key: value
+            for key, value in (video.meta or {}).items()
+            if key != metadata_field
+        }
+        video.save(update_fields=["meta"])
+    elif missing == "row":
+        video.frames.filter(frame_number=1).delete()
+    else:
+        video.frames.filter(frame_number=1).update(**{missing: None})
+    before = list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+    assert (
+        backfill_video_timelines(apply=False, video_ids=[video.pk]).entries[0].status
+        == "candidate"
+    )
+    assert (
+        list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+        == before
+    )
+    assert (
+        backfill_video_timelines(apply=True, video_ids=[video.pk]).entries[0].status
+        == "backfilled"
+    )
+    restored = list(
+        video.frames.order_by("frame_number").values_list(
+            "pk", "frame_number", "timestamp", "presentation_timestamp"
+        )
+    )
+    assert [row[1:] for row in restored] == [row[1:] for row in original]
+    assert all(
+        row[0] == original[index][0]
+        for index, row in enumerate(restored)
+        if missing != "row" or index != 1
+    )
+    monkeypatch.setattr(
+        service,
+        "probe_video_artifact",
+        Mock(side_effect=AssertionError("Duplicate recovery must not decode")),
+    )
+    assert (
+        backfill_video_timelines(apply=True, video_ids=[video.pk]).entries[0].status
+        == "ready"
+    )
 
 
 @pytest.mark.parametrize("numbers", [[0, 1], [0, 1, 2, 3, 4, 5], [0, 1, 2, 4]])

@@ -25,11 +25,19 @@ type TimelineIndexKey = tuple[int, str | None]
 class VideoTimelineIndex:
     """Read-only boundary resolver bound to one video generation."""
 
-    __slots__ = ("_native", "processed_video_hash", "video_id")
+    __slots__ = (
+        "_native",
+        "processed_video_hash",
+        "video_id",
+        "frame_count",
+        "last_persisted_timestamp",
+    )
 
     video_id: int
     processed_video_hash: str | None
     _native: NativeTimelineIndex
+    frame_count: int | None
+    last_persisted_timestamp: float | None
 
     def __init__(
         self,
@@ -37,10 +45,14 @@ class VideoTimelineIndex:
         video_id: int,
         processed_video_hash: str | None,
         native: NativeTimelineIndex,
+        frame_count: int | None,
+        last_persisted_timestamp: float | None,
     ) -> None:
         self.video_id = video_id
         self.processed_video_hash = processed_video_hash
         self._native = native
+        self.frame_count = frame_count
+        self.last_persisted_timestamp = last_persisted_timestamp
 
     @property
     def key(self) -> TimelineIndexKey:
@@ -107,6 +119,14 @@ def load_video_timeline_index(video: VideoFile) -> VideoTimelineIndex:
         video_id=video_id,
         processed_video_hash=processed_video_hash,
         native=native,
+        frame_count=mapping.frame_count,
+        last_persisted_timestamp=(
+            float(rows[-1][1])
+            if rows
+            and mapping.frame_count is not None
+            and rows[-1][0] == mapping.frame_count - 1
+            else None
+        ),
     )
 
 

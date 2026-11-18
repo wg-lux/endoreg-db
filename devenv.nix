@@ -10,6 +10,12 @@ let
   # Pin to specific Python 3.12 version to match pyproject.toml
   python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
   uvPackage = pkgs.uv;
+  reportEmbeddingModel = pkgs.python312Packages.spacy-models.de_core_news_lg;
+  reportEmbeddingModelDirectory = "${reportEmbeddingModel.pname}-${reportEmbeddingModel.version}/${reportEmbeddingModel.pname}/${reportEmbeddingModel.pname}-${reportEmbeddingModel.version}";
+  reportEmbeddingModelData = pkgs.runCommand "${reportEmbeddingModel.pname}-${reportEmbeddingModel.version}-data" { } ''
+    tar -xzf ${reportEmbeddingModel.src} ${reportEmbeddingModelDirectory}
+    mv ${reportEmbeddingModelDirectory} "$out"
+  '';
   
   numbaSupport = pkgs.callPackage ./nix/numba-support.nix { };
 
@@ -68,7 +74,7 @@ let
   ];
 
   
-  SYNC_CMD = "uv sync --python .devenv/state/venv/bin/python --extra dev";
+  SYNC_CMD = "uv sync --python ${python}/bin/python --extra dev";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
   FAST_TEST_ENV = ''
     export SKIP_EXPENSIVE_TESTS=true
@@ -121,19 +127,25 @@ in
 
     # Critical: uv and devenv use the same environment.
     UV_PROJECT_ENVIRONMENT = "${config.devenv.state}/venv";
+
+    # prek rejects an empty inherited cache path, including during hook installation.
+    PREK_HOME = "${config.devenv.state}/prek";
+
+    # Only model data: the venv supplies spaCy; integration checks manifest.yml hashes.
+    ENDOREG_REPORT_EMBEDDING_MODEL_PATH = "${reportEmbeddingModelData}";
   };
 
   languages.python = {
     enable = true;
     version = "3.12";
 
-    venv.enable = true;
+    # Shell reloads must never replace packages used by running tests or workers.
+    venv.enable = false;
 
     uv = {
       enable = true;
       package = uvPackage;
-      sync.enable = true;
-      sync.extras = [ "dev" ];
+      sync.enable = false;
     };
   };
 
@@ -275,11 +287,8 @@ in
       '';
     };
     "agent:format" = {
-      description = "Run the mutating format/lint hooks used after agent edits";
-      exec = ''
-        .devenv/state/venv/bin/pre-commit run ruff --all-files
-        .devenv/state/venv/bin/pre-commit run ruff-format --all-files
-      '';
+      description = "Run the configured formatter after agent edits";
+      exec = ".devenv/state/venv/bin/prek run ruff-format --all-files";
     };
     "agent:smoke" = {
       description = "Run quick import and deployment-contract checks after scoped edits";
@@ -303,7 +312,7 @@ in
     };
     "agent:pre-commit" = {
       description = "Run the full default pre-commit suite for agent preflight";
-      exec = ".devenv/state/venv/bin/pre-commit run --all-files";
+      exec = ".devenv/state/venv/bin/prek run --all-files";
     };
     "quality:dead-code" = {
       description = "Reject new, stale, or expired reviewed dead-code findings";
@@ -394,7 +403,7 @@ in
       exec = ''
         devenv tasks run test:sync
         ${FAST_TEST_ENV}
-        pytest -q ${FAST_TEST_PYTEST_ARGS}
+        .devenv/state/venv/bin/pytest -q ${FAST_TEST_PYTEST_ARGS}
       '';
     };
     "test:heavy" = {
@@ -405,7 +414,7 @@ in
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -q -m '${HEAVY_TEST_MARKER}' ${TEST_PYTEST_ARGS}
+        .devenv/state/venv/bin/pytest -q -m '${HEAVY_TEST_MARKER}' ${TEST_PYTEST_ARGS}
       '';
     };
     "test:full" = {
@@ -416,14 +425,14 @@ in
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -q ${TEST_PYTEST_ARGS} ${COVERAGE_ARGS}
+        .devenv/state/venv/bin/pytest -q ${TEST_PYTEST_ARGS} ${COVERAGE_ARGS}
       '';
     };
     "test:clean" = {
       description = "Remove pytest worker runtimes, temp directories, and test postgresql files";
       exec = ''
         devenv tasks run test:sync
-        python - <<'PY'
+        .devenv/state/venv/bin/python - <<'PY'
         from pathlib import Path
 
         from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
@@ -443,7 +452,8 @@ in
   };
 
   enterShell = ''
-    
+    export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"
+    export PATH="$VIRTUAL_ENV/bin:$PATH"
   '';
 
   enterTest = ''

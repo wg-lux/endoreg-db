@@ -22,6 +22,52 @@ source_documents:
   disposition: reference
   note: Provides the existing ingest operations model that outbound transfer operations must complement.
 definition_of_done:
+- id: recording_bound_export_preflight
+  category: functionality
+  title: Transfer-Vorprüfung bindet Herkunft an die Aufnahme und vermeidet erneutes Dekodieren am Sender
+  acceptance:
+  - Herkunft und elektrische Synchronisation beginnen bei raw_video_hash; eine spätere kanonische Transformation
+    ersetzt die Aufnahmeidentität nicht. Fehlende Ursprungsbelege bleiben ein Fehler.
+  - Exklusive Medienoperationen und ungültige Herkunft werden vor teurer Inhaltsprüfung erkannt. Der Sender
+    prüft weiterhin Freigabe und aktuellen Inhalts-Hash, verwendet danach die typisierten inhaltsgebundenen
+    Zeitstempelbelege; der Empfänger dekodiert und prüft die empfangene Generation weiterhin.
+  - Probe- und Lease-Fehler während der Sender-Vorbereitung werden über die bestehende Rust-Autorität
+    persistiert statt als scheinbar wartender Job zurückzubleiben; begrenzte Wiederholung bleibt sichtbar.
+  - Regressionen prüfen mehrstufige Herkunft trotz später beginnender Timeline-Historie, fehlende Ursprungsketten,
+    unveränderte Integritätsgates und Dekodierungsprüfung am Empfänger.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor Herkunfts-, Recovery-, Empfänger-, Cleanup- und Sender-Worker-Tests; veränderte
+      Dateien und bestehende Deploymentgrenzen separat prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-11-17: Vollständiges Backend-Pyright: 0 Fehler, 2 bestehende Warnungen; finales
+        Herkunftstest-Pyright: 0 Fehler/0 Warnungen. Fokussierte Backend-Integration (Herkunft, Recovery,
+        Medien-Leases, Hub-Cleanup, Transfervertrag, Speichernormalisierung, kanonische Zeitstempel, Rust-Hub-Zustände,
+        Importabschluss): zunächst 267 bestanden und 6 neue Fixture-Fehler. Nach Korrektur ausschließlich
+        der Fixtures (Center und Dateiname) Herkunftssuite erneut: 27 bestanden in 53,96 s; damit alle
+        273 ausgewählten Fälle abgedeckt. Sender-Pyright fehlerfrei; sechs Sender-Suiten einschließlich
+        Thread-Rennen, Retry und Cleanup: 99 bestanden in 65,07 s. Keine Herkunftsbelege erfunden; Empfänger
+        prüft die vollständige dekodierte Zeitstempelfolge weiterhin. Ruff, Manifest- und Diff-Prüfungen
+        bestanden.'
+    - kind: test
+      reference: 'Abschluss 2026-11-17: Bestehende Download-/Integritätsregression tests/views/media/test_video_export_downloads.py:
+        23 bestanden in 41,56 s (eine bestehende Pytest-Warnung), einschließlich tatsächlicher Hash-Prüfung,
+        veralteter Freigaben, Verschlüsselung und Lease-Gates. scripts/check_report_native_runtime.sh:
+        46 Rust-Tests bestanden, generierte Typ-Stubs identisch, endoreg_db-1.8.5-cp312-cp312-linux_x86_64.whl
+        erfolgreich gebaut, isoliert installiert und native Zustands-/Hash-Verträge geprüft; temporäres
+        Prüfartefakt anschließend entfernt. Finale Manifest-, Ruff- und Diff-Prüfungen bestanden. Feature-Check
+        bleibt insgesamt NICHT PRODUKTIONSREIF (hub_transfer 6/15, Sender-Retry 6/7); lokale Regressionen
+        ersetzen keine Betriebs- und Restore-Abnahme.'
+    note: Lokal geprüfte Code- und Vertragsgrenze; keine Produktionsfreigabe. Historisch fehlende Herkunft,
+      unversöhnte Schreib-Leases sowie LuxNix-Backup und verschlüsselte Kapazität bleiben getrennte Betriebsaufgaben.
+      Senderanwendung und Python-/Rust-Pakete müssen gemeinsam bereitgestellt werden.
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T12:21:33.634230Z'
 - id: guarded_patient_matching_resolver
   category: security
   title: Ausführbarer Patientenresolver nach dem Lean-Annahmevertrag
@@ -597,6 +643,8 @@ definition_of_done:
     fail as INCONSISTENT rather than creating or mutating unrelated resources.
   - Completion and cleanup eligibility require a receiver acknowledgement tied to the same transfer, artifact
     hash, and verified apply outcome.
+  - Repeated operator retries reuse the queued, active or completed job without another dispatch; workers
+    and recovery serialize execution of the same transfer and retain its ciphertext across transient failures.
   - Videoexport überträgt eine streng typisierte Frame-Herkunft mit Bindung an den anonymisierten Inhalts-Hash;
     Hub-Import bewahrt diese Bindung und akzeptiert keine zusätzlichen Identitäts-, Pfad- oder Schlüsselfelder.
   - Elektrische Daten unabhängiger Geräte werden nur über explizite, aufnahmesitzungsgebundene Synchronisationsanker
@@ -641,13 +689,20 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/hub/video_provenance.py; lx-dtypes:lx_dtypes/models/contracts/video_provenance.py;
         lx-annotate:lx_annotate/hub/hub_export_payloads.py
-    note: Tatsächliche Frame-Herkunft wird anonymisiert und hashgebunden exportiert, am Hub validiert
-      und für explizite unabhängige Geräteuhren zusammengesetzt. Reale Encoder-/Transferregressionen bestehen
-      mit lokalen, aufeinander abgestimmten Quellpaketen. Aufnahmehardware und Synchronisationsanker müssen
-      gerätespezifisch angebunden und vermessen werden; Migration 0092 und koordinierte Paketveröffentlichung
-      sind vor Deployment erforderlich. Keine Produktionsfreigabe.
-    assessed_by: codex-sidecar-20261008-a
-    assessed_at: '2026-10-08T13:13:38.736549Z'
+    - kind: test
+      reference: '2026-11-17: Receiver and owned-deletion suite 79 passed, 44 subtests. Sender worker/recovery
+        34 passed within an 81-pass run; final sender API/cleanup rerun 48 passed. Repeated retry requests
+        keep one job and dispatch; shared execution lock excludes duplicate delivery and reconciliation;
+        newly queued work is not stale from earlier attempts. Full endoreg Pyright 0 errors, 2 existing
+        warnings; sender integration Pyright 0 errors. No deployment or production approval.'
+    - kind: test
+      reference: '2026-11-17: Rust hub_transfer_state_v1 owns hub acknowledgement/failure decisions and
+        retry classification. Shared failure enum and local/receiver status mirrors fail closed on native
+        vocabulary drift. Native verification: 46 Rust and 80 Python parity/adapter tests; sender 98 tests
+        including two real PostgreSQL thread races. Completed receipt and status survive delayed failures.
+        Packaged native wheel and generated stubs verified; no deployment.'
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T09:33:22.491330Z'
 - id: envelope_encrypted_media_transfer
   category: security
   title: Standalone processed media uses a replay-safe recipient envelope
@@ -783,6 +838,11 @@ definition_of_done:
     loudly without unsafe automatic recovery.
   - Local processed media is retained until verified hub apply; cleanup uses typed atomic filesystem wrappers
     and emits structured JSON logs.
+  - After a completed retained video transfer, an authorized center-scoped operator can explicitly remove
+    all locally owned video files, including raw, processed, playback, frames and recorded upload copies.
+    The hub must freshly verify its current received master against the original receipt before deletion.
+    Retain local transfer and annotation records; active work, shared paths, missing proof and changed
+    generations block deletion. Durable cleanup intent permits idempotent recovery after partial deletion.
   - Operators can handle storage pressure, hub outage, certificate rotation, worker restart, and database/media
     restore without losing transfer provenance.
   - With Hub transfer disabled or its Vault-backed provisioning unavailable, lx-annotate remains startable;
@@ -876,26 +936,15 @@ definition_of_done:
     - kind: command
       reference: 'lx-annotate cleanup, staging and celery routing: 44 passed; Pyright shows only the 5
         pre-existing errors; Ruff passed.'
-    note: 'Automated verification confirms idempotent reconciliation, restart of lost queued and in-flight
-      jobs, visible retry exhaustion, fail-closed acknowledgement integrity, and cleanup eligibility only
-      after verified applied status. LuxNix atomically couples the PostgreSQL dump and protected media
-      snapshot through a private systemd credential. A fresh NixOS virtual machine confirms the authorization
-      boundary, joint checksums and publication, rejection of corrupted dumps, and the configurable minimum
-      free-space reserve before and after staging; every failure leaves the latest valid restore point
-      unchanged. Production-like exercises for hub outage, certificate rotation, and complete joint database/media
-      recovery by an operator remain outstanding. 2026-11-03: Validated-export approval now stages the
-      video for transfer, attributed to the approving operator, through an after-commit endoreg-db signal;
-      queueing still follows AUTO_QUEUE. The verified processed-video reaper runs on a 15-minute beat
-      schedule only under eligible_after_verified_apply and isolates blocked jobs per run. Raw media and
-      processed reports are not reaped. No production exercise; readiness unchanged. 2026-11-03 consolidation:
-      lx-annotate''s default policy is now eligible_after_verified_apply; the scheduled task and the operator
-      command share one reap_verified_local_processed_videos with per-job isolation; staging delegates
-      eligibility, site node and idempotency to mark_resources_for_hub_upload. Hub protection: the sender
-      reaper raises HubExportCleanupForbiddenOnHub on central_hub at its single deletion point, which
-      aborts the run, and its beat entry is not registered on hubs. Reviewed endoreg-db generation, upload-source,
-      staging and storage rotation/rekey cleanup: none can remove a referenced current processed master.'
-    assessed_by: claude-hub-staging-cleanup
-    assessed_at: '2026-11-03T11:27:04.160543Z'
+    - kind: test
+      reference: '2026-11-17: Explicit retained-video cleanup verifies live hub bytes and the persisted
+        envelope receipt, retains clinical/transfer records and resumes partial deletion. Final import/playback/owned-cleanup
+        suite: 120 passed; sender API/cleanup: 48 passed; Hub Export component: 25 passed. Tested raw/processed
+        files, both playback trees, frame cache, upload copies, transcode staging, shared ownership, active
+        leases/work, changed generations, wrong center and missing hub proof. Migration 0118 and sender
+        migration ordering required. No production files removed.'
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T08:45:27.351990Z'
 - id: transfer_observability
   category: observability
   title: Operators can correlate user intent, sender work, receiver decisions, and cleanup

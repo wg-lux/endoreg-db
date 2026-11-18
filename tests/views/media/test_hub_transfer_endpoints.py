@@ -2242,6 +2242,18 @@ class HubTransferEndpointTests(TestCase):
         assert video.processed_video_hash == processed_hash
         assert ProcessingHistory.objects.get(file_hash=raw_hash).success is True
 
+        verification_url = f"/api/media/hub/transfers/{payload['transfer_key']}/status/?verify_media=true"
+        verified = self._secure_get(verification_url, headers=self._auth_headers())
+        assert verified.status_code == 200, verified.content
+        assert verified.json()["media_verified"] is True
+        assert verified.json()["envelope_receipt"] == receipt
+        video.processed_file.save(
+            "changed.mp4", SimpleUploadedFile("changed.mp4", b"changed")
+        )
+        rejected = self._secure_get(verification_url, headers=self._auth_headers())
+        assert rejected.status_code == 409
+        assert "media_verified" not in rejected.json()
+
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_processed_upload_rejects_plaintext_without_envelope(self) -> None:
         processed_bytes = b"plaintext-must-not-cross-the-boundary"

@@ -319,12 +319,13 @@ def test_provisioned_model_inventory() -> None:
 
 @pytest.mark.parametrize("error", [OSError("missing"), ValueError("corrupt")])
 def test_missing_or_corrupt_provisioned_model_fails(
-    monkeypatch: pytest.MonkeyPatch, error: Exception
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, error: Exception
 ) -> None:
     def fail_load(path: Path) -> spacy.language.Language:
         raise error
 
     default_report_text_embedder.cache_clear()
+    monkeypatch.setenv("ENDOREG_REPORT_EMBEDDING_MODEL_PATH", str(tmp_path))
     monkeypatch.setattr(spacy, "load", fail_load)
     with pytest.raises(
         RuntimeError, match="missing or corrupt; rebuild the model asset"
@@ -354,10 +355,13 @@ def test_model_path_rejects_missing_directory(
 
 def test_wrong_provisioned_model_identity_is_rejected(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    nlp = default_report_text_embedder().nlp
+    nlp = spacy.blank("de")
+    nlp.vocab.set_vector("Polyp", cast(Floats1d, np.ones(300, dtype="float32")))
+    nlp.meta.update(name="core_news_md", version="3.8.0")
     default_report_text_embedder.cache_clear()
-    monkeypatch.setitem(nlp.meta, "name", "core_news_md")
+    monkeypatch.setenv("ENDOREG_REPORT_EMBEDDING_MODEL_PATH", str(tmp_path))
 
     def load_wrong_model(path: Path) -> spacy.language.Language:
         return nlp

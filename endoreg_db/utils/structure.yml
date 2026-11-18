@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: rust_backend.py
+  role: Fail-closed typed native adapters, including hub acknowledgement/failure decisions and retry classification; no Python reducer fallback.
 - file: video/timeline.py
   role: Initialization-free canonical frame/time rules, exact rational timestamp conversion and persisted-coordinate validation.
 - file: operation_log.py

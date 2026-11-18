@@ -9,6 +9,7 @@ import os
 import uuid
 from contextlib import nullcontext
 from fractions import Fraction
+from itertools import batched
 from pathlib import Path
 
 from django.db import DatabaseError
@@ -989,17 +990,26 @@ class VideoAnonymizer:
         )[0]
         raw_video_hash = str(getattr(video, "raw_video_hash", "") or "")
         persisted_count = 0
+        frame_numbers = {
+            number
+            for observation in observations
+            if (number := observation.resolved_frame_number) is not None
+        }
+        frame_ids: dict[int, int] = {}
+        # (video, frame_number) is unique; fetch only identity, never derive coordinates.
+        for numbers in batched(frame_numbers, 500):
+            frame_ids.update(
+                Frame.objects.filter(video=video, frame_number__in=numbers)
+                .order_by()
+                .values_list("frame_number", "pk")
+            )
 
         for observation in observations:
             frame_number = observation.resolved_frame_number
             if frame_number is None:
                 continue
-            frame = (
-                Frame.objects.filter(video=video, frame_number=frame_number)
-                .order_by("pk")
-                .first()
-            )
-            if frame is None:
+            frame_id = frame_ids.get(frame_number)
+            if frame_id is None:
                 logger.debug(
                     "Skipping PHI proposals for video=%s frame=%s because no Frame row exists.",
                     raw_video_hash,
@@ -1026,25 +1036,8 @@ class VideoAnonymizer:
                     height=height,
                 )
                 confidence = self._region_confidence(region)
-                annotation, _ = FrameBoxAnnotation.objects.get_or_create(
-                    frame=frame,
-                    information_source=information_source,
-                    annotator=PHI_REGION_ANNOTATOR,
-                    external_annotation_id=external_annotation_id,
-                    defaults={
-                        "label": label,
-                        "value": True,
-                        "float_value": confidence,
-                        "x": x,
-                        "y": y,
-                        "width": width,
-                        "height": height,
-                        "image_width": image_width,
-                        "image_height": image_height,
-                    },
-                )
-                updates: dict[str, Label | bool | float | int | None] = {
-                    "label": label,
+                updates: dict[str, bool | float | int | None] = {
+                    "label_id": label.pk,
                     "value": True,
                     "float_value": confidence,
                     "x": x,
@@ -1054,6 +1047,13 @@ class VideoAnonymizer:
                     "image_width": image_width,
                     "image_height": image_height,
                 }
+                annotation, _ = FrameBoxAnnotation.objects.get_or_create(
+                    frame_id=frame_id,
+                    information_source=information_source,
+                    annotator=PHI_REGION_ANNOTATOR,
+                    external_annotation_id=external_annotation_id,
+                    defaults=updates,
+                )
                 changed = False
                 for field, value in updates.items():
                     if getattr(annotation, field) != value:

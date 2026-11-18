@@ -22,6 +22,9 @@ def _enum_tokens(mirror: type[Enum]) -> frozenset[str]:
 
 def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
     """Python mirror tokens keyed by native vocabulary name."""
+    from endoreg_db.models.hub.outbound_hub_transfer_job import OutboundHubTransferJob
+    from endoreg_db.models.hub.transfer_job import TransferJob
+    from endoreg_db.models.state.hub_transfer import HubExportFailureClass
     from endoreg_db.models.state.anonymization import (
         AnonymizationPhase,
         AnonymizationState,
@@ -50,9 +53,14 @@ def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
         HlsPublicationAction,
         HlsReconciliationAction,
         HlsReservationAction,
+        HubTransferEvent,
     )
 
     return {
+        "hub_local_status": _enum_tokens(OutboundHubTransferJob.LocalStatus),
+        "hub_remote_status": _enum_tokens(TransferJob.TransferStatus),
+        "hub_failure_class": _enum_tokens(HubExportFailureClass),
+        "hub_transfer_event": _enum_tokens(HubTransferEvent),
         "import_processing_stage": _enum_tokens(ImportProcessingStage),
         "import_media_kind": _enum_tokens(ImportMediaKind),
         "import_processing_event": _enum_tokens(ImportProcessingEvent),

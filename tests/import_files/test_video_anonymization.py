@@ -7,9 +7,10 @@ from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
 import pytest
-from django.db import IntegrityError, OperationalError
+from django.db import IntegrityError, OperationalError, connection
+from django.test.utils import CaptureQueriesContext
 from lx_dtypes.models import SensitiveMeta
-from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.video_processing import video_anonymization
@@ -19,6 +20,7 @@ from endoreg_db.models import (
     EndoscopyProcessor,
     Frame,
     FrameBoxAnnotation,
+    Label,
     VideoFile,
 )
 
@@ -466,6 +468,10 @@ def test_persist_phi_region_proposals_skips_when_frame_row_is_missing() -> None:
         display_name="PHI Proposal Missing Frame Center",
     )
     video = VideoFile.objects.create(center=center, raw_video_hash="phi-video-no-frame")
+    other_video = VideoFile.objects.create(
+        center=center, raw_video_hash="phi-other-video"
+    )
+    Frame.objects.create(video=other_video, frame_number=5, relative_path="other.jpg")
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
     count = anonymizer._persist_phi_region_proposals(
@@ -501,6 +507,102 @@ def test_persist_phi_region_proposals_is_idempotent_by_external_annotation_id() 
     assert first_count == 1
     assert second_count == 1
     assert FrameBoxAnnotation.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_phi_proposal_retry_updates_changed_values() -> None:
+    center = Center.objects.create(name="phi-update-center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-update-video")
+    Frame.objects.create(video=video, frame_number=5, relative_path="frame_5.jpg")
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    metadata: JsonObject = {"frame_observations": [_phi_observation()]}
+    assert anonymizer._persist_phi_region_proposals(video, metadata) == 1
+    original_pk = FrameBoxAnnotation.objects.get().pk
+    other_label = Label.objects.create(name="other-proposal-label")
+    FrameBoxAnnotation.objects.update(label=other_label, float_value=0.1, value=False)
+
+    assert anonymizer._persist_phi_region_proposals(video, metadata) == 1
+
+    annotation = cast(
+        _FrameBoxAnnotationLike, FrameBoxAnnotation.objects.get(pk=original_pk)
+    )
+    assert annotation.label.name == "phi_region"
+    assert annotation.float_value == 0.71
+    assert annotation.value is True
+    assert FrameBoxAnnotation.objects.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("frame_number", [None, 5])
+def test_phi_proposals_skip_unresolved_frames_and_outside_boxes(
+    frame_number: int | None,
+) -> None:
+    center = Center.objects.create(name="phi-skipped-center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-skipped-video")
+    Frame.objects.create(video=video, frame_number=5, relative_path="frame_5.jpg")
+    observation = _phi_observation()
+    observation["frame_number"] = frame_number
+    observation["image_width"] = 50  # Region starts outside the image.
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    assert (
+        anonymizer._persist_phi_region_proposals(
+            video, {"frame_observations": [observation]}
+        )
+        == 0
+    )
+    assert not FrameBoxAnnotation.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("frame_count", [1, 20, 501])
+def test_phi_proposal_retry_query_budget(frame_count: int) -> None:
+    center = Center.objects.create(name="phi-budget-center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-budget-video")
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video,
+                frame_number=number,
+                relative_path=f"frame_{number}.jpg",
+                presentation_timestamp=1000 + number * 37,
+                timestamp=1 + number * 0.037,
+            )
+            for number in range(frame_count)
+        ]
+    )
+    coordinates = list(
+        video.frames.values_list("pk", "presentation_timestamp", "timestamp")
+    )
+    observations: list[JsonValue] = [
+        _phi_observation(number) for number in range(frame_count)
+    ]
+    # Repeated detector observations must reuse the same frame and annotation.
+    observations.append(_phi_observation(0))
+    metadata: JsonObject = {"frame_observations": observations}
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    assert anonymizer._persist_phi_region_proposals(video, metadata) == frame_count + 1
+
+    with CaptureQueriesContext(connection) as queries:
+        assert (
+            anonymizer._persist_phi_region_proposals(video, metadata) == frame_count + 1
+        )
+
+    sql = [query["sql"] for query in queries.captured_queries]
+    frame_reads = sum('FROM "endoreg_db_frame"' in query for query in sql)
+    label_reads = sum('FROM "endoreg_db_label"' in query for query in sql)
+    print(
+        f"proposal retry: frames={frame_count}, queries={len(sql)}, "
+        f"frame_reads={frame_reads}, label_reads={label_reads}"
+    )
+    assert frame_reads == (frame_count + 499) // 500
+    assert label_reads == 1
+    assert not any(query.startswith(("INSERT", "UPDATE", "DELETE")) for query in sql)
+    assert FrameBoxAnnotation.objects.count() == frame_count
+    assert (
+        list(video.frames.values_list("pk", "presentation_timestamp", "timestamp"))
+        == coordinates
+    )
 
 
 @pytest.mark.django_db

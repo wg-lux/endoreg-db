@@ -22,6 +22,18 @@ uv run python manage.py migrate
 uv run python manage.py setup_endoreg_db
 ```
 
+Shell entry and reload activate the existing virtual environment without creating
+or syncing it. Run `agent:sync` explicitly for initial setup or dependency changes,
+when no tests or workers are using that environment. Nix supplies the pinned report
+embedding model data and its path for the integration tests.
+
+Git hooks use `prek`: run `prek install -f` inside the development shell to
+replace both configured hooks (`pre-commit` and `commit-msg`), including legacy
+Python pre-commit shims. Then run `devenv tasks run agent:pre-commit` for the full
+default suite. Devenv sets its cache to `.devenv/state/prek`; reload with `direnv reload`
+after changing the shell configuration, including if an old shell exported an
+empty `PREK_HOME`. `devenv tasks run agent:format` runs the configured formatter.
+
 `setup_endoreg_db` loads base data and runs setup checks. To load base data
 separately, use `load_base_db_data` as described in the
 [configuration guide](setup/CONFIGURATION_GUIDE.md). That guide also covers

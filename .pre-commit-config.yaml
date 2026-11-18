@@ -36,6 +36,12 @@ repos:
         language: system
         pass_filenames: false
         types: [python]
+      - id: rust-tests
+        name: rust native backend unit tests
+        entry: scripts/run_rust_tests.sh
+        language: system
+        pass_filenames: false
+        files: ^(rust/endoreg_rust_backend/|scripts/run_rust_tests\.sh$)
       - id: documentation-governance
         name: documentation governance inventory
         entry: python scripts/check_documentation_governance.py --repository endoreg-db

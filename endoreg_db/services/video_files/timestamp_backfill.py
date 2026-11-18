@@ -18,6 +18,7 @@ from endoreg_db.schemas.video_storage import (
 )
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
 from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import validate_presentation_timestamp_seconds
 from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.video_storage.canonical_timelines import (
     capture_canonical_timeline,
@@ -31,6 +32,34 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger(__name__)
+
+
+def has_reconciled_video_timeline(
+    video: VideoFile, payload: VideoFileMetaPayload
+) -> bool:
+    """Require source evidence, canonical history and both coordinates for every ordinal."""
+    kind = (
+        VideoArtifactKind.PROCESSED if video.processed_file else VideoArtifactKind.RAW
+    )
+    digest = (
+        video.processed_video_hash if video.processed_file else video.raw_video_hash
+    )
+    if payload.source_timeline is None or not any(
+        entry.artifact_kind == kind.value and entry.after.content_hash == digest
+        for entry in payload.canonical_timeline_history or []
+    ):
+        return False
+    count = video.frame_count
+    return bool(
+        count
+        and video.frames.count() == count
+        and not video.frames.filter(
+            Q(timestamp__isnull=True)
+            | Q(presentation_timestamp__isnull=True)
+            | Q(frame_number__lt=0)
+            | Q(frame_number__gte=count)
+        ).exists()
+    )
 
 
 def _capture_generation(
@@ -101,9 +130,9 @@ def _capture_generation(
 def backfill_missing_video_timestamps(
     video: VideoFile, *, payload: VideoFileMetaPayload | None = None
 ) -> None:
-    """Fill only wholly absent coordinates, serialized with generation publication.
+    """Fill absent coordinates, serialized with generation publication.
 
-    Partial coordinates remain authoritative and are never repaired by guessing.
+    Existing coordinates must agree with decoded media and are never overwritten.
     No import state, annotation boundary or transformation ancestry is created.
     """
     from endoreg_db.models.media.frame.frame import Frame
@@ -113,14 +142,7 @@ def backfill_missing_video_timestamps(
         return
     if payload is None:
         payload = VideoFileMetaPayload.model_validate(video.meta or {})
-    existing = payload.source_timeline
-    present = Q(timestamp__isnull=False) | Q(presentation_timestamp__isnull=False)
-    if video.frames.filter(present).exists():
-        if existing is None:
-            current = VideoFile.objects.only("meta", "frame_count").get(pk=video.pk)
-            if current.meta != video.meta:
-                video.meta = current.meta
-                video.frame_count = current.frame_count
+    if has_reconciled_video_timeline(video, payload):
         return
     with transaction.atomic():
         current = VideoFile.objects.select_for_update().get(pk=video.pk)
@@ -132,14 +154,11 @@ def backfill_missing_video_timestamps(
                 "Canonical generation changed before timestamp backfill."
             )
         rows = list(current.frames.select_for_update().order_by("frame_number"))
-        if any(
-            row.timestamp is not None or row.presentation_timestamp is not None
-            for row in rows
-        ):
+        payload = VideoFileMetaPayload.model_validate(current.meta or {})
+        if has_reconciled_video_timeline(current, payload):
             video.meta = current.meta
             video.frame_count = current.frame_count
             return
-        payload = VideoFileMetaPayload.model_validate(current.meta or {})
         if payload.integrity_status == "lost":
             raise VideoTimelineMappingError(
                 "Cannot backfill timestamps for lost media."
@@ -157,22 +176,52 @@ def backfill_missing_video_timestamps(
             )
         # Admission rejects active writers. The row lock fences publication and
         # serializes concurrent fallback requests throughout capture and commit.
-        create_video_stream_lease(current, file_type=kind)
+        lease = create_video_stream_lease(current, file_type=kind, renew_matching=False)
+        assert lease is not None
         history = list(payload.canonical_timeline_history or [])
         # Recover the active generation directly. Retained raw media is not a
         # prerequisite for processed coordinates and is not probed here.
         probe, captured = _capture_generation(current, kind, payload, history)
         boundaries = frame_boundaries(captured, probe)
         count = len(boundaries) - 1
+        for row in rows:
+            if row.timestamp is None and row.presentation_timestamp is None:
+                continue
+            if not 0 <= row.frame_number < count:
+                raise VideoTimelineMappingError(
+                    "Existing frame lies outside decoded timeline."
+                )
+            tick = captured.presentation_timestamps[int(row.frame_number)]
+            if (
+                row.presentation_timestamp is not None
+                and row.presentation_timestamp != tick
+            ):
+                raise VideoTimelineMappingError(
+                    "Existing presentation timestamp conflicts with decoded media."
+                )
+            if row.timestamp is not None:
+                validate_presentation_timestamp_seconds(
+                    tick, captured.time_base_num, captured.time_base_den, row.timestamp
+                )
         by_number = {row.frame_number: row for row in rows}
         changed_numbers = set(by_number) != set(range(count))
-        if changed_numbers and (
-            current.label_video_segments.exists()
-            or current.frames.filter(
-                Q(is_extracted=True)
-                | Q(image_classification_annotations__isnull=False)
-                | Q(box_annotations__isnull=False)
-            ).exists()
+        # A complete, pre-existing generation receipt proves the ordinals of
+        # missing rows without moving any annotation or deleting an existing row.
+        proven_additions = set(by_number).issubset(range(count)) and any(
+            entry.artifact_kind == kind.value and entry.after == captured
+            for entry in payload.canonical_timeline_history or []
+        )
+        if (
+            changed_numbers
+            and not proven_additions
+            and (
+                current.label_video_segments.exists()
+                or current.frames.filter(
+                    Q(is_extracted=True)
+                    | Q(image_classification_annotations__isnull=False)
+                    | Q(box_annotations__isnull=False)
+                ).exists()
+            )
         ):
             raise VideoTimelineMappingError(
                 "Existing annotations or extracted frames require timestamp remapping before recovery."
@@ -185,8 +234,10 @@ def backfill_missing_video_timestamps(
             for index in range(count)
         ]
         for index, row in enumerate(rows):
-            row.timestamp = boundaries[index]
-            row.presentation_timestamp = captured.presentation_timestamps[index]
+            if row.timestamp is None:
+                row.timestamp = boundaries[index]
+            if row.presentation_timestamp is None:
+                row.presentation_timestamp = captured.presentation_timestamps[index]
         existing_rows = [row for row in rows if row.pk is not None]
         Frame.objects.bulk_create(
             [row for row in rows if row.pk is None], batch_size=2000
@@ -216,6 +267,9 @@ def backfill_missing_video_timestamps(
         }
         current.frame_count = count
         current.save(update_fields=["meta", "frame_count", "date_modified"])
+        # This synchronous operation owns only its fresh lease. Existing playback
+        # grace is untouched; failure rolls creation back with the transaction.
+        lease.delete()
         video.meta = current.meta
         video.frame_count = count
         emit_structured_event(

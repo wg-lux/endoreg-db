@@ -255,6 +255,7 @@ disable_faker_logging()
 # Performance optimization settings
 SKIP_EXPENSIVE_TESTS = env_bool("SKIP_EXPENSIVE_TESTS", False)
 RUN_VIDEO_TESTS = env_bool("RUN_VIDEO_TESTS", False)
+USE_MOCK_VIDEO_OPERATIONS = not RUN_VIDEO_TESTS or SKIP_EXPENSIVE_TESTS
 MAX_MOCK_VIDEO_FRAMES = 2
 USE_STUB_MODEL_META = env_bool("USE_STUB_MODEL_META", True)
 
@@ -831,6 +832,8 @@ def setup_test_environment(cache: CacheManager) -> Iterator[None]:
 
 def _apply_global_video_mocks(cache: CacheManager) -> None:
     """Apply comprehensive video mocking system with intelligent caching and real-code-first approach."""
+    if not USE_MOCK_VIDEO_OPERATIONS:
+        return
 
     # Import here to avoid import issues
     from pathlib import Path
@@ -1209,6 +1212,8 @@ def auto_mock_ffmpeg_for_video_tests(
     Automatically apply FFmpeg mocking for video-related tests to prevent failures.
     This ensures video tests can run without requiring working FFmpeg installation.
     """
+    if not USE_MOCK_VIDEO_OPERATIONS:
+        return
     node = cast(_PytestNode, _request_node(request))
     nodeid = node.nodeid.lower()
     if "tests/utils/video/test_ffmpeg_wrapper.py" in nodeid:
@@ -1371,6 +1376,9 @@ def smart_video_mocks(
     Intelligent video operation mocks with real-code-first caching.
     This fixture takes precedence over other video mocks.
     """
+    if not USE_MOCK_VIDEO_OPERATIONS:
+        yield
+        return
     ffmpeg_cache = cache.namespace("ffmpeg_smart_mock")
 
     def cached_get_stream_info_with_fallback(

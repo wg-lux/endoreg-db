@@ -17,6 +17,10 @@ def test_missing_schema_is_a_failure_without_import() -> None:
         ),
         patch("endoreg_db.management.commands.import_reference_catalog.select_catalog"),
         patch(
+            "endoreg_db.management.commands.import_reference_catalog.reuse_current_catalog",
+            return_value=None,
+        ),
+        patch(
             "endoreg_db.management.commands.import_reference_catalog.plan_reference_catalog",
             side_effect=OperationalError("missing table"),
         ),

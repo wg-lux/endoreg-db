@@ -107,6 +107,57 @@ _native_state_vocabularies: Callable[[], list[tuple[str, list[str]]]] | None
 _rust_backend_available = False
 
 
+class HubTransferEvent(StrEnum):
+    """Mirror of the native ``hub_transfer_event`` vocabulary."""
+
+    QUEUE = "queue"
+    RETRY = "retry"
+    OPERATOR_RETRY = "operator_retry"
+    REDISPATCH = "redispatch"
+    START_REGISTRATION = "start_registration"
+    START_UPLOAD = "start_upload"
+    INELIGIBLE = "ineligible"
+    ACKNOWLEDGE = "acknowledge"
+    FAIL = "fail"
+
+
+def _require_hub_transfer_state() -> None:
+    if not has_native_capability("hub_transfer_state_machine", "hub_transfer_state_v2"):
+        raise RuntimeError(
+            "Required Rust hub_transfer_state_v2 capability is unavailable"
+        )
+
+
+def reduce_hub_transfer_event(
+    *,
+    current_state: str,
+    current_failure_class: str | None,
+    event: HubTransferEvent,
+    remote_status: str | None = None,
+    failure_class: str | None = None,
+) -> tuple[str, str | None, bool]:
+    """Native transition ``(status, failure_class, apply)``; caller holds the row lock."""
+    _require_hub_transfer_state()
+    reduce = cast(
+        Callable[
+            [str, str | None, str, str | None, str | None],
+            tuple[str, str | None, bool],
+        ],
+        getattr(rust_backend, "reduce_hub_transfer_event"),
+    )
+    return reduce(
+        current_state, current_failure_class, event, remote_status, failure_class
+    )
+
+
+def hub_failure_is_retryable(failure_class: str) -> bool:
+    _require_hub_transfer_state()
+    classify = cast(
+        Callable[[str], bool], getattr(rust_backend, "hub_failure_is_retryable")
+    )
+    return classify(failure_class)
+
+
 def import_processing_stack_transition(
     payload: str,
     event: str,

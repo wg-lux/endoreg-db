@@ -9,6 +9,8 @@ responsibilities:
 boundaries:
 - Do not place secrets, patient information or parallel readiness records in messages.
 files:
+- file: reports/gc10_hub_storage_20261117.yml
+  role: Sanitized gc-10 transfer and gc-02/gs-02 storage/backup diagnosis; no deployment or deletion evidence.
 - file: reports/audit_followup_handoffs.md
   role: Bounded audit follow-up assignments with ownership, acceptance and verification; feature YAML retains readiness authority.
 - file: reports/lxenc_v2_review.md

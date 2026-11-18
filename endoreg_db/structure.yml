@@ -8,6 +8,12 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/max_migration.txt
+  role: Declared canonical migration graph leaf checked against the executable graph.
+- file: endoreg_rust_backend.pyi
+  role: Generated typed native interface, including hub acknowledgement/failure reduction and retry classification.
+- file: migrations/0118_outbound_video_file_cleanup.py
+  role: Durable intent and completion timestamps for explicit post-transfer local video file reclamation.
 - file: logger_conf.py
   role: Logging configuration creates its directory through audited filesystem wrappers.
 - file: migrations/0117_center_shift_presence_fraction.py

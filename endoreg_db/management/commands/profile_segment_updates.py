@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from fractions import Fraction
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -23,7 +25,13 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.other.information_source import InformationSource
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoSourceTimelineEvidence,
+    VideoTimelineContract,
+)
 from endoreg_db.services.annotations.segments_bulk_mutation import (
     bulk_mutate_video_segments,
 )
@@ -370,12 +378,49 @@ def _resolve_video(
         name=f"profile-segment-updates-{uuid4().hex[:12]}",
         display_name="Segment Update Profiling",
     )
+    # Synthetic profiler coordinates are generated explicitly, never inferred
+    # for the existing-video path above.
+    rate = Fraction(str(options.fps))
+    timeline = VideoTimelineContract(
+        fps_num=rate.numerator,
+        fps_den=rate.denominator,
+        duration_seconds=float(frame_count / rate),
+        frame_count=frame_count,
+        time_base_num=rate.denominator,
+        time_base_den=rate.numerator,
+    )
     video = VideoFile.objects.create(
         center=center,
         raw_video_hash=f"profile-segment-updates-{uuid4().hex}",
         original_file_name="profile_segment_updates.mp4",
         fps=options.fps,
         frame_count=frame_count,
+        meta={
+            "source_timeline": VideoSourceTimelineEvidence(
+                persisted_at=datetime.now(UTC),
+                timestamp_mapping="rational_cfr",
+                source=VideoArtifactProbe(
+                    codec_name="synthetic",
+                    pixel_format="synthetic",
+                    width=1,
+                    height=1,
+                    size_bytes=1,
+                    timeline=timeline,
+                ),
+            ).model_dump(mode="json")
+        },
+    )
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video,
+                frame_number=index,
+                presentation_timestamp=index,
+                timestamp=float(index / rate),
+            )
+            for index in range(frame_count)
+        ],
+        batch_size=1_000,
     )
     return video, frame_count, options.fps, True
 

@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from fractions import Fraction
+from datetime import timedelta
+from unittest.mock import Mock
 
 import pytest
+from django.utils import timezone
 from pydantic import ValidationError
 from lx_dtypes.models.contracts.video_provenance import (
     ElectricalTimestampSeries,
@@ -11,8 +14,13 @@ from lx_dtypes.models.contracts.video_provenance import (
 )
 
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models import Center
+from endoreg_db.models.media.operation_lease import MediaOperationLease
+from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.schemas.hub_payloads import TransferProvenancePayload
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from endoreg_db.schemas.video_storage import CanonicalTimelineHistoryEntry
+from endoreg_db.services.hub import video_provenance as exchange
 from endoreg_db.services.hub.video_provenance import (
     accept_video_provenance,
     electrical_sample_indices,
@@ -90,7 +98,16 @@ def test_recording_anchors_are_persisted_idempotently_and_conflicts_fail(
 ) -> None:
     video = mock_video_file
     video.raw_video_hash = "a" * 64
-    video.save(update_fields=["raw_video_hash"])
+    video.meta = {
+        "canonical_timeline_history": [
+            CanonicalTimelineHistoryEntry(
+                artifact_kind="processed",
+                before=proof().output,
+                after=timeline("c", [0, 50]),
+            ).model_dump(mode="json")
+        ]
+    }
+    video.save(update_fields=["raw_video_hash", "meta"])
     sync = synchronized_bundle().synchronization
     assert sync is not None
     record_video_synchronization(video, sync)
@@ -146,8 +163,10 @@ def test_disconnected_provenance_chain_is_rejected() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("stored_prefix", [0, 1, 2])
+@pytest.mark.parametrize("processed_history", [False, True])
 def test_resolver_composes_current_generation_without_mutating_metadata(
     stored_prefix: int,
+    processed_history: bool,
 ) -> None:
     first = proof()
     second = VideoFrameProvenancePayload(
@@ -163,6 +182,144 @@ def test_resolver_composes_current_generation_without_mutating_metadata(
                 transformations=[first, second][:stored_prefix]
             ).model_dump(mode="json")
         }
+    if processed_history:
+        video.meta = {
+            **(video.meta or {}),
+            "canonical_timeline_history": [
+                CanonicalTimelineHistoryEntry(
+                    artifact_kind="processed", before=second.source, after=second.output
+                ).model_dump(mode="json")
+            ],
+        }
     before = dict(video.meta or {})
     assert resolve_video_provenance(video) == expected
     assert (video.meta or {}) == before
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("persisted_bundle", [False, True])
+def test_processed_history_cannot_substitute_for_missing_recording_ancestry(
+    persisted_bundle: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    second = VideoFrameProvenancePayload(
+        source=proof().output,
+        output=timeline("c", [0, 50]),
+        source_frame_indices=[1, 2],
+    )
+    persist_frame_provenance(second)
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="missing-recording-proof"),
+        raw_video_hash="a" * 64,
+        processed_video_hash="c" * 64,
+        processed_file="processed/provenance-test.mp4",
+        meta={
+            "canonical_timeline_history": [
+                CanonicalTimelineHistoryEntry(
+                    artifact_kind="processed", before=second.source, after=second.output
+                ).model_dump(mode="json")
+            ]
+        },
+    )
+    if persisted_bundle:
+        video.meta = {
+            **(video.meta or {}),
+            "video_frame_provenance": VideoProvenanceBundle(
+                transformations=[second]
+            ).model_dump(mode="json"),
+        }
+        video.save(update_fields=["meta"])
+    validate = Mock()
+    monkeypatch.setattr(
+        "endoreg_db.services.media.export_downloads.validate_video_download", validate
+    )
+    with pytest.raises(ValueError, match="unavailable|another recording"):
+        exchange.export_video_provenance(video)
+    validate.assert_not_called()
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "blocker", ["none", "integrity", "transcode", "expired_writer"]
+)
+def test_sender_reuses_hash_bound_proof_and_checks_gates_before_export(
+    blocker: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = synchronized_bundle()
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="sender-proof-gates"),
+        raw_video_hash="a" * 64,
+        processed_video_hash="b" * 64,
+        processed_file="processed/provenance-test.mp4",
+        meta={"video_frame_provenance": bundle.model_dump(mode="json")},
+    )
+    validate = Mock(
+        side_effect=ValueError("integrity mismatch") if blocker == "integrity" else None
+    )
+    decode = Mock(
+        side_effect=AssertionError("Sender must reuse the hash-bound timestamp proof")
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.media.export_downloads.validate_video_download", validate
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.video_storage.canonical_timelines.capture_canonical_timeline",
+        decode,
+    )
+    if blocker in {"transcode", "expired_writer"}:
+        MediaOperationLease.objects.create(
+            video=video,
+            lease_type="transcode" if blocker == "transcode" else "artifact_write",
+            expires_at=timezone.now()
+            + timedelta(seconds=120 if blocker == "transcode" else -120),
+        )
+        with pytest.raises(MediaOperationDeferred):
+            exchange.export_video_provenance(video)
+        validate.assert_not_called()
+    elif blocker == "integrity":
+        with pytest.raises(ValueError, match="integrity mismatch"):
+            exchange.export_video_provenance(video)
+        validate.assert_called_once_with(video)
+    else:
+        assert exchange.export_video_provenance(video) == bundle
+        validate.assert_called_once_with(video)
+    decode.assert_not_called()
+    assert MediaOperationLease.objects.filter(
+        video=video, lease_type="stream"
+    ).exists() == (blocker == "none")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("changed", [False, True])
+def test_receiver_still_decodes_the_complete_received_generation(
+    changed: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import nullcontext
+    from pathlib import Path
+
+    bundle = synchronized_bundle()
+    video = VideoFile(raw_video_hash="a" * 64, processed_video_hash="b" * 64)
+    decoded = bundle.transformations[-1].output
+    if changed:
+        decoded = decoded.model_copy(update={"presentation_timestamps": [0, 51, 100]})
+    capture = Mock(return_value=decoded)
+    monkeypatch.setattr(
+        "endoreg_db.utils.storage.ensure_local_file",
+        Mock(return_value=nullcontext(Path("processed.mp4"))),
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.video_storage.probes.probe_video_artifact", Mock()
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.video_storage.canonical_timelines.capture_canonical_timeline",
+        capture,
+    )
+    if changed:
+        with pytest.raises(ValueError, match="decoded processed media"):
+            exchange.validate_received_video_timeline(video, bundle)
+    else:
+        exchange.validate_received_video_timeline(video, bundle)
+    capture.assert_called_once()

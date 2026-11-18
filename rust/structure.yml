@@ -15,6 +15,8 @@ entrypoints:
   file: endoreg_rust_backend/src/state_vocabulary.rs
   purpose: Export every native vocabulary for fail-closed Python mirror verification.
 files:
+- file: endoreg_rust_backend/src/hub_transfer_state.rs
+  role: Authoritative hub status, failure and transfer-event tokens; exhaustive transition table where duplicate, late or superseded events are explicit no-ops, completion is absorbing and non-retryable failures are kept; retry classification. Callers hold database row locks.
 - file: endoreg_rust_backend/Cargo.toml
   role: Native crate build and dependencies
 - file: endoreg_rust_backend/src/lib.rs

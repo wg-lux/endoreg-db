@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/profile_segment_updates.py
+  role: Rollback-by-default segment profiling using explicit synthetic timestamp rows or an existing video's authoritative timeline.
 - file: commands/storage_management.py
   role: Read-only canonical-storage capacity reporting; all legacy cleanup entrypoints fail closed.
 - file: commands/report_concept_embeddings.py
@@ -41,6 +43,8 @@ files:
   role: Typed command error translation.
 dependencies:
   internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
   - endoreg_db/services
   - endoreg_db/import_files
   - endoreg_db/utils

@@ -20,6 +20,8 @@ files:
   role: Annotation export selection, canonical artifact identity and shared browser/file export contracts.
 - file: image_hash_publication.md
   role: German scientific protocol, data dictionary, figure captions and reproduction instructions.
+- file: hub_transfer_state_machine.md
+  role: Outbound hub transfer states, events, transition rules, guarantees and caller contract.
 - file: report_import_concurrency_implementation.md
   role: Report ownership, publication, extraction receipts and native lifecycle contract.
 - file: implementation_standards_review.md

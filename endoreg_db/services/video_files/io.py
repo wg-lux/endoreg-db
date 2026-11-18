@@ -200,23 +200,42 @@ def delete_video_with_owned_files(
     Canonical raw/processed files are deleted through Django storage.
     Streamable/frame artifacts are path-based derived files and may be unlinked.
     """
+    type(video).objects.select_for_update().get(pk=video.pk)
+    video.refresh_from_db()
+    delete_video_owned_files(video, missing_ok=False)
+
+    deleted = super(type(video), video).delete(
+        using=using,
+        keep_parents=keep_parents,
+    )
+    logger.info(
+        "Deleted VideoFile database record PK %s UUID %s.",
+        video.pk,
+        video.raw_video_hash,
+    )
+    return deleted
+
+
+def delete_video_owned_files(video: "VideoFile", *, missing_ok: bool) -> None:
+    """Delete owned files under the caller's video row lock; retain clinical rows.
+
+    Missing canonical files are allowed only with a durable deletion intent.
+    """
     from endoreg_db.services.streaming.hls_media import delete_video_hls_artifacts
     from endoreg_db.services.video_files.deletion import delete_recorded_video_copies
 
-    type(video).objects.select_for_update().get(pk=video.pk)
-    video.refresh_from_db()
     delete_recorded_video_copies(video)
     for artifact_kind in ("raw", "processed"):
         delete_video_hls_artifacts(video, artifact_kind=artifact_kind)
 
     raw_field = getattr(video, "raw_file", None)
     if raw_field and raw_field.name:
-        delete_field_file(raw_field, missing_ok=False, save=False)
+        delete_field_file(raw_field, missing_ok=missing_ok, save=False)
         logger.info("Deleted raw file via storage for %s", video.raw_video_hash)
 
     processed_field = getattr(video, "processed_file", None)
     if processed_field and processed_field.name:
-        delete_field_file(processed_field, missing_ok=False, save=False)
+        delete_field_file(processed_field, missing_ok=missing_ok, save=False)
         logger.info("Deleted processed file via storage for %s", video.raw_video_hash)
 
     raw_stream_path = get_raw_video_stream_path(video)
@@ -226,18 +245,6 @@ def delete_video_with_owned_files(
     processed_stream_path = get_processed_video_stream_path(video)
     if processed_stream_path and processed_stream_path.exists():
         safe_unlink_file(processed_stream_path, missing_ok=True)
-
-    deleted = super(type(video), video).delete(
-        using=using,
-        keep_parents=keep_parents,
-    )
-
-    logger.info(
-        "Deleted VideoFile database record PK %s UUID %s.",
-        video.pk,
-        video.raw_video_hash,
-    )
-    return deleted
 
 
 def get_video_base_frame_dir(video: "VideoFile") -> Path:

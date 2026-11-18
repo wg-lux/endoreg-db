@@ -15,6 +15,10 @@ submodules:
   manifest: reidentification/structure.yml
   summary: Isolated synthetic incremental reidentification and baseline comparison.
 files:
+- file: check_report_native_runtime.sh
+  role: Rust unit tests, generated-stub parity and isolated wheel checks for report, lifecycle, streaming and hub native contracts.
+- file: run_rust_tests.sh
+  role: Native crate cargo test with embedded-Python linkage; shared by the rust-tests pre-commit hook and check_report_native_runtime.sh.
 - file: evaluate_patient_hmac.py
   role: Synthetic complete candidate scans through production HMAC helpers with shared/local keys; exports measurements and scientific figures.
 - file: benchmark_sha256.py

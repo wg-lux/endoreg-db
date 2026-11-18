@@ -51,7 +51,7 @@ files:
 - file: imports.py
   role: Exports create_video_file_from_path, create_initialized_video_file_from_path, initialize_video_file.
 - file: io.py
-  role: Exports streamable_path_is_safe_plaintext, resolve_streamable_path, get_raw_video_file_path.
+  role: Protected file access and shared owned-file deletion for full record removal or verified post-transfer reclamation.
 - file: metadata.py
   role: Exports get_video_ffmpeg_meta, update_video_meta, initialize_video_specs.
 - file: post_validation_blackening.py
@@ -80,7 +80,7 @@ files:
 - file: timeline.py
   role: Identity-preserving compatibility imports for the pure canonical rules in utils/video/timeline.py.
 - file: timestamp_backfill.py
-  role: Automatically recover wholly absent frame timestamps from hash-verified canonical media under the publication row lock.
+  role: Reconcile missing frame coordinates under the publication row lock and a uniquely owned read lease; release only that lease after synchronous capture, preserving playback grace and saved coordinates.
 - file: timeline_backfill.py
   role: Read-only classification of video timelines plus operator-applied recovery through timestamp_backfill; unverifiable media is reported, never estimated.
 - file: timeline_index.py

@@ -647,6 +647,10 @@ catalog_fields:
   - description
   - name
   - record_type
+  gender_alias:
+  - gender
+  - name
+  - record_type
   information_source:
   - abbreviation
   - date

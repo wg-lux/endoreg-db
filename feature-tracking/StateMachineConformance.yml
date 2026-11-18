@@ -189,6 +189,14 @@ definition_of_done:
   acceptance:
   - Every native state machine declares each state, event and action token exactly once in Rust and exports
     the complete vocabulary through native_state_vocabularies.
+  - Hub local status, receiver status and failure categories are Rust-owned vocabularies; persistence
+    and API share one failure mirror. Native acknowledgement/failure reduction preserves completed jobs,
+    rejects unknown tokens and runs under the caller's database lock without Python fallback.
+  - Every outbound hub local_status/failure_class change is one Rust hub_transfer_event applied through
+    endoreg_db.services.hub.outbound_transfer_state under a row lock; an exhaustive Rust test proves applied
+    results keep failure exactly on failed status and are idempotent under duplicate delivery, superseded
+    acknowledgements other than applied are no-ops, receiver lost is a non-retryable integrity failure,
+    and a stale worker cannot resume a transfer another writer failed or completed.
   - Each Python mirror enum is registered once; application startup refuses to run when any mirror differs
     from the Rust vocabulary in either direction, and a parametrized test covers every registered vocabulary.
   - utils/rust_backend.py keeps no duplicate token sets and no Python re-implementation of a native decision;
@@ -228,11 +236,29 @@ definition_of_done:
         and test_import_processing_stack => 0 errors; pyright probe passing "validate" => reportArgumentType
         error; zero literal events remain (rg); devenv shell pytest import stack, checkpoints, report
         import service, upload endpoints, hub ingest provenance => 190 passed, 3 skipped.'
-    note: Awaiting independent review and commit. update_import_processing_stack now accepts only ImportProcessingEvent;
-      every call site (services, report import, hub ingest, tests) passes the typed mirror, and pyright
-      rejects a plain string event.
-    assessed_by: claude-rust-state-sot-20261102
-    assessed_at: '2026-11-02T14:46:06.342915Z'
+    - kind: test
+      reference: '2026-11-17 hub native extension: scripts/check_report_native_runtime.sh passed (46 Rust
+        tests, generated stub parity, isolated release-wheel capability and absorbing-completion checks).
+        Project Pyright: 0 errors, 2 pre-existing warnings. pytest tests/rust_backend/test_hub_transfer_state.py
+        tests/rust_backend/test_state_enum_parity.py -q: 80 passed. Sender integrated against this rebuilt
+        backend: worker/reconciliation/payload/cleanup/API/concurrency suites 98 passed, including completion-versus-failure
+        races in both commit orders on separate PostgreSQL connections. One Python failure enum is shared
+        by model and API; all three hub vocabularies are verified against Rust at startup. No production
+        deployment.'
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/hub_transfer_state.rs
+    - kind: code
+      reference: endoreg_db/services/hub/outbound_transfer_state.py
+    - kind: test
+      reference: '2026-11-18 hub_transfer_state_v2: scripts/check_report_native_runtime.sh exit 0 (50
+        Rust tests incl. exhaustive duplicate-delivery idempotency and failure/status invariants, stub
+        parity, isolated wheel v2 assertions). Project Pyright 0 errors, 2 pre-existing warnings. pytest
+        tests/rust_backend: 297 passed. lx-annotate tests/hub against this checkout (PYTHONPATH): 296
+        passed, 2 failed in tests/hub/test_tasks.py from uncommitted is_retryable_outbound_failure failure_class
+        change whose SimpleNamespace/MagicMock doubles lack failure_class; new stale-worker and ineligibility-versus-completion
+        race tests pass. No production deployment.'
+    assessed_by: claude-hub-refactor
+    assessed_at: '2026-11-18T08:16:03.104884Z'
 - id: state_machine_documentation
   category: documentation
   title: Lifecycle mapping and phase rule are documented

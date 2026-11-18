@@ -26,6 +26,7 @@ files:
 dependencies:
   internal:
   - endoreg_db/services/media
+  - endoreg_db/services/annotations
   - endoreg_db/services/video_files
   - endoreg_db/authz
   external:

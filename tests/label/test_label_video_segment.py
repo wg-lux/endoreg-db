@@ -212,10 +212,16 @@ class LabelVideoSegmentModelTest(TestCase):
         self.assertAlmostEqual(
             self.segment.get_segment_len_in_s(), self.video_file.duration, places=4
         )
-        self.video_file.frames.filter(frame_number=0).update(timestamp=0.25)
-        self.video_file.frames.filter(frame_number=1).update(timestamp=0.75)
+        start, end = self.video_file.frames.order_by("frame_number").values_list(
+            "timestamp", flat=True
+        )[:2]
+        assert start is not None and end is not None
+        # Nominal metadata cannot replace the persisted presentation timeline.
+        self.segment.video_file.fps = 1.0
         self.segment.end_frame_number = 1
-        self.assertAlmostEqual(self.segment.get_segment_len_in_s(), 0.5, places=4)
+        self.assertAlmostEqual(
+            self.segment.get_segment_len_in_s(), end - start, places=4
+        )
 
     def test_get_frames_without_annotation(self):
         """Test retrieving frames that don't have annotations for the segment's label."""

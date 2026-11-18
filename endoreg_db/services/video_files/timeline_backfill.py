@@ -22,6 +22,7 @@ from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
 from endoreg_db.services.video_files.timestamp_backfill import (
     backfill_missing_video_timestamps,
+    has_reconciled_video_timeline,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event
 
@@ -134,13 +135,14 @@ def classify_video_timeline(
             )
     present = Q(timestamp__isnull=False) | Q(presentation_timestamp__isnull=False)
     if video.frames.filter(present).exists():
-        if source is None:
+        if source is None and not _has_canonical_media(video):
             # Existing coordinates are authoritative; recovery never rewrites them.
             return (
                 VideoTimelineBackfillStatus.BLOCKED,
                 VideoTimelineBackfillBlocker.FRAME_TIMESTAMPS_WITHOUT_SOURCE_TIMELINE,
             )
-        return VideoTimelineBackfillStatus.READY, None
+        if has_reconciled_video_timeline(video, payload):
+            return VideoTimelineBackfillStatus.READY, None
     if source is not None and source.timestamp_mapping == "rational_cfr":
         return VideoTimelineBackfillStatus.READY, None
     if not _has_canonical_media(video):

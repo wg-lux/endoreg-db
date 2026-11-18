@@ -11,6 +11,7 @@ from django.db import models
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from endoreg_db.models.state.hub_transfer import HubExportFailureClass
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
@@ -44,18 +45,7 @@ class OutboundHubTransferJob(models.Model):
         COMPLETED = "completed", "Completed"
         FAILED = "failed", "Failed"
 
-    class FailureClass(models.TextChoices):
-        NO_FAILURE = "", "No Failure"
-        CONFIGURATION_REJECTION = (
-            "configuration_rejection",
-            "Configuration Rejection",
-        )
-        AUTHORIZATION_DENIAL = "authorization_denial", "Authorization Denial"
-        INTEGRITY_INCONSISTENCY = (
-            "integrity_inconsistency",
-            "Integrity Inconsistency",
-        )
-        TRANSIENT_RETRY = "transient_retry", "Transient Retry"
+    FailureClass = HubExportFailureClass
 
     class TransferMode(models.TextChoices):
         METADATA_AND_PROCESSED_MEDIA = (
@@ -136,6 +126,12 @@ class OutboundHubTransferJob(models.Model):
     local_cleanup_completed_at: models.DateTimeField[
         datetime | None, datetime | None
     ] = models.DateTimeField(null=True, blank=True)
+    local_files_cleanup_started_at: models.DateTimeField[
+        datetime | None, datetime | None
+    ] = models.DateTimeField(null=True, blank=True)
+    local_files_cleanup_completed_at: models.DateTimeField[
+        datetime | None, datetime | None
+    ] = models.DateTimeField(null=True, blank=True)
     envelope_receipt: models.JSONField[JsonObject | None, JsonObject | None] = (
         models.JSONField(null=True, blank=True)
     )
@@ -150,9 +146,9 @@ class OutboundHubTransferJob(models.Model):
     )
     failure_class: models.CharField[str, str] = models.CharField(
         max_length=32,
-        choices=FailureClass.choices,
+        choices=[("", "No Failure"), *FailureClass.choices],
         blank=True,
-        default=FailureClass.NO_FAILURE,
+        default="",
         db_index=True,
     )
     last_error: models.TextField[str, str] = models.TextField(blank=True, default="")

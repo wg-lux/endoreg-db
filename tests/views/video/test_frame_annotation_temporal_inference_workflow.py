@@ -46,6 +46,8 @@ class _TemporalPredictionKwargs(TypedDict):
 
 class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
     def setUp(self) -> None:
+        from tests.helpers.video_timeline import constant_rate_video_metadata
+
         self.factory = APIRequestFactory()
         self.random_task_view = FrameAnnotationRandomTaskView.as_view()
         self.bulk_upsert_view = FrameAnnotationBulkUpsertView.as_view()
@@ -58,24 +60,22 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             processed_file="temporal_frame_video.mp4",
             fps=25.0,
             frame_count=30,
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=30),
         )
-        self.frames = [
-            Frame.objects.create(
-                video=self.video,
-                frame_number=frame_number,
-                relative_path=f"frame_{frame_number:07d}.jpg",
-                timestamp=timestamp,
-                is_extracted=False,
-            )
-            for frame_number, timestamp in ((10, 0.4), (11, 0.44), (12, 0.48))
-        ]
-        Frame.objects.create(
-            video=self.video,
-            frame_number=13,
-            relative_path="frame_0000013.jpg",
-            timestamp=0.52,
-            is_extracted=False,
+        all_frames = Frame.objects.bulk_create(
+            [
+                Frame(
+                    video=self.video,
+                    frame_number=frame_number,
+                    relative_path=f"frame_{frame_number:07d}.jpg",
+                    presentation_timestamp=frame_number,
+                    timestamp=frame_number / 25,
+                    is_extracted=False,
+                )
+                for frame_number in range(30)
+            ]
         )
+        self.frames = all_frames[10:13]
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
         self.predicted_label = Label.objects.create(name="temporal-polyp")
         self.other_label = Label.objects.create(name="temporal-outside")

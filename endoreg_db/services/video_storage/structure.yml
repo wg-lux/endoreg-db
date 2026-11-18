@@ -22,7 +22,7 @@ files:
 - file: __init__.py
   role: Internal modules for the video storage normalization service.
 - file: canonical_timelines.py
-  role: Canonical raw/processed timestamp provenance; streaming builds are excluded.
+  role: Capture complete canonical raw/processed timestamp proof before shared output validation; streaming builds are excluded.
 - file: contracts.py
   role: Exports configured_video_storage_profile, video_storage_capacity, evidence_as_json.
 - file: dimension_backfill.py
@@ -30,7 +30,7 @@ files:
 - file: format_reconciliation.py
   role: Exports default_managed_video_roots, legacy_compatibility_video_roots, reconcile_video_formats.
 - file: frame_provenance.py
-  role: Capture decoder ancestry and resolve current verified chains or explicit unresolved receipts for hub and ledger exports.
+  role: Capture decoder ancestry and resolve chains from the original recording identity, or explicit unresolved receipts, for hub and ledger exports.
 - file: generation_cleanup.py
   role: Retire committed superseded generations and reconcile proven rolled-back receipts without deleting media.
 - file: hls_encoding.py
@@ -54,7 +54,7 @@ files:
 - file: transcoding.py
   role: Directory transcoding preserving native timestamps without a numerical source FPS limit.
 - file: validation.py
-  role: Exports assert_temporal_equivalence and assert_storage_compliance.
+  role: Validate decoded timestamp identity, terminal duration and storage compliance; rate estimates gate only metadata without decoded proof.
 - file: workflow.py
   role: Backward-compatible facade for video storage normalization.
 dependencies:

@@ -325,8 +325,7 @@ def resolve_video_provenance(
         ):
             raise ValueError("Unresolved provenance acknowledgment is stale")
         return recovery
-    history = meta.canonical_timeline_history or []
-    source_hash = history[0].before.content_hash if history else video.raw_video_hash
+    source_hash = video.raw_video_hash
     existing = meta.video_frame_provenance
     if (
         existing is not None

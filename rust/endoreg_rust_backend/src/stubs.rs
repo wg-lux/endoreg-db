@@ -63,6 +63,38 @@ fn stub_type_bool() -> TypeInfo {
     TypeInfo::builtin("bool")
 }
 
+fn stub_type_hub_decision() -> TypeInfo {
+    TypeInfo::builtin("tuple[str, str | None, bool]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "reduce_hub_transfer_event",
+        args: &[
+            ArgInfo { name: "current_state", r#type: stub_type_str },
+            ArgInfo { name: "current_failure_class", r#type: stub_type_optional_str },
+            ArgInfo { name: "event", r#type: stub_type_str },
+            ArgInfo { name: "remote_status", r#type: stub_type_optional_str },
+            ArgInfo { name: "failure_class", r#type: stub_type_optional_str },
+        ],
+        r#return: stub_type_hub_decision,
+        doc: "Native hub transfer transition; callers hold the row lock and write only when applied.",
+        signature: Some("current_state: str, current_failure_class: str | None, event: str, remote_status: str | None = None, failure_class: str | None = None"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "hub_failure_is_retryable",
+        args: &[ArgInfo { name: "failure_class", r#type: stub_type_str }],
+        r#return: stub_type_bool,
+        doc: "Native retry classification; unknown failure categories raise.",
+        signature: Some("failure_class: str"),
+        module: None,
+    }
+}
+
 fn stub_type_state_vocabularies() -> TypeInfo {
     TypeInfo::builtin("list[tuple[str, list[str]]]")
 }

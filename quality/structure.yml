@@ -8,6 +8,10 @@ responsibilities:
 boundaries:
 - Policies do not replace feature readiness evidence or runtime contracts.
 files:
+- file: clinical_reference_projection.yml
+  role: Reviewed shared clinical graph and catalogue fields with host bootstrap ownership.
+- file: lx_dtypes_model_inventory.yml
+  role: Reviewed persistence model ownership, runtime shape and shared contract imports.
 - file: documentation_governance.yml
   role: Cross-repository documentation inventory policy
 - file: lx_dtypes_contract_policy.yml

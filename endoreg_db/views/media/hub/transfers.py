@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, BinaryIO, Protocol, TypeAlias, cast
 
 from django.conf import settings
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.core.exceptions import ObjectDoesNotExist
 from django.db import transaction
 from django.http import Http404
 from django.utils.decorators import method_decorator
@@ -477,6 +478,19 @@ class HubTransferStatusView(APIView):
         _assert_transfer_center_scope(authenticated_node, source_center_id)
 
         payload = _transfer_status_response_payload(transfer_job)
+        if request.query_params.get("verify_media") == "true":
+            from endoreg_db.services.hub.transfer_cleanup import (
+                verify_received_video_media,
+            )
+
+            try:
+                verify_received_video_media(transfer_job)
+            except (ValueError, OSError, ObjectDoesNotExist):
+                return Response(
+                    {"detail": "Received media could not be verified."},
+                    status=status.HTTP_409_CONFLICT,
+                )
+            payload["media_verified"] = True
         decision("RECEIVER TRANSFER-STATUS RESULT")
         kv("Transfer status", transfer_job.transfer_status)
         kv("Processing decision", transfer_job.processing_decision)

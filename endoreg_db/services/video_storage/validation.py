@@ -55,16 +55,7 @@ def assert_temporal_equivalence(
             "Output frame count drifted from "
             f"{source.frame_count} to {output.frame_count}"
         )
-    allowed_duration_drift = max(
-        profile.max_duration_drift_seconds,
-        1.0 / source.fps,
-    )
-    duration_drift = abs(source.duration_seconds - output.duration_seconds)
-    if duration_drift > allowed_duration_drift:
-        raise VideoStorageNormalizationError(
-            "Output duration drifted by "
-            f"{duration_drift:.6f}s (allowed {allowed_duration_drift:.6f}s)"
-        )
+    _assert_duration_equivalence(source, output, profile=profile)
     if not math.isclose(
         source.measured_average_fps,
         output.measured_average_fps,
@@ -75,6 +66,24 @@ def assert_temporal_equivalence(
             "Output measured average FPS drifted from "
             f"{source.measured_average_fps:g} "
             f"to {output.measured_average_fps:g}"
+        )
+
+
+def _assert_duration_equivalence(
+    source: VideoTimelineContract,
+    output: VideoTimelineContract,
+    *,
+    profile: VideoStorageProfile,
+) -> None:
+    allowed_duration_drift = max(
+        profile.max_duration_drift_seconds,
+        1.0 / source.fps,
+    )
+    duration_drift = abs(source.duration_seconds - output.duration_seconds)
+    if duration_drift > allowed_duration_drift:
+        raise VideoStorageNormalizationError(
+            "Output duration drifted by "
+            f"{duration_drift:.6f}s (allowed {allowed_duration_drift:.6f}s)"
         )
 
 
@@ -162,13 +171,16 @@ def validate_normalized_output(
                 canonical_timestamps.before, canonical_timestamps.after
             )
     if not processed_mapping:
-        try:
+        if canonical_timestamps is None:
             assert_temporal_equivalence(
                 source.timeline, output.timeline, profile=profile
             )
-        except MeasuredAverageFrameRateDriftError:
-            if canonical_timestamps is None:
-                raise
+        else:
+            # Complete decoded coordinates supersede container rate estimates.
+            # Duration still bounds the terminal frame's display interval.
+            _assert_duration_equivalence(
+                source.timeline, output.timeline, profile=profile
+            )
     assert_storage_compliance(output, profile=profile)
     mapped_segments = []
     if processed_mapping and canonical_timestamps is not None:

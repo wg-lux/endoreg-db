@@ -331,6 +331,10 @@ def test_selected_processed_frame_rejects_missing_or_stale_row_coordinates(
         frame_coordinates, "artifact_frame_timeline", canonical_timeline
     )
     monkeypatch.setattr(frame_stream.subprocess, "Popen", forbidden_decode)
+    monkeypatch.setattr(
+        "endoreg_db.services.video_files.timestamp_backfill.backfill_missing_video_timestamps",
+        forbidden_decode,
+    )
     frame = Frame(
         video=VideoFile(processed_file="processed/master.mp4"),
         frame_number=0,

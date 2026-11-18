@@ -8,7 +8,7 @@ boundaries:
 - Preserve content-hash deduplication, encrypted storage, fenced publication and failure propagation.
 files:
 - file: processing/video_processing/video_anonymization.py
-  role: Allocate attempt-owned anonymization output in protected transcoding staging before fenced publication.
+  role: Attempt-owned anonymization staging and fenced metadata persistence with bounded frame-identity lookups.
 - file: context/import_context.py
   role: Typed import context with one derived media reference, stable center identity and distinct forced reprocessing/recovery intent.
 - file: context/file_lock.py

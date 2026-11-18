@@ -51,7 +51,7 @@ def test_standalone_fast_lane_retains_sync_and_shared_contract() -> None:
     assert "devenv tasks run test:sync" in body
     assert "${FAST_TEST_ENV}" in body
     assert "${FAST_TEST_PYTEST_ARGS}" in body
-    assert "pytest -q ${FAST_TEST_PYTEST_ARGS}" in body
+    assert ".devenv/state/venv/bin/pytest -q ${FAST_TEST_PYTEST_ARGS}" in body
     assert "log_cli=true" not in body
 
 
@@ -81,7 +81,23 @@ def test_other_lanes_keep_quiet_output_and_duration_reporting(task_name: str) ->
     source = DEVENV_NIX.read_text(encoding="utf-8")
     body = _task_body(source, task_name)
 
-    assert "pytest -q" in body
+    assert ".devenv/state/venv/bin/pytest -q" in body
     assert "${TEST_PYTEST_ARGS}" in body
     assert "log_cli=true" not in body
     assert 'TEST_PYTEST_ARGS = "-n auto --dist=loadscope --durations=30";' in source
+
+
+def test_shell_reload_cannot_recreate_or_resync_the_active_environment() -> None:
+    source = DEVENV_NIX.read_text(encoding="utf-8")
+    assert "venv.enable = false;" in source
+    assert "sync.enable = false;" in source
+    assert 'SYNC_CMD = "uv sync --python ${python}/bin/python --extra dev";' in source
+    assert [
+        line.strip()
+        for line in _multiline_binding(source, "enterShell").strip().splitlines()
+    ] == [
+        'export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"',
+        'export PATH="$VIRTUAL_ENV/bin:$PATH"',
+    ]
+    assert "${SYNC_CMD}" in _task_body(source, "agent:sync")
+    assert "exec = SYNC_CMD;" in _task_body(source, "test:sync")

@@ -84,6 +84,7 @@ from lx_dtypes.models.contracts.hub_transfer import (
     HubTransferVideoSegmentPayload,
 )
 from lx_dtypes.models.contracts.video_provenance import (
+    VideoFrameTimeline,
     VideoProvenanceBundle,
     VideoProvenanceRecovery,
 )
@@ -457,19 +458,6 @@ def _json_float(
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"{field_name} must be a number") from exc
-
-
-def _json_str(
-    value: JsonValue | None,
-    *,
-    field_name: str,
-) -> str | None:
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise ValueError(f"{field_name} must be a string")
-    stripped = value.strip()
-    return stripped or None
 
 
 def _json_bool(value: JsonValue | None, *, field_name: str) -> bool:
@@ -1155,27 +1143,12 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             video.sensitive_meta = sensitive_meta
 
         video.center = source_center
-        _apply_video_file_payload(video, video_file_payload)
-        frame_provenance = transfer_job.provenance.get("video_frame_provenance")
-        if frame_provenance is not None:
-            from endoreg_db.services.hub.video_provenance import accept_video_provenance
-
-            accept_video_provenance(video, frame_provenance)
-        recovery = transfer_job.provenance.get("video_provenance_recovery")
-        if recovery is not None:
-            from endoreg_db.services.hub.video_provenance import (
-                accept_video_provenance_recovery,
-            )
-
-            if frame_provenance is not None:
-                raise ValueError(
-                    "Transfer must select verified or unresolved provenance"
-                )
-            accept_video_provenance_recovery(video, recovery)
-        _verify_video_segment_timeline_coordinates(
+        _sync_payload_fields(video, video_file_payload, _VIDEO_FILE_SYNC_FIELDS)
+        video_segments = _verified_video_segments(
             video=video,
-            frame_provenance=frame_provenance,
-            recovery=recovery,
+            provenance=_accept_transfer_video_provenance(
+                video, transfer_job.provenance
+            ),
             rows=_json_object_list(
                 resource_rows.get("video_segments"),
                 field_name="resource_rows.video_segments",
@@ -1184,7 +1157,9 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
 
         video.save()
         video_state = get_or_create_video_state(video)
-        _apply_video_state_payload(video_state, video_state_payload)
+        _save_synced_payload_fields(
+            video_state, video_state_payload, _VIDEO_STATE_SYNC_FIELDS
+        )
 
         processing_success = _coerce_optional_bool(
             processing_history_payload.get("success")
@@ -1200,14 +1175,13 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             media_obj=video,
             media_type="video",
         )
-        _apply_video_segment_rows(
-            transfer_job=transfer_job,
-            video=video,
-            rows=_json_object_list(
-                resource_rows.get("video_segments"),
-                field_name="resource_rows.video_segments",
-            ),
-        )
+        with suppress_label_video_segment_state_side_effects():
+            for video_segment in video_segments:
+                _upsert_video_segment(
+                    transfer_job=transfer_job,
+                    video=video,
+                    payload=video_segment,
+                )
         _apply_frame_annotation_rows(
             transfer_job=transfer_job,
             video=video,
@@ -1324,11 +1298,13 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             report.sensitive_meta = sensitive_meta
 
         report.center = source_center
-        _apply_report_file_payload(report, report_payload)
+        _sync_payload_fields(report, report_payload, _REPORT_FILE_SYNC_FIELDS)
 
         report.save()
         report_state = get_or_create_raw_pdf_state(report)
-        _apply_report_state_payload(report_state, report_state_payload)
+        _save_synced_payload_fields(
+            report_state, report_state_payload, _REPORT_STATE_SYNC_FIELDS
+        )
 
         processing_success = _coerce_optional_bool(
             processing_history_payload.get("success")
@@ -1665,12 +1641,7 @@ def _apply_frame_annotation_rows(
     if not rows:
         return
 
-    provenance = resolve_video_provenance(video)
-    timeline = (
-        provenance.processed_timeline
-        if isinstance(provenance, VideoProvenanceRecovery)
-        else provenance.transformations[-1].output
-    )
+    timeline = _processed_timeline(resolve_video_provenance(video))
     for row in rows:
         row_video_hash = str(row.get("raw_video_hash") or "").strip()
         if row_video_hash and row_video_hash != video.raw_video_hash:
@@ -1774,22 +1745,62 @@ def _apply_frame_annotation_rows(
         video_state.save(update_fields=["frame_annotations_generated", "date_modified"])
 
 
-def _verify_video_segment_timeline_coordinates(
-    *,
-    video: VideoFile,
-    frame_provenance: object,
-    recovery: object,
-    rows: list[JsonObject],
-) -> None:
-    """Recompute sender coordinates from the received provenance; never trust them."""
-    if not rows:
-        return
+def _processed_timeline(
+    provenance: VideoProvenanceBundle | VideoProvenanceRecovery,
+) -> VideoFrameTimeline:
+    """Presentation timeline of the published processed generation."""
+    if isinstance(provenance, VideoProvenanceRecovery):
+        return provenance.processed_timeline
+    return provenance.transformations[-1].output
+
+
+def _accept_transfer_video_provenance(
+    video: VideoFile, transfer_provenance: Mapping[str, object]
+) -> VideoProvenanceBundle | VideoProvenanceRecovery | None:
+    """Persist the sender's provenance and bind frame_count to its timestamps.
+
+    Received presentation timestamps are the single source of truth: the
+    declared ``frame_count`` must equal the processed timeline length.
+    """
+    from endoreg_db.services.hub.video_provenance import (
+        accept_video_provenance,
+        accept_video_provenance_recovery,
+    )
+
+    frame_provenance = transfer_provenance.get("video_frame_provenance")
+    recovery = transfer_provenance.get("video_provenance_recovery")
     provenance: VideoProvenanceBundle | VideoProvenanceRecovery
+    if frame_provenance is not None and recovery is not None:
+        raise ValueError("Transfer must select verified or unresolved provenance")
     if frame_provenance is not None:
         provenance = VideoProvenanceBundle.model_validate(frame_provenance)
+        accept_video_provenance(video, provenance)
     elif recovery is not None:
         provenance = VideoProvenanceRecovery.model_validate(recovery)
+        accept_video_provenance_recovery(video, provenance)
     else:
+        return None
+
+    timeline_frame_count = len(_processed_timeline(provenance).presentation_timestamps)
+    if video.frame_count not in (None, timeline_frame_count):
+        raise ValueError(
+            "resource_rows.video_file.frame_count disagrees with the received "
+            "presentation timeline"
+        )
+    video.frame_count = timeline_frame_count
+    return provenance
+
+
+def _verified_video_segments(
+    *,
+    video: VideoFile,
+    provenance: VideoProvenanceBundle | VideoProvenanceRecovery | None,
+    rows: list[JsonObject],
+) -> list[HubTransferVideoSegmentPayload]:
+    """Recompute sender coordinates from the received provenance; never trust them."""
+    if not rows:
+        return []
+    if provenance is None:
         raise ValueError(
             "Video segments require frame provenance or an unresolved receipt"
         )
@@ -1812,96 +1823,38 @@ def _verify_video_segment_timeline_coordinates(
                 f"video segment {segment.source_segment_id} timeline_coordinates "
                 "disagree with the received provenance"
             )
+    return segments
 
 
-def _apply_video_segment_rows(
+def _upsert_video_segment(
     *,
     transfer_job: TransferJob,
     video: VideoFile,
-    rows: list[JsonObject],
+    payload: HubTransferVideoSegmentPayload,
 ) -> None:
-    if not rows:
-        return
-    frame_count = video.frame_count
-    if frame_count is None or frame_count <= 0:
-        raise ValueError(
-            "resource_rows.video_file.frame_count is required for video segments"
-        )
-
-    with suppress_label_video_segment_state_side_effects():
-        for row in rows:
-            _upsert_video_segment_row(
-                transfer_job=transfer_job,
-                video=video,
-                frame_count=frame_count,
-                row=row,
-            )
-
-
-def _upsert_video_segment_row(
-    *,
-    transfer_job: TransferJob,
-    video: VideoFile,
-    frame_count: int,
-    row: JsonObject,
-) -> None:
-    source_node_key = str(row["source_node_key"]).strip()
-    if source_node_key != transfer_job.source_node.node_key:
+    """Idempotently upsert one PTS-verified segment by its source-scoped identity."""
+    if payload.source_node_key != transfer_job.source_node.node_key:
         raise ValueError(
             "resource_rows.video_segments source_node_key does not match transfer"
         )
-    row_video_hash = str(row["raw_video_hash"]).strip()
-    if row_video_hash != video.raw_video_hash:
+    if payload.raw_video_hash != video.raw_video_hash:
         raise ValueError(
             "resource_rows.video_segments raw_video_hash does not match transfer video"
         )
 
-    source_segment_id = str(row["source_segment_id"]).strip()
-    start_frame_number = _json_int(
-        row["start_frame_number"],
-        field_name="resource_rows.video_segments.start_frame_number",
-    )
-    end_frame_number = _json_int(
-        row["end_frame_number_exclusive"],
-        field_name="resource_rows.video_segments.end_frame_number_exclusive",
-    )
-    if start_frame_number < 0 or end_frame_number <= start_frame_number:
-        raise ValueError("video segment frame range must be non-empty and non-negative")
-    if end_frame_number > frame_count:
-        raise ValueError("video segment exclusive end exceeds video frame_count")
-
-    label_name = str(row["label_name"]).strip()
-    label, _ = Label.get_or_create_from_name(label_name)
-    provenance = _json_object(
-        row["anonymous_provenance"],
-        field_name="resource_rows.video_segments.anonymous_provenance",
-    )
-    information_source_name = str(provenance["information_source_name"]).strip()
+    source_segment_id = str(payload.source_segment_id)
+    label, _ = Label.get_or_create_from_name(payload.label_name.strip())
     information_source, _ = cast(
         InformationSourceManager, InformationSource.objects
     ).get_or_create_by_name(
-        information_source_name,
+        payload.anonymous_provenance.information_source_name.strip(),
         description="Anonymous provenance imported from a hub transfer segment",
-    )
-    source_kind = str(row["source_kind"])
-    prediction_meta = _resolve_transferred_segment_prediction_meta(
-        video=video,
-        label=label,
-        source_kind=source_kind,
-        model_name=_json_str(
-            row.get("model_name"),
-            field_name="resource_rows.video_segments.model_name",
-        ),
-        model_version=_json_str(
-            row.get("model_version"),
-            field_name="resource_rows.video_segments.model_version",
-        ),
     )
 
     segment = (
         LabelVideoSegment.objects.select_related("video_file")
         .filter(
-            source_node_key=source_node_key,
+            source_node_key=payload.source_node_key,
             source_segment_id=source_segment_id,
         )
         .first()
@@ -1912,37 +1865,32 @@ def _upsert_video_segment_row(
         )
     if segment is None:
         segment = LabelVideoSegment(
-            source_node_key=source_node_key,
+            source_node_key=payload.source_node_key,
             source_segment_id=source_segment_id,
             video_file=video,
         )
 
     segment.video_file = video
-    segment.start_frame_number = start_frame_number
-    segment.end_frame_number = end_frame_number
+    segment.start_frame_number = payload.start_frame_number
+    segment.end_frame_number = payload.end_frame_number_exclusive
     segment.label = label
     segment.source = information_source
-    segment.prediction_meta = prediction_meta
-    segment.export_segment = _json_bool(
-        row["export_segment"],
-        field_name="resource_rows.video_segments.export_segment",
+    segment.prediction_meta = _resolve_transferred_segment_prediction_meta(
+        video=video, label=label, payload=payload
     )
+    segment.export_segment = payload.export_segment
     segment.save()
 
-    state = LabelVideoSegmentState.objects.filter(origin=segment).first()
-    if state is None:
-        state = LabelVideoSegmentState(origin=segment)
-        state.prediction = source_kind == "prediction"
-        state.annotation = source_kind == "manual_annotation"
-        state.is_validated = row["validation_state"] == "validated"
+    existing_state = LabelVideoSegmentState.objects.filter(origin=segment).first()
+    state = existing_state or LabelVideoSegmentState(origin=segment)
+    state.prediction = payload.source_kind == "prediction"
+    state.annotation = payload.source_kind == "manual_annotation"
+    state.is_validated = payload.validation_state == "validated"
+    if existing_state is None:
         models.Model.save(state)
     else:
-        state.prediction = source_kind == "prediction"
-        state.annotation = source_kind == "manual_annotation"
-        state.is_validated = row["validation_state"] == "validated"
         models.Model.save(
-            state,
-            update_fields=["prediction", "annotation", "is_validated"],
+            state, update_fields=["prediction", "annotation", "is_validated"]
         )
 
 
@@ -1950,22 +1898,15 @@ def _resolve_transferred_segment_prediction_meta(
     *,
     video: VideoFile,
     label: Label,
-    source_kind: str,
-    model_name: str | None,
-    model_version: str | None,
+    payload: HubTransferVideoSegmentPayload,
 ) -> VideoPredictionMeta | None:
-    if source_kind not in {"manual_annotation", "prediction"}:
-        raise ValueError(f"Unsupported video segment source_kind: {source_kind!r}")
-    if model_name is None and model_version is None:
+    # The payload contract pairs model_name/model_version and limits them to predictions.
+    if payload.model_name is None or payload.model_version is None:
         return None
-    if source_kind != "prediction" or model_name is None or model_version is None:
-        raise ValueError(
-            "model_name and model_version are permitted only together for predictions"
-        )
     candidates = list(
         ModelMeta.objects.filter(
-            name=model_name,
-            version=model_version,
+            name=payload.model_name,
+            version=payload.model_version,
             labelset__labels=label,
         )
         .distinct()
@@ -2125,95 +2066,78 @@ def _upsert_patient_examination_report(
             version=version,
         )
 
-    report_any = cast(Any, report)
-    report_any.patient_examination = patient_examination
-    report_any.template_name = template_name
-    report_any.template_version = template_version
-    report_any.template_hash = template_hash
-    report_any.version = version
-    report_any.status = PatientExaminationReport.Status.FINAL.value
-    report_any.is_active = True
-
-    report_any.save()
+    report.status = PatientExaminationReport.Status.FINAL.value
+    report.is_active = True
+    report.save()
 
 
-def _apply_video_file_payload(video: VideoFile, payload: JsonObject) -> None:
-    sync_fields = [
-        "processed_video_hash",
-        "fps",
-        "duration",
-        "frame_count",
-        "width",
-        "height",
-        "suffix",
-    ]
-    for field_name in sync_fields:
-        if field_name in payload:
-            setattr(video, field_name, cast(Any, payload[field_name]))
+# Sender-declared columns mirrored verbatim; frame_count is then bound to the
+# received presentation timeline by _accept_transfer_video_provenance.
+_VIDEO_FILE_SYNC_FIELDS = (
+    "processed_video_hash",
+    "fps",
+    "duration",
+    "frame_count",
+    "width",
+    "height",
+    "suffix",
+)
+_VIDEO_STATE_SYNC_FIELDS = (
+    "frames_extracted",
+    "frames_initialized",
+    "frame_count",
+    "video_meta_extracted",
+    "text_meta_extracted",
+    "initial_prediction_completed",
+    "lvs_created",
+    "frame_annotations_generated",
+    "sensitive_meta_processed",
+    "anonymized",
+    "anonymization_validated",
+    "outside_segments_removed",
+    "processing_error",
+    "processing_started",
+    "segment_annotations_created",
+    "was_created",
+    "processed_file_sha256",
+)
+_REPORT_FILE_SYNC_FIELDS = (
+    "anonymized_text",
+    "state_report_processing_required",
+    "state_report_processed",
+)
+_REPORT_STATE_SYNC_FIELDS = (
+    "text_meta_extracted",
+    "initial_prediction_completed",
+    "sensitive_meta_processed",
+    "anonymized",
+    "anonymization_validated",
+    "processing_started",
+    "processing_error",
+    "was_created",
+    "pdf_meta_extracted",
+    "processed_file_sha256",
+)
 
 
-def _apply_video_state_payload(video_state: VideoState, payload: JsonObject) -> None:
-    sync_fields = [
-        "frames_extracted",
-        "frames_initialized",
-        "frame_count",
-        "video_meta_extracted",
-        "text_meta_extracted",
-        "initial_prediction_completed",
-        "lvs_created",
-        "frame_annotations_generated",
-        "sensitive_meta_processed",
-        "anonymized",
-        "anonymization_validated",
-        "outside_segments_removed",
-        "processing_error",
-        "processing_started",
-        "segment_annotations_created",
-        "was_created",
-        "processed_file_sha256",
-    ]
-    updated_fields: list[str] = []
-    for field_name in sync_fields:
-        if field_name in payload:
-            setattr(video_state, field_name, cast(Any, payload[field_name]))
-            updated_fields.append(field_name)
-    if updated_fields:
-        updated_fields.append("date_modified")
-        video_state.save(update_fields=updated_fields)
+def _sync_payload_fields(
+    instance: models.Model, payload: JsonObject, field_names: tuple[str, ...]
+) -> list[str]:
+    """Copy present payload fields onto ``instance``; return the names copied."""
+    copied = [name for name in field_names if name in payload]
+    for name in copied:
+        setattr(instance, name, payload[name])
+    return copied
 
 
-def _apply_report_file_payload(report: RawPdfFile, payload: JsonObject) -> None:
-    sync_fields = [
-        "anonymized_text",
-        "state_report_processing_required",
-        "state_report_processed",
-    ]
-    for field_name in sync_fields:
-        if field_name in payload:
-            setattr(report, field_name, cast(Any, payload[field_name]))
-
-
-def _apply_report_state_payload(report_state: RawPdfState, payload: JsonObject) -> None:
-    sync_fields = [
-        "text_meta_extracted",
-        "initial_prediction_completed",
-        "sensitive_meta_processed",
-        "anonymized",
-        "anonymization_validated",
-        "processing_started",
-        "processing_error",
-        "was_created",
-        "pdf_meta_extracted",
-        "processed_file_sha256",
-    ]
-    updated_fields: list[str] = []
-    for field_name in sync_fields:
-        if field_name in payload:
-            setattr(report_state, field_name, cast(Any, payload[field_name]))
-            updated_fields.append(field_name)
-    if updated_fields:
-        updated_fields.append("date_modified")
-        report_state.save(update_fields=updated_fields)
+def _save_synced_payload_fields(
+    instance: VideoState | RawPdfState,
+    payload: JsonObject,
+    field_names: tuple[str, ...],
+) -> None:
+    copied = _sync_payload_fields(instance, payload, field_names)
+    if copied:
+        instance.save(update_fields=[*copied, "date_modified"])
 
 
 @transaction.atomic

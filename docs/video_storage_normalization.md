@@ -37,6 +37,24 @@ Authenticated decryption, existing coordinates and publication locking remain
 enforced. Processed timestamps are recorded as processed evidence;
 they do not establish original frame ancestry or original timestamp history.
 
+Recovery also fills missing seconds or integer presentation timestamps and restores
+missing source evidence when every existing coordinate agrees with decoded media.
+Conflicts roll back the entire recovery. Missing annotated-frame ordinals may be
+added only when an existing complete canonical generation receipt proves their
+positions; existing frame identities and annotation boundaries remain unchanged.
+Training reads use the same recovery service before checking exact coordinates.
+
+Synchronous recovery uses a distinct read lease during capture and holds the
+publication row lock until commit. It releases only its own lease; failures roll
+back its creation. Existing playback leases are neither renewed nor removed.
+Exclusive writers and pending storage-cleanup authorization still block recovery.
+
+Single and bulk segment validation clamp a submitted end beyond the canonical
+terminal boundary to the last persisted frame presentation timestamp. Valid ends,
+including the terminal exclusive boundary, remain unchanged. Starts are never
+clamped; empty or reversed ranges fail. This does not bulk-edit stored segments,
+repair missing media, or infer coordinates from nominal frame rate.
+
 Video discovery returns `segments: null`, `timeline_error` and `status: failed`
 when a video's clinical timeline cannot be resolved, keeping other videos
 available. A healthy row has `timeline_error: null`. Missing canonical media
@@ -46,6 +64,18 @@ Discovery does not mark persistent integrity state or change annotations. Run
 the documented integrity reconciliation to assess missing media separately.
 
 ## Recover usable media with unresolved frame mapping
+
+Sender provenance always starts at the recording's `raw_video_hash`. A history
+containing only a later processed transformation cannot redefine that identity;
+the resolver composes the complete recorded ancestry or refuses the export.
+Electrical synchronization anchors use that same original recording identity.
+Exclusive writers and invalid ancestry are checked before hashing media. After
+clinical approval and current content-hash verification, the sender reuses the
+typed timestamp proof bound to those exact bytes instead of decoding them again.
+The receiver still decodes the received processed generation and compares its
+complete presentation timestamps before acceptance. This change does not invent
+missing ancestry or release abandoned writer barriers. Scope and evidence belong
+to `recording_bound_export_preflight` in `feature-tracking/HubTransfer.yml`.
 
 Use **Frame-Herkunft reparieren** in Hub Export or **Video für Transfer reparieren**
 on the video examination page. Every authenticated user assigned to the video's
@@ -844,8 +874,12 @@ persisted coordinates and stored with the source and output probes in
 `VideoFile.meta.storage_normalization`.
 
 Variable frame rate is allowed only when source and output time bases are
-available. Raw normalization enforces the strict rate and temporal-equivalence
-checks. Processed publication may accept differing container rate metadata only
+available. Canonical output validation captures complete decoded coordinates
+before evaluating temporal equivalence, once for both raw and processed media.
+Raw normalization accepts differing nominal or average container rates only when
+the complete decoded presentation timestamps agree; frame counts, terminal
+duration, dimensions and storage limits remain mandatory. Metadata-only callers
+retain strict rate checks. Processed publication may accept differing container rate metadata only
 with complete decoded timestamp proof under the bounded correction gate in
 [Canonical runtime paths and filenames](#canonical-runtime-paths-and-filenames).
 Frame-count changes, excessive timeline drift, or resolution changes prevent
@@ -1152,7 +1186,31 @@ to migration only under a versioned, reviewed profile or after the source has
 been corrected. Quarantine files are reviewed through the existing quarantine
 workflow and are not deleted by `normalize_video_storage`.
 
-### Duplicate Sources and Received Hub Generations
+### Explicit local reclamation after hub transfer
+
+The Hub Export action **Lokale Dateien löschen** is separate from the retention
+choice made when submitting a transfer. For a completed video, including one
+originally retained locally, an authorized operator may remove all recorded local
+video files after confirming the scope. The source authenticates a fresh
+`status/?verify_media=true` request: the hub must still hold the received master
+with the receipt's exact plaintext digest and size. Older hubs without this proof,
+unavailable hubs and changed generations block reclamation.
+
+The action removes owned raw and processed files, playback derivatives, frame
+files and recorded import copies. It keeps clinical rows, annotation coordinates,
+content identities and the transfer receipt. Active media leases, processing,
+other pending transfers and shared ownership block deletion. It never deletes
+the hub copy or exports raw media. The processed-only scheduled reaper retains
+its existing scope.
+
+Durable `local_files_cleanup_started_at` and `local_files_cleanup_completed_at`
+fields distinguish a recoverable interrupted deletion from a completed operation.
+Retry the same action after resolving a reported blocker; do not delete files or
+transfer records manually. Deploy backend migration `0118` and the matching hub
+verification endpoint before the sender/button release. Readiness is tracked in
+[`HubTransfer.yml`](../feature-tracking/HubTransfer.yml).
+
+### Received-generation duplicate reuse
 
 Source identity and legacy duplicate reconciliation are governed by
 [`source_identity_deduplication_and_legacy_reconciliation`](../feature-tracking/ImportPipelineRobustness.yml).

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from math import isclose
 from io import StringIO
 from pathlib import Path
 from typing import cast
@@ -14,6 +15,8 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.frame.frame import Frame
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 
 pytestmark = pytest.mark.django_db
 
@@ -52,6 +55,7 @@ def test_profile_segment_updates_rolls_back_synthetic_data_by_default(
     summary_path = tmp_path / "segments-profile.txt"
     video_count_before = VideoFile.objects.count()
     segment_count_before = LabelVideoSegment.objects.count()
+    frame_count_before = Frame.objects.count()
 
     stdout = StringIO()
     call_command(
@@ -93,3 +97,41 @@ def test_profile_segment_updates_rolls_back_synthetic_data_by_default(
     assert "function calls" in summary_path.read_text(encoding="utf-8")
     assert VideoFile.objects.count() == video_count_before
     assert LabelVideoSegment.objects.count() == segment_count_before
+    assert Frame.objects.count() == frame_count_before
+
+
+@pytest.mark.parametrize("fps", [25.0, 29.97])
+def test_synthetic_profile_persists_explicit_frame_coordinates(fps: float) -> None:
+    stdout = StringIO()
+    call_command(
+        "profile_segment_updates",
+        "--operation",
+        "bulk-mutation",
+        "--segments",
+        "2",
+        "--create-count",
+        "1",
+        "--update-count",
+        "1",
+        "--delete-count",
+        "1",
+        "--frame-count",
+        "20",
+        "--fps",
+        str(fps),
+        "--commit",
+        "--json",
+        stdout=stdout,
+    )
+    video = VideoFile.objects.get(pk=json.loads(stdout.getvalue())["video_id"])
+    source = VideoFileMetaPayload.model_validate(video.meta).source_timeline
+    assert source is not None
+    assert source.source.codec_name == "synthetic"
+    assert video.frames.count() == 20
+    assert list(
+        video.frames.order_by("frame_number").values_list(
+            "presentation_timestamp", flat=True
+        )
+    ) == list(range(20))
+    assert isclose(video.frame_number_to_s(7), 7 / fps, rel_tol=0, abs_tol=1e-6)
+    assert isclose(video.frame_number_to_s(20), 20 / fps, rel_tol=0, abs_tol=1e-6)

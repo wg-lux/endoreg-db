@@ -25,6 +25,52 @@ source_documents:
   disposition: reference
   note: Inventarisiert die bestehenden Ingest-Eingangsgrenzen und UploadJob-Orchestrierung.
 definition_of_done:
+- id: bounded_video_proposal_lookups
+  category: functionality
+  title: Begrenzte Datenbankabfragen beim Speichern erkannter personenbezogener Bildregionen
+  acceptance:
+  - Frame-Zuordnungen werden videospezifisch in Abfragen mit höchstens 500 unterschiedlichen Frame-Nummern
+    geladen; wiederholte Beobachtungen vervielfachen diese Abfragen nicht.
+  - Identische Wiederholungen erzeugen weder zusätzliche Boxen noch Updates und laden Labels nicht einzeln
+    pro Box. Geänderte Vorschlagswerte werden weiterhin gespeichert.
+  - Fehlende Frames, ungültige Boxen und gleich nummerierte Frames anderer Videos bleiben ausgeschlossen.
+    Bestehende Frame-Identitäten und Präsentationszeitstempel bleiben unverändert.
+  - Query-Budgets werden vor und nach der Änderung mit denselben synthetischen Beobachtungen gemessen;
+    Rust-Zustände, Ownership, Hashprüfungen und Publikation bleiben unverändert.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor tests/import_files/test_video_anonymization.py ausführen; Query-Budgets
+      einschließlich Batchgrenze und unverändertem Wiederholungsaufruf prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/import_files/processing/video_processing/video_anonymization.py; tests/import_files/test_video_anonymization.py
+    - kind: test
+      reference: '2026-11-17: Query-Baseline vor Implementierung, test_phi_proposal_retry_query_budget:
+        1/20/501 Frames plus eine wiederholte Beobachtung verursachten 8/65/1508 Abfragen, darunter 2/21/502
+        Frame- und 3/22/503 Label-Abfragen; alle drei neuen Budgets schlugen erwartungsgemäß fehl. Nach
+        Implementierung: 5/24/506 Abfragen, 1/1/2 Frame-Abfragen und jeweils eine Label-Abfrage. Identische
+        Wiederholungen ohne INSERT/UPDATE/DELETE; 66,4 Prozent weniger Abfragen im 501-Frame-Fall, keine
+        Gesamtlaufzeitbehauptung.'
+    - kind: test
+      reference: '2026-11-17: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/import_files/test_video_anonymization.py tests/import_files/test_video_import_normalization.py
+        tests/import_files/test_video_finalize_success.py tests/import_files/test_import_checkpoint_duplicate_execution.py
+        tests/import_files/test_video_import_workload_timing.py -q -s --tb=short: 60 passed, 1 existing
+        plugin warning, 47.80s. Einschließlich geänderter Vorschlagswerte, fehlender/fremder Frames, ungültiger
+        Boxen, Koordinatenerhalt, Checkpoint-Duplikaten und Publikation.'
+    - kind: command
+      reference: '2026-11-17: Full .devenv/state/venv/bin/pyright before pytest: 0 errors, 2 existing
+        warnings. Scoped Ruff passes; scripts/lint_structure.py: 67 manifests valid; tracker validate:
+        40 definitions valid; git diff --check passes.'
+    note: Lokale Query-Optimierung verifiziert. Keine Aussage zur gesamten Importlaufzeit und kein Deployment.
+      Rust-Zustände, Ownership, Hashprüfungen und Publikation unverändert; bestehende Frame-Identitäten
+      und Präsentationszeitstempel bleiben erhalten.
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T09:48:07.525826Z'
 - id: report_extraction_outcome_rust_authority
   category: data_integrity
   title: Report success distinguishes extraction outcomes through Rust-authoritative state transitions

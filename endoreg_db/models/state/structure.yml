@@ -9,6 +9,8 @@ boundaries:
 - Preserve concurrent operation ownership and canonical media generation identity; raw media export is
   prohibited.
 files:
+- file: hub_transfer.py
+  role: Sole Python hub failure-category mirror shared by persistence and API schemas, verified against Rust at startup.
 - file: sensitive_meta.py
   role: Persist name/date-of-birth checks; derived is_verified and compatibility mutators delegate to the verification service.
 - file: video.py

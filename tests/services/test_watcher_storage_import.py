@@ -19,10 +19,12 @@ from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
 from endoreg_db.services.hub import watcher_handoff
 from endoreg_db.services.hub.upload_job_cancellation import UploadJobImportCancelled
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     is_in_progress_handoff_path,
 )
+from endoreg_db.services.imports.processing import record_published_import
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
@@ -299,6 +301,13 @@ def _fake_video_import(video: VideoFile) -> _VideoImportCallable:
         assert callable(execution_guard)
         execution_guard()
         assert Path(file_path).exists()
+        upload_job_id = current_upload_job_id()
+        assert upload_job_id is not None
+        record_published_import(
+            upload_job_id,
+            media_id=int(video.pk),
+            source_sha256=get_file_hash(file_path),
+        )
         safe_unlink_file(Path(file_path), missing_ok=False)
         return video
 

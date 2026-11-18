@@ -538,7 +538,9 @@ def create_video_stream_lease(
     *,
     file_type: str,
     ttl_seconds: int | None = None,
+    renew_matching: bool = True,
 ) -> MediaOperationLease | None:
+    """Renew playback grace, or allocate a distinct lease for an owned operation."""
     if not isinstance(video, VideoFile) or getattr(video, "pk", None) is None:
         return None
     ttl = (
@@ -556,7 +558,7 @@ def create_video_stream_lease(
             lease_type=MediaOperationLeaseType.STREAM,
             expires_at=expires_at,
             metadata={"file_type": normalized_file_type},
-            renew_matching=True,
+            renew_matching=renew_matching,
         )
     )
 

@@ -26,7 +26,10 @@ def export_video_provenance(
     video: VideoFile,
 ) -> VideoProvenanceBundle | VideoProvenanceRecovery:
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.media.operation_gate import create_video_stream_lease
+    from endoreg_db.services.media.operation_gate import (
+        assert_video_not_transcoding,
+        create_video_stream_lease,
+    )
 
     with transaction.atomic():
         current = VideoFile.objects.select_for_update().get(pk=video.pk)
@@ -37,6 +40,7 @@ def export_video_provenance(
             raise ValueError(
                 "Processed generation changed while preparing provenance export"
             )
+        assert_video_not_transcoding(current.pk)
         result = _export_current_video_provenance(current)
         create_video_stream_lease(current, file_type="processed")
         return result
@@ -48,10 +52,10 @@ def _export_current_video_provenance(
     """Export only an approved, hash-verified processed artifact's ancestry."""
     from endoreg_db.services.media.export_downloads import validate_video_download
 
-    validate_video_download(video)
     provenance = resolve_video_provenance(video)
-    if isinstance(provenance, VideoProvenanceBundle):
-        validate_received_video_timeline(video, provenance)
+    # The current bytes must match the proof's output hash. That identity permits
+    # reuse of persisted timestamps; the receiver still decodes uploaded media.
+    validate_video_download(video)
     return provenance
 
 
@@ -137,11 +141,7 @@ def record_video_synchronization(
     with transaction.atomic():
         current = VideoFile.objects.select_for_update().get(pk=video.pk)
         meta = VideoFileMetaPayload.model_validate(current.meta or {})
-        history = meta.canonical_timeline_history or []
-        source_hash = (
-            history[0].before.content_hash if history else current.raw_video_hash
-        )
-        if synchronization.source_content_hash != source_hash:
+        if synchronization.source_content_hash != current.raw_video_hash:
             raise ValueError("Synchronization source does not match the recording")
         if (
             meta.recording_synchronization is not None

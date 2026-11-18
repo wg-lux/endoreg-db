@@ -820,11 +820,29 @@ definition_of_done:
         ein separater statischer Asset-Fehler. Backfill nun fuer zehn Videos mit insgesamt 1220679 persistierten
         Frame-Zeitstempeln abgeschlossen; keine vorhandenen Segmentindizes geaendert. Abschliessender
         authentifizierter Video-Listen-Test HTTP 200, count 30, kein Fehler. Assessor codex-video-list-20261104-a.'
-    note: '2026-11-02: Fehlende Quell-Timeline blockiert klinische Koordinaten; explizite konstante Timeline
-      bleibt zulässig. REST-framework-Validierung übersetzt den Mappingfehler ohne Koordinatenmutation.
-      Keine Produktionsfreigabe.'
-    assessed_by: codex-storage-review-20261102
-    assessed_at: '2026-11-02T12:54:02.942847Z'
+    - kind: command
+      reference: '2026-11-17: Kanonische Ausgabevalidierung vereinheitlicht; vollständige dekodierte Präsentationszeitstempel
+        ersetzen abweichende nominale und mittlere Bildratenangaben. Metadaten ohne dekodierten Nachweis
+        bleiben strikt; Dauer-, Frameanzahl-, Speicher- und Publikationsprüfungen bleiben erhalten. Vollständiger
+        Pyright: 0 Fehler, 2 fremde Warnungen. Ruff und Formatprüfung bestanden; 67 Strukturmanifeste
+        und 40 Feature-Definitionen gültig. Tests canonical_video_timelines, video_storage_normalization,
+        processed_timelines und video_import_normalization: 131 bestanden, 8 Fehler vor der geänderten
+        Validierung bei timestamp_csv(original=True), weil die parallele Timestamp-Recovery die nicht
+        vorhandene Fixture processed.mp4 öffnet; an codex-timeline-20261117 gemeldet. Zusätzliche Tests
+        video_processed_transcode_encryption, frame_provenance und video_import_service_unit: 152 bestanden,
+        1 bestehende Plugin-Warnung. Neue Regressionen prüfen nominale/mittlere Metadatenabweichung, unvollständige
+        oder verschobene Zeitstempel, terminale Dauer und wiederholte Normalisierung ohne Neukodierung
+        oder Dateiersatz. Kein Deployment und keine Produktionsfreigabe.'
+    - kind: review
+      reference: '2026-11-17: Rückmeldung codex-timeline-20261117, Nachricht 5e981b7fab2744cebaa231fa912101d6:
+        Die acht zuvor gemeldeten Originalexport-Fehler sind durch History-Auswahl vor Recovery in services/media/export_downloads.py
+        behoben. Dessen erneuter Lauf von test_processed_timelines.py, test_video_export_downloads.py
+        und test_video_timestamp_backfill.py mit RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false: 91 bestanden,
+        1 bestehende Plugin-Warnung, 71.49 Sekunden. Fokussierter Pyright 0 Fehler/0 Warnungen; Ruff und
+        Struktur-/Feature-Validatoren bestanden. Separat vom eigenen Lauf mit 283 bestandenen Tests berichtet;
+        keine Produktionsfreigabe.'
+    assessed_by: codex-import-refactor-20261117
+    assessed_at: '2026-11-17T09:08:04.651261Z'
 - id: clinical_frame_quality
   category: requirements
   title: Storage-Reduktion erhält die klinisch erforderliche Framequalität
@@ -2233,13 +2251,20 @@ definition_of_done:
   category: data_integrity
   title: Every frame decoder exposes authoritative generation-bound presentation timestamps
   acceptance:
-  - Clinical coordinate resolution automatically backfills wholly absent frame timestamps from the active
-    canonical media using decoded presentation timestamps. Identity verification belongs to import; timestamp-only
+  - Clinical coordinate resolution automatically backfills absent frame timestamps from the active canonical
+    media using decoded presentation timestamps. Identity verification belongs to import; timestamp-only
     recovery reuses its identity without rehashing media or requiring the legacy frame count to match.
     The decoded sequence determines the frame count and reconciles unannotated, unextracted rows atomically,
     preserving retained primary keys. Partial coordinates and saved annotations are never overwritten.
     Publication locking serializes recovery; import states and provenance approvals remain unchanged and
     repeated reads do not probe again.
+  - Partial coordinates and missing source evidence reconcile only when every saved coordinate agrees
+    with decoded media. Matching coordinates and annotations remain unchanged; conflicting values roll
+    back. Existing complete generation history permits adding missing ordinals without changing annotations.
+    Training reads and worker classification use the same recovery and completeness contract.
+  - Single and bulk segment validation clamp submitted ends beyond the canonical terminal boundary to
+    the last persisted presentation timestamp. Valid terminal ends remain unchanged; invalid starts, missing
+    final presentation timestamps and collapsed ranges fail without changing that segment.
   - Video discovery isolates unavailable clinical timelines per video, returning null segments, an explicit
     timeline_error and failed status while healthy videos remain discoverable. Missing canonical media
     raises a path-free timeline error; recovery never substitutes raw media for a published processed
@@ -2367,8 +2392,24 @@ definition_of_done:
         raw media. Discovery returns explicit per-video timeline errors while healthy segments remain
         available. Ruff, formatting, diff and 67 structure manifests pass. No deployment or production
         approval.'
-    assessed_by: codex-lx-local-20261113
-    assessed_at: '2026-11-13T18:40:27.613946Z'
+    - kind: test
+      reference: '2026-11-17: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_video_timestamp_backfill.py tests/management/commands/test_backfill_video_timelines.py
+        tests/services/test_video_timeline.py tests/rust_backend/test_timeline_index.py tests/views/video/test_segments_crud.py
+        -q: 167 passed, one existing plugin warning. Covers raw/processed partial recovery, missing source/history,
+        conflict rollback, concurrency, index parity and zero-query segment end clamping. LX-Annotate
+        source integration: 85 passed; final endpoint clamp rerun: 16 passed. Scoped Pyright 0 errors/0
+        warnings; Ruff and both structure validators passed. No deployment or production approval.'
+    - kind: test
+      reference: '2026-11-17 final export regression: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        .devenv/state/venv/bin/pytest tests/services/test_processed_timelines.py tests/views/media/test_video_export_downloads.py
+        tests/services/test_video_timestamp_backfill.py -q: 91 passed, one existing plugin warning. Includes
+        all eight publication/original-timestamp cases reported by the concurrent storage review. Existing
+        requested timestamp history is read without triggering unrelated processed recovery; absent history
+        still uses shared reconciliation. Scoped Pyright, Ruff, formatting, manifests and tracker validation
+        passed.'
+    assessed_by: codex-timeline-20261117
+    assessed_at: '2026-11-17T09:07:29.735630Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request

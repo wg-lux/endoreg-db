@@ -64,8 +64,7 @@ def timestamp_csv(video: VideoFile, *, original: bool) -> Iterator[str]:
         backfill_missing_video_timestamps,
     )
 
-    backfill_missing_video_timestamps(video)
-    history = (video.meta or {}).get("canonical_timeline_history")
+    history = (video.meta or {}).get("canonical_timeline_history", [])
     if not isinstance(history, list):
         raise ValueError("Keine gespeicherte kanonische Zeitstempelhistorie vorhanden.")
     entries = [CanonicalTimelineHistoryEntry.model_validate(entry) for entry in history]
@@ -79,6 +78,11 @@ def timestamp_csv(video: VideoFile, *, original: bool) -> Iterator[str]:
             and entry.after.content_hash == video.processed_video_hash
         )
     ]
+    if not candidates:
+        previous_meta = video.meta
+        backfill_missing_video_timestamps(video)
+        if video.meta is not previous_meta:
+            return timestamp_csv(video, original=original)
     if not candidates or any(candidate != candidates[0] for candidate in candidates):
         raise ValueError(
             "Die gewählte Zeitstempelfolge fehlt oder ist nicht eindeutig belegt."

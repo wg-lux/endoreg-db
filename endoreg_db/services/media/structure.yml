@@ -31,7 +31,7 @@ files:
 - file: frame_annotation_export_downloads.py
   role: Read-only listing, per-file and ZIP access to the latest completed export job of a run directory within the user's center scope; symbolic links fail loudly.
 - file: export_downloads.py
-  role: Browser exports of accepted media and annotations; timestamp downloads recover wholly absent coordinates through the shared backfill service.
+  role: Browser exports of accepted media and annotations; timestamp downloads use existing requested history first and recover missing history through the shared backfill service.
 - file: export_policy.py
   role: Shared processed-media integrity and generation-bound approval checks for all export paths.
 - file: csv_export.py
@@ -44,7 +44,7 @@ files:
 - file: integrity.py
   role: Exports mark_video_integrity_lost and reconcile_media_integrity for processed media, metadata and streamable artifacts.
 - file: operation_gate.py
-  role: Exports acquire_media_operation_lease, acquire_video_transcode_lease, assert_video_transcode_lease; lease admission locks video identity without loading timeline payloads.
+  role: Shared typed lease admission and publication locks; stream leases either renew playback grace or allocate a distinct token for synchronous operation ownership.
 - file: source_deletion.py
   role: Shared ownership checks for explicit deletion of recorded import sources.
 dependencies:

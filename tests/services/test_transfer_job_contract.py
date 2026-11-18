@@ -8,6 +8,8 @@ from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
 
+import pytest
+
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import IntegrityError, transaction
@@ -217,13 +219,14 @@ class TransferJobContractTests(TestCase):
         )
         state = video.get_or_create_state()
 
-        transfers._apply_video_state_payload(
+        transfers._save_synced_payload_fields(
             state,
             {
                 "anonymized": True,
                 "anonymization_validated": True,
                 "outside_segments_removed": True,
             },
+            transfers._VIDEO_STATE_SYNC_FIELDS,
         )
 
         state.refresh_from_db()
@@ -257,8 +260,6 @@ class TransferJobContractTests(TestCase):
         assert transfers._json_float("2.5", field_name="ratio") == 2.5
         assert transfers._json_float(None, field_name="ratio") is None
         assert transfers._json_float("", field_name="ratio") is None
-        assert transfers._json_str("  text  ", field_name="name") == "text"
-        assert transfers._json_str(None, field_name="name") is None
         assert transfers._json_bool(True, field_name="enabled") is True
 
         assert transfers._json_object({"a": 1}, field_name="payload")["a"] == 1
@@ -272,8 +273,6 @@ class TransferJobContractTests(TestCase):
             transfers._json_int(True, field_name="count")
         with self.assertRaises(ValueError):
             transfers._json_float(True, field_name="ratio")
-        with self.assertRaises(ValueError):
-            transfers._json_str(12, field_name="name")
         with self.assertRaises(ValueError):
             transfers._json_bool("yes", field_name="enabled")
 
@@ -1180,3 +1179,82 @@ class TransferJobContractTests(TestCase):
             TransferJob.TransferStatus.PENDING,
         )
         self.assertNotIn("owner", str(payload["detail"]).lower())
+
+
+_PTS_RECORDING_HASH = "a" * 64
+_PTS_PROCESSED_HASH = "b" * 64
+
+
+def _recovery_provenance(frame_count: int) -> dict[str, object]:
+    return {
+        "video_provenance_recovery": {
+            "recording_hash": _PTS_RECORDING_HASH,
+            "processed_timeline": {
+                "content_hash": _PTS_PROCESSED_HASH,
+                "time_base_num": 1,
+                "time_base_den": 1000,
+                "presentation_timestamps": [frame * 40 for frame in range(frame_count)],
+            },
+        }
+    }
+
+
+def _unsaved_transfer_video(frame_count: int | None) -> VideoFile:
+    return VideoFile(
+        raw_video_hash=_PTS_RECORDING_HASH,
+        processed_video_hash=_PTS_PROCESSED_HASH,
+        frame_count=frame_count,
+    )
+
+
+@pytest.mark.parametrize("declared_frame_count", [None, 3])
+def test_transfer_frame_count_is_bound_to_received_presentation_timeline(
+    declared_frame_count: int | None,
+) -> None:
+    video = _unsaved_transfer_video(declared_frame_count)
+
+    provenance = transfers._accept_transfer_video_provenance(
+        video, _recovery_provenance(3)
+    )
+
+    assert provenance is not None
+    assert video.frame_count == 3
+
+
+@pytest.mark.parametrize("declared_frame_count", [2, 4])
+def test_transfer_frame_count_disagreeing_with_timeline_is_rejected(
+    declared_frame_count: int,
+) -> None:
+    video = _unsaved_transfer_video(declared_frame_count)
+
+    with pytest.raises(ValueError, match="disagrees with the received presentation"):
+        transfers._accept_transfer_video_provenance(video, _recovery_provenance(3))
+
+
+def test_transfer_with_both_provenance_kinds_is_rejected_before_acceptance() -> None:
+    video = _unsaved_transfer_video(3)
+    both: dict[str, object] = {
+        **_recovery_provenance(3),
+        "video_frame_provenance": {},
+    }
+
+    with pytest.raises(ValueError, match="verified or unresolved provenance"):
+        transfers._accept_transfer_video_provenance(video, both)
+
+    assert video.meta in (None, {})
+
+
+def test_transfer_without_provenance_leaves_declared_frame_count() -> None:
+    video = _unsaved_transfer_video(5)
+
+    assert transfers._accept_transfer_video_provenance(video, {}) is None
+    assert video.frame_count == 5
+
+
+def test_video_segments_without_provenance_are_rejected() -> None:
+    with pytest.raises(ValueError, match="require frame provenance"):
+        transfers._verified_video_segments(
+            video=_unsaved_transfer_video(3),
+            provenance=None,
+            rows=[cast(Any, {})],
+        )

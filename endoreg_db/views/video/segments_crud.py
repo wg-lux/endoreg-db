@@ -66,6 +66,7 @@ from endoreg_db.services.annotations.segment_validation_workflow import (
     mark_segment_annotations_pending_cleanup,
     mark_segment_annotations_stale,
     resolve_segment_annotation_status,
+    resolve_segment_validation_frames,
 )
 from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
@@ -1308,10 +1309,12 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
             if annotation_input is not None:
                 segment_video = _segment_video_file(segment)
                 timeline = VideoTimelineIndexCache().for_video(segment_video)
-                new_start = timeline.seconds_to_frame_number(
-                    annotation_input.start_time
+                new_start, new_end = resolve_segment_validation_frames(
+                    segment_video,
+                    timeline,
+                    start_time=annotation_input.start_time,
+                    end_time=annotation_input.end_time,
                 )
-                new_end = timeline.seconds_to_frame_number(annotation_input.end_time)
                 _validate_segment_frame_range(
                     new_start,
                     new_end,
@@ -1440,8 +1443,12 @@ def _apply_bulk_segment_timing(
         return
     segment_video = _segment_video_file(segment)
     timeline = timeline_indexes.for_video(segment_video)
-    new_start = timeline.seconds_to_frame_number(annotation_input.start_time)
-    new_end = timeline.seconds_to_frame_number(annotation_input.end_time)
+    new_start, new_end = resolve_segment_validation_frames(
+        segment_video,
+        timeline,
+        start_time=annotation_input.start_time,
+        end_time=annotation_input.end_time,
+    )
     _validate_segment_frame_range(
         new_start,
         new_end,

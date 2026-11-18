@@ -370,9 +370,20 @@ def read_video_file_frame_sample(
 def read_processed_frame_jpeg(frame: Frame, *, quality: int = 2) -> EncodedFrameSample:
     """Decode a selected row only when its exact coordinates match the processed source."""
     if frame.presentation_timestamp is None or frame.timestamp is None:
-        raise ValueError(
-            "Selected frame requires exact persisted presentation coordinates."
+        if frame._state.adding:
+            raise ValueError(
+                "Selected frame requires exact persisted presentation coordinates."
+            )
+        from endoreg_db.services.video_files.timestamp_backfill import (
+            backfill_missing_video_timestamps,
         )
+
+        backfill_missing_video_timestamps(frame.video)
+        frame.refresh_from_db(fields=["timestamp", "presentation_timestamp"])
+        if frame.presentation_timestamp is None or frame.timestamp is None:
+            raise ValueError(
+                "Selected frame requires exact persisted presentation coordinates."
+            )
     return _read_video_file_frame_image(
         frame.video,
         frame_number=frame.frame_number,
