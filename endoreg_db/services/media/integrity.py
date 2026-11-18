@@ -135,10 +135,6 @@ def _first_video_stream(streams: list[object]) -> dict[str, Any] | None:
     return None
 
 
-def _new_int_list() -> list[int]:
-    return []
-
-
 def _new_video_report_list() -> list[dict[str, Any]]:
     return []
 

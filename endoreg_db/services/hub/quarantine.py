@@ -302,11 +302,6 @@ def approve_quarantine_item(
         raise ValueError("decision_reason is required")
     if delete_after_days < 0:
         raise ValueError("delete_after_days must not be negative")
-    if item.status in {
-        QuarantineItem.Status.DELETED.value,
-        QuarantineItem.Status.MISSING.value,
-    }:
-        raise ValueError(f"Cannot approve quarantine item in status {item.status}")
 
     decision_time = now or _now()
     with transaction.atomic():
@@ -342,8 +337,6 @@ def retain_quarantine_item(
     decision_reason = reason.strip()
     if not decision_reason:
         raise ValueError("decision_reason is required")
-    if item.status == QuarantineItem.Status.DELETED.value:
-        raise ValueError("Cannot retain a deleted quarantine item")
 
     with transaction.atomic():
         set_quarantine_item_status(item, QuarantineItem.Status.RETAINED.value)

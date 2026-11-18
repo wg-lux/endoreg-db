@@ -69,12 +69,6 @@ from endoreg_db.services.runtime.status_writers import (
 )
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
-from endoreg_db.services.runtime.lifecycle_state_machine import (
-    OperationClaimPath,
-    OperationLifecycleEvent,
-    OperationLifecycleState,
-    reduce_operation_lifecycle,
-)
 from endoreg_db.services.video_files import get_or_create_video_state
 from endoreg_db.services.video_files.timeline import (
     presentation_timestamp_seconds,
@@ -131,23 +125,6 @@ class TransferOperationBusy(RuntimeError):
     pass
 
 
-def transfer_operation_state(status: str) -> OperationLifecycleState:
-    mapping = {
-        TransferJob.TransferStatus.PENDING.value: OperationLifecycleState.QUEUED,
-        TransferJob.TransferStatus.AWAITING_MEDIA.value: OperationLifecycleState.QUEUED,
-        TransferJob.TransferStatus.CLAIMED.value: OperationLifecycleState.CLAIMED,
-        TransferJob.TransferStatus.RUNNING.value: OperationLifecycleState.RUNNING,
-        TransferJob.TransferStatus.RETRY_WAIT.value: OperationLifecycleState.RETRY_WAIT,
-        TransferJob.TransferStatus.APPLIED.value: OperationLifecycleState.SUCCEEDED,
-        TransferJob.TransferStatus.FAILED.value: OperationLifecycleState.FAILED,
-        TransferJob.TransferStatus.LOST.value: OperationLifecycleState.LOST,
-    }
-    try:
-        return mapping[status]
-    except KeyError as exc:
-        raise ValueError(f"unknown TransferJob status: {status}") from exc
-
-
 def _transfer_database_now(transfer_job_id: uuid.UUID) -> datetime:
     value = (
         TransferJob.objects.filter(pk=transfer_job_id)
@@ -179,27 +156,14 @@ def _claim_transfer_operation(
                 "inconsistent transfer cannot be reclaimed without explicit repair"
             )
         now = _transfer_database_now(transfer_job_id)
-        current = transfer_operation_state(transfer_job.transfer_status)
         orphaned_candidate_name = transfer_job.operation_candidate_name
-        claim_path = OperationClaimPath.INITIAL
-        if current is OperationLifecycleState.RUNNING:
-            if (
-                transfer_job.operation_lease_expires_at is not None
-                and transfer_job.operation_lease_expires_at > now
-            ):
-                raise TransferOperationBusy(
-                    "transfer operation already has a live owner"
-                )
-            claim_path = OperationClaimPath.INTERRUPTED
-        elif current is OperationLifecycleState.LOST:
-            claim_path = OperationClaimPath.RECONCILE
-        elif current is OperationLifecycleState.FAILED:
-            claim_path = OperationClaimPath.RETRY_REQUESTED
-        elif current is OperationLifecycleState.RETRY_WAIT:
-            claim_path = OperationClaimPath.RETRY_READY
-        current = reduce_operation_lifecycle(current, claim_path.events)
-        if current is not OperationLifecycleState.RUNNING:
-            raise RuntimeError("transfer claim did not reduce to RUNNING")
+        if (
+            transfer_job.transfer_status == TransferJob.TransferStatus.RUNNING.value
+            and transfer_job.operation_lease_expires_at is not None
+            and transfer_job.operation_lease_expires_at > now
+        ):
+            raise TransferOperationBusy("transfer operation already has a live owner")
+        # The native hub_inbound_transfer table decides which statuses may claim.
         with transaction.atomic():
             set_transfer_status(transfer_job, TransferJob.TransferStatus.RUNNING)
             transfer_job.attempt_id = attempt_id
@@ -1425,12 +1389,6 @@ def _save_transfer_job_state(
 
     if transfer_status != TransferJob.TransferStatus.APPLIED.value:
         raise ValueError("fenced transfer success must publish APPLIED status")
-    reduced = reduce_operation_lifecycle(
-        OperationLifecycleState.RUNNING,
-        (OperationLifecycleEvent.SUCCEED,),
-    )
-    if reduced is not OperationLifecycleState.SUCCEEDED:
-        raise RuntimeError("transfer completion did not reduce to SUCCEEDED")
     transfer_job.clean()
     updated = update_transfer_status(
         _fenced_transfer(operation_fence),
@@ -1464,12 +1422,6 @@ def _fail_transfer_operation(
     processing_decision: str,
     status_detail: str,
 ) -> TransferJob:
-    reduced = reduce_operation_lifecycle(
-        OperationLifecycleState.RUNNING,
-        (OperationLifecycleEvent.FAIL,),
-    )
-    if reduced is not OperationLifecycleState.FAILED:
-        raise RuntimeError("transfer failure did not reduce to FAILED")
     updated = update_transfer_status(
         _fenced_transfer(operation_fence),
         expected=TransferJob.TransferStatus.RUNNING,
