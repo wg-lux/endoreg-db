@@ -101,3 +101,66 @@ def test_shell_reload_cannot_recreate_or_resync_the_active_environment() -> None
     ]
     assert "${SYNC_CMD}" in _task_body(source, "agent:sync")
     assert "exec = SYNC_CMD;" in _task_body(source, "test:sync")
+
+
+def test_default_commit_hooks_cannot_start_full_repository_checks() -> None:
+    source = (REPO_ROOT / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    hooks = re.split(r"(?m)^      - id: ", source)[1:]
+    default_hooks = {
+        hook.splitlines()[0]: hook for hook in hooks if "stages: [manual]" not in hook
+    }
+
+    assert set(default_hooks) == {
+        "ruff-check",
+        "ruff-format",
+        "uv-lock",
+        "repository-structure",
+    }
+    for name in ("ruff-check", "ruff-format"):
+        assert "pass_filenames: false" not in default_hooks[name]
+        assert ".devenv/state/venv/bin/ruff" in default_hooks[name]
+    for hook in default_hooks.values():
+        assert "always_run: true" not in hook
+        assert "files:" in hook
+    assert "uv lock --check --offline" in default_hooks["uv-lock"]
+
+
+def test_remote_ci_keeps_shared_gates_locked_dependencies_and_native_tests() -> None:
+    source = DEVENV_NIX.read_text(encoding="utf-8")
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    checks = _task_body(source, "ci:checks")
+
+    assert "set -euo pipefail" in checks
+    assert "--locked" in _task_body(source, "ci:sync")
+    assert "uv sync" not in checks
+    for guard in (
+        "check_dead_code.py",
+        "check_quality_boundaries.py",
+        "check_lx_dtypes_contract_boundaries.py",
+        "check_state_mutation_owners.py",
+        "lint_structure.py",
+        "check_django_startup_imports.py",
+    ):
+        assert guard in checks
+    for task in ("ci:sync", "ci:checks", "ci:tests"):
+        assert f"devenv tasks run {task}" in workflow
+    assert workflow.index("ci:checks") < workflow.index("ci:tests")
+    assert "scripts/run_rust_tests.sh --locked" in workflow
+    assert "--junitxml=" in _task_body(source, "ci:tests")
+
+
+def test_ci_actions_are_immutable_and_untrusted_code_has_no_write_permission() -> None:
+    workflow = (REPO_ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    actions = re.findall(r"uses:\s+(\S+)", workflow)
+
+    assert actions
+    assert all(
+        re.fullmatch(r"[\w-]+/[\w-]+@[0-9a-f]{40}", action) for action in actions
+    )
+    assert "contents: read" in workflow
+    assert "persist-credentials: false" in workflow
+    assert "pull_request_target" not in workflow
+    assert "write-all" not in workflow
+    assert "continue-on-error" not in workflow
+    assert "timeout-minutes:" in workflow
+    assert "cancel-in-progress: true" in workflow

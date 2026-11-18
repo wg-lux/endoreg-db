@@ -311,8 +311,39 @@ in
       exec = "scripts/check_report_native_runtime.sh";
     };
     "agent:pre-commit" = {
-      description = "Run the full default pre-commit suite for agent preflight";
+      description = "Run the fast commit checks across tracked files; use ci:checks for full preflight";
       exec = ".devenv/state/venv/bin/prek run --all-files";
+    };
+    "ci:sync" = {
+      description = "Install exactly the committed Python dependencies without changing the lock";
+      exec = "${SYNC_CMD} --locked";
+    };
+    "ci:checks" = {
+      description = "Shared local and remote read-only quality preflight (no dependency sync)";
+      exec = ''
+        set -euo pipefail
+        uv lock --check --offline
+        .devenv/state/venv/bin/pyright
+        .devenv/state/venv/bin/ruff check endoreg_db tests
+        .devenv/state/venv/bin/ruff format --check endoreg_db tests
+        .devenv/state/venv/bin/python scripts/lint_structure.py
+        .devenv/state/venv/bin/python feature-tracking/tracker.py validate
+        .devenv/state/venv/bin/python scripts/check_dead_code.py
+        .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        .devenv/state/venv/bin/python scripts/check_lx_dtypes_contract_boundaries.py
+        .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+        .devenv/state/venv/bin/python scripts/check_state_mutation_owners.py
+        .devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository endoreg-db
+        .devenv/state/venv/bin/python scripts/check_route_matrix.py
+        .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        export DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test
+        .devenv/state/venv/bin/python manage.py check --deploy
+        .devenv/state/venv/bin/python manage.py makemigrations --check --dry-run
+      '';
+    };
+    "ci:tests" = {
+      description = "Run the CI Python suite in the prepared environment with bounded workers and JUnit results";
+      exec = ".devenv/state/venv/bin/pytest -q -n 2 --dist=loadscope --durations=30 --junitxml=test-results/pytest.xml";
     };
     "quality:dead-code" = {
       description = "Reject new, stale, or expired reviewed dead-code findings";

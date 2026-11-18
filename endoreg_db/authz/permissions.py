@@ -31,12 +31,11 @@ from collections.abc import Iterable
 from typing import TYPE_CHECKING, Protocol, cast
 
 from django.contrib.auth.models import AnonymousUser
-from django.utils.functional import cached_property
 from rest_framework.permissions import BasePermission
 from rest_framework.request import Request
 
 from endoreg_db.utils.permissions import is_debug_mode
-from endoreg_db.authz.policy import REQUIRED_ROLES, satisfies, get_needed_role
+from endoreg_db.authz.policy import satisfies, get_needed_role
 import logging
 
 if TYPE_CHECKING:
@@ -81,15 +80,7 @@ class PolicyPermission(BasePermission):
       - DEBUG: allow everything (keeps dev flow smooth).
       - PROD: require authentication AND the right role.
               Roles are read from request.user.groups (synced from Keycloak realm roles).
-
-    Why cached_property?
-      - REQUIRED_ROLES is a module-level dict; caching avoids re-reading it for every request.
-        (It remains live—if you edit the dict at runtime in tests, restart to refresh.)
     """
-
-    @cached_property
-    def _required_roles(self) -> dict[str, dict[str, str]]:
-        return REQUIRED_ROLES
 
     def has_permission(self, request: Request, view: APIView) -> bool:
         route = _normalized_route_name(request, view)

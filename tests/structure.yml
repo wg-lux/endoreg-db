@@ -11,7 +11,7 @@ boundaries:
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
 - file: scripts/test_devenv_quality_tasks.py
-  role: Explicit dependency synchronization and test interpreters; shell reload cannot recreate or resynchronize the active environment.
+  role: Dependency synchronization, fast commit scope and shared CI gates; shell reload cannot recreate or resynchronize the active environment.
 - file: management/commands/test_profile_segment_updates.py
   role: Explicit synthetic presentation coordinates at integer and fractional rates, terminal bounds and rollback of all generated profiling rows.
 - file: services/test_hub_video_provenance.py

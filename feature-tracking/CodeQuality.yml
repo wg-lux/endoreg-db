@@ -772,11 +772,38 @@ definition_of_done:
         fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
         Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
         Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
-    note: '2026-11-02: Reine Test-PDF-Erzeugung aus Produktion entfernt; unreferenzierte Loglöschfunktion
-      nach bestätigter Maintainerfreigabe entfernt. Medication-Beispiele und PdfMeta.create_from_file
-      bleiben nach Consumerprüfung als öffentliche ungeklärte Verträge erhalten.'
-    assessed_by: codex-storage-review-20261102
-    assessed_at: '2026-11-02T14:11:43.121049Z'
+    - kind: review
+      reference: '2026-11-18: Zwei private, nicht exportierte und in endoreg-db sowie /home/admin/dev/lx-annotate
+        nicht referenzierte Fassaden aus services/video_files/_ai.py entfernt: _predict_video_entry und
+        _extract_text_information. Aktive Modell-/Serviceaufrufe verwenden weiterhin ai.predict_video/_predict_video_pipeline
+        und extract_text_from_video_frames. Retained-AST-Vergleich unverändert; 81 Produktionszeilen entfernt,
+        Radon-Summe 215 auf 210. Ausschließlich zugehörige save_results-Ausnahme und ein Handler entfernt
+        (344 auf 343), 74 bestehende Typunterdrückungen unverändert; fremde Baseline-Evidenz erhalten.'
+    - kind: test
+      reference: '2026-11-18: Finaler fokussierter Pyright für beide geänderten Produktionsdateien und
+        test_model_links.py: 0 Fehler/0 Warnungen. Vorheriger Gesamt-Pyright: 0 Fehler/2 bestehende Warnungen.
+        Alle Tests in test_frame_materialization_boundary.py, test_video_metadata_ocr_boundary.py und
+        test_video_file_services_contract.py bestanden im gemeinsamen Lauf (48 bestanden, 5 neue ModelLinks-Fixturefehler
+        separat korrigiert). LX-Annotate: 21 Import-/API-Vertragstests bestanden; PYTHONPATH und Assertion
+        belegen /home/admin/endoreg-db/endoreg_db/__init__.py als Quelle. quality:dead-code und quality:boundaries
+        bestanden. Keine vollständige Python-/Rust-Suite oder Produktionsfreigabe.'
+    - kind: review
+      reference: '2026-11-18 Runde 2: Nur PolicyPermission._required_roles, die exklusiven cached_property/REQUIRED_ROLES-Imports
+        und überholte Cache-Dokumentation entfernt. Keine statischen, reflektiven, Subklassen- oder bekannten
+        lx-annotate-Verbraucher; DRF verwendet has_permission direkt. satisfies-Reexport für lx-annotate
+        erhalten. has_permission AST-identisch und Radon 7 unverändert; permissions.py 139 auf 130 LOC
+        und 69 auf 65 SLOC. Keine Baseline- oder Berechtigungsänderung. Verbleibende unsichere Kandidaten
+        nicht gelöscht.'
+    - kind: test
+      reference: '2026-11-18 Runde 2: Berechtigungs- und Patienten-API-Tests im zentralen 36-Test-Lauf
+        bestanden; Ausführungstrace belegt aktiven get_needed_role/satisfies-Pfad. LX-Annotate mit expliziten
+        Test-Settings und Assertion auf /home/admin/endoreg-db/endoreg_db/__init__.py: test_lx_annotate_import_smoke.py,
+        test_endoreg_db_service_contract.py, test_quarantine_unit.py zusammen 42 bestanden in 6.77 s.
+        Fokus-Pyright 0 Fehler/0 Warnungen; Dead-Code-/Boundary-Guards bestanden. Insgesamt 21 Produktionszeilen
+        in Runde 2 entfernt. Native Frame-Fallback-Duplikation wegen abweichender Fehler-/Verfügbarkeitsverträge
+        beibehalten; keine Rust-Migration, keine umfassende Python-/Rust-Suite oder Produktionsfreigabe.'
+    assessed_by: codex-opt-20261118-root
+    assessed_at: '2026-11-18T15:33:56.514593Z'
 - id: helper_class_boundaries
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
@@ -936,20 +963,39 @@ definition_of_done:
       reference: '2026-11-02 after Gender revert: pyright cohort files 0 errors; scripts/check_quality_boundaries.py
         clean (344 handlers, 73 suppressions); tests/services/test_sensitive_meta_ingestion.py 16 passed
         2 xfailed (strict).'
-    note: '2026-11-02 Handoff 1 (audit_followup_handoffs.md): SensitiveMeta dictionary ingestion (44 definitions)
-      moved unchanged to services/patient_identity/sensitive_meta_ingestion.py; all 44 AST-identical except
-      the cast target (_GenderManager protocol -> real GenderManager class), so no new protocol copy and
-      no model suppression (an earlier ClassVar annotation on Gender.objects added a pyright ignore and
-      was reverted after review; quality:boundaries back to 73 suppressions). sensitive_meta_logic.py
-      keeps hashing, save-time pseudo-entity and date logic (1368 -> ~600 lines), has no module-level
-      patient_identity import and lazily aliases the three public names; model facades delegate lazily
-      like verification. Recount: 41 barrel import occurrences in 30 files (unchanged), 7 model files
-      with module-level service imports (historical nine; unchanged by this cohort), 17 including lazy.
-      Finding, not fixed (behaviour change out of scope): the create path parses ISO dates of birth with
-      dateparser DATE_ORDER=DMY, swapping day/month when day<=12 and dropping the DOB and patient hash
-      when day>12; pinned by strict xfail. Overall criterion stays in_progress.'
-    assessed_by: claude-rust-state-sot-20261102
-    assessed_at: '2026-11-02T16:02:09.948458Z'
+    - kind: review
+      reference: '2026-11-18: ModelLinks.get_first_patient vereinigt sieben identische Schleifen über
+        itertools.chain; Laborwert-Sample-vor-Direktpatient, Abschnittsreihenfolge und frühzeitige Rückgabe
+        unverändert. Radon cc_visit: 18 auf 6; radon.raw.analyze: 366 auf 343 LOC, 254 auf 239 SLOC. Öffentliche
+        Klasse/Methode und ORM-Beziehungen bleiben erhalten; keine sinnvolle Rust-Verlagerung dieses Django-Objektgraphen.
+        Zusammen mit dem getrennten privaten AI-Fassadenabbau 104 Produktionszeilen entfernt.'
+    - kind: test
+      reference: '2026-11-18: tests/utils/test_model_links.py: 13 bestanden (no_db erzwingt keine Datenbankzugriffe),
+        fokussierter Pyright 0 Fehler/0 Warnungen. Neue Fixtures verwenden konkrete Modellkonstruktoren,
+        PatientFinding über PatientExamination; fünf anfängliche Fixturefehler korrigiert. Gezielter stdlib
+        trace.Trace nach Django-Initialisierung führt zehn vorhandene Testfälle aus: alle erfolgreich,
+        sämtliche Auswahl-/Rückgabepfade Zeilen 262-287 ausgeführt; Artefakt /tmp/codex-opt-20261118-model-links-trace/endoreg_db.utils.links.model_links.cover.
+        Zwei vorherige python -m trace pytest-Anläufe wegen Initialisierungsaufwand abgebrochen und nicht
+        als bestandene Tests gewertet. LX-Annotate-Quellkompatibilität: 21 Import-/API-Tests bestanden;
+        keine dortigen Dateien geändert. Gesamtfeature bleibt in_progress.'
+    - kind: review
+      reference: '2026-11-18 Runde 2: Doppelte choice_name-Suffixauswertung und exakte/von Großschreibung
+        unabhängige Label-Suche aus frame_annotation_bulk.py und frame_box_annotation.py zentralisiert.
+        Staticmethod-Kompatibilitätsnamen und self-Dispatch erhalten; getrennte Primärschlüsselprüfungen,
+        Kopie/In-place-Verhalten sowie Geometrie unverändert. validate-Radon 12 auf 9 und 17 auf 14; beide
+        Produktionsdateien zusammen 282 auf 270 LOC/SLOC 237 auf 225. serializers/structure.yml benennt
+        gemeinsamen Owner. Unabhängige lx-annotate-Aufrufer-/Importzyklusprüfung ohne Befund.'
+    - kind: test
+      reference: '2026-11-18 Runde 2: Nach Korrektur von vier neuen Test-Typfehlern fokussierter Pyright
+        0 Fehler/0 Warnungen; Gesamt-Pyright 0 Fehler/2 bestehende Warnungen. Zentraler pytest-Lauf test_policy_permission.py,
+        test_patient_api_rbac.py, test_frame_annotation_bulk_upsert.py und test_frame_box_annotation.py:
+        36 bestanden, 4 Subtests bestanden, 1 bekannte Plugin-Warnung, 86.03 s. Neue parametrisierte Fälle
+        prüfen beide Serializer einschließlich exakter Suchpriorität, 0/1/2 Datenbankabfragen, Suffixen,
+        Fehlereingaben und Mutation. stdlib trace nur während relevanter pytest_runtest_call-Aufrufe:
+        97 Anwendungszeilen, Artefakte /tmp/codex-opt-20261118-round2-trace. Beide Qualitätsguards und
+        67 Strukturmanifeste bestanden; keine globale Coverage-Aussage.'
+    assessed_by: codex-opt-20261118-root
+    assessed_at: '2026-11-18T15:33:37.528014Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert
@@ -1059,6 +1105,11 @@ definition_of_done:
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen
   acceptance:
+  - Standard-Pre-Commit prüft nur geänderte Python-Dateien mit dem gesperrten Ruff und betroffene Struktur-
+    oder Lockdateien; keine vollständige Typprüfung, Django-Initialisierung oder Tests.
+  - Lokale ci:checks und Remote-CI verwenden dieselben vollständigen Qualitätsprüfungen. CI synchronisiert
+    mit --locked, verwendet unveränderliche Action-Referenzen, begrenzte Laufzeit und Lesezugriff; Python-
+    und Rust-Tests bleiben verpflichtend und Testergebnisse werden auch bei Fehlern archiviert.
   - Boundary-Baselines werden nur nach überprüfter Signaturdifferenz einschließlich Umbenennungen und
     neuer Fehlergrenzen aktualisiert; eine Zählerreduktion allein ist keine Freigabe.
   - Basisdaten-Fixtures schreiben innerhalb der jeweiligen Testtransaktion; nachfolgende Frischdatenbanktests
@@ -1240,23 +1291,26 @@ definition_of_done:
         fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
         Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
         Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
-    note: 'Regression 2026-09-29: Basisdaten innerhalb der Testtransaktion, Migrationsteardown auf aktuelle
-      Migrationsblätter und vertragskonforme Job-/PDF-Testaufbauten. Gemeinsame Regression: 205 bestanden,
-      3 übersprungen. Aktivierte Report-Importfälle über Haupt-/Nachlauf bestanden; einmaliger SQLite-Schreibkonflikt
-      bleibt als sporadischer Befund dokumentiert. Vollständiger Pyright: 0 Fehler, 6 bestehende Warnungen;
-      sieben geänderte Testdateien: 0 Fehler/0 Warnungen, Ruff bestanden. Breite Fast-Lane wegen fremder
-      laufender lx-annotate-Suite nicht gestartet; keine vollständige Suite oder Produktionsfreigabe behauptet.
-
-      Rust-Lifecycle-Grenzen 2026-10-16: Beide Python-Adapter verweigern fehlende native Bindings und
-      inkompatible Vertragsversionen; native Fehler behalten ihre Ursache und ihre öffentliche Fehlerklasse.
-      Übergangsregeln bleiben unverändert in Rust. 15 zusätzliche parametrisierte Fälle; keine Produktionsänderung
-      oder Gesamtfreigabe.
-
-      2026-11-02: Baseline-Signaturdifferenzen gegen 854a8063 einschließlich historisch falscher Zähler,
-      Umbenennung und neuer Import-Checkpoint-Grenze geprüft; finaler Guard ist grün. Keine Baselinefreistellung
-      für ungeprüfte neue Handler.'
-    assessed_by: codex-storage-review-20261102
-    assessed_at: '2026-11-02T14:11:46.528326Z'
+    - kind: test
+      reference: '2026-11-18: Pyright vor pytest: 0 Fehler, 2 bestehende Warnungen. tests/scripts/test_devenv_quality_tasks.py
+        und tests/scripts/test_check_dead_code.py: 18 bestanden, 1 bestehende Plugin-Warnung. Actionlint
+        1.7.9 und prek validate-config bestanden; unveränderliche devenv-Referenz aus devenv.lock als
+        2.3.2 aufgelöst.'
+    - kind: command
+      reference: '2026-11-18: Standard-Pre-Commit ohne Django, Pyright oder Tests: einzelne Python-Datei
+        0,190 s; Struktur-/Lockdateien 2,022 s; alle versionierten Dateien 2,397 s, jeweils bestanden.
+        Vollständige Prüfungen sind als ci:checks lokal und in GitHub Actions identisch konfiguriert.
+        Python- und Rust-Gesamtläufe nicht zusätzlich zu fremden laufenden Suiten gestartet; Remote-Ausführung
+        der Änderungen und Branch-Protection unbestätigt (GitHub-Integration liefert HTTP 403 für Schutzregeln).'
+    - kind: command
+      reference: '2026-11-18: devenv tasks run ci:checks vollständig bestanden, Exit 0, 309 s. Enthält
+        Lock-Konsistenz, Pyright, Ruff, 67 Strukturmanifeste, 40 Feature-Definitionen, Dead-Code, überprüfte
+        Boundary-Deltas, Typ-/Modell-/Zustandsinventare, Dokumentation, Routen, Django-Startup und Migrationsdrift.
+        Bestehende Warnungen: 2 Pyright, 5 Deployment-Warnungen des Testprofils und nicht erreichbare
+        Testdatenbank bei Historienprüfung; keine Modelländerungen erkannt. tracker check code_quality
+        bleibt wegen bereits offener Gesamtkriterien nicht produktionsreif (18/25).'
+    assessed_by: codex-report-validation-20261118
+    assessed_at: '2026-11-18T15:10:30.285604Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam

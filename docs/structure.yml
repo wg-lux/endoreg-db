@@ -8,6 +8,8 @@ responsibilities:
 boundaries:
 - Feature scope and readiness evidence belong in feature-tracking YAML.
 files:
+- file: code_quality.md
+  role: Quality contracts and fast commit versus comprehensive CI command guidance.
 - file: patient_matching_threat_model.md
   role: Current linkage contract, complete key-compromise scenarios, storage alternatives and German registry safeguards in English.
 - file: patient_matching_2pc_assessment.md

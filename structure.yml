@@ -24,11 +24,13 @@ files:
 - file: pyrightconfig.json
   role: Strict type checking against installed locked dependencies without sibling source overrides.
 - file: .pre-commit-config.yaml
-  role: Local automated preflight hooks
+  role: Fast changed-file commit checks and explicitly invoked comprehensive hooks.
 - file: pytest.ini
   role: Pytest markers and runtime plugin
 - file: .github/workflows/ci.yml
-  role: Continuous integration checks
+  role: Pinned, bounded CI invoking shared local quality tasks and Python/native tests.
+- file: .github/dependabot.yml
+  role: Weekly reviewed updates for pinned GitHub Actions.
 submodules:
 - name: endoreg_db
   path: endoreg_db

@@ -26,6 +26,31 @@ class _FrameAnnotationBulkItemAttrs(TypedDict, total=False):
     model_meta_id: int | None
 
 
+def parse_frame_label_choice(choice_name: str) -> tuple[str, bool | None]:
+    normalized = choice_name.strip()
+    lowered = normalized.lower()
+    if lowered.endswith(": present"):
+        return normalized[: -len(": present")].strip(), True
+    if lowered.endswith(": absent"):
+        return normalized[: -len(": absent")].strip(), False
+    return normalized, None
+
+
+def resolve_frame_label_name(label_name: str) -> Label:
+    if not label_name:
+        raise serializers.ValidationError(
+            {"choice_name": "choice_name must include a non-empty label name."}
+        )
+    label = Label.objects.filter(name=label_name).only("id").first()
+    if label is None:
+        label = Label.objects.filter(name__iexact=label_name).only("id").first()
+    if label is None:
+        raise serializers.ValidationError(
+            {"choice_name": f"Unknown label name: {label_name}"}
+        )
+    return label
+
+
 class FrameAnnotationBulkItemSerializer(
     serializers.Serializer[FrameAnnotationBulkItemData]
 ):
@@ -45,15 +70,7 @@ class FrameAnnotationBulkItemSerializer(
     )
     model_meta_id = serializers.IntegerField(required=False, allow_null=True)
 
-    @staticmethod
-    def _parse_choice_name(choice_name: str) -> tuple[str, bool | None]:
-        normalized = choice_name.strip()
-        lowered = normalized.lower()
-        if lowered.endswith(": present"):
-            return normalized[: -len(": present")].strip(), True
-        if lowered.endswith(": absent"):
-            return normalized[: -len(": absent")].strip(), False
-        return normalized, None
+    _parse_choice_name = staticmethod(parse_frame_label_choice)
 
     def validate(
         self, attrs: _FrameAnnotationBulkItemAttrs
@@ -75,19 +92,7 @@ class FrameAnnotationBulkItemSerializer(
                 )
         else:
             label_name, inferred_value = self._parse_choice_name(choice_name)
-            if not label_name:
-                raise serializers.ValidationError(
-                    {"choice_name": "choice_name must include a non-empty label name."}
-                )
-
-            label = Label.objects.filter(name=label_name).only("id").first()
-            if label is None:
-                label = Label.objects.filter(name__iexact=label_name).only("id").first()
-            if label is None:
-                raise serializers.ValidationError(
-                    {"choice_name": f"Unknown label name: {label_name}"}
-                )
-
+            label = resolve_frame_label_name(label_name)
             label_pk = label.pk
             if not isinstance(label_pk, int):
                 raise serializers.ValidationError(

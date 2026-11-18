@@ -1,6 +1,12 @@
 from django.test import TestCase
 from django.contrib.auth.models import User
 from django.db import DatabaseError, IntegrityError, OperationalError
+from django.db import connection
+from django.test.utils import CaptureQueriesContext
+from collections.abc import Mapping
+from typing import cast
+import pytest
+from rest_framework.exceptions import ValidationError
 from rest_framework.test import APIRequestFactory, force_authenticate
 from unittest.mock import patch
 import json
@@ -14,6 +20,87 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.views.video.ai import FrameAnnotationBulkUpsertView
+from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
+    FrameAnnotationBulkItemSerializer,
+)
+from endoreg_db.serializers.label_video_segment.frame_box_annotation import (
+    FrameBoxAnnotationBulkItemSerializer,
+)
+
+
+@pytest.mark.parametrize(
+    "serializer_type",
+    [FrameAnnotationBulkItemSerializer, FrameBoxAnnotationBulkItemSerializer],
+)
+@pytest.mark.parametrize(
+    "choice,expected_value,error,query_count",
+    [
+        ("CHOICE", False, None, 1),
+        (" Choice: PrEsEnT ", True, None, 2),
+        ("CHOICE: AbSeNt", False, None, 1),
+        (": present", False, "choice_name", 0),
+        ("missing: present", False, "choice_name", 2),
+        (" ", False, "label_id", 0),
+    ],
+)
+def test_frame_label_choice_resolution_contract(
+    serializer_type: type[FrameAnnotationBulkItemSerializer]
+    | type[FrameBoxAnnotationBulkItemSerializer],
+    choice: str,
+    expected_value: bool,
+    error: str | None,
+    query_count: int,
+) -> None:
+    fallback = Label.objects.create(name="choice")
+    exact = Label.objects.create(name="CHOICE")
+    payload = dict(
+        frame_id=1,
+        choice_name=choice,
+        value=False,
+        information_source_name="annotation",
+        x=0,
+        y=0,
+        width=1,
+        height=1,
+        image_width=1,
+        image_height=1,
+    )
+    before = payload.copy()
+    serializer = serializer_type(data=payload)
+    queries = CaptureQueriesContext(connection)
+    try:
+        with queries:
+            serializer.is_valid(raise_exception=True)
+    except ValidationError as exc:
+        assert error is not None
+        assert error in cast(Mapping[str, object], exc.detail)
+    else:
+        assert error is None
+        assert serializer.validated_data["label_id"] == (
+            fallback.pk if query_count == 2 else exact.pk
+        )
+        assert serializer.validated_data["value"] is expected_value
+    assert len(queries) == query_count
+    assert payload == before
+
+
+def test_frame_label_choice_preserves_serializer_mutation_contracts() -> None:
+    label = Label.objects.create(name="choice")
+    regular_result = FrameAnnotationBulkItemSerializer().validate(
+        regular := {
+            "frame_id": 1,
+            "choice_name": "choice: absent",
+            "information_source_name": "annotation",
+        }
+    )
+    box: dict[str, object] = dict(
+        regular, x=0, y=0, width=1, height=1, image_width=1, image_height=1
+    )
+    box_result = FrameBoxAnnotationBulkItemSerializer().validate(box)
+    assert "label_id" not in regular and "value" not in regular
+    assert regular_result["label_id"] == label.pk and regular_result["value"] is False
+    assert box_result is box
+    assert box["label_id"] == label.pk and box["value"] is False
 
 
 class FrameAnnotationBulkUpsertViewTest(TestCase):

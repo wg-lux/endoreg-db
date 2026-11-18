@@ -11,7 +11,10 @@ else:
     _ModelSerializerMeta = object
 
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
-from endoreg_db.models.label.label import Label
+from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
+    parse_frame_label_choice,
+    resolve_frame_label_name,
+)
 
 
 class FrameBoxAnnotationSerializer(serializers.ModelSerializer[FrameBoxAnnotation]):
@@ -74,15 +77,7 @@ class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer[dict[str, obje
     )
     model_meta_id = serializers.IntegerField(required=False, allow_null=True)
 
-    @staticmethod
-    def _parse_choice_name(choice_name: str) -> tuple[str, bool | None]:
-        normalized = choice_name.strip()
-        lowered = normalized.lower()
-        if lowered.endswith(": present"):
-            return normalized[: -len(": present")].strip(), True
-        if lowered.endswith(": absent"):
-            return normalized[: -len(": absent")].strip(), False
-        return normalized, None
+    _parse_choice_name = staticmethod(parse_frame_label_choice)
 
     @staticmethod
     def _finite_float(attrs: dict[str, Any], field_name: str) -> float:
@@ -118,19 +113,7 @@ class FrameBoxAnnotationBulkItemSerializer(serializers.Serializer[dict[str, obje
 
         if label_id is None:
             label_name, inferred_value = self._parse_choice_name(choice_name)
-            if not label_name:
-                raise serializers.ValidationError(
-                    {"choice_name": "choice_name must include a non-empty label name."}
-                )
-
-            label = Label.objects.filter(name=label_name).only("id").first()
-            if label is None:
-                label = Label.objects.filter(name__iexact=label_name).only("id").first()
-            if label is None:
-                raise serializers.ValidationError(
-                    {"choice_name": f"Unknown label name: {label_name}"}
-                )
-
+            label = resolve_frame_label_name(label_name)
             attrs["label_id"] = cast(int, label.pk)
             if inferred_value is not None:
                 attrs["value"] = inferred_value

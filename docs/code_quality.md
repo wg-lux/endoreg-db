@@ -82,6 +82,30 @@ are desirable. Update it only as part of a named cohort:
 
 ## Reproducible quality run
 
+Normal commits run the locked environment's Ruff on changed Python files only.
+Structure changes trigger the structure validator; dependency changes trigger
+`uv lock --check --offline`, which never updates the lock. No default commit hook
+starts Django, Pyright, Rust tests or pytest. The target for a warm normal commit
+is under ten seconds; first-time environment setup is separate. Run
+`devenv tasks run agent:sync` explicitly when dependencies change.
+
+Before pushing, run `devenv tasks run ci:checks` for the same complete quality,
+type, ownership, startup and migration checks used by GitHub Actions. This does
+not synchronize dependencies or modify source. `devenv tasks run ci:sync` prepares
+the exact committed dependency set with `--locked`; CI always runs it first.
+`devenv tasks run ci:tests` runs the Python suite with two workers and writes
+`test-results/pytest.xml`. Run `scripts/run_rust_tests.sh --locked` inside devenv
+for native tests. Check for existing pytest processes before launching a suite.
+These commands are deliberately outside the commit path. Individual comprehensive
+hooks remain available through `prek run --stage manual <hook-id> --all-files`.
+
+CI uses read-only permissions, no persisted checkout credential, immutable action
+commits, the devenv revision in `devenv.lock`, cancellation of superseded runs and
+a 90-minute job limit. Test result artifacts are retained for 14 days. Dependency
+update pull requests require review; baseline expiry checks remain active.
+Repository administrators must require the `checks` status for protected branches;
+workflow YAML alone cannot enforce branch protection.
+
 Current metrics are derived from existing guards; historical test results in
 the feature tracker are not current target counts. After a reviewed architecture
 change, only the corresponding YAML inventories are updated:
@@ -101,8 +125,8 @@ Additional report video/frame containers do not constitute a second contract.
 
 Focused verification of these boundaries follows below. Install missing
 development tools first with `devenv tasks run agent:sync`. These commands use
-the prepared environment directly; an additional `devenv shell` can trigger
-another environment synchronization and does not belong in these test calls.
+the prepared environment directly. Shell entry does not synchronize dependencies;
+only an explicitly requested sync task may do so.
 
 ```bash
 .devenv/state/venv/bin/pyright

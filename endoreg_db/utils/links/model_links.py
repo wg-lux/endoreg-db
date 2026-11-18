@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from itertools import chain
 from typing import TYPE_CHECKING, Protocol, cast
 from collections.abc import Sequence
 
@@ -270,39 +271,15 @@ class ModelLinks(BaseModel):
             if direct_patient is not None:
                 return direct_patient
 
-        for patient_like in self.patient_lab_samples:
-            direct_patient = getattr(patient_like, "patient", None)
-            if direct_patient is not None:
-                return direct_patient
-
-        for patient_like in self.patient_examinations:
-            direct_patient = getattr(patient_like, "patient", None)
-            if direct_patient is not None:
-                return direct_patient
-
-        for patient_like in self.patient_diseases:
-            direct_patient = getattr(patient_like, "patient", None)
-            if direct_patient is not None:
-                return direct_patient
-
-        for patient_like in self.patient_events:
-            direct_patient = getattr(patient_like, "patient", None)
-            if direct_patient is not None:
-                return direct_patient
-
-        for patient_like in self.patient_findings:
-            direct_patient = getattr(patient_like, "patient", None)
-            if direct_patient is not None:
-                return direct_patient
-
-        # Check PatientMedication
-        for patient_like in self.patient_medications:
-            direct_patient = getattr(patient_like, "patient", None)
-            if direct_patient is not None:
-                return direct_patient
-
-        # Check PatientMedicationSchedule
-        for patient_like in self.patient_medication_schedules:
+        for patient_like in chain(
+            self.patient_lab_samples,
+            self.patient_examinations,
+            self.patient_diseases,
+            self.patient_events,
+            self.patient_findings,
+            self.patient_medications,
+            self.patient_medication_schedules,
+        ):
             direct_patient = getattr(patient_like, "patient", None)
             if direct_patient is not None:
                 return direct_patient

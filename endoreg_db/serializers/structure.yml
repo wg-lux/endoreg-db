@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - No service workflow ownership or duplicate clinical payload schema; keep public fields snake_case.
 files:
+- file: label_video_segment/frame_annotation_bulk.py
+  role: Bulk frame-label validation and shared label-choice parsing and exact-name-first lookup.
+- file: label_video_segment/frame_box_annotation.py
+  role: Frame-box validation using shared label-choice resolution while retaining geometry validation.
 - file: misc/file_overview.py
   role: File overview representation for media and report metadata.
 - file: label_video_segment/label_video_segment.py
