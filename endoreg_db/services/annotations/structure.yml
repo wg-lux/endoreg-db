@@ -19,6 +19,8 @@ entrypoints:
   file: segments_bulk_mutation.py
   purpose: Validate and apply a batch of clinical segment mutations.
 files:
+- file: label_presentation.py
+  role: Bulk label catalog resolution and optional owner-scoped study label whitelist enforcement.
 - file: comparisons.py
   role: Read-only named practitioner overlap and finalized report snapshot comparisons using central generation-bound timeline durations.
 - file: __init__.py

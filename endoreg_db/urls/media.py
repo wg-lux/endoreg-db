@@ -97,6 +97,7 @@ from endoreg_db.views.video.ai import (
     prediction_model_list,
     rerun_prediction_segments,
 )
+from endoreg_db.views.video.ai.label import label_catalog
 from endoreg_db.views.video.masks import VideoMasksView
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
@@ -330,6 +331,7 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         name="video-annotated-export-job-archive",
     ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
+    path("media/videos/labels/catalog/", label_catalog, name="video-label-catalog"),
     path(
         "media/videos/label-sets/list/",
         label_set_list,

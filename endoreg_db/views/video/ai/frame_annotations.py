@@ -54,6 +54,10 @@ from endoreg_db.services.annotations.annotation_access import (
     resolve_trusted_annotation_principal,
     validate_interactive_annotation_source,
 )
+from endoreg_db.services.annotations.label_presentation import (
+    parse_study_cohort_id,
+    require_study_labels,
+)
 from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
     FrameAnnotationBulkItemSerializer,
 )
@@ -596,6 +600,7 @@ def _build_bulk_upsert_response(
     requested_video_id: int | None,
     request: Request,
     ai_dataset_id_raw: object = None,
+    study_cohort_id: int | None = None,
 ) -> Response:
     try:
         ai_dataset, error = _resolve_bulk_ai_dataset(ai_dataset_id_raw)
@@ -603,6 +608,11 @@ def _build_bulk_upsert_response(
         validated_items, error = _validate_bulk_annotation_items(annotation_items)
         _raise_bulk_request_error(error)
         assert validated_items is not None
+        require_study_labels(
+            request,
+            study_cohort_id,
+            label_ids=[item["label_id"] for item in validated_items],
+        )
         references, error = _resolve_bulk_annotation_references(
             validated_items,
             requested_video_id,
@@ -967,6 +977,11 @@ def _parse_frame_task_request(request: Request) -> _FrameTaskRequestOptions:
     )
     _raise_task_request_error(error)
     _validate_filtered_task_label(task_mode, filter_label)
+    require_study_labels(
+        request,
+        parse_study_cohort_id(request.query_params.get("study_cohort_id")),
+        label_names=[str(target_label.name)] if target_label is not None else [],
+    )
     information_source_name = _resolve_task_information_source(request)
     annotator = resolve_request_annotator(
         request,
@@ -1204,6 +1219,7 @@ class FrameAnnotationBulkUpsertView(APIView):
             requested_video_id=payload.video_id,
             request=request,
             ai_dataset_id_raw=payload.ai_dataset_id,
+            study_cohort_id=payload.study_cohort_id,
         )
 
 
@@ -1263,6 +1279,7 @@ class FrameAnnotationSkipView(APIView):
             )
 
         frame_id = payload.frame_id
+        require_study_labels(request, payload.study_cohort_id)
         video_id = payload.video_id
 
         try:

@@ -46,6 +46,10 @@ from endoreg_db.services.video_files.temporal_inference import (
     extract_temporal_options,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.services.annotations.label_presentation import (
+    build_label_catalog,
+    parse_study_cohort_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +239,17 @@ def _resolve_prediction_model_meta(
             ),
         )
     return cast(ModelMeta, ai_model.get_latest_version())
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
+def label_catalog(request: Request) -> Response:
+    """Reload current label presentation for an optional owned study cohort."""
+    cohort_id = parse_study_cohort_id(request.query_params.get("study_cohort_id"))
+    return Response(
+        build_label_catalog(request, cohort_id).model_dump(mode="json"),
+        headers={"Cache-Control": "private, no-store"},
+    )
 
 
 @api_view(["GET"])

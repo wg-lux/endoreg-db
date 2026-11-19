@@ -40,6 +40,35 @@ source_documents:
   note: Dataset annotation attachment is a separate authorized operation; creating a definition must not
     implicitly attach all annotations.
 definition_of_done:
+- id: study_label_presentation
+  category: functionality
+  title: Optional study label presentation and locked label whitelists
+  acceptance:
+  - Typed study YAML configures label display names, colors, ordering and expertise presentation groups
+    without changing canonical identities.
+  - An explicitly selected owned study cohort resolves its current configuration in bulk; unscoped annotation
+    remains available.
+  - Locked study contexts reject out-of-scope frame assignments and segment creation, relabeling and validation
+    on the server; existing annotations remain readable and removable.
+  - Catalog reload, ownership, invalid references, whitelist rejection and unscoped compatibility have
+    focused regression coverage.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright and focused study label catalog and annotation endpoint regressions with
+      the coordinated lx-dtypes source.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/views/video/test_study_label_presentation.py
+    note: 'Coordinated lx-dtypes source verification: 49 focused backend tests and 2 subtests passed,
+      including real allowed label-ID and choice-name writes; full source Pyright 0 errors and 2 existing
+      warnings; changed-file Pyright 0 errors and 0 warnings. Installed lx-dtypes lacks the new contract;
+      coordinated package delivery and browser acceptance remain outstanding.'
+    assessed_by: codex-label-backend-context-20261119
+    assessed_at: '2026-11-19T11:08:03.174995Z'
 - id: configured_dataset_plots
   category: functionality
   title: YAML-configured scatter and forest plots for study and annotation labels

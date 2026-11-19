@@ -52,6 +52,10 @@ from endoreg_db.services.annotations.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
 )
+from endoreg_db.services.annotations.label_presentation import (
+    parse_study_cohort_id,
+    require_study_labels,
+)
 from endoreg_db.services.annotations.segment_frame_annotations import (
     delete_frame_annotations_for_segment as service_delete_frame_annotations_for_segment,
     sync_frame_annotations_for_segment as service_sync_frame_annotations_for_segment,
@@ -60,6 +64,7 @@ from endoreg_db.services.annotations.segment_frame_annotations import (
 from endoreg_db.services.annotations.segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
+    validate_bulk_segment_mutation_payload,
 )
 from endoreg_db.services.annotations.segment_validation_workflow import (
     mark_segment_annotations_complete_without_cleanup,
@@ -773,6 +778,17 @@ def video_segments_collection(request: Request) -> Response:
             return ai_dataset_error
         data = crud_payload.serializer_payload()
 
+        require_study_labels(
+            request,
+            crud_payload.study_cohort_id,
+            label_ids=[
+                value
+                for value in (crud_payload.label_id, crud_payload.label)
+                if value is not None
+            ],
+            label_names=[crud_payload.label_name] if crud_payload.label_name else [],
+        )
+
         target_video_id = crud_payload.video_id or crud_payload.video_file
         if target_video_id is None:
             return Response(
@@ -933,6 +949,17 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
             return ai_dataset_error
         data = crud_payload.serializer_payload(video_id=pk)
 
+        require_study_labels(
+            request,
+            crud_payload.study_cohort_id,
+            label_ids=[
+                value
+                for value in (crud_payload.label_id, crud_payload.label)
+                if value is not None
+            ],
+            label_names=[crud_payload.label_name] if crud_payload.label_name else [],
+        )
+
         with video_segment_mutation(video_id=int(video.pk)):
             serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
@@ -1005,6 +1032,50 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
     """
     video = get_object_or_404(VideoFile, id=pk)
     try:
+        raw_payload = _request_payload(request)
+        cohort_id = parse_study_cohort_id(raw_payload.get("study_cohort_id"))
+        if cohort_id is not None:
+            # Validate labels before the bulk service begins any writes.
+            mutation = validate_bulk_segment_mutation_payload(raw_payload)
+            label_ids: list[int] = []
+            label_names: list[str] = []
+            segment_ids: list[int] = []
+            for items, updating in (
+                (mutation.creates, False),
+                (mutation.updates, True),
+            ):
+                for raw_item in items:
+                    if not isinstance(raw_item, Mapping):
+                        return Response(
+                            {"error": "Segment items must be objects."}, status=400
+                        )
+                    item = cast(Mapping[str, Any], raw_item)
+                    item_payload = validate_segment_crud_payload(item)
+                    label_ids.extend(
+                        value
+                        for value in (item_payload.label_id, item_payload.label)
+                        if value is not None
+                    )
+                    if item_payload.label_name:
+                        label_names.append(item_payload.label_name)
+                    if updating and not (
+                        item_payload.label_id
+                        or item_payload.label
+                        or item_payload.label_name
+                    ):
+                        segment_ids.extend(
+                            validate_segment_bulk_validation_payload(
+                                {"segment_ids": [item.get("id")]}
+                            ).segment_ids
+                        )
+            require_study_labels(
+                request,
+                cohort_id,
+                label_ids=label_ids,
+                label_names=label_names,
+                segment_ids=segment_ids,
+                video_id=pk,
+            )
         response_data = bulk_mutate_video_segments(
             video=video,
             payload=_request_payload(request),
@@ -1018,6 +1089,8 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
             exc.response_data,
             status=exc.status_code,
         )
+    except PydanticValidationError as exc:
+        return _pydantic_error_response(exc)
 
     return Response(
         response_data,
@@ -1059,6 +1132,13 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
             message="Invalid segment import payload",
         )
 
+    require_study_labels(
+        request,
+        import_payload.study_cohort_id,
+        label_names=[
+            item.label_name or item.label or "" for item in import_payload.segments
+        ],
+    )
     correction_source, _ = InformationSource.objects.get_or_create(
         name=PREDICTION_CORRECTION_SOURCE_NAME,
         defaults={
@@ -1177,6 +1257,22 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
             return ai_dataset_error
         data = crud_payload.serializer_payload()
 
+        require_study_labels(
+            request,
+            crud_payload.study_cohort_id,
+            label_ids=[
+                value
+                for value in (crud_payload.label_id, crud_payload.label)
+                if value is not None
+            ],
+            label_names=[crud_payload.label_name] if crud_payload.label_name else [],
+            segment_ids=[segment_id]
+            if not (
+                crud_payload.label_id or crud_payload.label or crud_payload.label_name
+            )
+            else [],
+            video_id=pk,
+        )
         with video_segment_mutation(video_id=int(video.pk)):
             old_snapshot = _segment_snapshot(segment)
             serializer = LabelVideoSegmentSerializer(segment, data=data, partial=True)
@@ -1287,6 +1383,12 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
     )
 
     # for operation log table
+    require_study_labels(
+        request,
+        parse_study_cohort_id(_request_payload(request).get("study_cohort_id")),
+        segment_ids=[segment_id],
+        video_id=pk,
+    )
     status_before = (
         STATUS_VALIDATED
         if (segment.state and segment.state.is_validated)
@@ -1907,6 +2009,12 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
     if payload_error is not None:
         return payload_error
     assert payload is not None
+    require_study_labels(
+        request,
+        payload.study_cohort_id,
+        segment_ids=payload.segment_ids,
+        video_id=pk,
+    )
     return _execute_bulk_validation(
         request=request,
         video=video,
@@ -2014,6 +2122,9 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
             return _pydantic_error_response(exc)
 
         # Mark all segments as validated
+        cohort_id = parse_study_cohort_id(
+            _request_payload(request).get("study_cohort_id")
+        )
         label_name = payload.label_name
         segments_query = LabelVideoSegment.objects.filter(
             video_file=video
@@ -2024,6 +2135,12 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
 
         segments = segments_query.all()
 
+        if cohort_id is not None:
+            require_study_labels(
+                request,
+                cohort_id,
+                label_names=segments.values_list("label__name", flat=True),
+            )
         if not segments.exists():
             return Response(
                 {

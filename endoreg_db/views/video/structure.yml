@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - Renew operation leases; preserve presentation timestamp identity and reject unsafe raw media export.
 files:
+- file: ai/label.py
+  role: Label and label-set APIs plus reloadable optional study presentation catalog.
+- file: ai/frame_annotations.py
+  role: Frame task and submission adapters enforcing optional study label whitelists.
 - file: video_metadata.py
   role: Typed video statistics using merged outside-frame intervals shared with blackening.
 - file: provenance_recovery.py
