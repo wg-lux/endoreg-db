@@ -230,3 +230,67 @@ def test_explicit_selection_can_name_every_supported_reference_kind() -> None:
     assert len(selected.payload.records) == 826
     import_reference_catalog(selected)
     assert ReferenceCatalogImport.objects.get().projection == selected.projection
+
+
+def _with_record_field(
+    source: ReferenceCatalogSnapshot,
+    kind: ReferenceKind,
+    name: str,
+    field: str,
+    value: object,
+) -> ReferenceCatalogSnapshot:
+    records = [
+        record.model_dump(mode="json", by_alias=True)
+        for record in source.payload.records
+    ]
+    target = next(
+        record
+        for record in records
+        if record["record_type"] == kind.value and record["name"] == name
+    )
+    target[field] = value
+    payload = ReferenceCatalogPayload.model_validate({"records": records})
+    return ReferenceCatalogSnapshot(
+        identity=source.identity,
+        payload=payload,
+        projection=source.projection,
+        snapshot_id=ReferenceCatalogSnapshot.content_digest(
+            source.identity, payload, source.projection
+        ),
+    )
+
+
+def test_catalog_entry_name_de_is_imported_and_exported_when_contract_has_it() -> None:
+    # Risk is the only entry contract that already carries name_de.
+    source = _with_record_field(
+        select_catalog(snapshot(), {ReferenceKind.RISK}),
+        ReferenceKind.RISK,
+        "bleeding_high",
+        "name_de",
+        "Hohes Blutungsrisiko",
+    )
+    import_reference_catalog(source)
+    risk_model = CATALOG_MODELS[ReferenceKind.RISK]
+    assert (
+        risk_model._base_manager.get(name="bleeding_high").name_de  # pyright: ignore[reportAttributeAccessIssue,reportUnknownMemberType]
+        == "Hohes Blutungsrisiko"
+    )
+    exported = canonical(export_reference_catalog())
+    assert exported[(ReferenceKind.RISK, "bleeding_high", None)]["name_de"] == (
+        "Hohes Blutungsrisiko"
+    )
+
+
+def test_catalog_entries_without_name_de_import_null_and_export_unchanged() -> None:
+    # Current lx_dtypes Label entries carry no name_de; the column stays NULL.
+    source = select_catalog(snapshot(), {ReferenceKind.LABEL})
+    import_reference_catalog(source)
+    label_model = CATALOG_MODELS[ReferenceKind.LABEL]
+    rows = list(label_model._base_manager.values_list("name_de", flat=True))
+    assert rows and all(value is None for value in rows)
+    exported = canonical(export_reference_catalog())
+    labels = [
+        record for key, record in exported.items() if key[0] == ReferenceKind.LABEL
+    ]
+    assert labels and all("name_de" not in record for record in labels)
+    assert canonical(export_reference_catalog()) == canonical(source.payload)

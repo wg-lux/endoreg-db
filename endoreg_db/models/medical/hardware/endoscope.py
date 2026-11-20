@@ -13,6 +13,10 @@ class Endoscope(models.Model):
     objects = EndoscopeManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     sn: models.CharField[Any, Any] = models.CharField(max_length=255)
     center: models.ForeignKey[Any] = models.ForeignKey(
         "Center",
@@ -59,6 +63,10 @@ class EndoscopeType(models.Model):
     objects = EndoscopeTypeManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     if TYPE_CHECKING:
         endoscopes: models.QuerySet["Endoscope"]

@@ -57,6 +57,10 @@ submodules:
   path: frames
   manifest: frames/structure.yml
   summary: Processed training-frame materialization, retention and segment reconciliation.
+- name: electrical
+  path: electrical
+  manifest: electrical/structure.yml
+  summary: HF electrosurgical measurement import and PTS-based video frame alignment.
 - name: hub
   path: hub
   manifest: hub/structure.yml

@@ -28,6 +28,10 @@ class VideoSegmentationLabel(models.Model):
     objects = VideoSegmentationLabelManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     color: models.CharField[Any, Any] = models.CharField(
         max_length=255, blank=True, null=True

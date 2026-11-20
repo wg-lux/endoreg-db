@@ -9,18 +9,25 @@ from pathlib import Path
 import yaml
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.db import DatabaseError
-from lx_dtypes.models.contracts.deployment_setup import DeploymentSetup
+from lx_dtypes.models.contracts.deployment_setup import (
+    DeploymentLock,
+    DeploymentSetup,
+    DeploymentSetupV1,
+)
 from lx_dtypes.terminology.terminology_loader import get_terminology_service
 from lx_dtypes.terminology.terminology_service import TerminologyError
 from lx_dtypes.utils.deployment_setup import (
-    parse_deployment_lock,
-    parse_deployment_setup,
+    parse_any_deployment_lock,
+    parse_any_deployment_setup,
 )
 from lx_dtypes.utils.study_setup_yaml import MAX_SETUP_BYTES
 
 from endoreg_db.services.runtime.deployment_setup import (
+    V1_SETUP_MESSAGE,
     DeploymentActivationError,
+    DeploymentSetupVersionError,
     apply_deployment,
+    migrate_setup_to_v2,
     plan_deployment,
     validate_deployment,
 )
@@ -34,6 +41,25 @@ def _path(options: dict[str, object], name: str) -> Path:
     if not isinstance(value, str) or not value:
         raise ValueError(f"{name} requires a filesystem path")
     return Path(value).expanduser().resolve()
+
+
+def _v2_setup(raw: str) -> DeploymentSetup:
+    """v1 documents are only accepted by the explicit migrate action."""
+    setup = parse_any_deployment_setup(raw)
+    if isinstance(setup, DeploymentSetupV1):
+        raise DeploymentSetupVersionError(V1_SETUP_MESSAGE)
+    return setup
+
+
+def _v2_lock(raw: str) -> DeploymentLock:
+    lock = parse_any_deployment_lock(raw)
+    if not isinstance(lock, DeploymentLock):
+        raise DeploymentSetupVersionError(
+            "Die Lock-Datei verwendet schema_version 1.0; bitte die migrierte "
+            "Konfiguration erneut planen. / The lock file uses schema_version "
+            "1.0; plan the migrated setup again."
+        )
+    return lock
 
 
 def _read(path: Path) -> str:
@@ -55,6 +81,9 @@ class Command(BaseCommand):
         schema = actions.add_parser("schema")
         schema.add_argument("--output")
         actions.add_parser("provision")
+        migrate = actions.add_parser("migrate")
+        migrate.add_argument("file")
+        migrate.add_argument("--output", required=True)
         for action in ("validate", "plan", "apply"):
             command = actions.add_parser(action)
             command.add_argument("--file", required=True)
@@ -104,9 +133,31 @@ class Command(BaseCommand):
                 )
                 return
             source = _path(options, "file")
-            setup = parse_deployment_setup(_read(source))
+            if action == "migrate":
+                original = parse_any_deployment_setup(_read(source))
+                if not isinstance(original, DeploymentSetupV1):
+                    raise ValueError(
+                        "Die Konfiguration ist bereits schema_version 2.0. / "
+                        "The setup already uses schema_version 2.0."
+                    )
+                if _path(options, "output") == source:
+                    raise ValueError(
+                        "Die Ausgabe muss sich von der Eingabe unterscheiden. / "
+                        "output must differ from the input file"
+                    )
+                migrated = migrate_setup_to_v2(original, service)
+                self._emit(
+                    yaml.safe_dump(
+                        migrated.model_dump(mode="json"),
+                        sort_keys=False,
+                        allow_unicode=True,
+                    ),
+                    options,
+                )
+                return
+            setup = _v2_setup(_read(source))
             if action == "apply":
-                expected = parse_deployment_lock(_read(_path(options, "lock_file")))
+                expected = _v2_lock(_read(_path(options, "lock_file")))
                 result = apply_deployment(setup, expected, service)
                 payload = {"applied": True, "plan": result.model_dump(mode="json")}
             else:

@@ -49,6 +49,22 @@ publication row lock until commit. It releases only its own lease; failures roll
 back its creation. Existing playback leases are neither renewed nor removed.
 Exclusive writers and pending storage-cleanup authorization still block recovery.
 
+For a legacy video whose saved frame and annotation ordinals are independently
+confirmed to belong to its current processed generation, an operator may preview
+bounded recovery with `backfill_video_timelines --video-id ID
+--confirm-processed-ordinals --operator NAME`. Repeat `--video-id` for each reviewed
+video; add `--apply` only after reviewing the preview. This opt-in path verifies
+the processed content hash, decodes its presentation timestamps, requires the
+stored frame count to match, and checks every existing frame coordinate and saved
+segment boundary. It adds absent frame ordinals and fills null coordinates without
+deleting or renumbering frames or changing annotations. Preview rolls back its
+temporary database lease and publishes no timeline. Apply records captured current
+generation evidence and an operator audit event; it does not invent prior history,
+original recording ancestry, or provenance approval. The ordinary migration and
+automatic backfill behavior remains unchanged and rejects ambiguous annotation
+reconciliation. Missing media, mismatched counts, conflicting coordinates and
+out-of-range annotations require separate investigation, not frame-rate estimates.
+
 Single and bulk segment validation clamp a submitted end beyond the canonical
 terminal boundary to the last persisted frame presentation timestamp. Valid ends,
 including the terminal exclusive boundary, remain unchanged. Starts are never

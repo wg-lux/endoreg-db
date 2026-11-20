@@ -58,6 +58,10 @@ class InformationSource(models.Model):
     objects: ClassVar[models.Manager["InformationSource"]] = InformationSourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     name: models.CharField[Any, Any] = models.CharField(max_length=100)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     url: models.URLField[Any, Any] = models.URLField(blank=True, null=True)
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
@@ -149,6 +153,10 @@ class InformationSourceType(models.Model):
     objects = InformationSourceTypeManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     information_sources: models.ManyToManyField[

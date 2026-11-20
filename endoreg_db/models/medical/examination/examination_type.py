@@ -31,6 +31,10 @@ class ExaminationType(models.Model):
 
     objects = ExaminationTypeManager()
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     def __str__(self) -> str:
         """

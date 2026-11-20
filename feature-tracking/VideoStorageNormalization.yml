@@ -2251,6 +2251,11 @@ definition_of_done:
   category: data_integrity
   title: Every frame decoder exposes authoritative generation-bound presentation timestamps
   acceptance:
+  - Explicit operator-confirmed processed-ordinal recovery is scoped to named videos and previews without
+    persistent writes. It verifies processed content identity, decoded frame count, existing coordinates
+    and every saved segment boundary; only absent ordinals and null coordinates may be filled. Existing
+    frame and annotation primary keys remain unchanged, failures roll back, and an identified operator
+    and captured generation proof are audited without fabricating historical evidence.
   - Clinical coordinate resolution automatically backfills absent frame timestamps from the active canonical
     media using decoded presentation timestamps. Identity verification belongs to import; timestamp-only
     recovery reuses its identity without rehashing media or requiring the legacy frame count to match.
@@ -2408,8 +2413,22 @@ definition_of_done:
         requested timestamp history is read without triggering unrelated processed recovery; absent history
         still uses shared reconciliation. Scoped Pyright, Ruff, formatting, manifests and tracker validation
         passed.'
-    assessed_by: codex-timeline-20261117
-    assessed_at: '2026-11-17T09:07:29.735630Z'
+    - kind: command
+      reference: '2026-11-20: Explicit processed-ordinal recovery: scoped Pyright 0 errors/0 warnings;
+        devenv shell focused timestamp-backfill and command suite 68 passed (one existing pytest rewrite
+        warning); Ruff and structure validation passed. Dry-run rollback, wrong hash, count/range/coordinate
+        rejection, annotation identity preservation and replay verified locally; no production acceptance
+        claimed.'
+    - kind: command
+      reference: '2026-11-20 user-authorized takeover: reviewed operator-confirmed processed-ordinal recovery
+        and routed segments_without_frame_rows through the same strict recovery gate only with explicit
+        confirmation. Ordinary recovery remains blocked. Extended existing command regression parameterization
+        for zero retained frames; no tests run per user instruction. Scoped Pyright against built lx-dtypes
+        0.7.1 wheel: 0 errors, 0 warnings; Ruff check and format check passed for five scoped Python files;
+        68 structure manifests and git diff --check passed. Runtime behavior of the new branch remains
+        unverified; no deployment or production approval.'
+    assessed_by: codex-video-takeover-20261120
+    assessed_at: '2026-11-20T14:14:01.814608Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request

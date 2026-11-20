@@ -364,10 +364,31 @@ class SegmentFrameControlsSchema(Schema):
     step_forward_5_frame_number: int
 
 
+class SegmentAttachedFindingDisplayData(SegmentAttachedFindingData):
+    """Additive German display name; ``finding_name`` stays the identifier."""
+
+    finding_name_de: str | None
+
+
+class ReportExportFrameDetailDisplayData(ReportExportFrameDetailData):
+    """Additive German display names; ``*_name`` fields stay identifiers."""
+
+    label_name_de: str | None
+    finding_name_de: str | None
+
+
+class SegmentFrameSelectorItemDisplayData(SegmentFrameSelectorItemData):
+    """Additive German label name; ``label_name`` stays the identifier."""
+
+    label_name_de: str | None
+
+
 class SegmentAttachedFindingSchema(Schema):
     patient_finding_id: int
     finding_id: int | None
     finding_name: str | None
+    # German name from the report's pinned terminology; None when unresolved.
+    finding_name_de: str | None = None
 
 
 class SegmentSelectionMetaSchema(Schema):
@@ -380,6 +401,8 @@ class SegmentFrameSelectorItemSchema(Schema):
     video_id: int
     label_id: int | None
     label_name: str | None
+    # German name from Label.name_de; None when the catalogue carries none.
+    label_name_de: str | None = None
     start_frame_number: int
     end_frame_number: int
     segment_duration_seconds: float | None
@@ -410,7 +433,9 @@ class ReportExportFrameDetailSchema(Schema):
     frame_id: int
     frame_number: int
     label_name: str | None
+    label_name_de: str | None = None
     finding_name: str | None
+    finding_name_de: str | None = None
     stream_url: str
     caption: str
 
@@ -433,6 +458,9 @@ __all__ = [
     "SegmentFramePreviewSchema",
     "SegmentFrameControlsSchema",
     "SegmentAttachedFindingSchema",
+    "SegmentAttachedFindingDisplayData",
+    "ReportExportFrameDetailDisplayData",
+    "SegmentFrameSelectorItemDisplayData",
     "SegmentSelectionMetaSchema",
     "SegmentFrameSelectorItemSchema",
     "SegmentFrameSelectorResponseSchema",

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 
@@ -26,6 +27,7 @@ from endoreg_db.services.video_storage.canonical_timelines import (
 from endoreg_db.services.video_storage.probes import probe_video_artifact
 from endoreg_db.services.video_storage.processed_timelines import frame_boundaries
 from endoreg_db.utils.storage import ensure_local_file
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 if TYPE_CHECKING:
@@ -67,6 +69,8 @@ def _capture_generation(
     kind: VideoArtifactKind,
     payload: VideoFileMetaPayload,
     history: list[CanonicalTimelineHistoryEntry],
+    *,
+    verify_content: bool = False,
 ) -> tuple[VideoArtifactProbe, CanonicalFrameTimeline]:
     field = video.raw_file if kind == VideoArtifactKind.RAW else video.processed_file
     digest = (
@@ -80,6 +84,10 @@ def _capture_generation(
         )
     try:
         with ensure_local_file(field) as path:
+            if verify_content and get_file_hash(path) != digest:
+                raise VideoTimelineMappingError(
+                    "Processed ordinal recovery requires verified processed media"
+                )
             probe = probe_video_artifact(path)
             captured = capture_canonical_timeline(
                 path, probe, require_original_pts=True, imported_content_hash=digest
@@ -128,7 +136,11 @@ def _capture_generation(
 
 
 def backfill_missing_video_timestamps(
-    video: VideoFile, *, payload: VideoFileMetaPayload | None = None
+    video: VideoFile,
+    *,
+    payload: VideoFileMetaPayload | None = None,
+    processed_ordinals_operator: str | None = None,
+    dry_run: bool = False,
 ) -> None:
     """Fill absent coordinates, serialized with generation publication.
 
@@ -138,11 +150,23 @@ def backfill_missing_video_timestamps(
     from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
 
+    if processed_ordinals_operator is not None and (
+        not processed_ordinals_operator.strip()
+        or len(processed_ordinals_operator) > 128
+        or any(character in processed_ordinals_operator for character in "\r\n")
+    ):
+        raise ValueError("Processed ordinal recovery requires an identified operator")
+    if dry_run and processed_ordinals_operator is None:
+        raise ValueError(
+            "Recovery preview requires explicit processed ordinal confirmation"
+        )
     if not video.pk:
         return
     if payload is None:
         payload = VideoFileMetaPayload.model_validate(video.meta or {})
-    if has_reconciled_video_timeline(video, payload):
+    if processed_ordinals_operator is None and has_reconciled_video_timeline(
+        video, payload
+    ):
         return
     with transaction.atomic():
         current = VideoFile.objects.select_for_update().get(pk=video.pk)
@@ -155,7 +179,9 @@ def backfill_missing_video_timestamps(
             )
         rows = list(current.frames.select_for_update().order_by("frame_number"))
         payload = VideoFileMetaPayload.model_validate(current.meta or {})
-        if has_reconciled_video_timeline(current, payload):
+        if processed_ordinals_operator is None and has_reconciled_video_timeline(
+            current, payload
+        ):
             video.meta = current.meta
             video.frame_count = current.frame_count
             return
@@ -178,12 +204,59 @@ def backfill_missing_video_timestamps(
         # serializes concurrent fallback requests throughout capture and commit.
         lease = create_video_stream_lease(current, file_type=kind, renew_matching=False)
         assert lease is not None
+        if processed_ordinals_operator is not None and not processed:
+            raise VideoTimelineMappingError(
+                "Processed ordinal recovery requires verified processed media"
+            )
         history = list(payload.canonical_timeline_history or [])
         # Recover the active generation directly. Retained raw media is not a
         # prerequisite for processed coordinates and is not probed here.
-        probe, captured = _capture_generation(current, kind, payload, history)
+        probe, captured = _capture_generation(
+            current,
+            kind,
+            payload,
+            history,
+            verify_content=processed_ordinals_operator is not None,
+        )
         boundaries = frame_boundaries(captured, probe)
         count = len(boundaries) - 1
+        if processed_ordinals_operator is not None:
+            from endoreg_db.models.label.annotation.video_segmentation_annotation import (
+                VideoSegmentationAnnotation,
+            )
+
+            if current.frame_count != count or any(
+                not 0 <= row.frame_number < count for row in rows
+            ):
+                raise VideoTimelineMappingError(
+                    "Processed ordinal recovery requires matching frame count and bounded ordinals"
+                )
+            for segment in current.label_video_segments.select_for_update():
+                if (
+                    not 0
+                    <= segment.start_frame_number
+                    < segment.end_frame_number
+                    <= count
+                ):
+                    raise VideoTimelineMappingError(
+                        "Saved segment exceeds the processed timeline"
+                    )
+            for (
+                annotation
+            ) in VideoSegmentationAnnotation.objects.select_for_update().filter(
+                video_file=current
+            ):
+                if not (
+                    math.isfinite(annotation.start_time)
+                    and math.isfinite(annotation.stop_time)
+                    and boundaries[0]
+                    <= annotation.start_time
+                    < annotation.stop_time
+                    <= boundaries[-1]
+                ):
+                    raise VideoTimelineMappingError(
+                        "Saved time annotation exceeds the processed timeline"
+                    )
         for row in rows:
             if row.timestamp is None and row.presentation_timestamp is None:
                 continue
@@ -214,6 +287,7 @@ def backfill_missing_video_timestamps(
         if (
             changed_numbers
             and not proven_additions
+            and processed_ordinals_operator is None
             and (
                 current.label_video_segments.exists()
                 or current.frames.filter(
@@ -226,6 +300,18 @@ def backfill_missing_video_timestamps(
             raise VideoTimelineMappingError(
                 "Existing annotations or extracted frames require timestamp remapping before recovery."
             )
+        if dry_run:
+            emit_structured_event(
+                logger,
+                "processed_ordinal_recovery_preview",
+                video_id=current.pk,
+                operator=processed_ordinals_operator,
+                frame_count=count,
+                retained_frames=len(rows),
+                added_frames=count - len(rows),
+            )
+            transaction.set_rollback(True)
+            return
         obsolete = [row.pk for row in rows if row.frame_number >= count]
         if obsolete:
             Frame.objects.filter(pk__in=obsolete).delete()
@@ -272,6 +358,17 @@ def backfill_missing_video_timestamps(
         lease.delete()
         video.meta = current.meta
         video.frame_count = count
+        if processed_ordinals_operator is not None:
+            emit_structured_event(
+                logger,
+                "processed_ordinal_recovery_completed",
+                video_id=current.pk,
+                operator=processed_ordinals_operator,
+                processed_content_hash=captured.content_hash,
+                frame_count=count,
+                retained_frames=len(by_number),
+                added_frames=count - len(by_number),
+            )
         emit_structured_event(
             logger,
             "video_timestamps_backfilled",

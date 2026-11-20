@@ -14,7 +14,14 @@ from django.db import OperationalError, close_old_connections, connection, trans
 from django.test.utils import CaptureQueriesContext
 from django.utils import timezone
 
-from endoreg_db.models import Center, Frame, LabelVideoSegment, VideoFile
+from endoreg_db.models import (
+    Center,
+    Frame,
+    ImageClassificationAnnotation,
+    Label,
+    LabelVideoSegment,
+    VideoFile,
+)
 from endoreg_db.models.hub.storage_placement import StorageRotationCleanupReceipt
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
@@ -433,6 +440,108 @@ def test_count_reconciliation_preserves_annotated_coordinates(video: VideoFile) 
         service.backfill_missing_video_timestamps(video)
     assert video.frames.count() == 1
     assert video.frames.get().timestamp is None
+
+
+def test_confirmed_processed_ordinals_preserve_annotations_and_preview(
+    video: VideoFile,
+) -> None:
+    video.frame_count = 4
+    video.save(update_fields=["frame_count"])
+    frame = Frame.objects.create(video=video, frame_number=2, is_extracted=True)
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=Label.objects.create(name="retained-ordinal"),
+        value=True,
+    )
+    segment = LabelVideoSegment.objects.create(
+        video_file=video, start_frame_number=0, end_frame_number=4
+    )
+    before_annotation = (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+    )
+    before_segment = LabelVideoSegment.objects.filter(pk=segment.pk).values().get()
+    before_meta = video.meta
+    service.backfill_missing_video_timestamps(
+        video, processed_ordinals_operator="test-operator", dry_run=True
+    )
+    video.refresh_from_db()
+    frame.refresh_from_db()
+    assert (
+        video.meta == before_meta
+        and frame.timestamp is None
+        and video.frames.count() == 1
+    )
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+
+    service.backfill_missing_video_timestamps(
+        video, processed_ordinals_operator="test-operator"
+    )
+    frame.refresh_from_db()
+    assert frame.frame_number == 2 and frame.timestamp == 4.4
+    assert video.frames.count() == 4
+    assert (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+        == before_annotation
+    )
+    assert (
+        LabelVideoSegment.objects.filter(pk=segment.pk).values().get() == before_segment
+    )
+    payload = VideoFileMetaPayload.model_validate(video.meta)
+    assert payload.canonical_timeline_history
+    assert payload.canonical_timeline_history[-1].artifact_kind == "processed"
+    assert (
+        payload.canonical_timeline_history[-1].after.content_hash
+        == video.processed_video_hash
+    )
+    assert (
+        payload.source_timeline and payload.source_timeline.artifact_kind == "processed"
+    )
+    rows = list(
+        video.frames.order_by("frame_number").values_list(
+            "pk", "timestamp", "presentation_timestamp"
+        )
+    )
+    service.backfill_missing_video_timestamps(video)
+    assert (
+        list(
+            video.frames.order_by("frame_number").values_list(
+                "pk", "timestamp", "presentation_timestamp"
+            )
+        )
+        == rows
+    )
+
+
+@pytest.mark.parametrize(
+    "failure", ["wrong_hash", "out_of_range", "wrong_count", "segment", "coordinate"]
+)
+def test_confirmed_processed_ordinals_fail_without_mutation(
+    video: VideoFile, failure: str
+) -> None:
+    video.frame_count = 5 if failure == "wrong_count" else 4
+    if failure == "wrong_hash":
+        video.processed_video_hash = "f" * 64
+    video.save()
+    frame = Frame.objects.create(
+        video=video,
+        frame_number=4 if failure == "out_of_range" else 0,
+        timestamp=8.0 if failure == "coordinate" else None,
+        is_extracted=True,
+    )
+    if failure == "segment":
+        LabelVideoSegment.objects.create(
+            video_file=video, start_frame_number=0, end_frame_number=5
+        )
+    before = Frame.objects.filter(pk=frame.pk).values().get()
+    before_meta = video.meta
+    with pytest.raises(service.VideoTimelineMappingError):
+        service.backfill_missing_video_timestamps(
+            video, processed_ordinals_operator="test-operator"
+        )
+    video.refresh_from_db()
+    assert video.meta == before_meta and video.frames.count() == 1
+    assert Frame.objects.filter(pk=frame.pk).values().get() == before
+    assert not MediaOperationLease.objects.filter(video=video).exists()
 
 
 def test_timestamp_only_recovery_still_rejects_tampered_ciphertext(

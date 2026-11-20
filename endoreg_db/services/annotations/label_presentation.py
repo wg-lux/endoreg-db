@@ -114,6 +114,12 @@ def require_study_labels(
         )
 
 
+def _label_name_de(label: Label) -> str | None:
+    """Catalogue German name, or None; never the identifier."""
+    value = label.name_de
+    return value if isinstance(value, str) and value.strip() else None
+
+
 def build_label_catalog(
     request: Request, cohort_id: int | None
 ) -> StudyAnnotationLabelCatalog:
@@ -128,7 +134,8 @@ def build_label_catalog(
         StudyAnnotationLabel(
             id=int(by_name[item.name].pk),
             name=item.name,
-            display_name=item.display_name,
+            # A study display name wins; otherwise the catalogue German name.
+            display_name=item.display_name or _label_name_de(by_name[item.name]),
             color=item.color,
         )
         for item in configured
@@ -138,7 +145,10 @@ def build_label_catalog(
         included = {item.id for item in result}
         result.extend(
             StudyAnnotationLabel(
-                id=int(label.pk), name=str(label.name), display_name=None, color=None
+                id=int(label.pk),
+                name=str(label.name),
+                display_name=_label_name_de(label),
+                color=None,
             )
             for label in labels
             if int(label.pk) not in included

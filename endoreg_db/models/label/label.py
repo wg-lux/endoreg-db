@@ -46,6 +46,10 @@ class Label(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     label_type: models.ForeignKey[Any] = models.ForeignKey(
         "LabelType",
         on_delete=models.CASCADE,

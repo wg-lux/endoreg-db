@@ -72,6 +72,7 @@ class VideoLike(Protocol):
 class LabelFileLike(Protocol):
     id: int
     name: str
+    name_de: str | None
 
 
 class _SerializerDataLike(Protocol):
@@ -200,6 +201,7 @@ class LabelVideoSegmentTimelineSerializer(
 ):
     label_id = serializers.SerializerMethodField()
     label_name = serializers.SerializerMethodField()
+    label_name_de = serializers.SerializerMethodField()
     source_name = serializers.SerializerMethodField()
     segment_origin = serializers.SerializerMethodField()
     prediction_meta_id = serializers.SerializerMethodField()
@@ -212,6 +214,7 @@ class LabelVideoSegmentTimelineSerializer(
             "id",
             "label_id",
             "label_name",
+            "label_name_de",
             "source_name",
             "segment_origin",
             "prediction_meta_id",
@@ -239,6 +242,11 @@ class LabelVideoSegmentTimelineSerializer(
     def get_label_name(self, obj: LabelVideoSegmentLike) -> str | None:
         label = cast(LabelFileLike | None, obj.label)
         return None if label is None else label.name
+
+    def get_label_name_de(self, obj: LabelVideoSegmentLike) -> str | None:
+        """German display name; null when the catalogue carries none."""
+        label = cast(LabelFileLike | None, obj.label)
+        return None if label is None else label.name_de
 
     def get_source_name(self, obj: LabelVideoSegmentLike) -> str | None:
         return None if obj.source is None else obj.source.name
@@ -628,9 +636,11 @@ class LabelVideoSegmentSerializer(serializers.ModelSerializer[LabelVideoSegment]
         label = cast(LabelFileLike | None, instance.label)
         if label is not None:
             data["label_name"] = label.name
+            data["label_name_de"] = label.name_de
             data["label_id"] = label.id
         else:
             data["label_name"] = None
+            data["label_name_de"] = None
             data["label_id"] = None
         return data
 

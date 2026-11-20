@@ -30,6 +30,15 @@ class Command(BaseCommand):
             dest="video_ids",
             help="Limit the run to this video; repeat for several.",
         )
+        parser.add_argument(
+            "--confirm-processed-ordinals",
+            action="store_true",
+            help="Explicitly confirm saved annotation ordinals belong to the published processed generation; preview unless --apply is given.",
+        )
+        parser.add_argument(
+            "--operator",
+            help="Identified operator responsible for processed ordinal confirmation.",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         apply = options.get("apply")
@@ -45,7 +54,33 @@ class Command(BaseCommand):
                 if not isinstance(video_id, int):
                     raise CommandError("--video-id must be an integer")
                 video_ids.append(video_id)
-        result = backfill_video_timelines(apply=apply, video_ids=video_ids)
+        confirmed = options.get("confirm_processed_ordinals", False)
+        operator = options.get("operator")
+        if (
+            not isinstance(confirmed, bool)
+            or (
+                confirmed
+                and (
+                    not video_ids
+                    or not isinstance(operator, str)
+                    or not operator.strip()
+                )
+            )
+            or (not confirmed and operator is not None)
+        ):
+            raise CommandError(
+                "Processed ordinal recovery requires --confirm-processed-ordinals, --operator and explicit --video-id"
+            )
+        try:
+            result = backfill_video_timelines(
+                apply=apply,
+                video_ids=video_ids,
+                processed_ordinals_operator=operator
+                if isinstance(operator, str)
+                else None,
+            )
+        except ValueError as exc:
+            raise CommandError(str(exc)) from exc
         self.stdout.write(json.dumps(result.to_dict(), sort_keys=True))
         if result.failed:
             raise CommandError(

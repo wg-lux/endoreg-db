@@ -6,6 +6,7 @@ from typing import TypedDict, cast
 
 import pytest
 from django.core.management import call_command
+from django.core.management.base import CommandError
 
 from endoreg_db.models import Center, Frame, LabelVideoSegment, VideoFile
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
@@ -147,3 +148,53 @@ def test_imported_identity_is_reused_without_rehashing(video: VideoFile) -> None
         video.frames.order_by("frame_number").values_list("timestamp", flat=True)
     ) == [4.0, 4.15, 4.4, 4.75]
     assert _run("--apply", "--video-id", str(video.pk))["counts"]["ready"] == 1
+
+
+def test_operator_confirmation_requires_scope_and_identity() -> None:
+    for args in (
+        ("--confirm-processed-ordinals",),
+        ("--operator", "reviewer"),
+        ("--confirm-processed-ordinals", "--operator", "reviewer"),
+    ):
+        with pytest.raises(CommandError, match="requires"):
+            _run(*args)
+
+
+@pytest.mark.parametrize("retained_frame", [True, False])
+def test_operator_preview_validates_before_explicit_apply(
+    video: VideoFile, retained_frame: bool
+) -> None:
+    video.frame_count = 4
+    video.save(update_fields=["frame_count"])
+    frame = (
+        Frame.objects.create(video=video, frame_number=1, is_extracted=True)
+        if retained_frame
+        else None
+    )
+    segment = LabelVideoSegment.objects.create(
+        video_file=video, start_frame_number=0, end_frame_number=4
+    )
+    before_segment = LabelVideoSegment.objects.filter(pk=segment.pk).values().get()
+    if not retained_frame:
+        assert _run("--apply", "--video-id", str(video.pk))["counts"]["blocked"] == 1
+    args = (
+        "--video-id",
+        str(video.pk),
+        "--confirm-processed-ordinals",
+        "--operator",
+        "reviewer",
+    )
+    assert _run(*args)["counts"]["candidate"] == 1
+    assert video.frames.count() == int(retained_frame)
+    if frame is not None:
+        frame.refresh_from_db()
+        assert frame.timestamp is None
+    assert _run(*args, "--apply")["counts"]["backfilled"] == 1
+    if frame is not None:
+        frame.refresh_from_db()
+        assert frame.frame_number == 1 and frame.timestamp == 4.15
+    assert video.frames.count() == 4
+    assert (
+        LabelVideoSegment.objects.filter(pk=segment.pk).values().get() == before_segment
+    )
+    assert _run(*args, "--apply")["counts"]["ready"] == 1

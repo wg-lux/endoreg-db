@@ -174,6 +174,16 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.provenance_recovery.VideoProvenanceRecoveryView",
     ),
     (
+        "media/videos/<int:pk>/electrical-measurements/",
+        "video-electrical-measurements",
+        "endoreg_db.views.video.electrical_measurements.VideoElectricalMeasurementsView",
+    ),
+    (
+        "media/videos/<int:pk>/electrical-measurements/<int:measurement_id>/frames/",
+        "video-electrical-aligned-frames",
+        "endoreg_db.views.video.electrical_measurements.VideoElectricalAlignedFramesView",
+    ),
+    (
         "media/videos/<int:pk>/reimport/",
         "video-reimport",
         "endoreg_db.views.video.reimport.VideoReimportView",

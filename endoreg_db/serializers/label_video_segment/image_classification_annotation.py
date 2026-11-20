@@ -10,6 +10,7 @@ from endoreg_db.models.label.annotation.image_classification import (
 
 class _LabelLike(Protocol):
     name: str
+    name_de: str | None
 
 
 class _ImageClassificationAnnotationLike(Protocol):
@@ -27,6 +28,7 @@ class ImageClassificationAnnotationSerializer(
     """
 
     label_name = serializers.SerializerMethodField()
+    label_name_de = serializers.SerializerMethodField()
     confidence = serializers.SerializerMethodField()
     frame_number = serializers.IntegerField(source="frame.frame_number", read_only=True)
 
@@ -41,6 +43,7 @@ class ImageClassificationAnnotationSerializer(
             "date_created",
             "date_modified",
             "label_name",
+            "label_name_de",
         ]
 
     def get_confidence(self, obj: _ImageClassificationAnnotationLike) -> float | None:
@@ -60,6 +63,11 @@ class ImageClassificationAnnotationSerializer(
         """
         label = obj.label
         return label.name if label is not None else "No Label"
+
+    def get_label_name_de(self, obj: _ImageClassificationAnnotationLike) -> str | None:
+        """German label name; null without a label or a catalogue German name."""
+        label = obj.label
+        return label.name_de if label is not None else None
 
     def to_representation(
         self, instance: ImageClassificationAnnotation

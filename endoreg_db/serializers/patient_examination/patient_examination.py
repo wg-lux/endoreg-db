@@ -58,6 +58,8 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
     )
     patient_name = serializers.SerializerMethodField()
     examination_name = serializers.SerializerMethodField()
+    # German display name; null when the catalogue carries none.
+    examination_name_de = serializers.SerializerMethodField()
 
     class Meta:  # pyright: ignore[reportIncompatibleVariableOverride]
         model = PatientExamination
@@ -72,11 +74,13 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             "knowledge_base_version",
             "patient_name",
             "examination_name",
+            "examination_name_de",
         ]
         read_only_fields = [
             "id",
             "patient_name",
             "examination_name",
+            "examination_name_de",
             "patient_data",
         ]
 
@@ -102,6 +106,11 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
         if examination is None:
             return ""
         return examination.name
+
+    def get_examination_name_de(self, obj: _PatientExaminationOutputLike) -> str | None:
+        examination = obj.examination
+        name_de = examination.name_de if examination is not None else None
+        return name_de if isinstance(name_de, str) and name_de.strip() else None
 
     def validate_patient(self, value: int) -> Patient:
         request = self.context.get("request")

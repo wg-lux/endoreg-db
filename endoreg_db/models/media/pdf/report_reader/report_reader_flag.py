@@ -16,6 +16,10 @@ class ReportReaderFlagManager(models.Manager["ReportReaderFlag"]):
 class ReportReaderFlag(models.Model):
     objects = ReportReaderFlagManager()
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     value: models.CharField[Any, Any] = models.CharField(max_length=255)
 
     if TYPE_CHECKING:

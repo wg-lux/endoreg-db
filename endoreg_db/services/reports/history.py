@@ -26,6 +26,31 @@ from lx_dtypes.models.contracts.patient_examination_report import (
 )
 
 
+class PatientFindingClassificationHistoryDisplayData(
+    PatientFindingClassificationHistoryData
+):
+    """Additive German names; identifier ``*_name`` fields stay unchanged."""
+
+    classification_name_de: str | None
+    classification_choice_name_de: str | None
+
+
+class PatientFindingInterventionHistoryDisplayData(
+    PatientFindingInterventionHistoryData
+):
+    intervention_name_de: str | None
+
+
+class PatientFindingHistoryDisplayData(PatientFindingHistoryData):
+    finding_name_de: str | None
+
+
+class PreviousPatientExaminationHistoryDisplayData(
+    PreviousPatientExaminationHistoryData
+):
+    examination_name_de: str | None
+
+
 class _IdentifiedLike(Protocol):
     id: int
 
@@ -82,6 +107,18 @@ def _related_name(value: object) -> str | None:
     return name
 
 
+def _related_name_de(value: object) -> str | None:
+    """Catalogue German name; None when absent, never the identifier."""
+    if value is None:
+        return None
+    name_de = getattr(value, "name_de", None)
+    if name_de is None:
+        return None
+    if not isinstance(name_de, str):
+        raise ValueError("Related history German name must be a string.")
+    return name_de if name_de.strip() else None
+
+
 def _report_json_object(value: object) -> ReportJsonObject:
     if value is None:
         return {}
@@ -105,14 +142,16 @@ def _temporal_value(value: object) -> str | None:
 
 def _serialize_patient_finding_classification(
     row: object,
-) -> PatientFindingClassificationHistoryData:
+) -> PatientFindingClassificationHistoryDisplayData:
     pfc = cast(_PatientFindingClassificationSummaryLike, row)
     return {
         "id": model_pk(row),
         "classification_id": pfc.classification_id,
         "classification_choice_id": pfc.classification_choice_id,
         "classification_name": _related_name(pfc.classification),
+        "classification_name_de": _related_name_de(pfc.classification),
         "classification_choice_name": _related_name(pfc.classification_choice),
+        "classification_choice_name_de": _related_name_de(pfc.classification_choice),
         "subcategories": _report_json_object(pfc.subcategories),
         "numerical_descriptors": _report_json_object(pfc.numerical_descriptors),
     }
@@ -120,12 +159,13 @@ def _serialize_patient_finding_classification(
 
 def _serialize_patient_finding_intervention(
     row: object,
-) -> PatientFindingInterventionHistoryData:
+) -> PatientFindingInterventionHistoryDisplayData:
     pfi = cast(_PatientFindingInterventionSummaryLike, row)
     return {
         "id": model_pk(row),
         "intervention_id": pfi.intervention_id,
         "intervention_name": _related_name(pfi.intervention),
+        "intervention_name_de": _related_name_de(pfi.intervention),
         "state": _temporal_value(pfi.state),
         "date": _temporal_value(pfi.date),
         "time_start": _temporal_value(pfi.time_start),
@@ -135,14 +175,14 @@ def _serialize_patient_finding_intervention(
 
 def _serialize_patient_finding_summary(
     patient_finding: PatientFinding,
-) -> PatientFindingHistoryData:
+) -> PatientFindingHistoryDisplayData:
     patient_finding_ref = cast(_PatientFindingSummaryLike, patient_finding)
 
-    classifications = [
+    classifications: list[PatientFindingClassificationHistoryData] = [
         _serialize_patient_finding_classification(row)
         for row in patient_finding_ref.classifications.all()
     ]
-    interventions = [
+    interventions: list[PatientFindingInterventionHistoryData] = [
         _serialize_patient_finding_intervention(row)
         for row in patient_finding_ref.interventions.all()
     ]
@@ -152,6 +192,7 @@ def _serialize_patient_finding_summary(
         "instance_id": str(patient_finding.instance_id),
         "finding_id": patient_finding_ref.finding_id,
         "finding_name": _related_name(patient_finding_ref.finding),
+        "finding_name_de": _related_name_de(patient_finding_ref.finding),
         "classifications": classifications,
         "interventions": interventions,
     }
@@ -242,16 +283,16 @@ def get_patient_examination_history_context(
     previous_examinations: list[PreviousPatientExaminationHistoryData] = []
     for patient_examination_row in prior_examinations:
         pe = cast(_PatientExaminationHistoryLike, patient_examination_row)
-        previous_examinations.append(
-            {
-                "patient_examination_id": pe.id,
-                "examination_id": pe.examination_id,
-                "examination_name": _related_name(pe.examination),
-                "date_start": _temporal_value(pe.date_start),
-                "date_end": _temporal_value(pe.date_end),
-                "findings": findings_by_examination.get(pe.id, []),
-            }
-        )
+        previous_examination: PreviousPatientExaminationHistoryDisplayData = {
+            "patient_examination_id": pe.id,
+            "examination_id": pe.examination_id,
+            "examination_name": _related_name(pe.examination),
+            "examination_name_de": _related_name_de(pe.examination),
+            "date_start": _temporal_value(pe.date_start),
+            "date_end": _temporal_value(pe.date_end),
+            "findings": findings_by_examination.get(pe.id, []),
+        }
+        previous_examinations.append(previous_examination)
 
     return {
         "patient_id": patient_ref.id,

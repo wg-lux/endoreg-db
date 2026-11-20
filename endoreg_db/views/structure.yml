@@ -22,7 +22,7 @@ files:
 - file: report/reimport.py
   role: Report reimport and inference-job endpoints.
 - file: patient_report/patient_examination_report.py
-  role: Django Ninja examination-report router.
+  role: Django Ninja examination-report router; selector and export frames add German finding names from the pinned terminology.
 dependencies:
   internal:
   - endoreg_db/authz

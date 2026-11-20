@@ -1,3 +1,15 @@
+# 1.8.8 — Unreleased
+
+- Requires `lx-dtypes>=0.7.1` for package kinds and deployment setup schema 2.0.
+  Publish the matching core package before resolving or deploying this release.
+- Migrate schema 1.0 setup files with `setup_deployment migrate <file> --output
+  <new-file>`, then generate and review a new plan and lock before applying it.
+- Adds electrosurgical measurement import and video alignment (migration 0119),
+  and German reference-catalog display names (migration 0120).
+- Review migrations through `0120_reference_catalog_name_de` before deployment.
+  Release-preparation evidence is recorded in
+  `feature-tracking/reports/release_preparation.yml`.
+
 # Unreleased — 2026-11-02: LXENC v2 and migration safety
 
 These are working-tree changes, not a published version or deployment approval.

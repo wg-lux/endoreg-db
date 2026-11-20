@@ -41,7 +41,7 @@ def test_report_history_serializes_temporal_and_json_values() -> None:
     intervention = SimpleNamespace(
         pk=7,
         intervention_id=11,
-        intervention=SimpleNamespace(name="Polypectomy"),
+        intervention=SimpleNamespace(name="Polypectomy", name_de="Polypektomie"),
         state="completed",
         date=date(2026, 8, 20),
         time_start=time(10, 15, 30),
@@ -52,7 +52,7 @@ def test_report_history_serializes_temporal_and_json_values() -> None:
         classification_id=12,
         classification_choice_id=13,
         classification=SimpleNamespace(name="Paris"),
-        classification_choice=SimpleNamespace(name="0-Is"),
+        classification_choice=SimpleNamespace(name="0-Is", name_de=None),
         subcategories={"reviewed_at": date(2026, 8, 20)},
         numerical_descriptors={"size_mm": 8},
     )
@@ -61,6 +61,7 @@ def test_report_history_serializes_temporal_and_json_values() -> None:
         "id": 7,
         "intervention_id": 11,
         "intervention_name": "Polypectomy",
+        "intervention_name_de": "Polypektomie",
         "state": "completed",
         "date": "2026-08-20",
         "time_start": "10:15:30",
@@ -71,7 +72,10 @@ def test_report_history_serializes_temporal_and_json_values() -> None:
         "classification_id": 12,
         "classification_choice_id": 13,
         "classification_name": "Paris",
+        # Without a catalogue German name the field is null, not the identifier.
+        "classification_name_de": None,
         "classification_choice_name": "0-Is",
+        "classification_choice_name_de": None,
         "subcategories": {"reviewed_at": "2026-08-20"},
         "numerical_descriptors": {"size_mm": 8},
     }

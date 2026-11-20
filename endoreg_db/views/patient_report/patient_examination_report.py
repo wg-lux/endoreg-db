@@ -42,6 +42,7 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     report_json_safe_dict,
     validate_segment_selection_map,
 )
+from lx_dtypes.terminology.terminology_service import TerminologyError
 from pydantic import ValidationError
 from ninja import Query as NinjaQuery, Router
 from ninja.errors import HttpError
@@ -58,6 +59,9 @@ from endoreg_db.models.report.patient_examination_report import PatientExaminati
 
 from endoreg_db.serializers.report.patient_examination_report import (
     PatientExaminationReportSchema,
+    ReportExportFrameDetailDisplayData,
+    SegmentAttachedFindingDisplayData,
+    SegmentFrameSelectorItemDisplayData,
     SegmentFrameSelectorResponseSchema,
 )
 from endoreg_db.services.runtime.status_writers import (
@@ -76,6 +80,7 @@ from endoreg_db.services.reports.frame_selection import (
     SEGMENT_FRAME_SELECTIONS_KEY,
     auto_select_report_frames,
     persist_segment_selection,
+    report_finding_names_de,
     report_frame_candidates,
     assign_segment_patient_finding,
     selected_segment_patient_finding,
@@ -131,6 +136,13 @@ def _segment_label_name(segment: LabelVideoSegment) -> str | None:
     return str(name) if name is not None else None
 
 
+def _segment_label_name_de(segment: LabelVideoSegment) -> str | None:
+    """Catalogue German label name; None when absent, never the identifier."""
+    label = cast(object | None, getattr(segment, "label", None))
+    name_de = getattr(label, "name_de", None) if label is not None else None
+    return name_de if isinstance(name_de, str) and name_de.strip() else None
+
+
 def _segment_start(segment: LabelVideoSegment) -> int:
     return int(cast(Any, segment).start_frame_number)
 
@@ -174,6 +186,41 @@ def _patient_finding_finding_name(patient_finding: PatientFinding) -> str | None
     finding = cast(object | None, getattr(patient_finding, "finding", None))
     name = getattr(finding, "name", None) if finding is not None else None
     return str(name) if name is not None else None
+
+
+def _attached_finding_data(
+    patient_finding: PatientFinding,
+    finding_names_de: Mapping[str, str],
+) -> SegmentAttachedFindingDisplayData:
+    finding_name = _patient_finding_finding_name(patient_finding)
+    return {
+        "patient_finding_id": _patient_finding_pk(patient_finding),
+        "finding_id": _patient_finding_finding_id(patient_finding),
+        "finding_name": finding_name,
+        "finding_name_de": (
+            finding_names_de.get(finding_name) if finding_name is not None else None
+        ),
+    }
+
+
+def _resolve_report_finding_names_de(
+    report: PatientExaminationReport,
+    finding_names: list[str],
+) -> dict[str, str]:
+    """Fail closed when the pinned terminology of the report cannot be loaded."""
+    try:
+        return report_finding_names_de(report, finding_names)
+    except TerminologyError as exc:
+        # A missing registry is a deployment failure, as in report persistence.
+        unavailable = exc.status >= 500 or isinstance(exc.__cause__, OSError)
+        raise HttpError(
+            503 if unavailable else 409,
+            "Die Terminologie des Berichts ist nicht verfügbar; deutsche "
+            "Befundnamen können nicht aufgelöst werden. / The report terminology "
+            f"is unavailable; German finding names cannot be resolved ({exc}).",
+        ) from exc
+    except ValueError as exc:
+        raise HttpError(409, str(exc)) from exc
 
 
 def _report_pk(report: PatientExaminationReport) -> int:
@@ -477,10 +524,13 @@ class PatientExaminationReportApi:
         segment: LabelVideoSegment,
         frame: Frame,
         patient_finding: PatientFinding | None,
+        finding_name_de: str | None = None,
     ) -> str:
         parts = [
-            _segment_label_name(segment) or "prediction",
-            f"frame {_frame_number(frame)}",
+            _segment_label_name_de(segment)
+            or _segment_label_name(segment)
+            or "KI-Vorhersage",
+            f"Bild {_frame_number(frame)}",
         ]
 
         timestamp = _frame_timestamp(frame)
@@ -492,8 +542,11 @@ class PatientExaminationReportApi:
             if patient_finding is not None
             else None
         )
-        if finding_name:
-            parts.append(finding_name)
+        # The PDF caption shows the German name of the pinned terminology; the
+        # identifier remains only where that terminology has no such finding.
+        caption_finding = finding_name_de or finding_name
+        if caption_finding:
+            parts.append(caption_finding)
 
         return " | ".join(part for part in parts if part)
 
@@ -539,15 +592,17 @@ class PatientExaminationReportApi:
                         "Selected report frame timestamp changed; reload the preview.",
                     )
                 path = frame_scope.enter_context(materialized_report_frame(frame))
-                caption = f"frame {frame.frame_number} | {frame.timestamp}s"
-                detail: ReportExportFrameDetailData = {
+                caption = f"Bild {frame.frame_number} | {frame.timestamp}s"
+                detail: ReportExportFrameDetailDisplayData = {
                     "segment_id": None,
                     "video_id": preferred_frame.video_id,
                     "frame_id": _frame_pk(frame),
                     "frame_number": frame.frame_number,
                     "timestamp": preferred_frame.timestamp,
                     "label_name": None,
+                    "label_name_de": None,
                     "finding_name": None,
+                    "finding_name_de": None,
                     "caption": caption,
                     "stream_url": build_absolute_media_url(
                         self.request,
@@ -582,8 +637,18 @@ class PatientExaminationReportApi:
         captions: list[str] = []
         details: list[ReportExportFrameDetailData] = []
         warnings: list[str] = []
+        export_segments = list(segments[:max_frames])
+        finding_names_de = _resolve_report_finding_names_de(
+            report,
+            [
+                name
+                for segment in export_segments
+                for finding in segment_patient_findings(segment, patient_examination)
+                if (name := _patient_finding_finding_name(finding)) is not None
+            ],
+        )
 
-        for segment in segments[:max_frames]:
+        for segment in export_segments:
             segment_id = _segment_pk(segment)
             selection = selection_map.get(str(segment_id), {})
 
@@ -606,10 +671,19 @@ class PatientExaminationReportApi:
             except ValueError as exc:
                 raise HttpError(409, str(exc)) from exc
 
+            finding_name = (
+                _patient_finding_finding_name(patient_finding)
+                if patient_finding is not None
+                else None
+            )
+            finding_name_de = (
+                finding_names_de.get(finding_name) if finding_name is not None else None
+            )
             caption = self._frame_caption(
                 segment=segment,
                 frame=frame,
                 patient_finding=patient_finding,
+                finding_name_de=finding_name_de,
             )
 
             video_id = _segment_video_id(segment)
@@ -617,27 +691,24 @@ class PatientExaminationReportApi:
 
             frame_paths.append(str(frame_path))
             captions.append(caption)
-            details.append(
-                {
-                    "segment_id": segment_id,
-                    "video_id": video_id,
-                    "frame_id": _frame_pk(frame),
-                    "frame_number": frame_number,
-                    "label_name": _segment_label_name(segment),
-                    "finding_name": (
-                        _patient_finding_finding_name(patient_finding)
-                        if patient_finding is not None
-                        else None
+            detail: ReportExportFrameDetailDisplayData = {
+                "segment_id": segment_id,
+                "video_id": video_id,
+                "frame_id": _frame_pk(frame),
+                "frame_number": frame_number,
+                "label_name": _segment_label_name(segment),
+                "label_name_de": _segment_label_name_de(segment),
+                "finding_name": finding_name,
+                "finding_name_de": finding_name_de,
+                "stream_url": build_absolute_media_url(
+                    self.request,
+                    build_video_frame_decoded_stream_path(
+                        video_id, frame_number, file_type="processed"
                     ),
-                    "stream_url": build_absolute_media_url(
-                        self.request,
-                        build_video_frame_decoded_stream_path(
-                            video_id, frame_number, file_type="processed"
-                        ),
-                    ),
-                    "caption": caption,
-                }
-            )
+                ),
+                "caption": caption,
+            }
+            details.append(detail)
 
         return frame_paths, captions, details, warnings
 
@@ -651,7 +722,7 @@ class PatientExaminationReportApi:
         blocks: list[dict[str, Any]] = [
             {
                 "type": "paragraph",
-                "text": rendered_text or "No report text available.",
+                "text": rendered_text or "Kein Berichtstext vorhanden.",
             }
         ]
 
@@ -659,7 +730,7 @@ class PatientExaminationReportApi:
             blocks.append(
                 {
                     "type": "sentence_group",
-                    "section_title": "AI prediction frames",
+                    "section_title": "Bilder aus der KI-Vorhersage",
                     "variables": {},
                     "sentences": [
                         {
@@ -803,7 +874,8 @@ class PatientExaminationReportApi:
         patient_examination: PatientExamination,
         segment: LabelVideoSegment,
         selection_map: ReportSegmentSelectionMap,
-    ) -> SegmentFrameSelectorItemData:
+        finding_names_de: Mapping[str, str],
+    ) -> SegmentFrameSelectorItemDisplayData:
         segment_id = _segment_pk(segment)
         selection = selection_map.get(str(segment_id), {})
 
@@ -877,6 +949,7 @@ class PatientExaminationReportApi:
             "video_id": _segment_video_id(segment),
             "label_id": _segment_label_id(segment),
             "label_name": _segment_label_name(segment),
+            "label_name_de": _segment_label_name_de(segment),
             "start_frame_number": _segment_start(segment),
             "end_frame_number": _segment_end(segment),
             "segment_duration_seconds": _segment_duration(segment),
@@ -894,20 +967,12 @@ class PatientExaminationReportApi:
                 ),
             },
             "attached_finding": (
-                {
-                    "patient_finding_id": _patient_finding_pk(patient_finding),
-                    "finding_id": _patient_finding_finding_id(patient_finding),
-                    "finding_name": _patient_finding_finding_name(patient_finding),
-                }
+                _attached_finding_data(patient_finding, finding_names_de)
                 if patient_finding is not None
                 else None
             ),
             "attached_findings": [
-                {
-                    "patient_finding_id": _patient_finding_pk(finding),
-                    "finding_id": _patient_finding_finding_id(finding),
-                    "finding_name": _patient_finding_finding_name(finding),
-                }
+                _attached_finding_data(finding, finding_names_de)
                 for finding in attached_findings
             ],
             "selection_meta": {
@@ -930,12 +995,21 @@ class PatientExaminationReportApi:
         except ValueError as exc:
             raise HttpError(409, str(exc)) from exc
 
-        segments = (
+        segments = list(
             LabelVideoSegment.objects.select_related("video_file", "label")
             .prefetch_related("patient_findings__finding")
             .filter(self._patient_examination_segment_filter(patient_examination))
             .distinct()
             .order_by("video_file_id", "start_frame_number", "id")
+        )
+        finding_names_de = _resolve_report_finding_names_de(
+            report,
+            [
+                name
+                for segment in segments
+                for finding in segment_patient_findings(segment, patient_examination)
+                if (name := _patient_finding_finding_name(finding)) is not None
+            ],
         )
 
         items: list[SegmentFrameSelectorItemData] = [
@@ -943,6 +1017,7 @@ class PatientExaminationReportApi:
                 patient_examination=patient_examination,
                 segment=segment,
                 selection_map=selection_map,
+                finding_names_de=finding_names_de,
             )
             for segment in segments
         ]

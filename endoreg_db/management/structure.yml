@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/import_electrosurgical_measurements.py
+  role: Operator import of an lx_dtypes electrosurgical series with profile and optional synchronization anchors.
 - file: commands/profile_segment_updates.py
   role: Rollback-by-default segment profiling using explicit synthetic timestamp rows or an existing video's authoritative timeline.
 - file: commands/storage_management.py
@@ -30,7 +32,7 @@ files:
 - file: commands/materialize_video_hls.py
   role: HTTP Live Streaming (HLS) derivative backfill.
 - file: commands/backfill_video_timelines.py
-  role: Dry-run-by-default presentation timeline backfill; JSON report of blocked or failed videos and nonzero exit on failure.
+  role: Dry-run-by-default presentation timeline backfill; scoped operator-confirmed processed-ordinal recovery, JSON reporting and nonzero exit on failure.
 - file: commands/normalize_video_storage.py
   role: Canonical video storage normalization.
 - file: commands/audit_clinical_lifecycle.py

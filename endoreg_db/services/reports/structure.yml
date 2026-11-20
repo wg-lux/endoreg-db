@@ -35,7 +35,7 @@ files:
 - file: frame_export.py
   role: Materialize only a centrally verified canonical processed-frame identity for the duration of PDF rendering.
 - file: frame_selection.py
-  role: Canonical report frame queries and locked selection persistence.
+  role: Canonical report frame queries, locked selection persistence and German finding names of the pinned terminology.
 - file: history.py
   role: Exports get_patient_finding_summaries, get_patient_examination_history_context.
 - file: import_fencing.py

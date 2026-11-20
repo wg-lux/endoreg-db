@@ -34,6 +34,10 @@ class EmissionFactor(models.Model):
     objects = EmissionFactorManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     unit: models.ForeignKey[Any] = models.ForeignKey(
         "Unit", on_delete=models.SET_NULL, null=True
     )

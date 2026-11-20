@@ -26,6 +26,10 @@ class CenterManager(models.Manager["Center"]):
 class Center(models.Model):
     objects = CenterManager()
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     center_key: models.CharField[Any, Any] = models.CharField(
         max_length=255,
         unique=True,

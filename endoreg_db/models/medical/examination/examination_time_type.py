@@ -27,6 +27,10 @@ class ExaminationTimeType(models.Model):
 
     objects = ExaminationTimeTypeManager()
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     examinations: "models.ManyToManyField[Examination, Examination]" = (
         models.ManyToManyField("Examination", blank=True)
     )

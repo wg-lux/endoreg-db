@@ -18,6 +18,10 @@ class Unit(models.Model):
     name: models.CharField[Any, Any] = models.CharField(
         max_length=100
     )  # e.g. "Centimeter"
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[str | None, str | None] = models.TextField(
         blank=True, null=True
     )  # e.g. "centimeters", "milimeters", "inches"

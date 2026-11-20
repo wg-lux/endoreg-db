@@ -33,13 +33,25 @@ from endoreg_db.helpers.typing import ReferenceRelation
 logger = logging.getLogger(__name__)
 
 
+# Display-only fields: updatable, never part of identity or immutable meaning.
+DISPLAY_FIELDS: frozenset[str] = frozenset({"name_de"})
+
+
 class CatalogChange(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: ReferenceKind
     identity: CatalogIdentity
-    action: Literal["create", "adopt", "reuse", "conflict"]
+    # update_display_name: an already bound row whose only difference is a
+    # display field; apply rewrites just those fields.
+    action: Literal["create", "adopt", "reuse", "update_display_name", "conflict"]
     row_id: int | None = None
     differing_fields: list[str] = Field(default_factory=list)
+    # Display fields apply writes on an existing row (update_display_name or adopt).
+    display_fields: list[str] = Field(default_factory=list)
+
+
+def _meaning(fields: dict[str, object]) -> dict[str, object]:
+    return {key: value for key, value in fields.items() if key not in DISPLAY_FIELDS}
 
 
 class CatalogPlan(BaseModel):
@@ -187,8 +199,11 @@ def plan_reference_catalog(
             CATALOG_MODELS[record.kind]._base_manager.filter(**_lookup(record))
         )
         differences: list[str] = []
+        display_fields: list[str] = []
         row_id: int | None = None
-        action: Literal["create", "adopt", "reuse", "conflict"] = "create"
+        action: Literal[
+            "create", "adopt", "reuse", "update_display_name", "conflict"
+        ] = "create"
         if len(candidates) > 1:
             differences.append("ambiguous_identity")
         elif not candidates:
@@ -200,26 +215,31 @@ def plan_reference_catalog(
             actual = export_reference_row(record.kind, row)
             actual_fields = actual.model_dump(mode="json", by_alias=True)
             expected_fields = record.model_dump(mode="json", by_alias=True)
-            differences.extend(
-                field
-                for field in expected_fields
-                if actual_fields[field] != expected_fields[field]
-            )
+            for field in expected_fields:
+                if actual_fields[field] == expected_fields[field]:
+                    continue
+                if field in DISPLAY_FIELDS:
+                    display_fields.append(field)
+                else:
+                    differences.append(field)
             if any(
-                old.model_dump(mode="json", by_alias=True) != expected_fields
+                _meaning(old.model_dump(mode="json", by_alias=True))
+                != _meaning(expected_fields)
                 for old in meanings.get(record.key, [])
             ):
                 differences.append("immutable_clinical_meaning")
             if record.key in bound and bound[record.key] != row_id:
                 differences.append("row_identity_changed")
             if (*record.key, row_id) in known:
-                action = "reuse"
+                action = "update_display_name" if display_fields else "reuse"
             elif adopt_existing:
                 action = "adopt"
             else:
                 differences.append("explicit_legacy_adoption_required")
         if differences:
+            # Any non-display difference keeps the strict conflict.
             action = "conflict"
+            display_fields = []
         changes.append(
             CatalogChange(
                 kind=record.kind,
@@ -227,6 +247,7 @@ def plan_reference_catalog(
                 action=action,
                 row_id=row_id,
                 differing_fields=differences,
+                display_fields=display_fields,
             )
         )
     return CatalogPlan(
@@ -343,9 +364,13 @@ def import_reference_catalog_in_transaction(
         if change.action == "create":
             pending.append((record, change))
         else:
-            rows[record.key] = CATALOG_MODELS[record.kind]._base_manager.get(
-                pk=change.row_id
-            )
+            row = CATALOG_MODELS[record.kind]._base_manager.get(pk=change.row_id)
+            if change.display_fields:
+                values = record.model_dump(mode="python", by_alias=True)
+                for field in change.display_fields:
+                    setattr(row, field, values[field])
+                row.save(update_fields=change.display_fields)
+            rows[record.key] = row
     while pending:
         remaining: list[tuple[CatalogRecordBase, CatalogChange]] = []
         for record, change in pending:

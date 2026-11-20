@@ -47,6 +47,10 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
 
     # Custom fields for frontend compatibility
     examination_name = serializers.CharField(source="examination.name", read_only=True)
+    # German display name; null when the catalogue carries none.
+    examination_name_de = serializers.CharField(
+        source="examination.name_de", read_only=True, allow_null=True
+    )
     examination_id = serializers.IntegerField(source="examination.id", read_only=True)
     video_id = serializers.SerializerMethodField()
     video_ids = serializers.SerializerMethodField()
@@ -61,6 +65,7 @@ class VideoExaminationSerializer(serializers.ModelSerializer[PatientExamination]
             "id",
             "examination_id",
             "examination_name",
+            "examination_name_de",
             "video_id",
             "video_ids",
             "patient_id",

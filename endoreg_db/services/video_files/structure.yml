@@ -80,7 +80,7 @@ files:
 - file: timeline.py
   role: Identity-preserving compatibility imports for the pure canonical rules in utils/video/timeline.py.
 - file: timestamp_backfill.py
-  role: Reconcile missing frame coordinates under the publication row lock and a uniquely owned read lease; release only that lease after synchronous capture, preserving playback grace and saved coordinates.
+  role: Reconcile missing frame coordinates under publication locking and an owned read lease; explicit operator-confirmed processed ordinals require verified media, matching counts and unchanged annotations, with rollback-only preview.
 - file: timeline_backfill.py
   role: Read-only classification of video timelines plus operator-applied recovery through timestamp_backfill; unverifiable media is reported, never estimated.
 - file: timeline_index.py

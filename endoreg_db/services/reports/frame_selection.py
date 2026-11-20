@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from django.contrib.auth.models import User
 from django.db import transaction
 from django.db.models import Case, IntegerField, Max, Q, QuerySet, Value, When
@@ -18,6 +20,7 @@ from lx_dtypes.models.contracts.patient_examination_report import (
     report_json_safe_dict,
     validate_segment_selection_map,
 )
+from lx_dtypes.terminology.terminology_loader import load_module_kb
 from typing import cast
 from endoreg_db.helpers.model_ids import model_pk
 from endoreg_db.models.media.frame.frame import Frame
@@ -77,6 +80,49 @@ def segment_patient_findings(
         ),
         key=lambda finding: finding.pk,
     )
+
+
+# lx_dtypes fills absent translations with this literal before ``name`` fallback.
+_UNKNOWN_TRANSLATION = "unknown"
+
+
+def report_finding_names_de(
+    report: PatientExaminationReport,
+    finding_names: Iterable[str],
+) -> dict[str, str]:
+    """Map finding identifiers to German names of the report's pinned terminology.
+
+    The report identity wins; an auto-created selection report without one uses
+    its examination's pinned identity. Without any pinned identity the mapping is
+    empty, so callers expose ``None`` instead of guessing a terminology. A pinned
+    identity that cannot be loaded raises ``TerminologyError``; a partial identity
+    raises ``ValueError``. Names absent from the pinned terminology are omitted.
+    """
+    names = {name for name in finding_names if name}
+    if not names:
+        return {}
+    module = str(report.knowledge_base_module or "").strip()
+    version = str(report.knowledge_base_version or "").strip()
+    if not module and not version:
+        examination = cast(PatientExamination, report.patient_examination)
+        module = str(examination.knowledge_base_module or "").strip()
+        version = str(examination.knowledge_base_version or "").strip()
+    if bool(module) != bool(version):
+        raise ValueError(
+            "German finding names require a complete knowledge-base identity."
+        )
+    if not module:
+        return {}
+    knowledge_base = load_module_kb(module, version=version)
+    result: dict[str, str] = {}
+    for name in sorted(names):
+        record = knowledge_base.finding.get(name)
+        if record is None:
+            continue
+        name_de = str(record.name_de or "").strip()
+        if name_de and name_de != _UNKNOWN_TRANSLATION:
+            result[name] = name_de
+    return result
 
 
 def selected_segment_patient_finding(

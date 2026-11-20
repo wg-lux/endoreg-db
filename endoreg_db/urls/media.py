@@ -1,4 +1,8 @@
 from endoreg_db.views.video.provenance_recovery import VideoProvenanceRecoveryView
+from endoreg_db.views.video.electrical_measurements import (
+    VideoElectricalAlignedFramesView,
+    VideoElectricalMeasurementsView,
+)
 from django.urls import URLPattern, path
 from endoreg_db.views.media.finding_suggestions import FindingSuggestionsView
 from endoreg_db.views.media.export_downloads import VideoExportDownloadView
@@ -416,6 +420,16 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/provenance/recover/",
         VideoProvenanceRecoveryView.as_view(),
         name="video-provenance-recovery",
+    ),
+    path(
+        "media/videos/<int:pk>/electrical-measurements/",
+        VideoElectricalMeasurementsView.as_view(),
+        name="video-electrical-measurements",
+    ),
+    path(
+        "media/videos/<int:pk>/electrical-measurements/<int:measurement_id>/frames/",
+        VideoElectricalAlignedFramesView.as_view(),
+        name="video-electrical-aligned-frames",
     ),
     path(
         "media/videos/<int:pk>/segments/blacken-outside/",

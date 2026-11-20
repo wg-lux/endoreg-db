@@ -43,6 +43,36 @@ For YAML editor completion, associate the generated `deployment_setup.schema.jso
 The schema is generated from the same Pydantic contract used at runtime. Editor
 validation does not replace registry resolution or database reconciliation.
 
+### Package roles (schema_version 2.0) and migrating v1 files
+
+Setup files use `schema_version: '2.0'`. Each package role requires one
+package kind, read from the registry listing (declared, catalog or migrated
+kind):
+
+| Role | Package kind | `activate` |
+| --- | --- | --- |
+| `reference_packages` | `application_data` | not allowed |
+| `terminology_packages` | `terminology` | not allowed |
+| `report_template_packages` | `report_templates` | allowed, at most one |
+| `study_packages` | `study` | not allowed |
+
+`validate`, `plan` and `apply` reject a selection whose kind does not match
+its role, and also reject unclassified packages. Reference packages are
+projected as reference catalogues. Terminology and report-template packages
+are validated as clinical graphs. Study packages are resolved and pinned
+in the lock only.
+
+A `schema_version: '1.0'` file is refused by `validate`, `plan` and `apply`.
+Convert it explicitly into a new file, review the result, then plan again:
+
+```sh
+python manage.py setup_deployment migrate setup-v1.yml --output setup.yml
+```
+
+`migrate` never rewrites the input file and refuses an existing output file.
+Each v1 `study_packages` entry moves to the role of its kind.
+`activate: true` is kept only on a report-template package.
+
 ### Validate, review, apply
 
 Deploy compatible lx-dtypes and endoreg-db versions and apply migrations first.

@@ -187,7 +187,10 @@ def test_anonymous_cannot_delete_report_draft(
 def test_two_polyps_keep_resection_and_segment_identity_through_report_and_cohort(
     logged_in_client: Client,
     selector_context: SimpleNamespace,
+    packaged_registry: Path,
 ) -> None:
+    # The pinned examination terminology resolves German finding names.
+    del packaged_registry
     examination = cast(PatientExamination, selector_context.patient_examination)
     finding_type = Finding.objects.create(name="study_two_polyps")
     assert examination.examination is not None
@@ -1361,7 +1364,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     assert temporary_paths and all(not path.exists() for path in temporary_paths)
     assert decoded == [frame.frame_number for frame in selected_frames]
     assert captions is not None
-    assert f"frame {selected_frames[0].frame_number}" in captions[0]
+    assert f"Bild {selected_frames[0].frame_number}" in captions[0]
     assert "AI prediction based report text." in first_block_text
 
 
@@ -1785,3 +1788,197 @@ def test_auto_selection_respects_media_validation_and_exclusive_segment_end(
     assert response.status_code == 200, response.content
     report = PatientExaminationReport.objects.get(patient_examination=video.examination)
     assert report.editor_payload["report_segment_frame_selections"] == {}
+
+
+GERMAN_NAME_FINDING = "post_resection_wound"
+
+
+def _attach_selector_finding(
+    selector_context: SimpleNamespace, finding_name: str
+) -> PatientFinding:
+    examination = cast(PatientExamination, selector_context.patient_examination)
+    finding, _ = Finding.objects.get_or_create(name=finding_name)
+    patient_finding = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    cast(LabelVideoSegment, selector_context.segment).patient_findings.add(
+        patient_finding
+    )
+    return patient_finding
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_exposes_german_finding_name(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    expected = (
+        terminology_loader.get_terminology_service()
+        .load("star_upper_gi", "0.1.2")
+        .finding[GERMAN_NAME_FINDING]
+        .name_de
+    )
+    assert expected and expected != GERMAN_NAME_FINDING
+    patient_finding = _attach_selector_finding(selector_context, GERMAN_NAME_FINDING)
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    item = _get_segment_item(
+        cast(SegmentFrameSelectorResponseData, response.json()),
+        segment_id=selector_context.segment.pk,
+    )
+    expected_attached = {
+        "patient_finding_id": patient_finding.pk,
+        "finding_id": patient_finding.finding_id,
+        "finding_name": GERMAN_NAME_FINDING,
+        "finding_name_de": expected,
+    }
+    assert item["attached_finding"] == expected_attached
+    assert item["attached_findings"] == [expected_attached]
+    # The selector label has no catalogue German name: null, not the identifier.
+    assert item["label_name"] is None
+    assert item["label_name_de"] is None
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_german_name_is_null_outside_pinned_terminology(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    _attach_selector_finding(selector_context, "selector_unknown_finding")
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    item = _get_segment_item(
+        cast(SegmentFrameSelectorResponseData, response.json()),
+        segment_id=selector_context.segment.pk,
+    )
+    attached = item["attached_finding"]
+    assert attached["finding_name"] == "selector_unknown_finding"
+    assert attached["finding_name_de"] is None
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_german_name_is_null_without_pinned_terminology(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+) -> None:
+    PatientExamination.objects.filter(
+        pk=selector_context.patient_examination.pk
+    ).update(knowledge_base_module="", knowledge_base_version="")
+    _attach_selector_finding(selector_context, GERMAN_NAME_FINDING)
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    attached = _get_segment_item(
+        cast(SegmentFrameSelectorResponseData, response.json()),
+        segment_id=selector_context.segment.pk,
+    )["attached_finding"]
+    assert attached["finding_name"] == GERMAN_NAME_FINDING
+    assert attached["finding_name_de"] is None
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_fails_closed_for_unloadable_pinned_terminology(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    PatientExamination.objects.filter(
+        pk=selector_context.patient_examination.pk
+    ).update(knowledge_base_module="unknown_module", knowledge_base_version="9.9.9")
+    _attach_selector_finding(selector_context, GERMAN_NAME_FINDING)
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 409, response.content
+    assert "deutsche Befundnamen" in response.json()["detail"]
+
+
+def test_report_frame_caption_prefers_german_names() -> None:
+    from endoreg_db.views.patient_report.patient_examination_report import (
+        PatientExaminationReportApi,
+    )
+
+    segment = cast(
+        LabelVideoSegment,
+        SimpleNamespace(label=SimpleNamespace(name="polyp", name_de="Polyp")),
+    )
+    unnamed_segment = cast(
+        LabelVideoSegment,
+        SimpleNamespace(label=SimpleNamespace(name="polyp", name_de=None)),
+    )
+    unlabelled_segment = cast(LabelVideoSegment, SimpleNamespace(label=None))
+    frame = cast(Frame, SimpleNamespace(frame_number=12, timestamp=0.48))
+    patient_finding = cast(
+        PatientFinding, SimpleNamespace(finding=SimpleNamespace(name="polyp_finding"))
+    )
+
+    caption = PatientExaminationReportApi._frame_caption(  # pyright: ignore[reportPrivateUsage]
+        segment=segment,
+        frame=frame,
+        patient_finding=patient_finding,
+        finding_name_de="Polyp (deutsch)",
+    )
+    identifier_caption = PatientExaminationReportApi._frame_caption(  # pyright: ignore[reportPrivateUsage]
+        segment=unnamed_segment,
+        frame=frame,
+        patient_finding=patient_finding,
+    )
+    unlabelled_caption = PatientExaminationReportApi._frame_caption(  # pyright: ignore[reportPrivateUsage]
+        segment=unlabelled_segment,
+        frame=frame,
+        patient_finding=None,
+    )
+
+    assert caption == "Polyp | Bild 12 | 0.5s | Polyp (deutsch)"
+    assert identifier_caption == "polyp | Bild 12 | 0.5s | polyp_finding"
+    assert unlabelled_caption == "KI-Vorhersage | Bild 12 | 0.5s"
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_exposes_german_label_name(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+) -> None:
+    from endoreg_db.models import Label
+
+    named = Label.objects.create(name="selector_polyp_label", name_de="Polyp")
+    segment = cast(LabelVideoSegment, selector_context.segment)
+    segment.label = named
+    segment.save(update_fields=["label"])
+    unnamed_segment = LabelVideoSegment.objects.create(
+        video_file=selector_context.video,
+        label=Label.objects.create(name="selector_unnamed_label"),
+        start_frame_number=30,
+        end_frame_number=40,
+    )
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    data = cast(SegmentFrameSelectorResponseData, response.json())
+    item = _get_segment_item(data, segment_id=segment.pk)
+    assert item["label_name"] == "selector_polyp_label"
+    assert item["label_name_de"] == "Polyp"
+    unnamed = _get_segment_item(data, segment_id=unnamed_segment.pk)
+    assert unnamed["label_name"] == "selector_unnamed_label"
+    assert unnamed["label_name_de"] is None

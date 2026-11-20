@@ -22,7 +22,7 @@ files:
 - file: __init__.py
   role: Deployment, Betriebsbereitschaft und Dienstkoordination.
 - file: deployment_setup.py
-  role: Reviewed deployment plans and atomic reference/default-center provisioning.
+  role: Reviewed v2 deployment plans and atomic reference/default-center provisioning; every package role must match its registry package kind (unclassified rejected) and v1 setups convert only through explicit migration.
 - file: environment_readiness.py
   role: Exports check_environment_readiness, assert_environment_readiness.
 - file: lifecycle_state_machine.py

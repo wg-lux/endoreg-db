@@ -12,6 +12,8 @@ files:
   role: Declared canonical migration graph leaf checked against the executable graph.
 - file: endoreg_rust_backend.pyi
   role: Generated typed native interface, including hub acknowledgement/failure reduction and retry classification.
+- file: migrations/0120_reference_catalog_name_de.py
+  role: Nullable German display names on every named reference-catalogue model except Risk, which already had one.
 - file: migrations/0118_outbound_video_file_cleanup.py
   role: Durable intent and completion timestamps for explicit post-transfer local video file reclamation.
 - file: logger_conf.py

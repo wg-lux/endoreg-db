@@ -48,8 +48,8 @@ def validate_final_report_submission(
                     {
                         "code": "missing_knowledge_base_identity",
                         "message": (
-                            "Final reports require knowledge_base_module and "
-                            "knowledge_base_version."
+                            "Ein finaler Bericht benötigt eine festgelegte "
+                            "Terminologie (Modul und Version)."
                         ),
                     }
                 ],
@@ -67,7 +67,7 @@ def validate_final_report_submission(
                 "issues": [
                     {
                         "code": "invalid_persisted_report_ledger",
-                        "message": "The persisted report ledger is not valid.",
+                        "message": "Der gespeicherte Berichtsdatensatz ist ungültig.",
                     }
                 ],
             }
@@ -83,8 +83,8 @@ def validate_final_report_submission(
                     {
                         "code": "knowledge_base_identity_mismatch",
                         "message": (
-                            "Persisted report ledger and PatientExamination use "
-                            "different knowledge-base identities."
+                            "Gespeicherter Berichtsdatensatz und Untersuchung "
+                            "verwenden unterschiedliche Terminologien."
                         ),
                     }
                 ],
@@ -116,7 +116,8 @@ def validate_final_report_submission(
                     {
                         "code": "report_template_validation_unavailable",
                         "message": (
-                            "The versioned report template could not be validated."
+                            "Die versionierte Berichtsvorlage konnte nicht "
+                            "geprüft werden."
                         ),
                     }
                 ],

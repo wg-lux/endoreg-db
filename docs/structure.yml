@@ -8,6 +8,8 @@ responsibilities:
 boundaries:
 - Feature scope and readiness evidence belong in feature-tracking YAML.
 files:
+- file: electrosurgical_video_alignment.md
+  role: Electrosurgical import, on-demand PTS alignment, API contract and open questions; readiness stays in feature YAML.
 - file: code_quality.md
   role: Quality contracts and fast commit versus comprehensive CI command guidance.
 - file: patient_matching_threat_model.md

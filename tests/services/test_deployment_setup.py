@@ -25,7 +25,9 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
 from endoreg_db.services.runtime.deployment_setup import (
     DeploymentActivationError,
+    DeploymentPackageKindError,
     apply_deployment,
+    migrate_setup_to_v2,
     plan_deployment,
     validate_deployment,
 )
@@ -174,7 +176,7 @@ def test_activation_is_explicit_and_retry_preserves_database(
     registry: TerminologyService,
 ) -> None:
     setup = template("coloreg")
-    setup.study_packages[0] = setup.study_packages[0].model_copy(
+    setup.report_template_packages[0] = setup.report_template_packages[0].model_copy(
         update={"activate": True}
     )
     resolved = validate_deployment(setup, registry)
@@ -190,7 +192,7 @@ def test_activation_is_explicit_and_retry_preserves_database(
     assert registry.active_identity() == previous
     center = ApplicationSettings.objects.get(pk=1).center
     apply_deployment(setup, resolved.lock, registry)
-    selected = setup.study_packages[0]
+    selected = setup.report_template_packages[0]
     assert registry.active_identity() == (selected.module, selected.version)
     assert ApplicationSettings.objects.get(pk=1).center == center
     assert ReferenceCatalogImport.objects.count() == 1
@@ -310,3 +312,216 @@ def test_existing_rows_require_explicit_adoption_in_setup(
     apply_deployment(adopted, locked, registry)
     assert ApplicationSettings.objects.get(pk=1).center == center
     assert ReferenceCatalogImport.objects.count() == 2
+
+
+def _local_reference_package(
+    registry: TerminologyService,
+    tmp_path: Path,
+    name: str,
+    *,
+    package_kind: str | None,
+) -> DeploymentSetup:
+    """Register a local package and select it as the only reference package."""
+    from lx_dtypes.models.contracts.deployment_setup import DeploymentPackage
+
+    package_dir = tmp_path / "local_packages" / name
+    package_dir.mkdir(parents=True)
+    kind_line = f"package_kind: {package_kind}\n" if package_kind else ""
+    # A reference catalog mixed with a terminology record has no migrated kind.
+    (package_dir / "records.yml").write_text(
+        "- model: reference_catalog\n"
+        f"  name: {name}_shift_types\n"
+        "  payload:\n"
+        "    schema_version: '1.0'\n"
+        "    records:\n"
+        "    - record_type: shift_type\n"
+        f"      name: {name}_shift\n"
+        "      description: null\n"
+        "      is_active: true\n"
+        "- model: information_source\n"
+        f"  name: {name}_source\n"
+        "  description: Local test source.\n"
+    )
+    (package_dir / "config.yaml").write_text(
+        f"name: {name}\nversion: 1.0.0\n{kind_line}"
+        "modules: []\ndepends_on: []\ndata:\n  files:\n  - ./records.yml\n"
+    )
+    registry.register_local(name, "1.0.0", input_dirs=[package_dir.parent])
+    setup = template("minimal")
+    setup.reference_packages.append(DeploymentPackage(module=name, version="1.0.0"))
+    return setup
+
+
+V1_COLOREG = """schema_version: '1.0'
+site:
+  center_key: local-center
+  name: Local Center
+reference_packages:
+- module: endoreg_reference
+  version: 1.0.0
+study_packages:
+- module: coloreg
+  version: 0.3.0
+  activate: true
+adopt_existing: false
+"""
+
+
+@pytest.mark.parametrize("name", ["minimal", "coloreg", "training", "green_endoscopy"])
+def test_shipped_v2_templates_pass_the_role_kind_check(
+    registry: TerminologyService, name: str
+) -> None:
+    setup = template(name)
+    assert setup.schema_version == "2.0"
+    validate_deployment(setup, registry)
+
+
+def test_reference_package_with_catalog_kind_mismatch_fails_closed(
+    registry: TerminologyService,
+) -> None:
+    from lx_dtypes.models.contracts.deployment_setup import DeploymentPackage
+
+    setup = template("minimal")
+    setup.reference_packages.append(
+        DeploymentPackage(module="lx_findings", version="0.1.0")
+    )
+    with pytest.raises(
+        DeploymentPackageKindError, match="expected application_data, found terminology"
+    ):
+        validate_deployment(setup, registry)
+    lock = resolve_deployment(setup, registry).lock
+    with pytest.raises(DeploymentPackageKindError, match="Pakettypen passen nicht"):
+        apply_deployment(setup, lock, registry)
+    assert not Center.objects.exists()
+    assert not ReferenceCatalogImport.objects.exists()
+
+
+def test_report_template_role_rejects_terminology_package(
+    registry: TerminologyService,
+) -> None:
+    from lx_dtypes.models.contracts.deployment_setup import (
+        DeploymentReportTemplatePackage,
+    )
+
+    setup = template("minimal")
+    setup.report_template_packages.append(
+        DeploymentReportTemplatePackage(module="lx_findings", version="0.1.0")
+    )
+    with pytest.raises(DeploymentPackageKindError, match="report_templates"):
+        validate_deployment(setup, registry)
+
+
+def test_reference_package_with_declared_kind_mismatch_fails_closed(
+    registry: TerminologyService, tmp_path: Path
+) -> None:
+    setup = _local_reference_package(
+        registry, tmp_path, "site_terminology_reference", package_kind="terminology"
+    )
+    with pytest.raises(DeploymentPackageKindError, match="found terminology"):
+        validate_deployment(setup, registry)
+    assert not Center.objects.exists()
+
+
+def test_unclassified_reference_package_is_rejected_in_v2(
+    registry: TerminologyService, tmp_path: Path
+) -> None:
+    setup = _local_reference_package(
+        registry, tmp_path, "site_empty_reference", package_kind=None
+    )
+    with pytest.raises(DeploymentPackageKindError, match="unclassified"):
+        validate_deployment(setup, registry)
+    assert not Center.objects.exists()
+
+
+def test_v1_migration_moves_study_selection_by_kind(
+    registry: TerminologyService,
+) -> None:
+    from lx_dtypes.utils.deployment_setup import parse_any_deployment_setup
+    from lx_dtypes.models.contracts.deployment_setup import DeploymentSetupV1
+
+    original = parse_any_deployment_setup(V1_COLOREG)
+    assert isinstance(original, DeploymentSetupV1)
+    migrated = migrate_setup_to_v2(original, registry)
+    assert migrated.schema_version == "2.0"
+    assert [p.module for p in migrated.reference_packages] == ["endoreg_reference"]
+    assert [(p.module, p.activate) for p in migrated.report_template_packages] == [
+        ("coloreg", True)
+    ]
+    assert migrated.study_packages == []
+    validate_deployment(migrated, registry)
+
+
+def test_v1_migration_rejects_activate_on_terminology(
+    registry: TerminologyService,
+) -> None:
+    from lx_dtypes.utils.deployment_setup import parse_any_deployment_setup
+    from lx_dtypes.models.contracts.deployment_setup import DeploymentSetupV1
+
+    original = parse_any_deployment_setup(
+        V1_COLOREG.replace(
+            "module: coloreg\n  version: 0.3.0", "module: lx_findings\n  version: 0.1.0"
+        )
+    )
+    assert isinstance(original, DeploymentSetupV1)
+    with pytest.raises(DeploymentPackageKindError, match="activate is only allowed"):
+        migrate_setup_to_v2(original, registry)
+
+
+def test_cli_refuses_v1_and_migrates_to_a_new_file(
+    registry: TerminologyService, tmp_path: Path
+) -> None:
+    source = tmp_path / "setup-v1.yml"
+    source.write_text(V1_COLOREG)
+    target = tmp_path / "setup-v2.yml"
+    with patch(
+        "endoreg_db.management.commands.setup_deployment.get_terminology_service",
+        return_value=registry,
+    ):
+        for action in ("validate", "plan"):
+            with pytest.raises(CommandError, match="setup_deployment migrate"):
+                call_command(
+                    "setup_deployment", action, "--file", str(source), stdout=StringIO()
+                )
+        with pytest.raises(CommandError, match="schema_version 1.0"):
+            call_command(
+                "setup_deployment",
+                "apply",
+                "--file",
+                str(source),
+                "--lock-file",
+                str(tmp_path / "missing.lock.yml"),
+                stdout=StringIO(),
+            )
+        with pytest.raises(CommandError, match="output must differ"):
+            call_command(
+                "setup_deployment",
+                "migrate",
+                str(source),
+                "--output",
+                str(source),
+                stdout=StringIO(),
+            )
+        call_command(
+            "setup_deployment",
+            "migrate",
+            str(source),
+            "--output",
+            str(target),
+            stdout=StringIO(),
+        )
+        assert source.read_text() == V1_COLOREG
+        migrated = yaml.safe_load(target.read_text())
+        assert migrated["schema_version"] == "2.0"
+        assert migrated["report_template_packages"][0]["module"] == "coloreg"
+        with pytest.raises(CommandError, match="already exists"):
+            call_command(
+                "setup_deployment",
+                "migrate",
+                str(source),
+                "--output",
+                str(target),
+                stdout=StringIO(),
+            )
+        call_command(
+            "setup_deployment", "validate", "--file", str(target), stdout=StringIO()
+        )

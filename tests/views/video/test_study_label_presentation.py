@@ -329,3 +329,19 @@ def test_box_replace_preserves_historical_forbidden_labels(
     assert FrameBoxAnnotationView.as_view()(request).status_code == 400
     assert FrameBoxAnnotation.objects.filter(pk=old.pk).exists()
     assert FrameBoxAnnotation.objects.filter(frame=frame).count() == 1
+
+
+def test_catalog_uses_label_name_de_when_study_sets_no_display_name(
+    owner: User,
+) -> None:
+    Label.objects.create(name="catalog_named_label", name_de="Benanntes Label")
+    Label.objects.create(name="catalog_unnamed_label")
+    factory = APIRequestFactory()
+    request = factory.get("/labels/catalog/")
+    force_authenticate(request, owner)
+    response = label_catalog(request)
+    assert response.status_code == 200
+    by_name = {item["name"]: item for item in response.data["labels"]}
+    assert by_name["catalog_named_label"]["display_name"] == "Benanntes Label"
+    # No catalogue German name: null, never the identifier.
+    assert by_name["catalog_unnamed_label"]["display_name"] is None

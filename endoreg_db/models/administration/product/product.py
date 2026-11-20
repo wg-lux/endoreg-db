@@ -28,6 +28,10 @@ class Product(models.Model):
     objects = ProductManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     transport_route: models.ForeignKey[Any, Any] = models.ForeignKey(
         "TransportRoute", on_delete=models.SET_NULL, null=True

@@ -158,16 +158,29 @@ def classify_video_timeline(
     return VideoTimelineBackfillStatus.CANDIDATE, None
 
 
-def _apply_backfill(video: VideoFile) -> VideoTimelineBackfillEntry:
+def _apply_backfill(
+    video: VideoFile,
+    *,
+    processed_ordinals_operator: str | None = None,
+    dry_run: bool = False,
+) -> VideoTimelineBackfillEntry:
     video_id = int(video.pk)
     try:
-        backfill_missing_video_timestamps(video)
+        backfill_missing_video_timestamps(
+            video,
+            processed_ordinals_operator=processed_ordinals_operator,
+            dry_run=dry_run,
+        )
     except VideoTimelineMappingError as exc:
         reason = str(exc)
     except Exception as exc:  # noqa: BLE001 - one video must not stop the batch
         # The type alone is reported; messages may carry storage paths.
         reason = type(exc).__name__
     else:
+        if dry_run:
+            return VideoTimelineBackfillEntry(
+                video_id, VideoTimelineBackfillStatus.CANDIDATE
+            )
         video.refresh_from_db()
         status, blocker = classify_video_timeline(video)
         if status == VideoTimelineBackfillStatus.READY:
@@ -191,19 +204,41 @@ def _apply_backfill(video: VideoFile) -> VideoTimelineBackfillEntry:
 
 
 def backfill_video_timelines(
-    *, apply: bool, video_ids: Iterable[int] | None = None
+    *,
+    apply: bool,
+    video_ids: Iterable[int] | None = None,
+    processed_ordinals_operator: str | None = None,
 ) -> VideoTimelineBackfillResult:
     """Classify every selected video and, with ``apply``, recover candidates."""
     from endoreg_db.models.media.video.video_file import VideoFile
 
+    selected_ids = list(video_ids) if video_ids is not None else None
+    if processed_ordinals_operator is not None and not selected_ids:
+        raise ValueError("Processed ordinal recovery requires explicit video IDs")
     queryset = VideoFile.objects.order_by("pk")
-    if video_ids is not None:
-        queryset = queryset.filter(pk__in=list(video_ids))
+    if selected_ids is not None:
+        queryset = queryset.filter(pk__in=selected_ids)
+        if processed_ordinals_operator is not None and queryset.count() != len(
+            set(selected_ids)
+        ):
+            raise ValueError("A selected video does not exist")
     result = VideoTimelineBackfillResult(apply=apply)
     for video in queryset.iterator(chunk_size=200):
         status, blocker = classify_video_timeline(video)
-        if status == VideoTimelineBackfillStatus.CANDIDATE and apply:
-            result.entries.append(_apply_backfill(video))
+        if (
+            status == VideoTimelineBackfillStatus.CANDIDATE
+            or (
+                processed_ordinals_operator is not None
+                and blocker == VideoTimelineBackfillBlocker.SEGMENTS_WITHOUT_FRAME_ROWS
+            )
+        ) and (apply or processed_ordinals_operator is not None):
+            result.entries.append(
+                _apply_backfill(
+                    video,
+                    processed_ordinals_operator=processed_ordinals_operator,
+                    dry_run=not apply,
+                )
+            )
             continue
         result.entries.append(
             VideoTimelineBackfillEntry(

@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
 files:
+- file: electrosurgical_measurement.py
+  role: Model-boundary validation of persisted electrosurgical channel descriptors and aggregation profiles.
 - file: import_processing.py
   role: Typed database carrier validated by the native import processing stack contract.
 - file: patient_matching.py

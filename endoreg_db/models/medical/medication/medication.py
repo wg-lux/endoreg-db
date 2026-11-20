@@ -19,6 +19,10 @@ class Medication(models.Model):
     """Model representing a medication."""
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     adapt_to_renal_function: models.BooleanField[Any, Any] = models.BooleanField(
         default=False
     )

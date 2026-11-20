@@ -19,6 +19,10 @@ from endoreg_db.serializers.label_video_segment.frame_annotation_bulk import (
 
 class FrameBoxAnnotationSerializer(serializers.ModelSerializer[FrameBoxAnnotation]):
     label_name = serializers.CharField(source="label.name", read_only=True)
+    # German display name; null when the catalogue carries none.
+    label_name_de = serializers.CharField(
+        source="label.name_de", read_only=True, allow_null=True
+    )
     information_source_name = serializers.CharField(
         source="information_source.name",
         read_only=True,
@@ -34,6 +38,7 @@ class FrameBoxAnnotationSerializer(serializers.ModelSerializer[FrameBoxAnnotatio
             "frame_id",
             "label_id",
             "label_name",
+            "label_name_de",
             "value",
             "float_value",
             "x",

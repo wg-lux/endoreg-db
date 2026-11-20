@@ -3,10 +3,20 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Sequence
 from typing import Literal
 
 from django.db import connection, transaction
-from lx_dtypes.models.contracts.deployment_setup import DeploymentLock, DeploymentSetup
+from lx_dtypes.models.contracts.deployment_setup import (
+    DeploymentKindError,
+    DeploymentLock,
+    DeploymentPackage,
+    DeploymentSetup,
+    DeploymentSetupV1,
+    PackageKindLookup,
+    check_deployment_setup_kinds,
+    migrate_deployment_setup_v1_to_v2,
+)
 from lx_dtypes.models.contracts.reference_catalog import (
     CatalogRecordBase,
     ReferenceKind,
@@ -55,6 +65,76 @@ class DeploymentActivationError(RuntimeError):
     """Database commit succeeded; registry activation must be inspected/retried."""
 
 
+class DeploymentPackageKindError(ValueError):
+    """A selected package is unclassified or does not fit its v2 role."""
+
+
+class DeploymentSetupVersionError(ValueError):
+    """A v1 document reached validate/plan/apply instead of explicit migration."""
+
+
+V1_SETUP_MESSAGE = (
+    "Die Deployment-Konfiguration verwendet schema_version 1.0. Bitte zuerst mit "
+    "'setup_deployment migrate <datei> --output <neue-datei>' nach 2.0 migrieren. / "
+    "The deployment setup uses schema_version 1.0. Migrate it to 2.0 first with "
+    "'setup_deployment migrate <file> --output <new-file>'."
+)
+
+
+def package_kind_lookup(
+    packages: Sequence[DeploymentPackage], service: TerminologyService
+) -> PackageKindLookup:
+    """Kinds of the selected identities from the registry listing.
+
+    The listing reports declared, catalog or migrated kinds; an unregistered or
+    unclassified identity maps to None, which the role check rejects.
+    """
+    if not packages:
+        return {}
+    bundles = {
+        (bundle.module_name, bundle.version): bundle.package_kind
+        for bundle in service.list_bundles().bundles
+    }
+    return {
+        (package.module, package.version): bundles.get(
+            (package.module, package.version)
+        )
+        for package in packages
+    }
+
+
+def _kind_error(error: DeploymentKindError) -> DeploymentPackageKindError:
+    details = "; ".join(problem.format() for problem in error.problems)
+    return DeploymentPackageKindError(
+        "Pakettypen passen nicht zu ihren Rollen in der Deployment-Konfiguration "
+        "(nicht klassifizierte Pakete werden abgelehnt). / Deployment package "
+        f"kinds do not match their roles (unclassified packages are rejected): "
+        f"{details}"
+    )
+
+
+def check_role_kinds(setup: DeploymentSetup, service: TerminologyService) -> None:
+    """Fail closed unless every selection's kind fits its role."""
+    try:
+        check_deployment_setup_kinds(
+            setup, package_kind_lookup(setup.selected_packages(), service)
+        )
+    except DeploymentKindError as exc:
+        raise _kind_error(exc) from exc
+
+
+def migrate_setup_to_v2(
+    setup: DeploymentSetupV1, service: TerminologyService
+) -> DeploymentSetup:
+    """Explicit v1 to v2 migration by registered package kinds."""
+    try:
+        return migrate_deployment_setup_v1_to_v2(
+            setup, package_kind_lookup(setup.selected_packages(), service)
+        )
+    except DeploymentKindError as exc:
+        raise _kind_error(exc) from exc
+
+
 def _catalogues(resolved: ResolvedDeployment) -> list[ReferenceCatalogSnapshot]:
     return [
         catalog_snapshot(resolved.knowledge_bases[p.module])
@@ -66,9 +146,10 @@ def validate_deployment(
     setup: DeploymentSetup, service: TerminologyService
 ) -> ResolvedDeployment:
     resolved = resolve_deployment(setup, service)
+    check_role_kinds(setup, service)
     # All catalogue edges and all selected clinical graphs validate before writes.
     _catalogues(resolved)
-    for package in setup.study_packages:
+    for package in [*setup.terminology_packages, *setup.report_template_packages]:
         clinical_snapshot(resolved.knowledge_bases[package.module])
     return resolved
 
@@ -134,7 +215,7 @@ def plan_deployment(resolved: ResolvedDeployment) -> DeploymentPlan:
         conflicts=conflicts,
         can_apply=not conflicts and all(p.can_import for p in plans),
         activation="select"
-        if any(p.activate for p in setup.study_packages)
+        if any(p.activate for p in setup.report_template_packages)
         else "unchanged",
     )
 
@@ -159,7 +240,9 @@ def apply_deployment(
             raise ValueError(
                 "package sources differ from the reviewed lock; run plan again"
             )
-        activating = next((p for p in setup.study_packages if p.activate), None)
+        activating = next(
+            (p for p in setup.report_template_packages if p.activate), None
+        )
         registry_revision = (
             service.list_bundles().revision if activating is not None else None
         )
