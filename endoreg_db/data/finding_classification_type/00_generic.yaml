@@ -1,0 +1,53 @@
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "location"
+    name_de: "Lokalisation"
+    name_en: "Location"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "morphology"
+    name_de: "Morphologie"
+    name_en: "Morphology"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "histology"
+    name_de: "Histologie"
+    name_en: "Histology"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "size"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "surface_integrity"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "planarity"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "circularity"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "shape"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "capillary_pattern"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "inferrable"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "bowel_prep"
+
+- model: endoreg_db.finding_classification_type
+  fields:
+    name: "colon_lesion_advanced_imaging"

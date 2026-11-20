@@ -1,0 +1,60 @@
+version: 1
+tier: module
+path: endoreg_db/services/video_files/_metadata
+parent: ../structure.yml
+summary: Internal video specification, crop, region and metadata helpers.
+responsibilities:
+- Read observed video specifications and resolve crop and endoscope regions.
+- Update video and text metadata using persisted processing context.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+entrypoints:
+- name: get_endo_roi
+  file: get_endo_roi.py
+  purpose: Return the endoscope ROI from linked VideoMeta as a shared RoiBoxCore contract.
+files:
+- file: __init__.py
+  role: Package imports and compatibility exports.
+- file: get_crop_template.py
+  role: 'Internal helpers: _get_crop_template.'
+- file: get_endo_roi.py
+  role: Exports get_endo_roi.
+- file: get_fps.py
+  role: 'Internal helpers: _validate_video_path, _is_valid_fps, _parse_frame_rate.'
+- file: initialize_video_specs.py
+  role: 'Internal helpers: _ObservedVideoSpecs, _select_metadata_field_file, _select_metadata_source.'
+- file: text_meta.py
+  role: 'Internal helpers: _VideoTextMetaState, _update_text_metadata.'
+- file: video_meta.py
+  role: 'Internal helpers: _get_import_processor, _get_import_context_names, _populate_video_fields_from_meta.'
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/services/patient_identity
+  - endoreg_db/services/video_storage
+  - endoreg_db/services/video_files
+  - endoreg_db/utils
+  external:
+  - cv2
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Presentation timestamp call sites
+  doc: docs/video_pts_fps_callsite_inventory.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_video_initialize_specs.py tests/media/video/test_get_fps.py
+  files:
+  - tests/services/test_video_initialize_specs.py
+  - tests/media/video/test_get_fps.py

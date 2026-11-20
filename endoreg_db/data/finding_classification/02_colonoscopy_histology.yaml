@@ -1,0 +1,13 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "colonoscopy_polyp_histology"
+    classification_types:
+      - histology
+    choices: [
+        "histology_polyp_hyperplastic",
+        "histology_polyp_adenoma_tubular",
+        "histology_polyp_adenoma_tubulovillous",
+        "histology_polyp_adenoma_villous",
+        "histology_polyp_sessile_serrated_lesion",
+        # unknown?
+      ]

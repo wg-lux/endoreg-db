@@ -1,0 +1,44 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "visualized"
+    classification_types:
+      - inferrable
+    choices:
+      - "yes"
+      - "no"
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "examination_setting_generic_location"
+    classification_types: []
+    choices:
+      - examination_setting_generic_location_inpatient
+      - examination_setting_generic_location_outpatient
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "sedation_performed"
+    classification_types: []
+    choices:
+      - "yes"
+      - "no"
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "examination_setting_generic_sedation"
+    classification_types: []
+    choices:
+      - "sedation_propofol"
+      - "sedation_midazolam"
+      - "sedation_propofol_midazolam"
+      - "sedation_other"
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "complication_generic_type"
+    classification_types: []
+    choices:
+      - complication_generic_type_cardiorespiratory
+      - complication_generic_type_bleeding
+      - complication_generic_type_perforation
+      - complication_generic_type_other

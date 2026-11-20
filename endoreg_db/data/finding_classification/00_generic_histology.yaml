@@ -1,0 +1,28 @@
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_dysplasia_default"
+    classification_types:
+      - histology
+    choices:
+      - histology_dysplasia_none
+      - histology_dysplasia_low_grade
+      - histology_dysplasia_high_grade
+
+- model: endoreg_db.finding_classification
+  fields:
+    name: "histology_dignity_default"
+    classification_types:
+      - histology
+    choices:
+      - histology_dignity_benign
+      - histology_dignity_malign
+
+- model: endoreg_db.finding_classification_choice
+  fields:
+    name: "histology_in_sano_default"
+    classification_types:
+      - histology
+    choices:
+      - "yes"
+      - "no"
+      - "na"

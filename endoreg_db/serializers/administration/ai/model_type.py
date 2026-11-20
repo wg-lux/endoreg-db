@@ -1,10 +1,21 @@
-from rest_framework import serializers
-from endoreg_db.models import ModelType
+from __future__ import annotations
 
-class ModelTypeSerializer(serializers.ModelSerializer):
+from typing import TYPE_CHECKING
+
+from rest_framework import serializers
+
+if TYPE_CHECKING:
+    _ModelSerializerMeta = serializers.ModelSerializer.Meta
+else:
+    _ModelSerializerMeta = object
+from endoreg_db.models.administration.ai.model_type import ModelType
+
+
+class ModelTypeSerializer(serializers.ModelSerializer[ModelType]):
     """
     Serializer for the ModelType model.
     """
-    class Meta:
-        model = ModelType
-        fields = '__all__'
+
+    class Meta(_ModelSerializerMeta):
+        model = ModelType  # pyright: ignore[reportAssignmentType]
+        fields = "__all__"

@@ -1,0 +1,113 @@
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_polyp"
+    description: "Polyp"
+    finding_types:
+      - observation
+      #TODO add finding_classifications and finding_interventions
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_ulcer"
+    description: "Ulcer"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_erythema"
+    description: "Erythema"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_subepithelial_tumor"
+    description: "Subepithelial Tumor"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_stenosis"
+    description: "Stenosis"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_varices_esophageal"
+    description: "Esophageal Varices"
+    finding_types:
+      - observation
+      - persisting
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_varices_gastric"
+    description: "Gastric Varices"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_varices_duodenal"
+    description: "Duodenal Varices"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_scar"
+    description: "Scar"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_bleeding"
+    description: "Bleeding"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_stenosis"
+    description: "Stenosis"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_ectopic_gastric_mucosa"
+    description: "Ectopic Gastric Mucosa"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_diverticulum_esophagus"
+    description: "Divertikel (Ösophagus)"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_diverticulum_duodenum"
+    description: "Divertikel (Duodenum)"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_ectopic_pancreatic_tissue"
+    description: "Ectopic Pancreatic Tissue"
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "gastroscopy_obstruction_generic"
+    description: "Generic Obstruction"
+    finding_types:
+      - observation

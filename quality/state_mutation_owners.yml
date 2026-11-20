@@ -1,0 +1,145 @@
+# Reviewed owners of every status/state field write in endoreg_db.
+# Checked by scripts/check_state_mutation_owners.py; see
+# docs/state_mutation_ownership.md for the writer kinds and how to add entries.
+# New code writes a lifecycle field through its native single writer or a
+# native-validated service.
+version: 1
+writers:
+  # --- Native single writers -------------------------------------------------
+  - path: endoreg_db/services/hub/outbound_transfer_state.py
+    fields: [local_status, failure_class]
+    machine: hub_outbound_transfer
+    kind: native_single_writer
+    functions: [apply_outbound_transfer_event]
+    note: Rust reduce_hub_transfer_event.
+  - path: endoreg_db/services/streaming/hls_artifact_state.py
+    fields: [status]
+    machine: hls_artifact
+    kind: native_single_writer
+    functions: [set_hls_artifact_status]
+    note: Rust decide_hls_artifact_transition.
+  - path: endoreg_db/services/runtime/status_writers.py
+    fields: [status, transfer_status, case_resolution_status, cleanup_status, local_cleanup_status]
+    machine: native_status_tables
+    kind: native_single_writer
+    functions:
+      - set_report_llm_job_status
+      - set_video_processing_history_status
+      - set_quarantine_item_status
+      - update_frame_export_job_status
+      - set_ai_dataset_export_artifact_status
+      - set_dicom_export_job_status
+      - set_patient_examination_report_status
+      - set_transfer_status
+      - update_transfer_status
+      - mark_transfers_lost
+      - set_case_resolution_status
+      - set_upload_job_cleanup_status
+      - set_outbound_local_cleanup_status
+    note: >-
+      Rust decide_status_transition tables for report LLM jobs, video processing
+      history, quarantine items, frame annotation exports, AI dataset export
+      artifacts, DICOM export jobs, patient examination reports, inbound hub
+      transfers and their case resolution, upload source cleanup and outbound
+      local cleanup. update_transfer_status persists the case resolution that
+      set_case_resolution_status already decided.
+
+  # --- Native-validated services ----------------------------------------------
+  - path: endoreg_db/models/hub/upload_job.py
+    fields: [status]
+    machine: upload_job
+    kind: model_transition_method
+    note: >-
+      mark_* methods; called by upload_job_state_machine and the import lease
+      reconciler after native lifecycle validation under the row lock.
+  - path: endoreg_db/services/hub/upload_job_cancellation.py
+    fields: [status]
+    machine: upload_job
+    kind: native_validated
+  - path: endoreg_db/services/jobs/model_training_jobs.py
+    fields: [status]
+    machine: ai_model_training_run
+    kind: native_validated
+  - path: endoreg_db/services/media/integrity.py
+    fields: [status]
+    machine: ai_model_training_run
+    kind: native_validated
+    note: Conditional update after native reduction to LOST.
+  - path: endoreg_db/services/reports/import_fencing.py
+    fields: [status]
+    machine: report_import_attempt
+    kind: native_validated
+
+  # --- Storage lifecycle model methods ------------------------------------------
+  - path: endoreg_db/models/hub/storage_placement.py
+    fields: [status]
+    machine: storage_reservation
+    kind: model_transition_method
+    note: save() rejects status changes outside apply_lifecycle_status.
+  - path: endoreg_db/models/hub/storage_placement.py
+    fields: [state]
+    machine: storage_artifact_placement
+    kind: model_transition_method
+    note: save() rejects state changes outside apply_lifecycle_state.
+  - path: endoreg_db/models/hub/storage_transfer.py
+    fields: [state]
+    machine: storage_transfer_evidence
+    kind: model_transition_method
+    note: save() rejects state changes outside the apply_* methods.
+
+  # --- State relations (foreign key to a state row) --------------------------
+  - path: endoreg_db/models/metadata/sensitive_meta.py
+    fields: [state]
+    machine: sensitive_meta_state
+    kind: state_relation
+  - path: endoreg_db/models/state/video.py
+    fields: [state]
+    machine: video_state
+    kind: state_relation
+  - path: endoreg_db/services/video_files/imports.py
+    fields: [state]
+    machine: video_state
+    kind: state_relation
+  - path: endoreg_db/services/video_files/state.py
+    fields: [state]
+    machine: video_state
+    kind: state_relation
+  - path: endoreg_db/services/media/export_ready.py
+    fields: [state]
+    machine: video_state
+    kind: state_relation
+  - path: endoreg_db/services/jobs/video_reimport_jobs.py
+    fields: [state]
+    machine: video_state
+    kind: state_relation
+  - path: endoreg_db/services/raw_pdf_files/imports.py
+    fields: [state]
+    machine: raw_pdf_state
+    kind: state_relation
+  - path: endoreg_db/services/raw_pdf_files/state.py
+    fields: [state]
+    machine: raw_pdf_state
+    kind: state_relation
+  - path: endoreg_db/services/reports/concept_embeddings.py
+    fields: [state]
+    machine: raw_pdf_state
+    kind: state_relation
+
+  # --- Result records --------------------------------------------------------
+  - path: endoreg_db/services/video_storage/transcoding.py
+    fields: [status]
+    machine: video_transcode_report
+    kind: result_record
+  - path: endoreg_db/services/video_storage/format_reconciliation.py
+    fields: [status]
+    machine: video_format_report
+    kind: result_record
+  - path: endoreg_db/services/privacy/quality_evaluation.py
+    fields: [sensitive_meta_deletion_status]
+    machine: anonymization_quality_metric
+    kind: result_record
+  - path: endoreg_db/services/clinical_lifecycle/state_machine.py
+    fields: [state]
+    machine: clinical_lifecycle_error
+    kind: result_record
+    note: Attribute of ClinicalLifecycleTransitionError.

@@ -1,0 +1,59 @@
+schema_version: 1
+date: '2026-09-23'
+assessor: codex-gc10-video51-20260923
+host: gc-10
+profile: site-client
+feature_references:
+  - feature-tracking/VideoStorageNormalization.yml#hls_source_generation_and_publication_integrity
+  - feature-tracking/CenterAccess.yml#identity_center_memberships
+scope:
+  video_id: 51
+  artifact_kind: raw
+observations:
+  - Webdienst, nginx und Streaming-Worker sind aktiv.
+  - Der produktive Readiness-Helper akzeptiert Rohvideo-Artefakt 53 einschließlich Quellenidentität und aller 758 Segmentreferenzen.
+  - Der Inhaltsschlüssel lässt sich erfolgreich lokal entschlüsseln; seine Länge beträgt 16 Bytes.
+  - Segmente 0, 379 und 757 wurden ausschließlich auf gc-10 im Arbeitsspeicher entschlüsselt und mit FFmpeg vollständig dekodiert; jeweils Exit-Code 0 ohne Decoderfehler.
+  - nginx protokolliert für die ursprüngliche Raw-Playlist-Anfrage um 10:41:42 MESZ HTTP 499; der Client beendete die Anfrage vor der Antwort.
+  - Für Video 51 enthält das aktuelle nginx-Fehlerprotokoll keine Fehler.
+  - Nach erneuter Anmeldung synchronisierte Keycloak für yvonne, lokale Benutzer-ID 2, eine leere Zentrumsmenge.
+  - Video 51 gehört zum Zentrum university_hospital_wuerzburg, lokale Zentrums-ID 2.
+  - Der installierte Backend-Code validiert bereits Gruppen aus UserInfo beziehungsweise dem verifizierten ID-Token und lehnt vollständig fehlende Gruppenclaims ab.
+  - Der gespeicherte ID-Token von yvonne wurde auf gc-10 anhand der Keycloak-Signatur geprüft. Sein Gruppenclaim enthält //centers/university_hospital_wuerzburg mit zwei führenden Schrägstrichen; der Parser erwartet /centers/university_hospital_wuerzburg.
+verification_commands:
+  - systemctl is-active lx-annotate.service nginx.service lx-annotate-celery-ffmpeg-worker.service
+  - get_ready_hls_artifact(video=VideoFile.objects.get(pk=51), artifact_kind='raw')
+  - unwrap_hls_content_key und lokale FFmpeg-Dekodierung mit Null-Ausgabe für drei Segmente
+  - journalctl --namespace=lx-annotate -u lx-annotate.service
+  - Gefilterte Prüfung von /var/log/nginx/access.log und error.log
+  - resolve_allowed_center_ids für yvonne
+http_probe:
+  initial_probe_limitation: Zwei Sitzungen aus einer Wartungsumgebung ohne den produktiven Secret-Export wurden zur Anmeldung umgeleitet; diese Ergebnisse erlauben keine Diagnose der Benutzersitzung.
+  runtime_correction: Die abschließende Wartungsprüfung verwendet lx_annotate_wheel_export_secret_env aus dem installierten Runtime-Wrapper, ohne Geheimnisse auszugeben.
+  result: Authentifizierter Operator-Test über nginx mit bestehendem Administratorkonto und konfiguriertem ModelBackend erfolgreich; keine Rollenänderung und kein Benutzertest für yvonne.
+  raw_playlist:
+    status: 200
+    bytes: 82122
+    seconds: 0.051
+    content_type: application/vnd.apple.mpegurl
+  content_key:
+    status: 200
+    bytes: 16
+    seconds: 0.049
+  first_encrypted_segment:
+    status: 200
+    bytes: 8681280
+    seconds: 0.036
+    content_type: video/mp2t
+  cleanup: Alle drei temporären Sitzungen wurden gelöscht. HTTP-Antwortinhalte blieben auf gc-10 im Arbeitsspeicher; keine Schlüssel oder Medieninhalte verließen den Host.
+required_identity_repair:
+  realm: EndoregDb
+  username: yvonne
+  group: /centers/university_hospital_wuerzburg
+  observed_token_group: //centers/university_hospital_wuerzburg
+  procedure: Bestehenden Keycloak-Gruppennamen beziehungsweise die Hierarchie korrigieren, sodass der vollständige Gruppenpfad genau einen führenden Schrägstrich enthält; danach neu anmelden und Zentrumszuordnung sowie Raw-Playlist, Schlüssel und Segmente über nginx verifizieren.
+  access_dependency: Freigegebener Keycloak-Administratorzugang ist noch nicht verfügbar. Lokale Datenbankzuweisungen werden bei erneuter Anmeldung ersetzt und sind keine dauerhafte Reparatur.
+limitations:
+  - Die Ursache der ursprünglichen clientseitigen Anfragebeendigung ist noch nicht nachgewiesen.
+  - Browserwiedergabe nach der dauerhaften Zentrumszuweisung bleibt zu prüfen.
+  - Keine Medienneugenerierung, Paketänderung, Dienstneustart oder Änderung der Zentrumszuordnung durchgeführt.

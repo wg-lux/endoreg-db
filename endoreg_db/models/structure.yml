@@ -1,0 +1,73 @@
+version: 1
+tier: domain
+path: endoreg_db/models
+summary: Persistence models grouped by clinical and operational ownership.
+responsibilities:
+- Own fields, constraints, persisted payload validation and thin compatibility wrappers.
+boundaries:
+- New workflows belong in services; prefer leaf imports and do not expand barrel import cycles.
+files:
+- file: __init__.py
+  role: Model re-exports retained for compatibility.
+- file: operation_log.py
+  role: Structured operation-log persistence.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+  - pydantic
+  - lx_dtypes
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/models
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models
+parent: ../structure.yml
+submodules:
+- name: administration
+  path: administration
+  manifest: administration/structure.yml
+  summary: Administrative centers, personnel, equipment and application settings.
+- name: aidataset
+  path: aidataset
+  manifest: aidataset/structure.yml
+  summary: Dataset, split-plan, training-run and export-artifact persistence.
+- name: hub
+  path: hub
+  manifest: hub/structure.yml
+  summary: Node, upload, transfer, quarantine and storage control-plane persistence.
+- name: interoperability
+  path: interoperability
+  manifest: interoperability/structure.yml
+  summary: Digital Imaging and Communications in Medicine (DICOM) export persistence.
+- name: label
+  path: label
+  manifest: label/structure.yml
+  summary: Labels, segment coordinates and annotation persistence.
+- name: media
+  path: media
+  manifest: media/structure.yml
+  summary: Media records, operation leases and anonymization metrics.
+- name: medical
+  path: medical
+  manifest: medical/structure.yml
+  summary: Clinical terminology and patient examination aggregates.
+- name: metadata
+  path: metadata
+  manifest: metadata/structure.yml
+  summary: Sensitive identity, media metadata and prediction references.
+- name: other
+  path: other
+  manifest: other/structure.yml
+  summary: Shared reference rows, studies and import receipts.
+- name: report
+  path: report
+  manifest: report/structure.yml
+  summary: Structured examination reports and report definitions.
+- name: state
+  path: state
+  manifest: state/structure.yml
+  summary: Media, annotation and import states plus the audit ledger.

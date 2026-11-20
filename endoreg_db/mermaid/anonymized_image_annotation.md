@@ -18,3 +18,4 @@ graph TD;
     X2(["**Example: anonymized_colonoscopy.jpg**"]) -.-> B;
     X3(["**Example: Label - 'Polyp Detected'**"]) -.-> D;
     X4(["**Example: Name 'John Doe' removed**"]) -.-> E;
+```

@@ -1,0 +1,364 @@
+schema_version: '1.0'
+id: real_video_anonymization_dataset
+name: Realvideo-Datensatz zur Anonymisierungsevaluation
+description: >-
+  Erzeugt als explizit freigegebenes Nebenprodukt des Videoimports in lx-annotate
+  einen patienten- und videoseparierten Datensatz aus realen Endoskopievideos.
+  Nicht anonymisierte Videos bleiben ausschließlich vorübergehend innerhalb der
+  genehmigten verschlüsselten Importgrenze und sind niemals ein Datensatzartefakt.
+  Dauerhaft zulässig sind nur fachlich validierte anonymisierte Videos,
+  Annotationen ohne geschützte Gesundheitsinformationen (Protected Health
+  Information, PHI) und daraus abgeleitete, erneut validierte synthetische Positivbeispiele.
+owners:
+- endoreg_db maintainers
+- lx-annotate maintainers
+- clinical data governance
+- study statistics
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: docs/anonymization_contract.md
+  disposition: reference
+  note: Definiert Schutzumfang, Qualitätsgrenzen, menschliche Freigabe und fail-closed Zustände.
+- path: docs/video_storage_normalization.md
+  disposition: reference
+  note: Definiert Artefaktrollen, verschlüsselte Speichergrenze, Timeline, Leases und sichere Rohvideo-Löschung.
+- path: docs/video_import_concurrency_contract.md
+  disposition: reference
+  note: Definiert Import-Leases, Fencing, unveränderliche Staging-Artefakte und versuchslokale Verarbeitung.
+- path: docs/video_pts_fps_callsite_inventory.md
+  disposition: reference
+  note: Definiert persistierte Präsentationszeitstempel als maßgebliche Video- und Framekoordinaten.
+definition_of_done:
+- id: approved_study_protocol
+  category: requirements
+  title: Rechtsgrundlage, Studienzweck und prospektiver Stichprobenplan sind vor Erhebung freigegeben
+  acceptance:
+  - >-
+    Ethikvotum beziehungsweise dokumentierte Nichtzuständigkeit, Rechtsgrundlage,
+    Einwilligungs- oder Widerspruchsverfahren, Zentrenverträge, Rollen, Zweckbindung,
+    Aufbewahrungsfristen und Löschpflichten sind vor der ersten Aufnahme genehmigt;
+    eine technische Aktivierung ohne gültige Freigabe schlägt laut fehl.
+  - >-
+    Ein vorab versioniertes Protokoll definiert Zielpopulation, Ein- und Ausschlusskriterien,
+    Rekrutierungszeitraum, primären Sicherheitsendpunkt, akzeptable Fehlergrenze,
+    Konfidenzniveau und den Umgang mit Abbrüchen sowie nicht auswertbaren Videos.
+  - >-
+    Die Fallzahl wird prospektiv aus dem geforderten Sicherheitsziel auf unabhängiger
+    Patienten- beziehungsweise Videoebene berechnet; weder vier korrelierte Frames noch
+    eine beliebig gesetzte Videoanzahl gelten als Fallzahlbegründung.
+  - >-
+    Das Protokoll trennt Detector-Entwicklung, Schwellenwertabstimmung, interne Validierung
+    und einen unberührten unabhängigen Testdatensatz einschließlich der zulässigen
+    Zugriffe und Entsperrentscheidung.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Freigaben, Datenschutz-Folgenabschätzung, Studienprotokoll und signierte
+      Fallzahlberechnung gemeinsam durch Data Governance, klinische Leitung,
+      Datenschutz und Studienstatistik prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+- id: import_enrollment_contract
+  category: functionality
+  title: Datensatzaufnahme ist ein explizites, idempotentes Nebenprodukt des lx-annotate-Imports
+  acceptance:
+  - >-
+    Jeder Import ist standardmäßig nicht in die Studie eingeschlossen. Die Aufnahme
+    verlangt eine serverseitig validierte, versionierte Studienfreigabe und einen
+    berechtigten Einschlussentscheid; Frontendzustand oder Dateiname allein dürfen
+    keinen Einschluss bewirken.
+  - >-
+    Der Import persistiert eine nicht direkt identifizierende Studienreferenz,
+    Protokollversion, Freigabestatus, Zentrum, Erfassungsgerät, Raumklasse,
+    Aufnahmekonfiguration und Einschlusszeitpunkt in einem typisierten Vertrag;
+    direkte Identifikatoren und Freitext sind ausgeschlossen.
+  - >-
+    Wiederholter Import, Worker-Wiederholung und Reanonymisierung erzeugen für dasselbe
+    Video keine zweite unabhängige Beobachtung. Generation, Import-Job, Video und
+    Patientengruppe bleiben auditierbar korreliert.
+  - >-
+    Die Aufnahme umfasst gemäß Protokoll vollständige Videos und explizit dokumentierte
+    Ausschlüsse. Einzelne leicht auswertbare Frames dürfen nicht nachträglich als
+    Ersatz für unabhängige Patienten oder Videos ausgewählt werden.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Positiven, abgelehnten, widerrufenen, wiederholten und konkurrierenden Import
+      end-to-end zwischen lx-annotate, Programmierschnittstelle (API), Import-Ledger
+      und Datensatzmanifest prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+- id: representative_cohort
+  category: data_integrity
+  title: Kohorte und Abdeckungsmatrix bilden reale Einsatzbedingungen nachvollziehbar ab
+  acceptance:
+  - >-
+    Patienten und vollständige Videos sind die primären unabhängigen Einheiten;
+    mehrere Frames, Untersuchungen oder Reimporte derselben Patientengruppe werden
+    als korreliert gezählt und in allen Nennern erkennbar zusammengehalten.
+  - >-
+    Eine vorab definierte Abdeckungsmatrix umfasst mehrere Zentren, Endoskopmodelle,
+    Raumklassen, Auflösungen, Bildraten, relevante PHI-Arten sowie Unschärfe,
+    Spiegelung, Verdeckung, geringe Kontraste und weitere begründete schwierige Bedingungen.
+  - >-
+    PHI-positive und PHI-negative vollständige Videos beziehungsweise Zeitintervalle
+    werden eingeschlossen; fehlende oder dünn besetzte Strata werden berichtet und
+    nicht durch zusätzliche Frames desselben Videos kaschiert.
+  - >-
+    Rekrutierungsfluss, Ausschlussgründe, nicht auswertbare Fälle und Abweichungen vom
+    Stichprobenplan werden ohne direkte Identifikatoren in einem versionierten Manifest festgehalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Eingefrorenes Kohortenmanifest gegen Studienprotokoll, Import-Ledger,
+      Patienten-/Videogruppierung und Abdeckungsmatrix statistisch prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+- id: expert_ground_truth
+  category: functionality
+  title: Vollständige Expertenannotation erfasst jedes lesbare PHI-Element und jede erforderliche Maske
+  acceptance:
+  - >-
+    Geschulte Reviewer prüfen jedes eingeschlossene Rohvideo vollständig innerhalb der
+    verschlüsselten lokalen Grenze und markieren jedes lesbare PHI-Element mit Typ,
+    erforderlicher Maske und zeitlichem Bereich anhand persistierter Präsentationszeitstempel;
+    der tatsächliche PHI-Text wird weder in Labels noch Kommentaren gespeichert.
+  - >-
+    PHI-negative Intervalle und Videos erhalten eine ausdrückliche vollständige
+    Negativbestätigung. Nicht geprüft, nicht lesbar und bestätigt negativ sind getrennte Zustände.
+  - >-
+    Mindestens zwei qualifizierte Reviewer, Verblindung gegenüber der finalen Modellentscheidung
+    und ein dokumentiertes Adjudikationsverfahren sichern Vollständigkeit und Übereinstimmung;
+    Interessenkonflikte und Reviewer-Schulung werden protokolliert.
+  - >-
+    Masken-, Zeitachsen- und Vollständigkeitsprüfung ist abgeschlossen, bevor der Fall
+    in eine Datensatzaufteilung eingeht oder die Rohvideo-Löschung als zulässig markiert wird.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Stichprobenunabhängige Doppelannotation, Adjudikationsprotokoll, vollständige
+      Timeline-Abdeckung und PHI-freie Annotationsexporte klinisch prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+- id: privacy_preserving_dataset_artifacts
+  category: security
+  title: Dauerhafte Datensatzartefakte enthalten kein reales lesbares PHI
+  acceptance:
+  - >-
+    Nicht anonymisierte Videos, rohes HTTP Live Streaming (HLS), Rohframes, Text aus
+    optischer Zeichenerkennung (OCR) und ausgeschnittene reale PHI-Regionen sind
+    transiente Import- oder Reviewartefakte und werden niemals an AIDataSet,
+    Trainingsmanifest, Export oder entfernten Storage angehängt.
+  - >-
+    Der wiederverwendbare Datensatz enthält ausschließlich das menschlich validierte
+    anonymisierte Mastervideo, PHI-freie Geometrie- und Qualitätslabels sowie zulässige
+    technische Deskriptoren. Direkte Identifikatoren, absolute Pfade, Originaldateinamen,
+    stabile Patientenhashes und Freitext werden am typisierten Rand abgelehnt.
+  - >-
+    Reale PHI-positive Detector-Beispiele dürfen dauerhaft nur als neu erzeugte
+    synthetische Ersetzung auf validiert PHI-freiem Bildmaterial vorliegen. Kein reales
+    Zeichen oder Pixel der ursprünglichen PHI-Region darf übernommen werden, und jede
+    Ableitung wird vor Freigabe erneut auf restliches reales PHI geprüft.
+  - >-
+    Eine Auswertung gegen reales PHI findet ausschließlich transient innerhalb der
+    lokalen verschlüsselten Grenze statt. Dauerhaft bleiben nur PHI-freie Annotationen,
+    Modell- und Schwellenwertversion, ausreichend aggregierte Metriken und ein
+    manipulationssicherer, nicht rückführbarer Laufnachweis.
+  - >-
+    Datensatzexport ist nur nach menschlicher Anonymisierungsvalidierung, positiver
+    Dataset-Release-Prüfung und Center-Scope-Autorisierung möglich; Rohmedienexport
+    und Übertragung des Master-Keys sind technisch ausgeschlossen.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Threat Model, typisierte Manifeste, Dateisystemgrenzen, Exportpfade und reale
+      Freigabeartefakte auf PHI-Rückstände, Linkage-Risiken und Schlüsseloffenlegung prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+- id: raw_video_cleanup
+  category: security
+  title: Rohvideo-Löschung ist fristgebunden, nachweisbar und fail-closed
+  acceptance:
+  - >-
+    Rohvideo und Roh-HLS verbleiben nur für Import, Anonymisierung und autorisierte
+    Expertenprüfung in der genehmigten verschlüsselten Speichergrenze; eine kurze
+    maximale Aufbewahrungsfrist und verantwortliche Stelle sind im Studienprofil festgelegt.
+  - >-
+    Löschung beginnt erst, wenn genau ein validiertes anonymisiertes Mastervideo,
+    passende verarbeitete HLS-Generation, vollständige Präsentationszeitstempel,
+    klinische Qualitätsfreigabe, abgeschlossene Ground Truth, PHI-freier Dataset-Kandidat,
+    Hash- und Timeline-Prüfung sowie abgelaufene Media-Leases nachgewiesen sind.
+  - >-
+    Läuft die Forschungsfrist vor vollständiger Ground Truth oder Dataset-Freigabe ab,
+    wird der Fall aus dem Forschungsdatensatz ausgeschlossen; die Forschungsfunktion
+    darf die klinischen Lösch- und Sicherheitsgates weder verlängern noch umgehen.
+  - >-
+    Löschung verwendet ausschließlich die typisierten atomaren Dateisystem-Wrapper,
+    erzeugt strukturierte Ereignisse in JavaScript Object Notation (JSON) und wird
+    durch Datenbank-/Dateisystem-Reconciliation sowie einen PHI-freien Löschbeleg
+    bestätigt. Unbekannte Referenzen oder aktive Leases blockieren sie.
+  - >-
+    Fehler löschen niemals das einzige gültige Mastervideo. Überfällige Rohartefakte,
+    blockierte Löschung und Reconciliation-Abweichungen alarmieren den Betrieb und
+    stoppen weitere Studieneinschlüsse, bis der sichere Zustand wiederhergestellt ist.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Erfolgs-, Fristablauf-, Lease-, Crash-, unbekannte-Referenz- und Reconciliation-Szenarien
+      in einem produktionsnahen verschlüsselten Profil durchführen und Löschbelege prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+- id: frozen_patient_video_splits
+  category: data_integrity
+  title: Entwicklungs-, Abstimmungs- und Testaufteilungen sind unveränderlich und leckagefrei
+  acceptance:
+  - >-
+    Die Aufteilung erfolgt vor Training und Schwellenwertabstimmung deterministisch auf
+    Patienten- und Videoebene; alle korrelierten Frames, Reimporte und Generationen liegen
+    genau in derselben Aufteilung.
+  - >-
+    Ein versioniertes, gehashtes Split-Manifest weist Entwicklung, interne Validierung,
+    Schwellenwertabstimmung und unabhängigen Test aus und prüft Überschneidungen laut.
+    Wo im Protokoll gefordert, bleiben auch Zentren oder Geräte vollständig zurückgehalten.
+  - >-
+    Der unabhängige Testdatensatz bleibt bis zur protokollierten Entsperrung für Modelltraining,
+    Featureentwicklung, Fehleranalyse und Schwellenwertwahl unzugänglich. MIDI-B bleibt als
+    Entwicklungs-/Validierungsevidenz getrennt und wird nicht als dieser Holdout umetikettiert.
+  - >-
+    Nach Entsperrung oder Publikation werden Wiederverwendung, zusätzliche Analysen und
+    Änderungen an Modell oder Schwelle als neue, klar bezeichnete Auswertung behandelt.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Split-Manifest, Gruppenüberschneidungsprüfung, Zugriffsprotokolle, Modellprovenienz
+      und Entsperrentscheidung durch unabhängige Datenverwaltung und Statistik prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed
+- id: clinical_evaluation_metrics
+  category: testing
+  title: Auswertung berichtet klinisch relevante Endpunkte auf Patienten- und Videoebene
+  acceptance:
+  - >-
+    Primär- und Sekundäranalysen berichten Nenner, Punktwerte und vorab festgelegte
+    Konfidenzintervalle auf Patienten- und Videoebene; Framewerte werden nur ergänzend
+    und unter Berücksichtigung der Korrelation innerhalb eines Videos ausgewiesen.
+  - >-
+    Berichtet werden mindestens Rate restlicher lesbarer PHI-Elemente, Anteil vollständig
+    redigierter Videos, falsch-positive Maskierung, Verlust nutzbarer Viewport-Fläche und
+    Anteil beziehungsweise Gründe manueller Review-Fehlschläge.
+  - >-
+    Ergebnisse werden insgesamt und für vorab festgelegte Zentren-, Geräte-, PHI-,
+    Auflösungs- und Schwierigkeitsstrata gezeigt; kleine Gruppen und nicht auswertbare
+    Fälle bleiben sichtbar und werden nicht aus den Nennern entfernt.
+  - >-
+    Auswertungsmanifest bindet Kohortenversion, Split, Ground-Truth-Version, anonymisiertes
+    Artefakt, Modell, Schwellenwert und Codeversion, ohne Pfade oder Identifikatoren offenzulegen.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Eingefrorenen statistischen Analyseplan und reproduzierten Ergebnisbericht gegen
+      Rohzählungen, Clusterstruktur, Konfidenzintervalle und Manifestprovenienz prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+- id: automated_safety_regressions
+  category: testing
+  title: Vertrags-, Leckage-, Split- und Cleanup-Grenzen sind automatisiert regressionsgetestet
+  acceptance:
+  - >-
+    Tests decken Default-opt-out, ungültige oder abgelaufene Studienfreigabe, idempotenten
+    Wiederimport, konkurrierende Worker, Patient-/Video-Deduplizierung und vollständige
+    Positiv-/Negativannotationen ab.
+  - >-
+    Negativtests lehnen direkte Identifikatoren, Freitext, Originaldateinamen, absolute Pfade,
+    Rohframes, reale PHI-Crops, unbekannte Manifestfelder und Aufteilungsüberschneidungen
+    vor Persistenz oder Export ab.
+  - >-
+    Fehler-Injektion beweist, dass Rohvideo-Löschung bei fehlender Freigabe, aktivem Lease,
+    inkonsistenter Timeline, unvollständigem Dataset-Kandidaten oder Reconciliation-Fehler
+    blockiert, nach vollständigem Gate aber idempotent und nachweisbar abschließt.
+  - >-
+    Statistiktests verwenden kleine bekannte Clusterbeispiele und sichern Nenner,
+    Konfidenzintervalle, vollständige-Redaktion-Rate, Residual-PHI-Rate,
+    falsch-positive Maskierung, Viewport-Verlust und Review-Fehlschläge.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Pyright vor den fokussierten Backendtests ausführen; anschließend lx-annotate
+      Typecheck und Unit-Tests sowie repository-übergreifende Import-/Cleanup-Fehlerfälle
+      in einem einzigen auditierten Vordergrundlauf prüfen.
+    timeout_seconds: 2400
+  assessment:
+    status: not_assessed
+- id: operational_controls
+  category: operations
+  title: Betrieb überwacht Einwilligung, Reviewfortschritt, Speicherfrist und sichere Löschung
+  acceptance:
+  - >-
+    Rollengetrennte lx-annotate-Ansichten zeigen Einschlussgrundlage, Protokollversion,
+    Ground-Truth-Fortschritt, Adjudikation, Dataset-Freigabe, Rohvideo-Frist und Cleanupstatus,
+    ohne PHI oder geschützte Systemdetails offenzulegen.
+  - >-
+    Strukturierte Metriken und Alarme erfassen auslaufende Freigaben, überfällige Reviews,
+    knappen verschlüsselten Speicher, blockierte Löschung, fehlgeschlagene Reconciliation,
+    Split-Konflikte und Dataset-Exportversuche.
+  - >-
+    Widerruf, Studienabbruch, Modellrückzug und fehlerhafte Ground Truth besitzen dokumentierte,
+    getestete Abläufe für Sperrung, Neuableitung oder Löschung dauerhaft zulässiger Artefakte;
+    bereits aggregierte Publikationsergebnisse werden gesondert behandelt.
+  - >-
+    Ein kontrollierter Pilot mit wenigen unabhängigen Videos bestätigt Kapazität,
+    Revieweraufwand, Fristen und Löschung, bevor weitere Zentren oder die prospektiv
+    berechnete Kohorte aktiviert werden.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Rollen, Monitoring, Alarme, Widerruf und Pilotbetrieb mit Data Governance,
+      klinischen Reviewern, Security und Betrieb im produktionsnahen Profil abnehmen.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+- id: contributor_and_study_documentation
+  category: documentation
+  title: Technischer Ablauf und Studienmethodik sind konsistent und reproduzierbar dokumentiert
+  acceptance:
+  - >-
+    Eine englische technische Anleitung beschreibt Import-Einschluss, Zustandsmaschine,
+    Reviewerrollen, Präsentationszeitstempel, zulässige Artefakte, synthetische Ersetzung,
+    Exportgrenze, Fristablauf und Rohvideo-Löschung und verweist auf dieses Feature-YAML.
+  - >-
+    Eine deutsche Studien- und Betriebsdokumentation beschreibt Rekrutierung, Abdeckungsmatrix,
+    Fallzahl, Ground Truth, Split-Freeze, Statistik, Widerruf, Incident Response und Verantwortlichkeiten.
+  - >-
+    Publikationen unterscheiden klar reale transiente Evaluation, dauerhaft anonymisierte
+    reale Videos, synthetisch re-personalisierte Positivbeispiele, MIDI-B-Entwicklungsergebnisse
+    und den unabhängigen Holdout; Frames eines Videos werden nicht als unabhängige Fälle dargestellt.
+  required: true
+  verification:
+    kind: manual
+    instructions: >-
+      Technische Anleitung, Studienprotokoll, Bedienerhandbuch und Manuskriptmethodik
+      gemeinsam auf widerspruchsfreie Begriffe, Zahlen und Freigabestatus prüfen.
+    timeout_seconds: 900
+  assessment:
+    status: not_assessed

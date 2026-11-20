@@ -1,0 +1,33 @@
+version: 1
+tier: service
+path: endoreg_db/services/queue
+parent: ../structure.yml
+summary: Typed conversion of frame-annotation queue payloads.
+responsibilities:
+- Convert the typed frame-annotation queue payload into the internal queue specification.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: frame_annotation_queue_spec_from_payload
+  file: frame_annotation_queue.py
+  purpose: Convert the lx_dtypes transport contract into the internal ORM-rich queue spec.
+files:
+- file: __init__.py
+  role: Queue service adapters.
+- file: frame_annotation_queue.py
+  role: Exports frame_annotation_queue_spec_from_payload.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/services/annotations
+  external:
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models/state/test_frame_annotation.py
+  files:
+  - tests/models/state/test_frame_annotation.py

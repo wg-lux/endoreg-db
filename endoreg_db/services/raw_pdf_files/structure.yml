@@ -1,0 +1,63 @@
+version: 1
+tier: service
+path: endoreg_db/services/raw_pdf_files
+parent: ../structure.yml
+summary: Raw report imports, protected file access, integrity and processing state.
+responsibilities:
+- Initialize raw report imports and resolve protected report artifacts.
+- Verify report integrity, metadata validation and persisted processing state.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: create_initialized_raw_pdf_file_from_path
+  file: imports.py
+  purpose: Create a raw report record and initialize its metadata and processing state.
+- name: verify_processed_report_artifact
+  file: integrity.py
+  purpose: Return the plaintext SHA-256 after verifying the stored processed PDF.
+files:
+- file: __init__.py
+  role: Package imports and compatibility exports.
+- file: imports.py
+  role: Exports create_raw_pdf_file_from_path, create_initialized_raw_pdf_file_from_path, initialize_raw_pdf_file.
+- file: integrity.py
+  role: Exports verify_processed_report_path, verify_processed_report_artifact, verify_and_persist_processed_report_sha256.
+- file: io.py
+  role: Exports get_raw_pdf_plaintext_path, get_processed_pdf_plaintext_path, set_raw_pdf_file_path.
+- file: metadata.py
+  role: Exports prepare_raw_pdf_before_save, process_raw_pdf_file, build_report_reader_config.
+- file: queries.py
+  role: Exports get_raw_pdf_by_pk, get_raw_pdf_by_content_hash, raw_pdf_hash_exists.
+- file: state.py
+  role: Exports get_or_create_raw_pdf_state, mark_report_sensitive_meta_processed, mark_report_sensitive_meta_verified.
+- file: types.py
+  role: Exports parse_report_pdf_artifact_kind.
+- file: validation.py
+  role: Validates report metadata with atomic checked correction of inferred clinical links.
+dependencies:
+  internal:
+  - endoreg_db/services/cases
+  - endoreg_db/models
+  - endoreg_db/services/centers
+  - endoreg_db/services/media
+  - endoreg_db/services/patient_identity
+  - endoreg_db/services/secret_rotation
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Concurrent report import
+  doc: docs/report_import_concurrency_implementation.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_center_defaults.py tests/services/test_report_import_service_unit.py
+    tests/services/test_media_security_lifecycle.py
+  files:
+  - tests/services/test_center_defaults.py
+  - tests/services/test_report_import_service_unit.py
+  - tests/services/test_media_security_lifecycle.py

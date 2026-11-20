@@ -1,0 +1,47 @@
+version: 1
+tier: service
+path: endoreg_db/services/electrical
+parent: ../structure.yml
+summary: Typed HF electrosurgical measurement import and on-demand PTS frame alignment.
+responsibilities:
+- Validate lx_dtypes ElectrosurgicalMeasurementSeries documents once and store them verbatim as ciphertext.
+- Bind series to the recording, its synchronization anchors and an operator-supplied aggregation profile.
+- Align bounded output-frame ranges of the published generation through lx_dtypes electrical_frame_window_v1.
+boundaries:
+- Presentation timestamps are authoritative; nominal frames per second are never used.
+- Gaps keep their frame status; values are never filled, carried forward or extrapolated.
+- Alignments are recomputed per request from current identities and are not cached outside the encrypted boundary.
+- Unresolved provenance, missing anchors, stale generations and identity mismatches fail closed.
+- Not production-approved; readiness lives only in feature-tracking/backlog/ElectricalToVideoMapping.yml.
+entrypoints:
+- name: import_electrosurgical_measurement
+  file: measurement_import.py
+  purpose: Idempotent per-source import with conflict rejection and structured logs.
+- name: align_measurement_frames
+  file: video_alignment.py
+  purpose: Bounded identity-checked alignment page with canonical presentation seconds.
+files:
+- file: __init__.py
+  role: Package marker without side effects.
+dependencies:
+  internal:
+  - endoreg_db/models/media/video
+  - endoreg_db/schemas
+  - endoreg_db/services/hub
+  - endoreg_db/services/video_storage
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+contracts:
+- name: Electrosurgical video alignment host contract
+  doc: docs/electrosurgical_video_alignment.md
+- name: Feature scope and readiness
+  doc: feature-tracking/backlog/ElectricalToVideoMapping.yml
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+tests:
+  directory: tests/services
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_electrosurgical_alignment.py
+submodules: []

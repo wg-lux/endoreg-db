@@ -1,0 +1,24 @@
+schema_version: '1.0'
+migration_id: colorectal_indication_interventions_v1
+module: endoreg_reference
+version: '1.0.0'
+snapshot_id: sha256:fbe853dbf34c0154940ecfd76787a1d1a769f4a2434e532adf11640aabecf0f9
+indications:
+  - colonoscopy_follow_up_post_eftr
+  - colonoscopy_follow_up_post_emr
+  - colonoscopy_follow_up_post_esd
+  - colonoscopy_follow_up_residual_or_recurrent_lesion
+  - colonoscopy_lesion_removal_emr
+  - colonoscopy_lesion_removal_large
+  - colonoscopy_lesion_removal_small
+interventions:
+  - endoscopy_cold_snare_polypectomy_colorectal
+  - endoscopy_hot_snare_polypectomy_colorectal
+  - endoscopy_cold_emr_colorectal
+  - endoscopy_hot_emr_colorectal
+  - endoscopy_esd_colorectal
+  - endoscopy_eftr_colorectal
+  - endoscopy_margin_ablation_soft_coagulation_colorectal
+  - endoscopy_hot_avulsion_colorectal
+intervention_types:
+  - histology_sampling

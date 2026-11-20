@@ -1,153 +1,290 @@
+from __future__ import annotations
+
 import hashlib
+import hmac
+import json
+import logging
+from datetime import date, datetime
 from pathlib import Path
-from datetime import datetime, date
+from typing import Literal
+from uuid import UUID
 
-import os
+from django.conf import settings
+from django.db.models.fields.files import FieldFile
 
-SALT = os.getenv("DJANGO_SALT", "default_salt")
-DJANGO_NAME_SALT = os.environ.get("DJANGO_SALT", "default_salt")
+from endoreg_db.config.identity_hashing import (
+    current_identity_keyring,
+    validate_identity_salt,
+)
+from endoreg_db.utils.rust_backend import stable_file_identity
+
+logger = logging.getLogger(__name__)
+
+type HubRecordKind = Literal["patient", "examination"]
 
 
-def get_video_hash(video_path):
+def get_bytes_hash(payload: bytes) -> str:
+    """Return an unkeyed SHA-256 digest of already serialized bytes.
+
+    Callers own encoding and domain separation. Use get_file_hash for files
+    and the keyed identity helpers below for patient or examiner identities.
     """
-    Get the hash of a video file.
-    """
-    # Open the video file in read-binary mode:
-    with open(video_path, "rb") as f:
-        # Create the hash object, passing in the video contents for hashing:
-        hash_object = hashlib.sha256(f.read())
-        # Get the hexadecimal representation of the hash
-        video_hash = hash_object.hexdigest()
-        assert len(video_hash) <= 255, "Hash length exceeds 255 characters"
-
-    return video_hash
+    return hashlib.sha256(payload).hexdigest()
 
 
-def get_pdf_hash(pdf_path: Path):
-    """
-    Get the hash of a pdf file.
-    """
-    pdf_hash = None
-
-    # Open the file in binary mode and read its contents
-    with open(pdf_path, "rb") as f:
-        pdf_contents = f.read()
-        # Create a hash object using SHA-256 algorithm
-
-    hash_object = hashlib.sha256(pdf_contents, usedforsecurity=False)
-    # Get the hexadecimal representation of the hash
-    pdf_hash = hash_object.hexdigest()
-    assert len(pdf_hash) <= 255, "Hash length exceeds 255 characters"
-
-    return pdf_hash
+def _get_active_salt_bytes(salt: bytes | str | None = None) -> bytes:
+    """Resolve validated UTF-8 material or an enrolled historical generation."""
+    ring = current_identity_keyring()
+    if ring is not None:
+        validate_identity_salt(ring.active)
+    if salt is not None:
+        candidate = salt.encode("utf-8") if isinstance(salt, str) else salt
+        # Retained generations are read-only compatibility material, enrolled
+        # through the private manifest rather than accepted as active settings.
+        if ring is not None and candidate in ring.retiring:
+            return candidate
+        return validate_identity_salt(candidate).encode("utf-8")
+    return validate_identity_salt(
+        ring.active if ring is not None else getattr(settings, "DJANGO_SALT", None)
+    ).encode("utf-8")
 
 
-def _get_date_hash_string(date_obj: date) -> str:
-    # if date is datetime object, convert to date
-    if isinstance(date_obj, datetime):
-        # warnings.warn("Date is a datetime object. Converting to date object.")
-        date_obj = date_obj.date()
-    elif isinstance(date_obj, str):
-        # warnings.warn(f"Date is a string ({date_obj}). Converting to date object.")
-        date_obj = datetime.strptime(date_obj, "%Y-%m-%d").date()
-
-    assert isinstance(date_obj, date), "Date must be a date object"
-    # if date is 1900-01-01, make it an empty string
-    if date_obj == date(1900, 1, 1):
-        date_str = ""
-    else:
-        date_str = date_obj.strftime("%Y-%m-%d")
-
-    return date_str
+def get_identity_salt() -> str:
+    """Retrieve validated identity salt string."""
+    return _get_active_salt_bytes().decode("utf-8")
 
 
-def get_hash_string(
-    first_name: str = "",
-    last_name: str = "",
-    dob: date = date(1900, 1, 1),
-    center_name: str = "",
-    examination_date: date = date(1900, 1, 1),
-    endoscope_sn: str = "",
-    salt: str = "",
-):
-    """
-    Get the string to be hashed for a patient's first name, last name, date of birth, examination date, and endoscope serial number.
-    """
-    if not salt:
-        salt = SALT
-
-    examination_date_str = _get_date_hash_string(examination_date)
-    dob_str = _get_date_hash_string(dob)
-
-    # Concatenate the patient's first name, last name, date of birth, examination date, endoscope serial number, and salt:
-    hash_str = f"{first_name}{last_name}{dob_str}{center_name}{dob_str}{examination_date_str}{endoscope_sn}{salt}"
-    return hash_str
+def get_identity_hash(payload: bytes, *, salt: bytes | str | None = None) -> str:
+    """Hash a domain-separated identity payload with the validated identity salt."""
+    return hmac.new(_get_active_salt_bytes(salt), payload, hashlib.sha256).hexdigest()
 
 
-def get_patient_hash(
-    first_name: str, last_name: str, dob: date, center: str, salt: str = ""
-):
-    """
-    Get the hash of a patient's first name, last name, and date of birth.
-    """
-    # Concatenate the patient's first name, last name, date of birth, and salt:
-    hash_str = get_hash_string(
+def get_center_key(center_identifier: str) -> str:
+    """Resolve a Center instance by name or center_key and return its canonical center_key."""
+    from endoreg_db.models.administration.center import Center
+
+    center = Center.resolve_identity(center_identifier)
+    if center is None or not center.center_key:
+        raise ValueError(
+            f"Could not resolve Center with identifier '{center_identifier}' to a valid center_key"
+        )
+    return str(center.center_key)
+
+
+def get_identity_salt_fingerprint(salt: bytes | str | None = None) -> str:
+    """Public fingerprint for verifying matching salt generations."""
+    return get_identity_hash(b"endoreg-identity-salt-v1", salt=salt)
+
+
+def encode_patient_identity(
+    first_name: str,
+    last_name: str,
+    dob: date,
+    center_key: str,
+) -> bytes:
+    """Canonical v1 JSON/UTF-8 payload; no case folding or Unicode normalization."""
+    birthday = dob.date() if isinstance(dob, datetime) else dob
+    return json.dumps(
+        [
+            "patient-identity-v1",
+            first_name.strip(),
+            last_name.strip(),
+            birthday.isoformat(),
+            center_key.strip(),
+        ],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+
+
+def get_patient_identity_fingerprint(
+    first_name: str,
+    last_name: str,
+    dob: date,
+    center_key: str,
+    *,
+    salt: bytes | str | None = None,
+) -> str:
+    """HMAC-SHA-256 of an unambiguously encoded tuple, not unique human identity."""
+    return get_identity_hash(
+        encode_patient_identity(first_name, last_name, dob, center_key), salt=salt
+    )
+
+
+def calculate_patient_hash(
+    first_name: str,
+    last_name: str,
+    dob: date,
+    center_name: str | None = None,
+    *,
+    center_key: str | None = None,
+    salt: bytes | str | None = None,
+) -> str:
+    """Calculate the modern deterministic HMAC identity hash for a patient."""
+    resolved_key = (
+        center_key.strip() if center_key else get_center_key(center_name or "")
+    )
+    return get_patient_identity_fingerprint(
         first_name=first_name,
         last_name=last_name,
         dob=dob,
-        center_name=center,
+        center_key=resolved_key,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
-    hash_object = hashlib.sha256(hash_str.encode())
-    # Get the hexadecimal representation of the hash
-    patient_hash = hash_object.hexdigest()
 
-    return patient_hash
+
+# Backwards compatibility alias for existing callers
+get_patient_hash = calculate_patient_hash
 
 
 def get_patient_examination_hash(
     first_name: str,
     last_name: str,
     dob: date,
-    center: str,
-    examination_date: date,
-    salt: str = "",
-):
-    """
-    Get the hash of a patient's first name, last name, date of birth, and examination date.
-    """
-    # Concatenate the patient's first name, last name, date of birth, examination date, and salt:
-    hash_str = get_hash_string(
+    center_name: str | None = None,
+    examination_date: date | None = None,
+    *,
+    center_key: str | None = None,
+    salt: bytes | str | None = None,
+) -> str:
+    """Calculate a deterministic, collision-safe examination hash."""
+    resolved_key = (
+        center_key.strip() if center_key else get_center_key(center_name or "")
+    )
+    salt = _get_active_salt_bytes(salt)
+    patient_fp = get_patient_identity_fingerprint(
         first_name=first_name,
         last_name=last_name,
-        center_name=center,
         dob=dob,
-        examination_date=examination_date,
+        center_key=resolved_key,
         salt=salt,
     )
-    # Create a hash object using SHA-256 algorithm
-    hash_object = hashlib.sha256(hash_str.encode())
-    # Get the hexadecimal representation of the hash
-    patient_examination_hash = hash_object.hexdigest()
-
-    return patient_examination_hash
-
-
-def get_examiner_hash(first_name, last_name, center_name, salt):
-    """
-    Get the hash of an examiner's first name, last name, and center name.
-    """
-    # Concatenate the examiner's first name, last name, center name, and salt:
-    hash_str = get_hash_string(
-        first_name=first_name,
-        last_name=last_name,
-        center_name=center_name,
-        salt=salt,
+    exam_date_str = (
+        examination_date.isoformat()
+        if isinstance(examination_date, (date, datetime))
+        else str(examination_date or "")
     )
-    # Create a hash object using SHA-256 algorithm
-    hash_object = hashlib.sha256(hash_str.encode())
-    # Get the hexadecimal representation of the hash
-    examiner_hash = hash_object.hexdigest()
+    payload = json.dumps(
+        ["patient-examination-v1", patient_fp, exam_date_str, resolved_key],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return get_identity_hash(payload, salt=salt)
 
-    return examiner_hash
+
+def get_examiner_hash(
+    first_name: str,
+    last_name: str,
+    center_name: str | None = None,
+    *,
+    center_key: str | None = None,
+    salt: bytes | str | None = None,
+) -> str:
+    """Calculate the deterministic HMAC identity hash for an examiner."""
+    resolved_key = (
+        center_key.strip() if center_key else get_center_key(center_name or "")
+    )
+    payload = json.dumps(
+        ["examiner-identity-v1", first_name.strip(), last_name.strip(), resolved_key],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return get_identity_hash(payload, salt=salt)
+
+
+def _uuid8_from_digest(digest: bytes) -> UUID:
+    value = int.from_bytes(digest[:16], "big")
+    # RFC 9562 UUIDv8: version nibble 8, variant bits 10.
+    value = (value & ~(0xF << 76)) | (0x8 << 76)
+    value = (value & ~(0x3 << 62)) | (0x2 << 62)
+    return UUID(int=value)
+
+
+def get_patient_uuid(
+    patient_hash: str, *, center_key: str, salt: bytes | str | None = None
+) -> UUID:
+    """Center-scoped, keyed UUIDv8 for new local patient identities.
+
+    Exact nonblank legacy hash strings remain supported by the import facade.
+    Persist the result once: rotation and historical aliases must not rekey rows.
+    This is a pseudonym, not anonymous data or proof of a unique natural person.
+    """
+    if not patient_hash or not patient_hash.strip():
+        raise ValueError("Patient hash is required for UUID generation")
+    center = center_key.strip()
+    if not center:
+        raise ValueError("Patient UUID generation requires a center key")
+    payload = json.dumps(
+        ["center-patient-uuid-v1", center, patient_hash],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return _uuid8_from_digest(bytes.fromhex(get_identity_hash(payload, salt=salt)))
+
+
+def get_hub_record_pseudonym(
+    record_uuid: UUID,
+    *,
+    kind: HubRecordKind,
+    hub_node_key: str,
+    salt: bytes | str | None = None,
+) -> UUID:
+    """Hub-scoped UUIDv8 pseudonym; only the local identity salt relates it to the record.
+
+    The local UUID never leaves the site. Repeated transfers of one record to one
+    hub keep the same pseudonym, so follow-ups stay linkable at that hub, while
+    pseudonyms for other hubs or salts are unlinkable without the salt.
+    """
+    hub = hub_node_key.strip()
+    if not hub:
+        raise ValueError("Hub record pseudonyms require the target hub node key")
+    payload = json.dumps(
+        ["hub-record-pseudonym-v1", kind, str(record_uuid), hub],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    digest = hmac.new(_get_active_salt_bytes(salt), payload, hashlib.sha256).digest()
+    return _uuid8_from_digest(digest)
+
+
+def get_file_hash(file: str | Path | FieldFile | None) -> str:
+    """Hash local sources or stream authenticated plaintext from stored files."""
+    if file is None:
+        raise ValueError("HASH COULD NOT BE CREATED")
+    if getattr(file, "storage", None) is not None:
+        from endoreg_db.utils.storage_streaming import (
+            field_file_size,
+            iter_field_file_bytes,
+        )
+
+        digest = hashlib.sha256()
+        size = field_file_size(file)
+        if size < 0:
+            raise ValueError("Stored file plaintext size must not be negative")
+        consumed = 0
+        if size > 0:
+            for chunk in iter_field_file_bytes(
+                file, start=0, end=size - 1, chunk_size=1024 * 1024
+            ):
+                consumed += len(chunk)
+                if consumed > size:
+                    raise ValueError(
+                        "Stored file stream exceeds declared plaintext size"
+                    )
+                digest.update(chunk)
+        if consumed != size or field_file_size(file) != size:
+            raise ValueError(
+                "Stored file plaintext size changed or stream is incomplete"
+            )
+        return digest.hexdigest()
+
+    path = file if isinstance(file, (str, Path)) else getattr(file, "path", None)
+    if not isinstance(path, (str, Path)):
+        raise TypeError("Hash source must be a local path or stored file")
+    hash_tuple = stable_file_identity(Path(path))
+    if hash_tuple is not None:
+        size = hash_tuple[0]
+        hash_canonical = hash_tuple[2]
+        logger.debug("Hash created for %s bytes", size)
+        return hash_canonical
+    raise ValueError("HASH COULD NOT BE CREATED")

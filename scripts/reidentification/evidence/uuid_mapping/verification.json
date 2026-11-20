@@ -1,0 +1,12 @@
+{
+  "cases": 45,
+  "replay_equal_excluding_time_and_memory": true,
+  "attacker_outputs_equal_excluding_time_and_memory": true,
+  "isolation_probes_per_case": 4,
+  "public_key_redaction_passed": true,
+  "independent_rescore_cases": 45,
+  "tests": "18 passed",
+  "focused_pyright": "0 errors",
+  "full_pyright": "1 pre-existing reportPrivateUsage error tests/views/test_central_hub_training_access.py:311; 24 warnings",
+  "archive_sha256": "7dd1de710d6f6a667e0bad2a81a686b8365c92765de2dcfb1ee926c5245298d8"
+}

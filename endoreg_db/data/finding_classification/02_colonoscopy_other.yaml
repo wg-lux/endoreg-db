@@ -1,0 +1,12 @@
+- model: endoreg_db.finding_classification
+  fields:
+    name: "hemorrhoids_grade"
+    classification_types: []
+    choices:
+      [
+        "hemorrhoids_grade_0_no_hemorrhoids",
+        "hemorrhoids_grade_1",
+        "hemorrhoids_grade_2",
+        "hemorrhoids_grade_3",
+        "hemorrhoids_grade_4",
+      ]
