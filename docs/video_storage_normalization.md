@@ -71,6 +71,37 @@ including the terminal exclusive boundary, remain unchanged. Starts are never
 clamped; empty or reversed ranges fail. This does not bulk-edit stored segments,
 repair missing media, or infer coordinates from nominal frame rate.
 
+### Explicit two-second annotation recovery
+
+Automatic processed-media backfill still fills missing timestamps without moving
+existing annotations. Batch classification also schedules processed videos that
+only have old constant-frame-rate estimates, until decoded timestamps are stored.
+For legacy conflicting coordinates, an operator may instead
+confirm that saved frame ordinals belong to the current processed generation:
+
+```sh
+python manage.py backfill_video_timelines --video-id ID \
+  --confirm-processed-ordinals --operator NAME --remap-annotations
+```
+
+This previews inside a rolled-back transaction. Inspect the structured
+`processed_annotation_recovery_plan` event and repeat with `--apply` to commit.
+The operation verifies the processed content hash and decoded presentation
+timestamps, requires complete unchanged frame ordinals and a matching frame count,
+and accepts at most **two seconds per corrected frame or annotation boundary**.
+This is an explicit legacy recovery allowance, not a relaxed encoder or receiver
+validation threshold. It does not manufacture raw ancestry or electrical alignment.
+
+Frame-based segment and image labels retain their existing frame identities.
+Seconds-based annotations follow the unambiguous nearest legacy boundary to the
+same confirmed processed ordinal. Ambiguous ties, collapsed intervals, missing
+legacy time evidence, authoritative-history conflicts, larger corrections and
+active processing fail atomically. Labels and annotation rows are retained.
+Changed coordinates invalidate segment review, outside-segment cleanup and export
+readiness through the normal state helper; human anonymization approval remains.
+Typed before/after segment mappings are retained in canonical history. Review the
+annotations and complete cleanup/export validation again before transfer.
+
 Video discovery returns `segments: null`, `timeline_error` and `status: failed`
 when a video's clinical timeline cannot be resolved, keeping other videos
 available. A healthy row has `timeline_error: null`. Missing canonical media
@@ -455,6 +486,24 @@ fencing epoch can no longer publish. A completed upload returns success idempote
 Legacy unnamespaced task owners are potentially active execution owners and are
 never treated as queued reservations. Recovery must wait for expiry or follow the
 explicit operator recovery contract.
+
+When an upload requests automatic prediction, its model version is pinned in
+upload provenance before dispatch. The existing processing history binds that
+upload to its raw and processed content hashes and effective prediction options.
+Redelivery reuses the same pending task identifier, accepts the same running
+operation, or reuses its successful result; changed generations or options fail
+explicitly. Manual prediction requests remain separate operations. These records
+provide identity evidence, not another import state machine.
+
+Required automatic prediction uses `VIDEO_TEMPORAL_INFERENCE_JOB_MODE=celery`
+(the default) or `inline`. Inline execution must actually succeed; a Celery
+handoff must be accepted before upload completion and source cleanup. Broker
+errors retain the pending intent and source for retry. `thread` is rejected before
+reservation because process-local execution cannot provide a durable handoff;
+manual thread execution remains available. The explicit watcher inline fallback
+runs the existing fenced video import worker directly, but does not override this
+prediction policy. Historical completed uploads without this prediction intent
+are not automatically replayed by this contract.
 
 Raw-source import success still requires raw and processed HTTP Live Streaming
 (HLS) artifacts to be ready. Verified reuse of a received processed Hub generation
@@ -1417,3 +1466,11 @@ evidence exists:
 Reviewer names and approval timestamps are recorded only as evidence in the
 feature YAML. This runbook explains the process but does not maintain a separate
 completion status.
+
+Export entry points also invoke `prepare_video_timestamps_for_export` after access
+checks and before export transactions: approval, MP4/CSV downloads and the site's
+hub mark/retry/worker paths. Already reconciled timelines need no decoding. Legacy
+processed timelines with stored frame counts use the two-second correction policy;
+missing counts use strict backfill. Repairs commit before any renewed-review
+rejection, preserving labels and clearing segment/export validation on movement.
+CLI preview remains available for inspection before requesting an export.

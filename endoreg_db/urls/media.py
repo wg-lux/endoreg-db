@@ -1,5 +1,6 @@
 from endoreg_db.views.video.provenance_recovery import VideoProvenanceRecoveryView
 from endoreg_db.views.video.electrical_measurements import (
+    VideoElectricalActivationsView,
     VideoElectricalAlignedFramesView,
     VideoElectricalMeasurementsView,
 )
@@ -420,6 +421,11 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/provenance/recover/",
         VideoProvenanceRecoveryView.as_view(),
         name="video-provenance-recovery",
+    ),
+    path(
+        "media/videos/<int:pk>/electrical-activations/<int:activation_log_id>/",
+        VideoElectricalActivationsView.as_view(),
+        name="video-electrical-activations",
     ),
     path(
         "media/videos/<int:pk>/electrical-measurements/",

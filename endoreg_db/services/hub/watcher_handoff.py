@@ -4,6 +4,7 @@ import logging
 import os
 import stat
 import time
+import uuid
 from math import isfinite
 from pathlib import Path
 
@@ -12,6 +13,8 @@ from endoreg_db.config.env import (
     get_watcher_stable_after_seconds,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event, path_reference
+from endoreg_db.utils.file_operations import atomic_move_path, safe_unlink_file
+from endoreg_db.utils.hashs import get_file_hash
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +31,50 @@ IN_PROGRESS_HANDOFF_NAME_MARKERS = (".tmp.", ".part.")
 
 class WatcherFileNotReadyError(RuntimeError):
     """Raised when a watcher source should be retried later."""
+
+
+def claim_verified_watcher_source(
+    file_path: Path, *, expected_hash: str
+) -> Path | None:
+    """Claim the pathname before deletion; changed arrivals remain discoverable.
+
+    The claimed name retains its media suffix and is intentionally not a temporary
+    handoff name: interruption at any point leaves a normal retryable intake file.
+    Never restore over the producer's original pathname.
+    Producers must close their writable handles before the settled handoff; rename
+    cannot revoke a producer's already-open descriptor. Stat checks detect writes
+    during hashing, while ownership after handoff remains a producer contract.
+    """
+    claimed_path = file_path.with_name(f"recovered-{uuid.uuid4().hex}-{file_path.name}")
+    try:
+        atomic_move_path(source=file_path, destination=claimed_path)
+    except FileNotFoundError:
+        return None
+    before_hash = watcher_file_stat(claimed_path)
+    claimed_hash = get_file_hash(claimed_path)
+    assert_watcher_file_unchanged(
+        file_path=claimed_path,
+        expected_stat=before_hash,
+        current_stat=watcher_file_stat(claimed_path),
+        stage="claimed_source_cleanup",
+    )
+    if claimed_hash != expected_hash:
+        emit_structured_event(
+            logger,
+            "watcher.replaced_source_preserved",
+            level=logging.WARNING,
+            file=path_reference(claimed_path),
+        )
+        return None
+    return claimed_path
+
+
+def remove_verified_watcher_source(file_path: Path, *, expected_hash: str) -> bool:
+    claimed_path = claim_verified_watcher_source(file_path, expected_hash=expected_hash)
+    if claimed_path is None:
+        return False
+    safe_unlink_file(claimed_path, missing_ok=False)
+    return True
 
 
 def _validated_duration_seconds(

@@ -173,7 +173,11 @@ def test_import_requires_installed_package_before_creating_studies(
     StudyCollectionEntry.objects.all().delete()
     study.delete()
     ClinicalReferenceImport.objects.all().delete()
-    with pytest.raises(ClinicalReferenceImport.DoesNotExist):
+    from endoreg_db.services.reference_data.clinical_projection import (
+        ClinicalPackageRequiredError,
+    )
+
+    with pytest.raises(ClinicalPackageRequiredError):
         import_study_exchange(owner=owner, bundle=bundle, examination_scope=scope)
     assert not Study.objects.exists()
 

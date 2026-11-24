@@ -12,6 +12,7 @@ from lx_dtypes.models.contracts.reference_catalog import (
     CatalogRecordBase,
     ReferenceCatalogPayload,
     ReferenceKind,
+    TERMINOLOGY_REFERENCE_MODELS,
 )
 from lx_dtypes.models.contracts.reference_catalog_snapshot import (
     CatalogBinding,
@@ -19,6 +20,19 @@ from lx_dtypes.models.contracts.reference_catalog_snapshot import (
     ReferenceCatalogSnapshot,
 )
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
+from lx_dtypes.models.contracts.package_snapshot import (
+    PackageSnapshot,
+    build_package_snapshot,
+    restore_package_snapshot,
+)
+from endoreg_db.services.reference_data.clinical_projection import (
+    clinical_snapshot,
+    import_clinical_references_in_transaction,
+    plan_clinical_reference_import,
+    reuse_clinical_package,
+)
+from endoreg_db.schemas.clinical_reference import ClinicalReferencePlan
+
 from pydantic import BaseModel, ConfigDict, Field
 
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
@@ -62,6 +76,7 @@ class CatalogPlan(BaseModel):
     projection: str
     changes: list[CatalogChange]
     conflicts: list[str] = Field(default_factory=list)
+    clinical_plan: ClinicalReferencePlan | None = None
     unchanged: bool = False
 
     @property
@@ -82,10 +97,27 @@ def catalog_snapshot(knowledge_base: KnowledgeBase) -> ReferenceCatalogSnapshot:
         knowledge_base_module=knowledge_base.config.name,
         knowledge_base_version=knowledge_base.config.version,
     )
+    clinical_package = (
+        PackageSnapshot.model_validate_json(
+            build_package_snapshot(knowledge_base).model_dump_json()
+        )
+        if knowledge_base.config.depends_on
+        and not any(
+            record.kind in TERMINOLOGY_REFERENCE_MODELS for record in payload.records
+        )
+        and any(
+            getattr(knowledge_base, family).keys()
+            for family in ("examination", "finding", "unit")
+        )
+        else None
+    )
     return ReferenceCatalogSnapshot(
         identity=identity,
         payload=payload,
-        snapshot_id=ReferenceCatalogSnapshot.content_digest(identity, payload),
+        clinical_package=clinical_package,
+        snapshot_id=ReferenceCatalogSnapshot.content_digest(
+            identity, payload, clinical_package=clinical_package
+        ),
     )
 
 
@@ -116,13 +148,23 @@ def select_catalog(
     """Select explicit record types and their complete reference dependency closure."""
     if not kinds:
         return snapshot
+    if snapshot.clinical_package is not None and kinds.intersection(
+        TERMINOLOGY_REFERENCE_MODELS
+    ):
+        # Clinical concepts are owned by the pinned graph, not catalogue rows.
+        # Import its complete dependency closure through the same atomic boundary.
+        for kind in kinds.intersection(TERMINOLOGY_REFERENCE_MODELS):
+            family = TERMINOLOGY_REFERENCE_MODELS[kind]
+            if not snapshot.clinical_package.records[family]:
+                raise ValueError(f"Selected package has no {kind.value} definitions")
+        return snapshot
     records = {record.key: record for record in snapshot.payload.records}
     selected = {key for key in records if key[0] in kinds}
     pending = list(selected)
     while pending:
         for _, kind, identity in records[pending.pop()].references():
             key = (kind, identity.name, identity.version)
-            if key not in selected:
+            if key in records and key not in selected:
                 selected.add(key)
                 pending.append(key)
     payload = ReferenceCatalogPayload.model_validate(
@@ -135,12 +177,22 @@ def select_catalog(
         }
     )
     projection = ",".join(sorted(kind.value for kind in kinds))
+    clinical_package = (
+        snapshot.clinical_package
+        if any(
+            kind in TERMINOLOGY_REFERENCE_MODELS
+            for record in payload.records
+            for _, kind, _ in record.references()
+        )
+        else None
+    )
     return ReferenceCatalogSnapshot(
         identity=snapshot.identity,
         payload=payload,
         projection=projection,
+        clinical_package=clinical_package,
         snapshot_id=ReferenceCatalogSnapshot.content_digest(
-            snapshot.identity, payload, projection
+            snapshot.identity, payload, projection, clinical_package
         ),
     )
 
@@ -169,8 +221,17 @@ def plan_reference_catalog(
         ),
         None,
     )
+    clinical_plan = None
+    if snapshot.clinical_package is not None:
+        clinical_plan = plan_clinical_reference_import(
+            clinical_snapshot(restore_package_snapshot(snapshot.clinical_package)),
+            adopt_existing=adopt_existing,
+            package_snapshot=snapshot.clinical_package,
+        )
     conflicts: list[str] = []
-    if previous and previous.snapshot != snapshot:
+    if clinical_plan is not None and not clinical_plan.can_import:
+        conflicts.append("Terminology dependencies conflict; review the clinical plan")
+    if previous and previous.snapshot.snapshot_id != snapshot.snapshot_id:
         conflicts.append("Same module/version already has different content")
     known = {
         (binding.kind, binding.identity.name, binding.identity.version, binding.row_id)
@@ -257,7 +318,9 @@ def plan_reference_catalog(
         projection=snapshot.projection,
         changes=changes,
         conflicts=conflicts,
+        clinical_plan=clinical_plan,
         unchanged=previous is not None
+        and (clinical_plan is None or clinical_plan.unchanged)
         and not conflicts
         and all(change.action == "reuse" for change in changes),
     )
@@ -276,6 +339,11 @@ def reuse_current_catalog(snapshot: ReferenceCatalogSnapshot) -> CatalogPlan | N
     snapshot = ReferenceCatalogSnapshot.model_validate_json(
         snapshot.model_dump_json(by_alias=True)
     )
+    clinical_plan = None
+    if snapshot.clinical_package is not None:
+        clinical_plan = reuse_clinical_package(snapshot.clinical_package)
+        if clinical_plan is None:
+            return None
     row = ReferenceCatalogImport.objects.filter(
         module=snapshot.identity.knowledge_base_module,
         version=snapshot.identity.knowledge_base_version,
@@ -284,7 +352,11 @@ def reuse_current_catalog(snapshot: ReferenceCatalogSnapshot) -> CatalogPlan | N
     if row is None or row.snapshot_id != snapshot.snapshot_id:
         return None
     receipt = ReferenceCatalogReceipt.model_validate(row.payload)
-    if receipt.snapshot != snapshot:
+    if (
+        receipt.snapshot.identity != snapshot.identity
+        or receipt.snapshot.projection != snapshot.projection
+        or receipt.snapshot.snapshot_id != snapshot.snapshot_id
+    ):
         raise ValueError("Reference catalogue receipt does not match its digest")
     bound: dict[ReferenceKind, set[int]] = {}
     for binding in receipt.bindings:
@@ -316,6 +388,7 @@ def reuse_current_catalog(snapshot: ReferenceCatalogSnapshot) -> CatalogPlan | N
             )
             for binding in receipt.bindings
         ],
+        clinical_plan=clinical_plan,
         unchanged=True,
     )
 
@@ -359,6 +432,23 @@ def import_reference_catalog_in_transaction(
     if plan.unchanged:
         return plan
     rows: dict[tuple[ReferenceKind, str, int | None], models.Model] = {}
+    if snapshot.clinical_package is not None:
+        import_clinical_references_in_transaction(
+            clinical_snapshot(restore_package_snapshot(snapshot.clinical_package)),
+            adopt_existing=adopt_existing,
+            package_snapshot=snapshot.clinical_package,
+        )
+        for kind, family in TERMINOLOGY_REFERENCE_MODELS.items():
+            for record in snapshot.clinical_package.records[family]:
+                # Only actual external catalogue links need host rows. Some KB
+                # families have a more selective host projection (indications).
+                key = (kind, record.name, None)
+                if any(
+                    (target, identity.name, identity.version) == key
+                    for item in snapshot.payload.records
+                    for _, target, identity in item.references()
+                ):
+                    rows[key] = CATALOG_MODELS[kind]._base_manager.get(name=record.name)
     pending: list[tuple[CatalogRecordBase, CatalogChange]] = []
     for record, change in zip(snapshot.payload.records, plan.changes, strict=True):
         if change.action == "create":

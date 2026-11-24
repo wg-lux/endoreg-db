@@ -144,7 +144,7 @@ def video(monkeypatch: pytest.MonkeyPatch) -> VideoFile:
     return video
 
 
-def test_repeated_rebuilds_keep_one_encrypted_master_and_no_plaintext(
+def test_repeated_rebuilds_reuse_one_encrypted_master_and_no_plaintext(
     video: VideoFile,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -167,14 +167,17 @@ def test_repeated_rebuilds_keep_one_encrypted_master_and_no_plaintext(
             video, outside_intervals=[(10, 20)]
         )
         video.refresh_from_db()
-        assert not video.processed_file.storage.exists(previous_name)
+        if attempt == 0:
+            assert not video.processed_file.storage.exists(previous_name)
+        else:
+            assert video.processed_file.name == previous_name
         assert Path(video.processed_file.path).read_bytes().startswith(MAGIC)
         assert not cleanup_receipts(video.meta)
         assert video.raw_file.name == raw_name
         history = VideoFileMetaPayload.model_validate(
             video.meta
         ).canonical_timeline_history
-        assert history is not None and len(history) == attempt + 1
+        assert history is not None and len(history) == 1
         assert all(not path.exists() for path in scoped_paths)
     assert (
         len(list(get_runtime_paths().anonym_video.glob(f"{video.raw_video_hash}*.mp4")))
@@ -276,7 +279,120 @@ def test_postpublication_failure_blocks_accumulation_and_keeps_receipt(
     assert cleanup_receipts(video.meta)[0].committed is (failure == "cleanup")
     encoder = Mock()
     monkeypatch.setattr(service, "blacken_video_frame_intervals", encoder)
+    assert service.rebuild_processed_video_without_outside_frames(
+        video, outside_intervals=[(10, 20)]
+    ) is (failure == "cleanup")
+    encoder.assert_not_called()
+
+
+@pytest.mark.parametrize("failure", ["hls", "verification"])
+def test_published_blackening_retry_resumes_same_generation(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    original_name = str(video.processed_file.name)
+    calls: list[Path] = []
+
+    def encode(source: Path, output: Path, **kwargs: object) -> Path:
+        calls.append(source)
+        atomic_write_file(destination=output, content=[b"blackened"], file_mode=0o600)
+        return output
+
+    def verify(_video: VideoFile) -> None:
+        if failure == "verification":
+            raise RuntimeError("blackness tolerance exceeded")
+
+    monkeypatch.setattr(service, "blacken_video_frame_intervals", encode)
+    if failure == "hls":
+        monkeypatch.setattr(
+            service,
+            "materialize_video_hls",
+            Mock(side_effect=RuntimeError("HLS unavailable")),
+        )
+    assert not service.rebuild_processed_video_without_outside_frames(
+        video,
+        outside_intervals=[(10, 20)],
+        verify_output=verify,
+    )
+    video.refresh_from_db()
+    published_name = str(video.processed_file.name)
+    published_hash = video.processed_video_hash
+    assert published_name != original_name
+    assert video.processed_file.storage.exists(original_name)
+    assert not cleanup_receipts(video.meta)[0].committed
+    monkeypatch.setattr(service, "materialize_video_hls", ready_hls)
+    assert service.rebuild_processed_video_without_outside_frames(
+        video,
+        outside_intervals=[(10, 20)],
+        verify_output=lambda _video: None,
+    )
+    video.refresh_from_db()
+    assert video.processed_file.name == published_name
+    assert video.processed_video_hash == published_hash
+    assert len(calls) == 1
+    assert not video.processed_file.storage.exists(original_name)
+    assert not cleanup_receipts(video.meta)
+
+
+@pytest.mark.parametrize("change", ["intervals", "validation_scope"])
+def test_pending_blackening_cannot_resume_with_changed_configuration(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    def encode(source: Path, output: Path, **kwargs: object) -> Path:
+        atomic_write_file(destination=output, content=[b"blackened"], file_mode=0o600)
+        return output
+
+    encoder = Mock(side_effect=encode)
+    monkeypatch.setattr(service, "blacken_video_frame_intervals", encoder)
+    monkeypatch.setattr(
+        service,
+        "materialize_video_hls",
+        Mock(side_effect=RuntimeError("HLS unavailable")),
+    )
     assert not service.rebuild_processed_video_without_outside_frames(
         video, outside_intervals=[(10, 20)]
     )
-    encoder.assert_not_called()
+    monkeypatch.setattr(service, "materialize_video_hls", ready_hls)
+    assert not service.rebuild_processed_video_without_outside_frames(
+        video,
+        outside_intervals=[(20, 30)] if change == "intervals" else [(10, 20)],
+        only_validated=change == "validation_scope",
+    )
+    assert encoder.call_count == 1
+
+
+def test_published_blackening_retry_rejects_tampered_output(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_name = str(video.processed_file.name)
+
+    def encode(source: Path, output: Path, **kwargs: object) -> Path:
+        atomic_write_file(destination=output, content=[b"blackened"], file_mode=0o600)
+        return output
+
+    encoder = Mock(side_effect=encode)
+    monkeypatch.setattr(service, "blacken_video_frame_intervals", encoder)
+    monkeypatch.setattr(
+        service,
+        "materialize_video_hls",
+        Mock(side_effect=RuntimeError("HLS unavailable")),
+    )
+    assert not service.rebuild_processed_video_without_outside_frames(
+        video, outside_intervals=[(10, 20)]
+    )
+    video.refresh_from_db()
+    output_path = Path(video.processed_file.path)
+    content = bytearray(output_path.read_bytes())
+    content[-1] ^= 1
+    atomic_write_file(destination=output_path, content=[bytes(content)])
+    monkeypatch.setattr(service, "materialize_video_hls", ready_hls)
+    assert not service.rebuild_processed_video_without_outside_frames(
+        video, outside_intervals=[(10, 20)]
+    )
+    assert encoder.call_count == 1
+    assert video.processed_file.storage.exists(original_name)
+    assert not cleanup_receipts(video.meta)[0].committed

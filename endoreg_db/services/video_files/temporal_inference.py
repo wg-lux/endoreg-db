@@ -40,7 +40,10 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
-from endoreg_db.schemas.temporal_inference import CanonicalTemporalOptions
+from endoreg_db.schemas.temporal_inference import (
+    CanonicalTemporalOptions,
+    UploadPredictionOperation,
+)
 from endoreg_db.services.annotations.workflow import (
     mark_frame_prediction_completed,
     mark_frame_prediction_reset,
@@ -180,6 +183,7 @@ class TemporalInferenceHistoryConfig:
     deferred_reason: str | None = None
     blocked_by_history_id: int | None = None
     kind: str = TEMPORAL_INFERENCE_KIND
+    upload_prediction: UploadPredictionOperation | None = None
 
     def to_dict(self) -> dict[str, Any]:
         payload: dict[str, Any] = {
@@ -196,6 +200,8 @@ class TemporalInferenceHistoryConfig:
             "lx_ai_core_version": _lx_ai_core_version(),
             "temporal_options": self.temporal_options.to_dict(),
         }
+        if self.upload_prediction is not None:
+            payload["upload_prediction"] = self.upload_prediction.to_dict()
         if self.deferred_reason:
             payload["deferred_reason"] = self.deferred_reason
         if self.blocked_by_history_id is not None:
@@ -916,6 +922,14 @@ def _parse_temporal_history_config(
 ) -> TemporalInferenceHistoryConfig | None:
     if config is None:
         return None
+    upload_prediction_data = (
+        config.get("upload_prediction") if isinstance(config, Mapping) else None
+    )
+    upload_prediction = (
+        UploadPredictionOperation.model_validate(upload_prediction_data)
+        if upload_prediction_data is not None
+        else None
+    )
     config_payload = (
         config
         if isinstance(config, TemporalInferenceHistoryConfigPayload)
@@ -974,7 +988,10 @@ def _parse_temporal_history_config(
         temporal_options=normalize_temporal_options(compatibility_options),
         queue=queue,
         frame_source_mode=_normalize_temporal_frame_source_mode(
-            config_payload.frame_source_mode
+            config_payload.requested_frame_source_mode
+            or config_payload.frame_source_mode
+            if upload_prediction is not None
+            else config_payload.frame_source_mode
         ),
         test_run=_coerce_bool(config_payload.test_run, default=False),
         n_test_frames=_coerce_int_config(
@@ -984,6 +1001,7 @@ def _parse_temporal_history_config(
         ),
         deferred_reason=deferred_reason,
         blocked_by_history_id=parsed_blocked_by_history_id,
+        upload_prediction=upload_prediction,
     )
 
 
@@ -1024,6 +1042,9 @@ def _temporal_request_signature(
         "frame_source_mode": config.frame_source_mode,
         "test_run": config.test_run,
         "n_test_frames": config.n_test_frames,
+        "upload_prediction": config.upload_prediction.to_dict()
+        if config.upload_prediction
+        else None,
     }
 
 
@@ -1136,6 +1157,36 @@ def _reserve_temporal_inference_history(
     with transaction.atomic():
         locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
         _expire_stale_temporal_inference_histories(locked_video)
+        if dispatch_config.upload_prediction is not None:
+            identity = dispatch_config.upload_prediction
+            _require_upload_prediction_generation(
+                identity, locked_video, dispatch_config.model_meta_id
+            )
+            histories = (
+                VideoProcessingHistory.objects.filter(
+                    video=locked_video,
+                    operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
+                    config__upload_prediction__upload_job_id=str(
+                        identity.upload_job_id
+                    ),
+                )
+                .order_by("-created_at")
+                .select_for_update()
+            )
+            for previous in histories:
+                previous_config = _parse_temporal_history_config(previous.config)
+                if previous_config is None or _temporal_request_signature(
+                    previous_config
+                ) != _temporal_request_signature(dispatch_config):
+                    raise TemporalInferenceConfigError(
+                        "Automatic prediction intent changed after reservation."
+                    )
+                if previous.status == VideoProcessingHistory.STATUS_SUCCESS:
+                    return previous, "completed"
+                if previous.status == VideoProcessingHistory.STATUS_RUNNING:
+                    return previous, "already_queued"
+                if previous.status == VideoProcessingHistory.STATUS_PENDING:
+                    return previous, "redispatch"
 
         outside_rebuild_history: VideoProcessingHistory | None = None
         active_reprocessing = (
@@ -1155,6 +1206,8 @@ def _reserve_temporal_inference_history(
             return history, "busy"
 
         if outside_rebuild_history is not None:
+            if dispatch_config.upload_prediction is not None:
+                return outside_rebuild_history, "busy"
             active_inference = (
                 VideoProcessingHistory.objects.filter(
                     video=locked_video,
@@ -1311,7 +1364,8 @@ def _dispatch_temporal_inference_history(
     mode: str,
 ) -> TemporalInferenceDispatchResult:
     video = VideoFile.objects.get(pk=video_id)
-    mark_frame_prediction_reset(video)
+    if dispatch_config.upload_prediction is None:
+        mark_frame_prediction_reset(video)
 
     if mode == "inline":
         _set_history_task_id(history, task_id)
@@ -1368,6 +1422,7 @@ def _dispatch_temporal_inference_history(
                 },
                 queue=dispatch_config.queue,
                 routing_key=dispatch_config.queue,
+                task_id=task_id,
             )
             _set_history_task_id(history, str(async_result.id))
             return TemporalInferenceDispatchResult(
@@ -1383,7 +1438,8 @@ def _dispatch_temporal_inference_history(
             logger.exception(
                 "Celery temporal inference dispatch failed for video %s.", video_id
             )
-            history.mark_failure(str(exc))
+            if dispatch_config.upload_prediction is None:
+                history.mark_failure(str(exc))
             return TemporalInferenceDispatchResult(
                 task_id=task_id,
                 mode=mode,
@@ -1421,7 +1477,8 @@ def _dispatch_temporal_inference_history(
     try:
         _executor.submit(_job)
     except Exception as exc:
-        history.mark_failure(str(exc))
+        if dispatch_config.upload_prediction is None:
+            history.mark_failure(str(exc))
         raise
 
     return TemporalInferenceDispatchResult(
@@ -1560,17 +1617,40 @@ def _cleanup_history_frames_if_required(
     rollback_video_frame_artifacts(history_video, reason=reason)
 
 
+def _require_upload_prediction_generation(
+    identity: UploadPredictionOperation,
+    video: VideoFile,
+    model_meta_id: int,
+) -> None:
+    if (
+        identity.model_meta_id != model_meta_id
+        or identity.raw_video_hash != video.raw_video_hash
+        or identity.processed_video_hash != video.processed_video_hash
+    ):
+        raise TemporalInferenceConfigError(
+            "Automatic prediction generation or model changed."
+        )
+
+
 @transaction.atomic
 def _prepare_temporal_history(
     history: VideoProcessingHistory | None,
     *,
     video_id: int,
     delete_frames_after: bool,
+    model_meta_id: int,
 ) -> bool:
     if history is None:
         return False
-    VideoFile.objects.select_for_update().get(pk=video_id)
+    video = VideoFile.objects.select_for_update().get(pk=video_id)
     history.refresh_from_db()
+    identity_data = history.config.get("upload_prediction")
+    if identity_data is not None:
+        _require_upload_prediction_generation(
+            UploadPredictionOperation.model_validate(identity_data),
+            video,
+            model_meta_id,
+        )
     if (
         history.video.pk != video_id
         or history.operation != VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE
@@ -1818,6 +1898,13 @@ def _persist_temporal_prediction(
                 video_id=prepared.video.pk,
                 operation=VideoProcessingHistory.OPERATION_AI_TEMPORAL_INFERENCE,
             )
+            identity_data = current_history.config.get("upload_prediction")
+            if identity_data is not None:
+                _require_upload_prediction_generation(
+                    UploadPredictionOperation.model_validate(identity_data),
+                    current_video,
+                    int(prepared.model_meta.pk),
+                )
             if current_history.status == VideoProcessingHistory.STATUS_SUCCESS:
                 return
             if current_history.status != VideoProcessingHistory.STATUS_RUNNING:
@@ -1942,6 +2029,7 @@ def run_video_temporal_inference(
         history,
         video_id=video_id,
         delete_frames_after=delete_frames_after,
+        model_meta_id=model_meta_id,
     ):
         return True
     video: VideoFile | None = None
@@ -2012,8 +2100,14 @@ def dispatch_video_temporal_inference(
     temporal_options: Mapping[str, Any] | None = None,
     test_run: bool = False,
     n_test_frames: int = 10,
+    upload_job_id: str | None = None,
 ) -> TemporalInferenceDispatchResult:
     mode = get_video_temporal_inference_job_mode()
+    if upload_job_id is not None and mode == "thread":
+        raise TemporalInferenceConfigError(
+            "Required automatic upload prediction requires celery or inline execution; "
+            "thread execution cannot provide a durable handoff."
+        )
     frame_source_mode = _normalize_temporal_frame_source_mode()
     task_id = str(uuid.uuid4())
     queue = get_celery_inference_queue()
@@ -2030,6 +2124,14 @@ def dispatch_video_temporal_inference(
         frame_source_mode=frame_source_mode,
         test_run=bool(test_run),
         n_test_frames=int(n_test_frames),
+        upload_prediction=UploadPredictionOperation(
+            upload_job_id=uuid.UUID(upload_job_id),
+            model_meta_id=int(model_meta_id),
+            raw_video_hash=video.raw_video_hash,
+            processed_video_hash=video.processed_video_hash or "",
+        )
+        if upload_job_id is not None
+        else None,
     )
 
     history, reservation_status = _reserve_temporal_inference_history(
@@ -2087,7 +2189,7 @@ def dispatch_video_temporal_inference(
             blocked_by_history_id=deferred_config.blocked_by_history_id,
         )
 
-    if reservation_status == "already_queued":
+    if reservation_status in {"already_queued", "completed"}:
         return TemporalInferenceDispatchResult(
             task_id=history.task_id or "",
             mode=mode,
@@ -2100,6 +2202,12 @@ def dispatch_video_temporal_inference(
             history_id=history.pk,
         )
 
+    if reservation_status == "redispatch":
+        if not history.task_id:
+            raise TemporalInferenceConfigError(
+                "Reserved upload prediction has no task identity."
+            )
+        task_id = history.task_id
     return _dispatch_temporal_inference_history(
         video_id=int(video_id),
         history=history,

@@ -2,6 +2,8 @@
 Django management command to create ModelMeta from Hugging Face model.
 """
 
+from __future__ import annotations
+
 from pathlib import Path
 from importlib import import_module
 from typing import BinaryIO, Protocol, cast
@@ -188,5 +190,5 @@ def _save_model_weights(
 ) -> None:
     model_meta.weights.save(
         f"{model_name}_v{version}.safetensors",
-        ContentFile[bytes](weights_file.read()),
+        ContentFile(weights_file.read()),
     )

@@ -240,8 +240,36 @@ def _append_ready_audit(
         ) from exc
 
 
-@transaction.atomic
 def mark_video_ready_for_export(
+    *,
+    video: VideoFile,
+    user: Any,
+    center_key: str | None,
+    expected_processed_file_sha256: str | None = None,
+) -> ReadyForExportResult:
+    from endoreg_db.services.video_files.timestamp_backfill import (
+        prepare_video_timestamps_for_export,
+    )
+    from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+
+    _require_authenticated_user(user)
+    video.refresh_from_db()
+    center = _resolve_center(center_key)
+    _verify_center_scope(user=user, video=video, center=center)
+    try:
+        prepare_video_timestamps_for_export(video, operator=_user_identifier(user))
+    except VideoTimelineMappingError as exc:
+        raise ReadyForExportError(str(exc), status_code=409) from exc
+    return _mark_video_ready_for_export(
+        video=video,
+        user=user,
+        center_key=center_key,
+        expected_processed_file_sha256=expected_processed_file_sha256,
+    )
+
+
+@transaction.atomic
+def _mark_video_ready_for_export(
     *,
     video: VideoFile,
     user: Any,

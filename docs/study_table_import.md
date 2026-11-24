@@ -2,6 +2,44 @@
 
 Responsible: endoreg_db, lx_dtypes, and lx-annotate. Scope and audit trails are exclusively located in [DtypesStudyDefinitions.yml](../feature-tracking/DtypesStudyDefinitions.yml), criteria `researcher_table_import`, `dataset_lifecycle`, and `study_persistence`.
 
+## Reference-data prerequisites and cohort compatibility
+
+The selected mapping's exact package must be installed as **clinical reference
+data**, including its complete package snapshot. Registration or a successful
+mapping upload alone is insufficient. Missing prerequisites return HTTP 409 with
+`clinical_reference_package_required`, the package module/version, and an operator
+action. The UI displays that cause. Rejections are logged with safe identifiers
+and error types, never spreadsheet cells or patient identities.
+
+Fresh bootstrap uses `endoreg_reference@2.0.0`. This application-data package
+contains no clinical copies: its external references resolve through pinned
+`lx_units` and `endoreg_information_sources` dependency snapshots, projected atomically
+with the application catalogue. Historical 1.x releases remain immutable.
+
+An operator reviews `import_clinical_reference_data --module MODULE
+--module-version VERSION --adopt-existing --dry-run` for the selected reporting
+package. Equivalent legacy rows may be adopted explicitly; genuine differences
+remain blocked for review in lx-dtypes. The shared missing-text rule treats empty
+and `unknown` descriptions alike without rewriting stored descriptions or receipts.
+An examination's finding membership is additive across packages; reading remains
+scoped to the active package. Different clinical meanings are never merged.
+Existing databases containing legacy definitions still require conflict review.
+
+The import template and inspection vocabulary take their package from the cohort's
+`terminology_requirements`. Multiple requirements require an explicit selection;
+a mapping outside those requirements is rejected before import. Users must choose
+source-value-to-finding mappings explicitly. The generic `colonoscopy.yml` example
+has no study-specific finding defaults; a generic polyp is not evidence of resection.
+Existing saved mappings keep their immutable identities.
+
+Validation and import return `eligible_examinations` and `warnings`. Eligibility
+uses the same study criteria as statistics, so a successful import with no
+matching examinations is reported explicitly. Warnings show the required packages
+and findings; they do not rewrite imported observations. Draft analyses also
+produce a warning and remain skipped until their protocol requirements are
+resolved by the study owner. The template alone does not supply lesion linkage,
+measurements or approved protocol identifiers required for analysis.
+
 ## Persisted Studies
 
 `endoreg_db.models.other.study.Study` stores studies independently of lx-annotate: UUID, name, hypothesis, description, owner, and timestamp. The shared contract `lx_dtypes.models.contracts.study.StudyDefinition` validates the fields at the API and model boundaries.

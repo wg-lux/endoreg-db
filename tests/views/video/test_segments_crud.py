@@ -893,6 +893,73 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         state.refresh_from_db()
         self.assertFalse(state.segment_annotations_validated)
 
+    def test_async_expansion_rejects_missing_frame_evidence(self) -> None:
+        from endoreg_db.tasks import run_segment_annotation_expansion_task
+
+        segment = LabelVideoSegment.objects.create(
+            video_file=self.video,
+            label=self.label,
+            start_frame_number=90,
+            end_frame_number=93,
+            source=self.segment_source,
+        )
+        for rebuild in (False, True):
+            with (
+                self.subTest(rebuild=rebuild),
+                patch(
+                    "endoreg_db.services.jobs.video_post_validation_jobs.dispatch_video_post_validation_rebuild"
+                ) as dispatch,
+            ):
+                with self.assertRaisesMessage(ValueError, "complete frame annotations"):
+                    run_segment_annotation_expansion_task.run(
+                        int(self.video.pk),
+                        [int(segment.pk)],
+                        "manual_annotation",
+                        None,
+                        rebuild,
+                        not rebuild,
+                    )
+                dispatch.assert_not_called()
+                state = self.video.get_or_create_state()
+                self.assertFalse(state.segment_annotations_validated)
+                self.assertFalse(state.outside_segments_removed)
+
+    def test_async_expansion_rejects_absent_segment(self) -> None:
+        from endoreg_db.tasks import run_segment_annotation_expansion_task
+
+        with self.assertRaisesMessage(ValueError, "selection is missing"):
+            run_segment_annotation_expansion_task.run(
+                int(self.video.pk),
+                [99999999],
+                "manual_annotation",
+                None,
+                False,
+                True,
+            )
+        self.assertFalse(self.video.get_or_create_state().segment_annotations_validated)
+
+    def test_async_expansion_checks_persisted_annotations_before_completion(
+        self,
+    ) -> None:
+        from endoreg_db.tasks import run_segment_annotation_expansion_task
+
+        with (
+            patch(
+                "endoreg_db.services.annotations.segment_annotations.ensure_segment_annotations",
+                return_value={},
+            ),
+            self.assertRaisesMessage(ValueError, "complete frame annotations"),
+        ):
+            run_segment_annotation_expansion_task.run(
+                int(self.video.pk),
+                [int(self.segment.pk)],
+                "manual_annotation",
+                None,
+                False,
+                True,
+            )
+        self.assertFalse(self.video.get_or_create_state().segment_annotations_validated)
+
 
 class VideoSegmentsBlackenOutsideRouteTest(TestCase):
     def setUp(self):

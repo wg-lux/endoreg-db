@@ -33,6 +33,7 @@ class MediaIntegrityExpectation(StrEnum):
     RAW_WATCHER_VIDEO = "raw_watcher_video"
     PREANONYMIZED_VIDEO = "preanonymized_video"
     REPORT = "report"
+    PREANONYMIZED_REPORT = "preanonymized_report"
 
 
 class _UploadJobCenter(Protocol):
@@ -329,7 +330,9 @@ def check_video_media_integrity(
 def check_report_media_integrity(
     report: RawPdfFile | None,
     *,
+    expectation: MediaIntegrityExpectation = MediaIntegrityExpectation.REPORT,
     content_hash: str,
+    require_review: bool = True,
 ) -> MediaIntegrityResult:
     normalized_hash = (content_hash or "").strip()
     if not normalized_hash:
@@ -379,10 +382,44 @@ def check_report_media_integrity(
             media_pk=media_pk,
             missing_artifacts=("state",),
         )
-    if not validated:
+    if require_review and not validated:
         return _failed_result(
             status=MediaIntegrityStatus.STATE_NOT_VALIDATED,
             reason="RawPdfState anonymization has not been validated.",
+            content_hash=normalized_hash,
+            media_pk=media_pk,
+        )
+
+    from endoreg_db.services.raw_pdf_files.integrity import (
+        ProcessedReportIntegrityError,
+        require_usable_completed_report,
+        verify_processed_report_artifact,
+    )
+
+    try:
+        state = report.state
+        if state is None:
+            raise ProcessedReportIntegrityError("Report has no persisted state.")
+        digest = state.processed_file_sha256
+        if not require_review:
+            if expectation == MediaIntegrityExpectation.PREANONYMIZED_REPORT:
+                if not state.anonymized or state.processing_error:
+                    raise ProcessedReportIntegrityError(
+                        "Preanonymized report has no successful processed state."
+                    )
+            else:
+                digest = require_usable_completed_report(
+                    report, source_sha256=normalized_hash, require_artifact=False
+                )
+        if not digest:
+            raise ProcessedReportIntegrityError(
+                "Completed report has no persisted processed artifact digest."
+            )
+        verify_processed_report_artifact(report, expected_sha256=digest)
+    except ProcessedReportIntegrityError as exc:
+        return _failed_result(
+            status=MediaIntegrityStatus.STATE_NOT_PROCESSED,
+            reason=str(exc),
             content_hash=normalized_hash,
             media_pk=media_pk,
         )
@@ -397,6 +434,8 @@ def _expectation_for_upload_job(
     provenance = upload_job.processing_provenance
 
     if content_type in {"application/pdf", "export/txt", "text/plain"}:
+        if provenance.get("ingest_variant") == "preanonymized":
+            return MediaIntegrityExpectation.PREANONYMIZED_REPORT
         return MediaIntegrityExpectation.REPORT
 
     if content_type.startswith("video/"):
@@ -433,13 +472,21 @@ def check_upload_job_media_integrity(
             missing_artifacts=("source_center",),
         )
 
-    if expectation == MediaIntegrityExpectation.REPORT:
+    if expectation in {
+        MediaIntegrityExpectation.REPORT,
+        MediaIntegrityExpectation.PREANONYMIZED_REPORT,
+    }:
         report = (
             RawPdfFile.objects.select_related("state")
             .filter(pdf_hash=content_hash, center_id=center_id)
             .first()
         )
-        return check_report_media_integrity(report, content_hash=content_hash)
+        return check_report_media_integrity(
+            report,
+            expectation=expectation,
+            content_hash=content_hash,
+            require_review=require_review,
+        )
 
     video = (
         VideoFile.objects.select_related("state")
@@ -452,3 +499,18 @@ def check_upload_job_media_integrity(
         content_hash=content_hash,
         require_review=require_review,
     )
+
+
+def check_upload_job_import_completion(upload_job: UploadJob) -> MediaIntegrityResult:
+    """Persisted evidence that an upload's import finished, for reuse and redelivery.
+
+    Reviewed media, or processed media with technical and sensitive metadata
+    awaiting review, both prove completion. Completion never grants
+    anonymization approval; source cleanup keeps requiring the reviewed check.
+    A failure reports the reviewed result so repair keeps its artifact detail.
+    """
+    reviewed = check_upload_job_media_integrity(upload_job)
+    if reviewed.ok:
+        return reviewed
+    processed = check_upload_job_media_integrity(upload_job, require_review=False)
+    return processed if processed.ok else reviewed

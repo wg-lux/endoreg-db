@@ -551,7 +551,9 @@ def _reset_frames_after_resampling(
 
     video.frames.all().delete()
     initialize_video_frames(video)
-    persist_video_source_timeline(video, candidate.path)
+    persist_video_source_timeline(
+        video, candidate.path, artifact_kind=VideoArtifactKind.PROCESSED
+    )
 
 
 def _publish_transcode_candidate(

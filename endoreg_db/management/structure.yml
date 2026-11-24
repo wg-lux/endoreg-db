@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/import_electrosurgical_activations.py
+  role: Bounded operator CSV/XLSX activation import with explicit timezone, recording anchors and timing tolerance.
 - file: commands/import_electrosurgical_measurements.py
   role: Operator import of an lx_dtypes electrosurgical series with profile and optional synchronization anchors.
 - file: commands/profile_segment_updates.py
@@ -26,7 +28,9 @@ files:
 - file: commands/rotate_identity_salt.py
   role: Private review-file parsing and command adapter for whole-run identity salt migration.
 - file: commands/load_base_db_data.py
-  role: Canonical base reference-data command; reuses an unchanged catalogue receipt unless --verify is given.
+  role: Current 2.0.0 application catalogue reconciliation; legacy flag follows the same strict importer.
+- file: commands/migrate_reference_catalog.py
+  role: Compatibility reconciliation entrypoint using current application and terminology sources, without historical relationship rewrites.
 - file: commands/setup_endoreg_db.py
   role: Application setup command.
 - file: commands/materialize_video_hls.py
@@ -40,7 +44,7 @@ files:
 - file: commands/exempt_legacy_identity_verification.py
   role: Dry-run-first recording of the legacy identity exemption for validated videos before a cutoff.
 - file: reference_catalog_command.py
-  role: Shared reference catalog command adapter.
+  role: Shared command adapter using central application package settings and requiring explicit module/version for clinical loaders; optional packages pin their own versions.
 - file: command_errors.py
   role: Typed command error translation.
 dependencies:

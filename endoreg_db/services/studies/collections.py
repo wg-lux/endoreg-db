@@ -18,7 +18,9 @@ from lx_dtypes.evaluation import assess_examination
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport
-from endoreg_db.schemas.clinical_reference import ClinicalReferenceReceipt
+from endoreg_db.services.reference_data.clinical_projection import (
+    require_clinical_package,
+)
 from endoreg_db.services.reference_data.clinical_projection import load_imported_package
 from endoreg_db.models.other.study import Study
 from endoreg_db.models.other.study_cohort import StudyCohort
@@ -62,10 +64,9 @@ def collect_study_examination(
     elif cohort_examination_scope is not None:
         raise ValueError("Cohort membership scope requires a cohort")
     examination = examination_scope.select_for_update().get(pk=patient_examination_id)
-    package_import = ClinicalReferenceImport.objects.get(pk=package_import.pk)
-    receipt = ClinicalReferenceReceipt.model_validate(package_import.payload)
-    if receipt.package_snapshot is None:
-        raise ValueError("Collection requires a complete imported package snapshot")
+    package_import, snapshot = require_clinical_package(
+        package_import.module, package_import.version
+    )
     knowledge_base = load_imported_package(
         package_import.module, package_import.version
     )
@@ -80,7 +81,7 @@ def collect_study_examination(
     )
     payload = StudyCollectionRecord(
         record_uuid=uuid4(),
-        package_snapshot_id=receipt.package_snapshot.snapshot_id,
+        package_snapshot_id=snapshot.snapshot_id,
         study_uuid=study.uuid,
         cohort_uuid=cohort.definition_uuid if cohort else None,
         patient_examination_uuid=examination.uuid,

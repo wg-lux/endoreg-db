@@ -2,7 +2,8 @@
 import shutil
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Literal, NoReturn
+from typing import Iterator, Literal, NoReturn
+from uuid import UUID
 
 import pytest
 from django.core.files.storage import FileSystemStorage
@@ -20,6 +21,8 @@ from endoreg_db.models import (
     Label,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.hub.upload_job_file import UploadJobFile
 from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.services.video_files import _imports as create_from_file_module
@@ -314,7 +317,11 @@ def test_completed_video_without_processor_only_allows_reuse(
     monkeypatch: pytest.MonkeyPatch,
     force_reprocess: bool,
 ) -> None:
-    video = VideoFile(raw_video_hash="completed-content", raw_file="retained.mp4")
+    video = VideoFile(
+        raw_video_hash="completed-content",
+        raw_file="retained.mp4",
+        center=Center(name="existing-center"),
+    )
     ctx = ImportContext(
         file_path=tmp_path / "reimport.mp4",
         center_name="existing-center",
@@ -434,6 +441,7 @@ def test_create_or_retrieve_success_history_unusable_processed_file_needs_proces
     assert isinstance(ctx.file_hash, str)
     video = video_file_module.VideoFile(
         raw_video_hash=ctx.file_hash,
+        center=Center(name=ctx.center_name),
         processor=EndoscopyProcessor(name="olympus_cv_1500"),
     )
     video.pk = 1
@@ -1187,3 +1195,103 @@ def test_create_from_file_transcoding_failure_is_retry_safe(
     assert processed is False
     assert needs_processing is True
     assert call_count["count"] == 2
+
+
+@pytest.fixture
+def encrypted_raw_storage(mock_storage: EndoregPathsModel) -> Iterator[None]:
+    from django.db.models import FileField
+    from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+
+    raw_field = VideoFile._meta.get_field("raw_file")
+    assert isinstance(raw_field, FileField)
+    previous_storage = raw_field.storage
+    raw_field.storage = EncryptedStorage(
+        location=mock_storage.storage, master_key=b"a" * 32
+    )
+    try:
+        yield
+    finally:
+        raw_field.storage = previous_storage
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("published_before_failure", [False, True])
+def test_raw_candidate_is_owned_before_database_publication_failure(
+    mock_storage: EndoregPathsModel,
+    encrypted_raw_storage: None,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    published_before_failure: bool,
+) -> None:
+    from endoreg_db.services.hub import upload_job_files
+    from endoreg_db.services.hub.cleanup import additional_source_paths
+
+    _root, _sensitive, transcoding = _configure_storage_layout(mock_storage, "intent")
+    monkeypatch.setattr(
+        create_from_file_module,
+        "get_runtime_paths",
+        lambda: mock_storage.model_copy(update={"transcoding": transcoding}),
+    )
+    monkeypatch.setattr(
+        create_from_file_module, "ensure_video_file_profile", _copy_profile_candidate
+    )
+    source = tmp_path / "raw-intent.mp4"
+    source.write_bytes(b"raw-import-database-failure")
+    center_name = "raw-intent-center"
+    processor_name = "raw-intent-processor"
+    center = Center.objects.create(name=center_name)
+    EndoscopyProcessor.objects.create(name=processor_name)
+    job = UploadJob.objects.create(
+        source_center=center,
+        content_hash=get_file_hash(source),
+        content_type="video/mp4",
+    )
+    monkeypatch.setattr(upload_job_files, "current_upload_job_id", lambda: job.pk)
+    registered_paths: list[Path] = []
+    register = upload_job_files.register_upload_job_file
+
+    def register_before_write(
+        upload_job_id: UUID,
+        path: Path,
+        *,
+        role: UploadJobFile.Role | None = None,
+        planned: bool = False,
+    ) -> None:
+        assert planned
+        assert not path.exists()
+        register(upload_job_id, path, role=role, planned=planned)
+        registered_paths.append(path)
+
+    monkeypatch.setattr(
+        upload_job_files, "register_upload_job_file", register_before_write
+    )
+
+    save_video = VideoFile.save
+
+    def fail_video_save(self: VideoFile, *args: object, **kwargs: object) -> None:
+        if published_before_failure:
+            save_video(self)
+        raise RuntimeError("video database publication failed")
+
+    monkeypatch.setattr(VideoFile, "save", fail_video_save)
+    with pytest.raises(RuntimeError, match="database publication failed"):
+        create_from_file_module._create_from_file(
+            VideoFile,
+            source,
+            center_name,
+            processor_name,
+            job.content_hash,
+        )
+
+    assert len(registered_paths) == 1
+    entry = UploadJobFile.objects.get(upload_job=job, path=str(registered_paths[0]))
+    assert entry.role == UploadJobFile.Role.RETAINED
+    assert registered_paths[0].is_file()
+    assert registered_paths[0].read_bytes().startswith(b"LXENC01")
+    assert (
+        VideoFile.objects.filter(raw_video_hash=job.content_hash).exists()
+        is published_before_failure
+    )
+    disposable, _blocker = additional_source_paths(job)
+    assert registered_paths[0] not in disposable
+    assert source.exists()

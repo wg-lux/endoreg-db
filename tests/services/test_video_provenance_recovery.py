@@ -9,6 +9,8 @@ import pytest
 from django.contrib.auth.models import User
 from django.core.files.base import ContentFile
 from lx_dtypes.models.contracts.video_provenance import (
+    VideoFrameProvenancePayload,
+    VideoProvenanceBundle,
     VideoProvenanceRecovery,
     VideoFrameTimeline,
 )
@@ -161,6 +163,87 @@ def test_recovery_cannot_relabel_changed_bytes_or_overwrite_verified_mapping(
     assert not AuditLedger.objects.filter(
         action="acknowledge_unresolved_provenance"
     ).exists()
+
+
+@pytest.mark.parametrize("matching_recording", [False, True])
+def test_recovery_only_protects_recording_bound_verified_mapping(
+    prepared: tuple[VideoFile, User, list[Path]], matching_recording: bool
+) -> None:
+    video, user, paths = prepared
+    source = timeline("a", [10, 20, 30]).model_copy(
+        update={
+            "content_hash": video.raw_video_hash if matching_recording else "f" * 64
+        }
+    )
+    output = source.model_copy(update={"content_hash": video.processed_video_hash})
+    historical = VideoProvenanceBundle(
+        transformations=[
+            VideoFrameProvenancePayload(
+                source=source, output=output, source_frame_indices=[0, 1, 2]
+            )
+        ]
+    ).model_dump(mode="json")
+    video.meta = {**(video.meta or {}), "video_frame_provenance": historical}
+    video.save(update_fields=["meta"])
+    client = APIClient()
+    client.force_authenticate(user=user)
+    response = client.post(
+        f"/api/media/videos/{video.pk}/provenance/recover/",
+        {"acknowledge_unresolved": True, "dry_run": False},
+        format="json",
+    )
+    video.refresh_from_db()
+    meta = video.meta
+    assert meta is not None
+    assert VideoProvenanceBundle.model_validate(
+        meta["video_frame_provenance"]
+    ) == VideoProvenanceBundle.model_validate(historical)
+    if matching_recording:
+        assert response.status_code == 409
+        assert "video_provenance_recovery" not in meta
+        assert not paths
+    else:
+        assert response.status_code == 200, response.data
+        receipt = VideoProvenanceRecovery.model_validate(
+            meta["video_provenance_recovery"]
+        )
+        assert receipt.recording_hash == video.raw_video_hash
+        assert receipt.mapping_status == "unresolved"
+        assert not receipt.electrical_matching_eligible
+        assert all(not path.exists() for path in paths)
+    assert AuditLedger.objects.filter(
+        action="acknowledge_unresolved_provenance"
+    ).count() == (0 if matching_recording else 1)
+
+
+@pytest.mark.parametrize("matching_recording", [False, True])
+def test_recovery_retains_original_timestamps_from_older_bound_provenance(
+    prepared: tuple[VideoFile, User, list[Path]], matching_recording: bool
+) -> None:
+    video, user, _ = prepared
+    source = timeline("a", [17, 41, 99]).model_copy(
+        update={
+            "content_hash": video.raw_video_hash if matching_recording else "f" * 64
+        }
+    )
+    historical = VideoProvenanceBundle(
+        transformations=[
+            VideoFrameProvenancePayload(
+                source=source,
+                output=timeline("e", [0, 24, 82]),
+                source_frame_indices=[0, 1, 2],
+            )
+        ]
+    )
+    video.meta = {"video_frame_provenance": historical.model_dump(mode="json")}
+    video.raw_file.name = ""
+    video.save(update_fields=["meta", "raw_file"])
+    receipt = service.recover_video_provenance(
+        video.pk, actor_id=user.pk, dry_run=False
+    )
+    assert receipt.original_timeline == (source if matching_recording else None)
+    assert receipt.mapping_status == "unresolved"
+    assert receipt.processed_timeline.content_hash == video.processed_video_hash
 
 
 def test_any_authenticated_center_user_can_recover_but_other_centers_cannot(

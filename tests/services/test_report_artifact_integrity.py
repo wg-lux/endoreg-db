@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+# Direct import-boundary coverage verifies reuse before source cleanup.
+# pyright: reportPrivateUsage=false
+
 from tests.helpers.pdf import render_single_page_pdf
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
+from unittest.mock import Mock
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -113,6 +118,72 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)
 
 
+def test_validation_detaches_legacy_raw_alias_without_deleting_processed_pdf(
+    base_db_data: object,
+    django_capture_on_commit_callbacks: Callable[..., Any],
+) -> None:
+    report = completed_report()
+    report.file.delete(save=False)
+    report.file.name = report.processed_file.name
+    report.save(update_fields=["file"])
+    processed_name = report.processed_file.name
+    digest = get_file_hash(report.processed_file)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert validate_report_metadata_annotation(
+            report, {"anonymized_text": "Anonymized report text"}
+        )
+    report.refresh_from_db()
+    assert not report.file
+    assert report.processed_file.name == processed_name
+    assert file_exists(report.processed_file)
+    assert get_file_hash(report.processed_file) == digest
+    assert report.state is not None and report.state.anonymization_validated
+
+
+@pytest.mark.parametrize("preanonymized", [False, True])
+def test_upload_import_completion_keeps_report_review_separate_and_checks_bytes(
+    base_db_data: object,
+    preanonymized: bool,
+) -> None:
+    from endoreg_db.models.hub.upload_job import UploadJob
+    from endoreg_db.services.hub.media_integrity import (
+        check_upload_job_import_completion,
+        check_upload_job_media_integrity,
+    )
+
+    report = completed_report()
+    verify_and_persist_processed_report_sha256(report)
+    assert report.sensitive_meta is not None
+    type(report.sensitive_meta).objects.filter(pk=report.sensitive_meta.pk).update(
+        patient_hash="c" * 64
+    )
+    job = UploadJob.objects.create(
+        content_hash=report.pdf_hash,
+        content_type="application/pdf",
+        source_center=report.center,
+    )
+    if preanonymized:
+        report.anonymized_text = ""
+        report.sensitive_meta = None
+        report.save(update_fields=["anonymized_text", "sensitive_meta"])
+        assert not check_upload_job_import_completion(job).ok
+        job.processing_provenance = {"ingest_variant": "preanonymized"}
+        job.save(update_fields=["processing_provenance"])
+    assert check_upload_job_import_completion(job).ok
+    assert not check_upload_job_media_integrity(job).ok
+    assert report.state is not None
+    report.state.refresh_from_db()
+    assert not report.state.anonymization_validated
+    report.state.processed_file_sha256 = "0" * 64
+    report.state.save(update_fields=["processed_file_sha256"])
+    assert not check_upload_job_import_completion(job).ok
+    report.state.refresh_from_db()
+    assert not report.state.anonymization_validated
+    report.state.anonymization_validated = True
+    report.state.save(update_fields=["anonymization_validated"])
+    assert not check_upload_job_import_completion(job).ok
+
+
 def test_validation_surfaces_cleanup_failure_and_can_retry(
     base_db_data: object,
     django_capture_on_commit_callbacks: Callable[..., Any],
@@ -196,3 +267,110 @@ def test_completed_record_survives_pdf_cleanup(
             require_usable_completed_report(report, require_artifact=False)
     with pytest.raises(ProcessedReportIntegrityError):
         require_usable_completed_report(report)
+
+
+@pytest.mark.parametrize(
+    "storage_state",
+    ["available", "raw_reclaimed", "processed_missing", "processed_corrupt"],
+)
+def test_import_reuse_verifies_processed_media_and_repairs_loss(
+    base_db_data: object,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    storage_state: str,
+) -> None:
+    import endoreg_db.import_files.report_import_service as service_module
+    from endoreg_db.import_files.context.import_context import ImportContext
+    from endoreg_db.import_files.file_storage.create_report_file import (
+        create_or_retrieve_report_file,
+    )
+    from endoreg_db.models.state.processing_history.processing_history import (
+        ProcessingHistory,
+    )
+
+    report = completed_report()
+    verify_and_persist_processed_report_sha256(report)
+    assert report.sensitive_meta is not None
+    type(report.sensitive_meta).objects.filter(pk=report.sensitive_meta.pk).update(
+        patient_hash="c" * 64
+    )
+    ProcessingHistory.get_or_create_for_hash(
+        obj=report, file_hash=report.pdf_hash, success=True
+    )
+    if storage_state == "raw_reclaimed":
+        report.file.delete(save=True)
+    elif storage_state == "processed_missing":
+        report.processed_file.delete(save=True)
+    elif storage_state == "processed_corrupt":
+        from django.core.files.base import ContentFile
+
+        report.processed_file.save(
+            "corrupt.pdf", ContentFile(b"invalid PDF"), save=True
+        )
+    report.refresh_from_db()
+    monkeypatch.setattr(service_module, "ReportAnonymizer", Mock())
+    service = service_module.ReportImportService()
+    source = tmp_path / "redelivery.pdf"
+    source.write_bytes(PDF_BYTES)
+    assert report.center is not None
+    ctx = ImportContext(
+        file_path=source,
+        file_type="report",
+        file_hash=report.pdf_hash,
+        center_name=report.center.name,
+        center_key=report.center.center_key,
+    )
+    reusable = storage_state in {"available", "raw_reclaimed"}
+    result = service._get_existing_completed_report(ctx)
+    assert (result is not None) is reusable
+    if not reusable:
+        assert ctx.current_report == report
+    reused, processed, needs_processing = create_or_retrieve_report_file(ctx)
+    assert reused == report
+    assert processed is reusable
+    assert needs_processing is not reusable
+    assert source.read_bytes() == PDF_BYTES
+
+
+@pytest.mark.parametrize("missing", ["text", "patient_hash"])
+def test_usable_pdf_does_not_replace_missing_clinical_completion_evidence(
+    base_db_data: object, missing: str
+) -> None:
+    from endoreg_db.services.raw_pdf_files.integrity import (
+        require_reusable_completed_report,
+    )
+
+    report = completed_report()
+    verify_and_persist_processed_report_sha256(report)
+    if missing == "text":
+        report.anonymized_text = ""
+    else:
+        assert report.sensitive_meta is not None
+        report.sensitive_meta.patient_hash = ""
+    with pytest.raises(ProcessedReportIntegrityError, match="text or patient identity"):
+        require_reusable_completed_report(report, source_sha256=report.pdf_hash)
+    assert file_exists(report.file)
+    assert file_exists(report.processed_file)
+
+
+@pytest.mark.parametrize("raw_present", [False, True])
+def test_direct_creation_rejects_cross_center_reuse_before_deleting_record(
+    base_db_data: object, tmp_path: Path, raw_present: bool
+) -> None:
+    from endoreg_db.models.administration.center.center import Center
+    from endoreg_db.services.raw_pdf_files.imports import create_raw_pdf_file_from_path
+
+    report = completed_report()
+    source = tmp_path / "same-content.pdf"
+    source.write_bytes(PDF_BYTES)
+    report.pdf_hash = get_file_hash(source)
+    report.save(update_fields=["pdf_hash"])
+    if not raw_present:
+        report.file.delete(save=True)
+    other_center = Center.objects.create(name="other-report-center")
+    with pytest.raises(ValueError, match="different center"):
+        create_raw_pdf_file_from_path(source, center_name=other_center.name)
+    report.refresh_from_db()
+    assert report.center_id != other_center.pk
+    assert file_exists(report.processed_file)
+    assert source.read_bytes() == PDF_BYTES

@@ -125,12 +125,32 @@ def verify_existing_raw_pdf_file(
     )
 
 
+@transaction.atomic
 def delete_raw_pdf_raw_file(
     report: "RawPdfFile",
     *,
     save: bool = False,
 ) -> bool:
+    from endoreg_db.services.hub.cleanup import stored_media_name_referenced
+
+    type(report).objects.select_for_update().get(pk=report.pk)
+    report.refresh_from_db(fields=["file", "processed_file"])
     raw_name = report.file.name if report.file and report.file.name else None
+    if raw_name and stored_media_name_referenced(
+        raw_name, exclude_raw_report_id=int(report.pk)
+    ):
+        report.file.name = ""
+        if save:
+            report.save(update_fields=["file"])
+        _emit_report_file_event(
+            "raw_pdf.file_reference_detached",
+            report=report,
+            artifact_kind=ReportPdfArtifactKind.RAW,
+            status="ok",
+            storage_name=raw_name,
+            detail="Shared media artifact retained",
+        )
+        return False
     raw_deleted = delete_field_file(report, "file", missing_ok=False, save=save)
     if raw_deleted:
         _emit_report_file_event(

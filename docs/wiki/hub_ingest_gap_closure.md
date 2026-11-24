@@ -390,7 +390,7 @@ Recommended matrix:
 | New transfer, no local row, raw media present, `processing_policy=reprocess_always` | `start_processing` |
 | Local `ProcessingHistory.success=True`, required artifacts present, `processing_policy=reprocess_if_missing_outputs` | `skip_processing_existing_success` |
 | Sender says completed, transferred processed media exists, `processing_policy=preserve_processing_state` | `skip_processing_preserved_state` |
-| Sender says completed, but required artifacts are missing or state is contradictory | `mark_inconsistent` |
+| Sender says completed, but required artifacts are missing | `wait_for_missing_media` (superseded the original `mark_inconsistent`; a timing gap between metadata and media is not an integrity conflict, see `feature-tracking/BackendIdempotencyGuarantee.yml`) |
 | `processing_policy=ingest_only_no_processing` | `skip_processing_preserved_state` or `wait_for_missing_media` depending on artifact requirements |
 
 ### Inconsistency rules
@@ -399,8 +399,9 @@ Mark a transfer inconsistent when any of the following is true:
 
 - `ProcessingHistory.success=True` but `video_state` indicates processing never
   started
-- sender claims anonymized completion but no processed artifact was transferred
-  and no local processed artifact exists
+- ~~sender claims anonymized completion but no processed artifact was transferred
+  and no local processed artifact exists~~ (superseded: such transfers now wait
+  for media, see `feature-tracking/BackendIdempotencyGuarantee.yml`)
 - transferred `processed_video_hash` does not match the uploaded processed media
 - transferred `resource_hash` does not match the uploaded raw media
 

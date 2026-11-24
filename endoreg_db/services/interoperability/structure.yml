@@ -5,13 +5,19 @@ parent: ../structure.yml
 summary: FHIR, DICOM, SAP IS-H and typed medical-ledger integrations.
 responsibilities:
 - Validate anonymized DICOM imports and pseudonymized FHIR exports.
+- Serve the read-only FHIR R4 REST API from the same validated examination Bundles.
 - Normalize SAP IS-H inputs and project typed medical-ledger records.
 boundaries:
 - Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- The FHIR API never assembles clinical resources itself; callers pass a center-scoped examination queryset.
+- Terminology CodeSystems and ValueSets are produced by lx-dtypes and only routed here.
 entrypoints:
 - name: build_patient_examination_fhir_bundle
   file: fhir_r4.py
   purpose: Validate FHIR export inputs and publish local record IDs without source identity hashes.
+- name: read_clinical_resource / search_clinical_resources / patient_everything
+  file: fhir_r4_api.py
+  purpose: Resolve deterministic FHIR ids within a center scope and answer read, search-type and $everything interactions.
 - name: import_dicom_export_manifest
   file: dicom_import.py
   purpose: Validate and idempotently catalogue one anonymized DICOM study.
@@ -23,7 +29,9 @@ files:
 - file: dicom_manifest_backfill.py
   role: Exports backfill_dicom_export_manifests_v2.
 - file: fhir_r4.py
-  role: Exports build_patient_examination_fhir_bundle.
+  role: Exports build_patient_examination_fhir_bundle and fhir_resource_id; codes indications as Procedure.reasonCode.
+- file: fhir_r4_api.py
+  role: Read-only FHIR R4 API interactions, OperationOutcome errors and the CapabilityStatement.
 - file: medical_ledger.py
   role: Typed medical ledger projection and transactional, idempotent persistence of medication, laboratory, disease and event records.
 - file: sap_ish_clinical.py
@@ -50,9 +58,10 @@ contracts:
   doc: feature-tracking/CodeQuality.yml
 tests:
   directory: tests
-  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py tests/services/test_medical_ledger_transactions.py
-    tests/services/test_sap_ish_clinical.py
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_fhir_r4_export.py tests/services/test_fhir_r4_api.py
+    tests/services/test_medical_ledger_transactions.py tests/services/test_sap_ish_clinical.py
   files:
   - tests/services/test_fhir_r4_export.py
+  - tests/services/test_fhir_r4_api.py
   - tests/services/test_medical_ledger_transactions.py
   - tests/services/test_sap_ish_clinical.py

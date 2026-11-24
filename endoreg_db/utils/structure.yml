@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: encryption/encrypted.py
+  role: Encrypted storage with collision-resolved publication intent before artifact creation; callers own durable attempt inventory and recovery.
+- file: storage/files.py
+  role: Canonical FileField materialization and save helpers with explicit publication intent and no unsupported-backend fallback.
 - file: rust_backend.py
   role: Fail-closed typed native adapters, including hub acknowledgement/failure decisions and retry classification; no Python reducer fallback.
 - file: video/timeline.py

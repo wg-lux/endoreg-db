@@ -60,8 +60,15 @@ def cleanup_transferred_video_files(
     """
     if hub_mode_enabled():
         raise ValueError("Local video reclamation is forbidden on a central hub.")
+    video_id = (
+        OutboundHubTransferJob.objects.only("video_file")
+        .get(pk=outbound_job_id)
+        .video_file_id
+    )
+    if video_id is None:
+        raise ValueError("Video transfer has no bound video.")
     with transaction.atomic():
-        job, video = _locked_cleanup_target(outbound_job_id, receipt)
+        job, video = _locked_cleanup_target(outbound_job_id, receipt, video_id=video_id)
         if job.local_files_cleanup_completed_at is not None:
             return
         if job.local_files_cleanup_started_at is None:
@@ -74,7 +81,7 @@ def cleanup_transferred_video_files(
             job.save(update_fields=["local_files_cleanup_started_at", "updated_at"])
 
     with transaction.atomic():
-        job, video = _locked_cleanup_target(outbound_job_id, receipt)
+        job, video = _locked_cleanup_target(outbound_job_id, receipt, video_id=video_id)
         if job.local_files_cleanup_completed_at is not None:
             return
         if video.processed_file.name and video.processed_file.storage.exists(
@@ -116,9 +123,14 @@ def cleanup_transferred_video_files(
 
 
 def _locked_cleanup_target(
-    job_id: str, receipt: HubMediaEnvelopeReceipt
+    job_id: str, receipt: HubMediaEnvelopeReceipt, *, video_id: int
 ) -> tuple[OutboundHubTransferJob, VideoFile]:
+    # Match generation admission/publication: resource first, then its transfer.
+    # Recheck the unlocked snapshot before acting on either locked record.
+    video = VideoFile.objects.select_for_update().get(pk=video_id)
     job = OutboundHubTransferJob.objects.select_for_update().get(pk=job_id)
+    if job.video_file_id != video.pk:
+        raise ValueError("Video binding changed during local cleanup.")
     if (
         job.resource_kind != str(OutboundHubTransferJob.ResourceKind.VIDEO)
         or job.local_status != str(OutboundHubTransferJob.LocalStatus.COMPLETED)
@@ -129,7 +141,6 @@ def _locked_cleanup_target(
         raise ValueError(
             "Completed video and matching verified hub receipt are required."
         )
-    video = VideoFile.objects.select_for_update().get(pk=job.video_file_id)
     if video.center_id != job.source_center_id:
         raise ValueError("Video ownership changed after transfer.")
     job.video_file = video

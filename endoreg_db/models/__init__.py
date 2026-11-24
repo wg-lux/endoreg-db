@@ -12,6 +12,7 @@ from .media.video.frame_annotation_export_job import FrameAnnotationExportJob
 from .media.video.electrosurgical_measurement import (
     VideoElectrosurgicalMeasurement,
 )
+from .media.video.electrosurgical_activation import VideoElectrosurgicalActivationLog
 
 from .hub.storage_operator_dispatch_receipt import StorageOperatorDispatchReceipt
 
@@ -244,6 +245,7 @@ __all__ = [
     "VideoTranscodeJob",
     "FrameAnnotationExportJob",
     "VideoElectrosurgicalMeasurement",
+    "VideoElectrosurgicalActivationLog",
     "StorageOperatorDispatchReceipt",
     "StorageNodeActionReceipt",
     "StorageArtifactPublication",

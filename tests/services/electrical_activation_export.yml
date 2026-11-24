@@ -1,0 +1,7 @@
+# Synthetic summary export, explicitly using a fixed UTC+01:00 laptop clock.
+source_timezone: Etc/GMT-1
+csv: |
+  ,t,hfmode,hfmode_options,effect,duration_s,P_avg_W,E_tot_J,slot_number,instrument
+  0,2026-01-01 01:00:00.123456,mode-a,,3,0.1,1.25,0.125,1,test-instrument
+  1,2026-01-01 01:00:01.123456,mode-b,option,2,0,0,0,2,test-instrument
+  2,2026-01-01 01:00:02.123456,mode-a,,3,0.2,2.50,0.5,1,test-instrument

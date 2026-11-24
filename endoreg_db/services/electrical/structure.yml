@@ -12,7 +12,7 @@ boundaries:
 - Gaps keep their frame status; values are never filled, carried forward or extrapolated.
 - Alignments are recomputed per request from current identities and are not cached outside the encrypted boundary.
 - Unresolved provenance, missing anchors, stale generations and identity mismatches fail closed.
-- Not production-approved; readiness lives only in feature-tracking/backlog/ElectricalToVideoMapping.yml.
+- Not production-approved; readiness lives only in feature-tracking/ElectricalToVideoMapping.yml.
 entrypoints:
 - name: import_electrosurgical_measurement
   file: measurement_import.py
@@ -21,6 +21,12 @@ entrypoints:
   file: video_alignment.py
   purpose: Bounded identity-checked alignment page with canonical presentation seconds.
 files:
+- file: activation_alignment.py
+  role: Recording-bound activation frame coverage using canonical clock interpolation and composed ancestry, without deriving sample curves.
+- file: activation_storage.py
+  role: Atomic activation import, encrypted source verification and idempotence.
+- file: activation_import.py
+  role: Bounded CSV/XLSX activation-summary decoding through the canonical lx_dtypes contract, with explicit timestamp conversion precision.
 - file: __init__.py
   role: Package marker without side effects.
 dependencies:
@@ -29,16 +35,18 @@ dependencies:
   - endoreg_db/schemas
   - endoreg_db/services/hub
   - endoreg_db/services/video_storage
+  - endoreg_db/services/video_files
   - endoreg_db/utils
   external:
   - django
   - lx_dtypes
   - pydantic
+  - defusedxml
 contracts:
 - name: Electrosurgical video alignment host contract
   doc: docs/electrosurgical_video_alignment.md
 - name: Feature scope and readiness
-  doc: feature-tracking/backlog/ElectricalToVideoMapping.yml
+  doc: feature-tracking/ElectricalToVideoMapping.yml
 - name: Canonical video storage and timeline runbook
   doc: docs/video_storage_normalization.md
 tests:

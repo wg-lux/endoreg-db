@@ -5,6 +5,7 @@ Data Loader Helpers and others
 from pathlib import Path
 
 from django.core.management import call_command
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 
 ASSET_DIR = Path(__file__).resolve().parent.parent / "assets"
 
@@ -165,13 +166,21 @@ def load_contraindication_data():
     )
 
 
-def load_examination_data():
-    """
-    Loads examination data into the database using the corresponding Django management command.
-    """
-    call_command(
-        "load_examination_data",
+def _load_clinical_data(command: str, package: KnowledgeBaseIdentity | None) -> None:
+    """Load the explicitly selected terminology; missing identity fails at the command boundary."""
+    options = (
+        {
+            "module": package.knowledge_base_module,
+            "module_version": package.knowledge_base_version,
+        }
+        if package is not None
+        else {}
     )
+    call_command(command, **options)
+
+
+def load_examination_data(package: KnowledgeBaseIdentity | None = None) -> None:
+    _load_clinical_data("load_examination_data", package)
 
 
 def load_lab_value_data():
@@ -183,22 +192,14 @@ def load_lab_value_data():
     )
 
 
-def load_finding_data():
-    """
-    Loads finding data into the database by invoking the corresponding Django management command.
-    """
-    call_command(
-        "load_finding_data",
-    )
+def load_finding_data(package: KnowledgeBaseIdentity | None = None) -> None:
+    _load_clinical_data("load_finding_data", package)
 
 
-def load_examination_indication_data():
-    """
-    Loads examination indication data into the database using the corresponding Django management command.
-    """
-    call_command(
-        "load_examination_indication_data",
-    )
+def load_examination_indication_data(
+    package: KnowledgeBaseIdentity | None = None,
+) -> None:
+    _load_clinical_data("load_examination_indication_data", package)
 
 
 def load_medication_data():
@@ -237,34 +238,7 @@ def load_green_endoscopy_wuerzburg_data():
     )
 
 
-def load_data():
-    """
-    Loads all predefined data sets into the database in the required sequence.
-
-    Calls individual data loading functions in a specific order to ensure that dependencies between data sets are respected.
-    """
-
-    load_information_source()
-    load_risk_data()
-    load_center_data()
-    load_endoscope_data()
-    load_distribution_data()
-
-    load_gender_data()
-    load_report_reader_flag_data()
-    load_pdf_type_data()
-    load_unit_data()
-    load_disease_data()
-    load_event_data()
-    load_organ_data()
-    load_contraindication_data()
-    load_examination_data()
-    load_lab_value_data()
-    load_finding_data()
-    load_examination_indication_data()
-    load_medication_data()
-
-    load_ai_model_label_data()
-    load_ai_model_data()
-
+def load_data() -> None:
+    """Load current application data; clinical terminology is selected separately."""
+    load_base_db_data()
     load_green_endoscopy_wuerzburg_data()

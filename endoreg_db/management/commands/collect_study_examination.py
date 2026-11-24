@@ -10,7 +10,10 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
 )
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport
+from endoreg_db.services.reference_data.clinical_projection import (
+    ClinicalPackageRequiredError,
+    require_clinical_package,
+)
 from endoreg_db.models.other.study import Study
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.services.studies.collections import collect_study_examination
@@ -64,12 +67,12 @@ class Command(BaseCommand):
                 study=study,
                 examination_scope=scope,
                 patient_examination_id=examination_id,
-                package_import=ClinicalReferenceImport.objects.get(
-                    module=module, version=version
-                ),
+                package_import=require_clinical_package(module, version)[0],
                 record=record,
                 report_template_name=template,
             )
+        except ClinicalPackageRequiredError as error:
+            raise CommandError(str(error)) from error
         except (
             ValueError,
             ValidationError,

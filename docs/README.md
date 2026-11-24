@@ -59,6 +59,7 @@ Start with your task below. Guides describe operation; the
 - [Case graph persistence](case_graph_persistence.md)
 - [Medical ledger integration](medical_ledger_contract.md)
 - [LXDM host integration and persistence](dtypes_lookup_module_entrypoint.md)
+- [Package kinds in the host](package_kinds_host_guide.md)
 - [LXDM contract usage audit](lxdm_contract_usage_audit.md)
 - [DICOM interoperability](dicom_interoperability.md)
 - [FHIR R4 export](fhir_r4_export.md)

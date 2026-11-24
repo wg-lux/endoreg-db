@@ -58,6 +58,14 @@ class VideoExportDownloadTests(TestCase):
     center: Center
 
     def setUp(self) -> None:
+        # Transport fixtures intentionally contain opaque bytes, not an encoded video.
+        # Real decoded recovery is covered by test_video_timestamp_backfill and the
+        # site's export API integration test.
+        recovery = patch(
+            "endoreg_db.services.video_files.timestamp_backfill.prepare_video_timestamps_for_export"
+        )
+        recovery.start()
+        self.addCleanup(recovery.stop)
         suffix = uuid4().hex
         self.center = Center.objects.create(name=f"download-{suffix}")
         self.user = User.objects.create_user(username=f"download-{suffix}")

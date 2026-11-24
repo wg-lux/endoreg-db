@@ -85,9 +85,7 @@ class PdfMediaTextVisibilityTests(TransactionTestCase):
         txt_path.write_text(txt_content, encoding="utf-8")
 
         try:
-            converted_path = ReportImportService()._create_temp_pdf_from_txt(  # pyright: ignore[reportPrivateUsage]
-                txt_path
-            )
+            converted_path = ReportImportService.create_pdf_from_text(txt_path)
             try:
                 self.assertEqual(converted_path.suffix, ".pdf")
                 document = cast(PdfDocument, pymupdf.open(filename=str(converted_path)))

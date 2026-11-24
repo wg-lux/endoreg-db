@@ -178,6 +178,7 @@ class StudyCohortPreviewViewTests(TestCase):
                         "instance_id": str(patient_finding.instance_id),
                         "finding_id": finding.pk,
                         "finding_name": finding.name,
+                        "finding_name_de": None,
                         "classifications": [],
                         "interventions": [],
                     }
@@ -282,6 +283,7 @@ class StudyCohortPreviewViewTests(TestCase):
                 "instance_id": str(follow_up_finding.instance_id),
                 "finding_id": finding.pk,
                 "finding_name": finding.name,
+                "finding_name_de": None,
                 "classifications": [],
                 "interventions": [],
             }

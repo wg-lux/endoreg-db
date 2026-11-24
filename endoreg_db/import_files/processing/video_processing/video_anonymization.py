@@ -25,6 +25,7 @@ from endoreg_db.services.video_storage.provenance_cleaner import (
     create_frame_cleaner as FrameCleaner,
 )
 from lx_dtypes.models import SensitiveMeta
+from lx_anonymizer.processing_contracts import ModelExecutionSummary
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.media_streaming import (
     FfmpegStreamProbeEntry,
@@ -804,6 +805,19 @@ class VideoAnonymizer:
             temp_result_path,
             anonymized_output_path=anonymized_output_path,
         )
+        execution_payload = extracted_metadata.get("model_execution")
+        if execution_payload is not None:
+            try:
+                execution = ModelExecutionSummary.model_validate(execution_payload)
+            except ValidationError:
+                raise ValueError(
+                    "Video anonymization model execution evidence is invalid."
+                ) from None
+            if execution.reprocessing_required:
+                raise RuntimeError(
+                    "Video anonymization requires reprocessing after model failure; "
+                    "the candidate cannot be published."
+                )
         logger.info(
             "Retained anonymized video in attempt-local staging pending validation: "
             "video=%s attempt=%s path=%s",

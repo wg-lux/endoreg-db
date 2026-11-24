@@ -34,7 +34,7 @@ files:
 - file: sampling.py
   role: Share eligibility work and random-sampling pools for one task batch.
 - file: segment_annotations.py
-  role: Exports ensure_segment_annotations, ensure_prediction_segment_annotations.
+  role: Exports annotation expansion and the shared request/worker completion integrity check.
 - file: segment_frame_annotations.py
   role: Exports sync_frame_annotations_for_segment, delete_frame_annotations_for_segment.
 - file: segment_identity.py

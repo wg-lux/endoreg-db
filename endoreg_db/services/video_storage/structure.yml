@@ -50,7 +50,7 @@ files:
 - file: recording_time.py
   role: Capture the raw container recording time at import before masking strips metadata.
 - file: timelines.py
-  role: Exports timeline_from_video_metadata, segment_timeline_references, persist_video_source_timeline.
+  role: Persist generation-bound raw and processed timestamp history; repair unpublished raw coordinates without changing clinical identities or processed reimport coordinates.
 - file: transcoding.py
   role: Directory transcoding preserving native timestamps without a numerical source FPS limit.
 - file: validation.py

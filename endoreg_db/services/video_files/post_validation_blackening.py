@@ -3,10 +3,12 @@ from __future__ import annotations
 from endoreg_db.utils.storage.files import canonical_media_name
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import TYPE_CHECKING
 from uuid import uuid4
+
+from endoreg_db.schemas.processed_video_cleanup import OutsideFrameBlackeningCheckpoint
 
 from endoreg_db.models.label.annotation.image_classification import (
     ImageClassificationAnnotation,
@@ -130,6 +132,7 @@ def rebuild_processed_video_without_outside_frames(
     only_validated: bool = False,
     outside_intervals: Sequence[tuple[int, int]] | None = None,
     raise_on_error: bool = False,
+    verify_output: Callable[[VideoFile], None] | None = None,
 ) -> bool:
     """Serialize replacement, playback publication and generation retirement."""
     with video_artifact_mutation(video_id=int(video.pk)):
@@ -139,7 +142,36 @@ def rebuild_processed_video_without_outside_frames(
             only_validated=only_validated,
             outside_intervals=outside_intervals,
             raise_on_error=raise_on_error,
+            verify_output=verify_output,
         )
+
+
+def _complete_processed_publication(
+    video: VideoFile,
+    *,
+    verify_output: Callable[[VideoFile], None] | None,
+) -> None:
+    if get_file_hash(video.processed_file) != video.processed_video_hash:
+        raise ValueError(
+            "Published blackening output differs from its stored identity."
+        )
+    if verify_output is not None:
+        verify_output(video)
+    result = materialize_video_hls(
+        int(video.pk), artifact_kind="processed", claim_queued=True
+    )
+    if not hls_result_is_ready(result.status):
+        raise RuntimeError(f"Processed HLS materialization ended with {result.status}.")
+    sync_video_streamable_artifacts(
+        video,
+        include_raw=False,
+        include_processed=True,
+        save=True,
+    )
+    with video_artifact_publication(video_id=int(video.pk)):
+        if commit_processed_replacements(video):
+            video.save(update_fields=["meta", "date_modified"])
+    schedule_processed_generation_cleanup(int(video.pk))
 
 
 def _rebuild_processed_video_owned(
@@ -148,6 +180,7 @@ def _rebuild_processed_video_owned(
     only_validated: bool,
     outside_intervals: Sequence[tuple[int, int]] | None,
     raise_on_error: bool,
+    verify_output: Callable[[VideoFile], None] | None,
 ) -> bool:
     """
     Rebuild the processed video by blackening frames in outside intervals.
@@ -186,6 +219,20 @@ def _rebuild_processed_video_owned(
         return True
 
     try:
+        intervals = merge_half_open_frame_intervals(intervals)
+        checkpoint_data = (video.meta or {}).get("outside_frame_blackening")
+        if checkpoint_data is not None:
+            checkpoint = OutsideFrameBlackeningCheckpoint.model_validate(
+                checkpoint_data
+            )
+            if (
+                checkpoint.output_name == previous_name
+                and checkpoint.output_sha256 == previous_hash
+                and checkpoint.only_validated == only_validated
+                and checkpoint.intervals == tuple(intervals)
+            ):
+                _complete_processed_publication(video, verify_output=verify_output)
+                return True
         reconcile_previous_processed_cleanup(video)
         with ensure_local_processed_video_file(video) as processed_path:
             if get_file_hash(processed_path) != previous_hash:
@@ -289,6 +336,13 @@ def _rebuild_processed_video_owned(
                         artifact_kind="processed",
                         output_content_hash=new_processed_hash,
                     ),
+                    "outside_frame_blackening": OutsideFrameBlackeningCheckpoint(
+                        source_sha256=previous_hash or "",
+                        output_sha256=new_processed_hash,
+                        output_name=candidate_name,
+                        only_validated=only_validated,
+                        intervals=tuple(intervals),
+                    ).model_dump(mode="json"),
                     "storage_normalization": normalization_evidence.model_dump(
                         mode="json", exclude={"canonical_timestamps"}
                     ),
@@ -314,23 +368,7 @@ def _rebuild_processed_video_owned(
             published = True
         # Drop both plaintext paths before the HLS encoder materializes its source.
         safe_unlink_file(staged_output_path, missing_ok=True)
-        result = materialize_video_hls(
-            int(video.pk), artifact_kind="processed", claim_queued=True
-        )
-        if not hls_result_is_ready(result.status):
-            raise RuntimeError(
-                f"Processed HLS materialization ended with {result.status}."
-            )
-        sync_video_streamable_artifacts(
-            video,
-            include_raw=False,
-            include_processed=True,
-            save=True,
-        )
-        with video_artifact_publication(video_id=int(video.pk)):
-            commit_processed_replacements(video)
-            video.save(update_fields=["meta", "date_modified"])
-        schedule_processed_generation_cleanup(int(video.pk))
+        _complete_processed_publication(video, verify_output=verify_output)
         replace_completed = True
         return True
     except AssertionError as ae:

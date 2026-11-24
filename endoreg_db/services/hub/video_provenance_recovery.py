@@ -74,6 +74,7 @@ def recover_video_provenance(
         existing = meta.video_frame_provenance
         if (
             existing is not None
+            and existing.transformations[0].source.content_hash == video.raw_video_hash
             and existing.transformations[-1].output.content_hash
             == video.processed_video_hash
         ):
@@ -108,6 +109,12 @@ def recover_video_provenance(
             if entry.before.content_hash == video.raw_video_hash:
                 original = entry.before
                 break
+        if (
+            original is None
+            and existing is not None
+            and existing.transformations[0].source.content_hash == video.raw_video_hash
+        ):
+            original = existing.transformations[0].source
         if (
             original is None
             and video.raw_file

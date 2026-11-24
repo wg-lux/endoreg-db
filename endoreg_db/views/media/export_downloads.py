@@ -62,6 +62,14 @@ class VideoExportDownloadView(OpenApiAPIView):
                 {"error": "use_export_flags muss true oder false sein."}, status=400
             )
         try:
+            from endoreg_db.services.video_files.timestamp_backfill import (
+                prepare_video_timestamps_for_export,
+            )
+
+            video = get_object_or_404(VideoFile, pk=pk)
+            assert_center_scope_allowed(request=request, obj=video)
+            self.check_object_permissions(request, video)
+            prepare_video_timestamps_for_export(video, operator=str(request.user.pk))
             with transaction.atomic():
                 video = get_object_or_404(VideoFile.objects.select_for_update(), pk=pk)
                 assert_center_scope_allowed(request=request, obj=video)

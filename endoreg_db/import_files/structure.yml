@@ -27,7 +27,7 @@ entrypoints:
   purpose: Canonical video import and reanonymization share Rust-tracked encrypted preparation and fenced publication; verified reuse adopts the published native checkpoint.
 - name: ReportImportService
   file: report_import_service.py
-  purpose: Document import coordinator with lossless paginated text conversion; fixture PDF generation belongs to tests.
+  purpose: Document import coordinator with shared create_pdf_from_text conversion for ordinary and preanonymized intake; callers own converted PDF cleanup.
 dependencies:
   internal:
   - endoreg_db/models

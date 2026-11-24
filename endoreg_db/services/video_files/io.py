@@ -7,9 +7,10 @@ import logging
 from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from collections.abc import Generator
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING, Optional, cast
 
-from django.db import transaction
+from django.db import router, transaction
+from django.db.models.deletion import Collector
 
 from endoreg_db.utils.paths import (
     get_runtime_paths,
@@ -20,6 +21,8 @@ from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage import delete_field_file
 
 if TYPE_CHECKING:
+    from django.db.models import Model
+    from django.utils.datastructures import _IndexableCollection
     from endoreg_db.models.media.video.video_file import VideoFile
 
 logger = logging.getLogger("video_file")
@@ -202,6 +205,13 @@ def delete_video_with_owned_files(
     """
     type(video).objects.select_for_update().get(pk=video.pk)
     video.refresh_from_db()
+    # Discover protected clinical rows before any irreversible file deletion.
+    collector = Collector(
+        using=using or router.db_for_write(type(video), instance=video)
+    )
+    # Django accepts lists; its stub protocol omits list's positional-only index.
+    owners = cast("_IndexableCollection[Model | None]", [video])
+    collector.collect(owners, keep_parents=keep_parents)
     delete_video_owned_files(video, missing_ok=False)
 
     deleted = super(type(video), video).delete(

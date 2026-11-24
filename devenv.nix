@@ -82,8 +82,8 @@ let
     export USE_STUB_MODEL_META=true
     export TEST_DB_REUSE=true
   '';
-  # pytest-xdist accepts PYTEST_XDIST_AUTO_NUM_WORKERS=2 (or 4) to bound
-  # worker-local PostgreSQL startup and memory costs without changing isolation.
+  # pytest.ini caps workers at two; pass --maxprocesses=N -n N explicitly
+  # to increase worker-local PostgreSQL and model memory consumption.
   TEST_PYTEST_ARGS = "-n auto --dist=loadscope --durations=30";
   FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' ${TEST_PYTEST_ARGS}";
   HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";

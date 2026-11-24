@@ -5,6 +5,7 @@ import yaml
 
 from scripts.check_clinical_reference_inventory import (
     ClinicalInventory,
+    bootstrap_source,
     validate_inventory,
 )
 
@@ -14,7 +15,7 @@ def test_reviewed_inventory_covers_all_graph_fields_and_bootstrap_commands() -> 
     inventory = ClinicalInventory.model_validate(
         yaml.safe_load((root / "quality/clinical_reference_projection.yml").read_text())
     )
-    source = (root / "endoreg_db/management/commands/load_base_db_data.py").read_text()
+    source = bootstrap_source(root)
     validate_inventory(inventory, source)
     inventory.collections["finding"].fields.remove("interventions")
     with pytest.raises(ValueError, match="field inventory"):
@@ -35,7 +36,7 @@ def test_unclassified_bootstrap_command_fails_inventory(command: str) -> None:
     inventory = ClinicalInventory.model_validate(
         yaml.safe_load((root / "quality/clinical_reference_projection.yml").read_text())
     )
-    source = (root / "endoreg_db/management/commands/load_base_db_data.py").read_text()
+    source = bootstrap_source(root)
     with pytest.raises(ValueError, match="ownership inventory"):
         validate_inventory(inventory, source + f"\n{command}\n")
 

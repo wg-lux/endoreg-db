@@ -5,6 +5,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Protocol
 from collections.abc import Callable
 from unittest.mock import patch
@@ -15,7 +16,14 @@ from lx_dtypes.models.contracts.hub_ingest import (
     parse_upload_provenance_payload,
 )
 
-from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
+from endoreg_db.models import (
+    Center,
+    EndoscopyProcessor,
+    RawPdfFile,
+    UploadJob,
+    VideoFile,
+)
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.services.hub import ingest
 from endoreg_db.services.hub import watcher_handoff
 from endoreg_db.services.hub.upload_job_cancellation import UploadJobImportCancelled
@@ -39,6 +47,7 @@ class _VideoImportCallable(Protocol):
         *,
         file_path: Path,
         center_name: str,
+        center_key: str,
         processor_name: str,
         retry: bool,
         execution_fence: object,
@@ -59,6 +68,10 @@ def _write_test_file(path: Path, content: bytes) -> Path:
         content=(content,),
         required_bytes=len(content),
     )
+
+
+def _test_storage_relative(path: Path) -> str:
+    return f"{path.parent.name}/{path.name}"
 
 
 def _validated_upload_provenance(upload_job: UploadJob) -> UploadProvenancePayload:
@@ -291,6 +304,7 @@ def _fake_video_import(video: VideoFile) -> _VideoImportCallable:
         *,
         file_path: Path,
         center_name: str,
+        center_key: str,
         processor_name: str,
         retry: bool,
         execution_fence: object,
@@ -579,6 +593,48 @@ def test_watcher_rejects_unsupported_report_formats(suffix: str) -> None:
         ingest._watcher_file_contract("report", Path(f"report{suffix}"))
 
 
+@pytest.mark.unit
+@pytest.mark.parametrize("replaced_kind", ["media", "sidecar"])
+def test_rejected_preanonymized_snapshot_preserves_replacement(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, replaced_kind: str
+) -> None:
+    media = tmp_path / "incoming.pdf"
+    sidecar = media.with_suffix(".json")
+    media.write_bytes(b"original-media")
+    sidecar.write_bytes(b"invalid-sidecar")
+    quarantine = tmp_path / "quarantine"
+    quarantine.mkdir()
+    replaced_path = media if replaced_kind == "media" else sidecar
+
+    def replace_during_validation(**_kwargs: object) -> None:
+        replaced_path.write_bytes(b"replacement-arrival")
+        raise ValueError("Invalid sidecar")
+
+    monkeypatch.setattr(
+        ingest, "_load_preanonymized_watcher_context", replace_during_validation
+    )
+    with (
+        patch.object(ingest, "_quarantine_dir", return_value=quarantine),
+        patch.object(ingest, "index_quarantine_file"),
+        patch.object(ingest, "emit_hub_audit_event"),
+        pytest.raises(ValueError, match="Invalid sidecar"),
+    ):
+        ingest._prepare_preanonymized_watcher_context(
+            watched_path=media,
+            settled_stat=media.stat(),
+            center=None,
+            source_system="test",
+        )
+
+    recovered = list(tmp_path.glob(f"recovered-*{replaced_path.suffix}"))
+    assert len(recovered) == 1
+    assert recovered[0].read_bytes() == b"replacement-arrival"
+    assert not (quarantine / replaced_path.name).exists()
+    if replaced_kind == "media":
+        assert sidecar.read_bytes() == b"invalid-sidecar"
+        assert list(quarantine.iterdir()) == []
+
+
 @pytest.mark.django_db
 @pytest.mark.parametrize(
     ("filename", "content_type"),
@@ -652,6 +708,113 @@ def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
     assert reused_job.id == original_id
     assert reused_job.status == UploadJob.Status.PENDING
     assert not watched_file.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("corrupt", [False, True])
+def test_active_reuse_preserves_good_drop_when_retained_source_is_unusable(
+    tmp_path: Path, watcher_center: Center, corrupt: bool
+) -> None:
+    source = _write_test_file(tmp_path / "report.pdf", b"original report")
+    job, _ = ingest.create_or_reuse_watcher_upload_job(
+        file_path=source, content_type="application/pdf", source_center=watcher_center
+    )
+    if corrupt:
+        replacement = _write_test_file(tmp_path / "replacement.pdf", b"wrong bytes")
+        save_local_file(job.file, replacement, name=str(job.file.name), overwrite=True)
+    else:
+        job.file.storage.delete(str(job.file.name))
+
+    with pytest.raises(WatcherFileNotReadyError, match="incoming source retained"):
+        ingest._reuse_watcher_upload_job(
+            upload_job=job, created=False, watched_path=source
+        )
+    assert source.read_bytes() == b"original report"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("completed", [False, True])
+def test_report_inline_fallback_uses_shared_fenced_dispatch(
+    tmp_path: Path, watcher_center: Center, completed: bool
+) -> None:
+    source = _write_test_file(tmp_path / "report.pdf", b"source report")
+    job, _ = ingest.create_or_reuse_watcher_upload_job(
+        file_path=source, content_type="application/pdf", source_center=watcher_center
+    )
+
+    def dispatch(
+        *, upload_job_id: str, resume_existing: bool, execute_inline: bool
+    ) -> SimpleNamespace:
+        assert upload_job_id == str(job.pk)
+        assert resume_existing and execute_inline
+        if completed:
+            job.mark_completed()
+        return SimpleNamespace(status="completed" if completed else "failed")
+
+    with patch(
+        "endoreg_db.services.jobs.report_llm_jobs.dispatch_report_llm_import",
+        side_effect=dispatch,
+    ) as dispatcher:
+        if completed:
+            result = ingest._run_watcher_upload_job_inline(
+                upload_job=job,
+                watched_path=source,
+                normalized_type="report",
+                source_center=watcher_center,
+            )
+            assert result.is_successful
+            assert not source.exists()
+        else:
+            with pytest.raises(RuntimeError, match="did not complete"):
+                ingest._run_watcher_upload_job_inline(
+                    upload_job=job,
+                    watched_path=source,
+                    normalized_type="report",
+                    source_center=watcher_center,
+                )
+            assert source.exists()
+        dispatcher.assert_called_once()
+
+
+def test_watcher_deletion_claim_preserves_replacement_arrival(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _write_test_file(tmp_path / "report.pdf", b"already persisted")
+    expected_hash = get_file_hash(source)
+    move = watcher_handoff.atomic_move_path
+
+    def replace_before_claim(*, source: Path, destination: Path) -> Path:
+        _write_test_file(source, b"new arrival")
+        return move(source=source, destination=destination)
+
+    monkeypatch.setattr(watcher_handoff, "atomic_move_path", replace_before_claim)
+    assert not watcher_handoff.remove_verified_watcher_source(
+        source, expected_hash=expected_hash
+    )
+    recovered = list(tmp_path.glob("recovered-*.pdf"))
+    assert len(recovered) == 1
+    assert recovered[0].read_bytes() == b"new arrival"
+    assert not is_in_progress_handoff_path(recovered[0])
+
+
+def test_watcher_deletion_claim_preserves_mutation_during_hash(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = _write_test_file(tmp_path / "report.pdf", b"already persisted")
+    expected_hash = get_file_hash(source)
+
+    def mutate_claimed_source(path: Path) -> str:
+        path.write_bytes(b"changed while hashing")
+        return expected_hash
+
+    monkeypatch.setattr(watcher_handoff, "get_file_hash", mutate_claimed_source)
+    with pytest.raises(WatcherFileNotReadyError, match="changed after settle"):
+        watcher_handoff.remove_verified_watcher_source(
+            source, expected_hash=expected_hash
+        )
+    recovered = list(tmp_path.glob("recovered-*.pdf"))
+    assert len(recovered) == 1
+    assert recovered[0].read_bytes() == b"changed while hashing"
 
 
 @pytest.mark.django_db
@@ -825,46 +988,66 @@ def test_completed_preanonymized_video_does_not_require_raw_file_for_reuse(
 
 
 @pytest.mark.unit
-def test_persist_preanonymized_file_moves_source_when_delete_source_requested(
+def test_persist_preanonymized_file_encrypts_and_preserves_source_until_publication(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "drop" / "video.mp4"
     target = tmp_path / "managed" / "video.mp4"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"processed-video")
+    stored = RawPdfFile().processed_file
+    stored.storage = EncryptedStorage(location=tmp_path)
+    monkeypatch.setattr(ingest, "to_storage_relative", _test_storage_relative)
 
     ingest._persist_preanonymized_file(
         source_path=source,
         target_path=target,
-        delete_source=True,
+        field_file=stored,
     )
 
-    assert not source.exists()
-    assert target.read_bytes() == b"processed-video"
+    assert source.read_bytes() == b"processed-video"
+    assert target.read_bytes() != b"processed-video"
+    assert get_file_hash(stored) == get_file_hash(source)
 
 
 @pytest.mark.unit
-def test_persist_preanonymized_file_copies_source_when_delete_source_is_false(
+def test_persist_preanonymized_file_reuses_authenticated_target_without_extra_copy(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "drop" / "report.pdf"
     target = tmp_path / "managed" / "report.pdf"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    stored = RawPdfFile().processed_file
+    stored.storage = EncryptedStorage(location=tmp_path)
+    monkeypatch.setattr(ingest, "to_storage_relative", _test_storage_relative)
 
     ingest._persist_preanonymized_file(
         source_path=source,
         target_path=target,
-        delete_source=False,
+        field_file=stored,
+    )
+
+    published_bytes = target.read_bytes()
+    ingest._persist_preanonymized_file(
+        source_path=source,
+        target_path=target,
+        field_file=stored,
     )
 
     assert source.read_bytes() == b"%PDF-1.4\n%%EOF\n"
-    assert target.read_bytes() == b"%PDF-1.4\n%%EOF\n"
+    assert target.read_bytes() == published_bytes
+    assert list(target.parent.glob("*.pdf")) == [target]
+    assert target.read_bytes() != source.read_bytes()
+    assert get_file_hash(stored) == get_file_hash(source)
 
 
 @pytest.mark.unit
-def test_persist_preanonymized_file_unlinks_duplicate_source_when_target_exists(
+def test_persist_preanonymized_file_preserves_source_when_target_is_corrupt(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     source = tmp_path / "drop" / "video.mp4"
     target = tmp_path / "managed" / "video.mp4"
@@ -872,14 +1055,18 @@ def test_persist_preanonymized_file_unlinks_duplicate_source_when_target_exists(
     target.parent.mkdir(parents=True)
     source.write_bytes(b"duplicate-source")
     target.write_bytes(b"canonical-target")
+    stored = RawPdfFile().processed_file
+    stored.storage = EncryptedStorage(location=tmp_path)
+    monkeypatch.setattr(ingest, "to_storage_relative", _test_storage_relative)
 
-    ingest._persist_preanonymized_file(
-        source_path=source,
-        target_path=target,
-        delete_source=True,
-    )
+    with pytest.raises(ValueError):
+        ingest._persist_preanonymized_file(
+            source_path=source,
+            target_path=target,
+            field_file=stored,
+        )
 
-    assert not source.exists()
+    assert source.read_bytes() == b"duplicate-source"
     assert target.read_bytes() == b"canonical-target"
 
 
@@ -1052,6 +1239,7 @@ def test_preanonymized_quarantine_logs_use_opaque_path_references(
     upload_job = UploadJob.objects.create(
         source_center=watcher_center,
         processing_provenance={},
+        content_hash=get_file_hash(watched_file),
     )
     monkeypatch.setattr(ingest, "_quarantine_dir", lambda: quarantine_dir)
 
@@ -1063,6 +1251,7 @@ def test_preanonymized_quarantine_logs_use_opaque_path_references(
         ingest._quarantine_failed_preanonymized_sidecar(
             upload_job=upload_job,
             sidecar_path=sidecar,
+            sidecar_hash=get_file_hash(sidecar),
         )
 
     events = [
@@ -1095,6 +1284,7 @@ def test_preanonymized_quarantine_failure_log_redacts_path_bearing_error(
     upload_job = UploadJob.objects.create(
         source_center=watcher_center,
         processing_provenance={},
+        content_hash=get_file_hash(watched_file),
     )
     monkeypatch.setattr(ingest, "_quarantine_dir", lambda: tmp_path / "quarantine")
 

@@ -15,6 +15,8 @@ files:
   role: Examination detail and update adapter passing request authorization context to identity validation.
 - file: access_control.py
   role: Center-scoped access helpers.
+- file: fhir_r4_api.py
+  role: Read-only FHIR R4 API views (application/fhir+json); route policy plus center scope, OperationOutcome for every error.
 - file: case.py
   role: Clinical case endpoints.
 - file: examination_revision.py

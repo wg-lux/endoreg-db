@@ -5,6 +5,11 @@
 # native-validated service.
 version: 1
 writers:
+  - path: endoreg_db/services/interoperability/fhir_r4_api.py
+    fields: [status]
+    machine: fhir_api_error
+    kind: result_record
+    note: HTTP response status on FhirApiError; no persisted lifecycle mutation.
   # --- Native single writers -------------------------------------------------
   - path: endoreg_db/services/hub/outbound_transfer_state.py
     fields: [local_status, failure_class]

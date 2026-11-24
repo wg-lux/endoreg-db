@@ -383,6 +383,13 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
         next_meta["processed_generation"] = saved_name
         instance.meta = next_meta
         with ctx.owned_mutation():
+            state = _ensure_instance_state(instance)
+            if previous_hash != instance.processed_video_hash and (
+                previous_name or previous_hash or state.anonymization_validated
+            ):
+                # Human review belongs to the previous content, including repairs
+                # entered without the explicit retry flag.
+                state.mark_processing_not_started()
             record_processed_replacement(
                 instance, previous_name=previous_name, previous_hash=previous_hash
             )

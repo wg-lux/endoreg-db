@@ -387,6 +387,9 @@ def test_documented_mapping_validates() -> None:
     example = Path(endoreg_db.__file__).parent / "data/study_import/colonoscopy.yml"
     spec = TableMapping.model_validate(yaml.safe_load(example.read_text()))
     assert spec.first_name.columns == ["Patient.Vorname"]
+    assert spec.finding is None
+    assert spec.findings == {}
+    assert spec.examination.value is None
 
 
 @pytest.mark.django_db(transaction=True)

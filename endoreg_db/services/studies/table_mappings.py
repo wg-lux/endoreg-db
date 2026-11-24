@@ -20,6 +20,24 @@ from endoreg_db.utils.file_operations import atomic_create_file, ensure_director
 from endoreg_db.utils.paths import ensure_within_storage_root, get_runtime_paths
 
 
+def cohort_table_packages(owner_id: int, cohort_id: int) -> list[KnowledgeBaseIdentity]:
+    """Only an owned cohort defines which package identities a table may use."""
+    from endoreg_db.models.other.study_cohort import StudyCohort
+    from lx_dtypes.models.contracts.study_metadata import StudyMetadata
+
+    try:
+        cohort = StudyCohort.objects.get(pk=cohort_id, created_by_id=owner_id)
+    except StudyCohort.DoesNotExist as error:
+        raise PermissionError("Cohort access denied") from error
+    metadata = StudyMetadata.model_validate(cohort.study_metadata)
+    return [
+        KnowledgeBaseIdentity(
+            knowledge_base_module=item.module, knowledge_base_version=item.version
+        )
+        for item in metadata.terminology_requirements
+    ]
+
+
 def mapping_directory(owner_id: int) -> Path:
     if owner_id < 1:
         raise ValueError("A persisted mapping owner is required")

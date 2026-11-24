@@ -26,6 +26,10 @@ definition_of_done:
   category: functionality
   title: Transfer-Vorprüfung bindet Herkunft an die Aufnahme und vermeidet erneutes Dekodieren am Sender
   acceptance:
+  - Explicit unresolved recovery rejects replacement of a verified recording-bound mapping, but permits
+    legacy provenance rooted at a different recording to be acknowledged without deleting historical evidence.
+    API recovery, marking and encrypted receiver acceptance cover missing and mismatched legacy ancestry;
+    human approvals, content integrity and exact receiver timestamps remain mandatory.
   - Herkunft und elektrische Synchronisation beginnen bei raw_video_hash; eine spätere kanonische Transformation
     ersetzt die Aufnahmeidentität nicht. Fehlende Ursprungsbelege bleiben ein Fehler.
   - Exklusive Medienoperationen und ungültige Herkunft werden vor teurer Inhaltsprüfung erkannt. Der Sender
@@ -42,7 +46,7 @@ definition_of_done:
       Dateien und bestehende Deploymentgrenzen separat prüfen.
     timeout_seconds: 1200
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: test
       reference: '2026-11-17: Vollständiges Backend-Pyright: 0 Fehler, 2 bestehende Warnungen; finales
@@ -63,11 +67,19 @@ definition_of_done:
         Prüfartefakt anschließend entfernt. Finale Manifest-, Ruff- und Diff-Prüfungen bestanden. Feature-Check
         bleibt insgesamt NICHT PRODUKTIONSREIF (hub_transfer 6/15, Sender-Retry 6/7); lokale Regressionen
         ersetzen keine Betriebs- und Restore-Abnahme.'
-    note: Lokal geprüfte Code- und Vertragsgrenze; keine Produktionsfreigabe. Historisch fehlende Herkunft,
-      unversöhnte Schreib-Leases sowie LuxNix-Backup und verschlüsselte Kapazität bleiben getrennte Betriebsaufgaben.
-      Senderanwendung und Python-/Rust-Pakete müssen gemeinsam bereitgestellt werden.
-    assessed_by: codex-storage-retry-20261117
-    assessed_at: '2026-11-17T12:21:33.634230Z'
+    - kind: test
+      reference: '2026-11-23: focused recovery Pyright 0 errors/0 warnings; devenv shell -- .devenv/state/venv/bin/pytest
+        tests/services/test_video_provenance_recovery.py -q --tb=short: 22 passed, 1 existing plugin warning.
+        Earlier combined ancestry suite: 27 unchanged hub provenance cases passed. Full backend Pyright:
+        0 errors/2 existing warnings. Sender API integration evidence is recorded in lx-annotate HubExportFailedVideoRetry.yml.'
+    - kind: test
+      reference: '2026-11-23 final sender integration: PYTHONPATH=/home/admin/endoreg-db lx-annotate pytest
+        end-to-end/API/payload/payload-guards/worker/reconciliation suites: 133 passed in 160.14s. Missing
+        original PTS, missing/stale frame counts and mismatched ancestry recover through the API and reach
+        encrypted receiver acceptance without rewriting annotations. Recovery suite 22 passed; import
+        matrix 93 passed plus final 40-case follow-up. No production deployment or live acceptance.'
+    assessed_by: codex-hub-transfer-20261123
+    assessed_at: '2026-11-23T11:28:05.343627Z'
 - id: guarded_patient_matching_resolver
   category: security
   title: Ausführbarer Patientenresolver nach dem Lean-Annahmevertrag
@@ -631,6 +643,18 @@ definition_of_done:
   category: data_integrity
   title: Registration, media upload, acknowledgement, and replay preserve one canonical transfer
   acceptance:
+  - A cleanup exception after receiver publication preserves the committed master and its receipt; rollback
+    deletes only an unpublished candidate. Existing raw media or processing history alone never proves
+    authenticated receipt of a new processed generation.
+  - Storage records the final collision-resolved candidate name under its execution fence before writing
+    artifact bytes. Rejected ownership writes no candidate; interrupted publication remains discoverable
+    through the durable transfer or upload inventory.
+  - A corrected processed generation has a distinct immutable transfer identity and receipt; historical
+    completion remains unchanged and cannot label current report or video content as transferred.
+  - Sender creation, dispatch and reconciliation use the same source-node identity. Interrupted envelope
+    preparation resumes safely without replacing ciphertext already bound to a published transfer.
+  - Scheduled processed-master reclamation requires fresh authenticated verification of the exact receiver
+    artifact and receipt; missing, corrupt, unavailable or changed receiver evidence retains local media.
   - The sender validates typed payload schema, immutable transfer identity, source ownership, processed-media
     hash, and resource rows before network transmission.
   - Video overview eligibility, marking, and payload construction consume one canonical readiness resolver;
@@ -701,8 +725,20 @@ definition_of_done:
         vocabulary drift. Native verification: 46 Rust and 80 Python parity/adapter tests; sender 98 tests
         including two real PostgreSQL thread races. Completed receipt and status survive delayed failures.
         Packaged native wheel and generated stubs verified; no deployment.'
-    assessed_by: codex-storage-retry-20261117
-    assessed_at: '2026-11-17T09:33:22.491330Z'
+    - kind: test
+      reference: '2026-11-24: seven-file receiver/storage/raw lane 146 passed and 49 subtests before a
+        new raw-import test fixture error (unencrypted test storage; corrected separately). Receiver follow-up
+        4 nodes and 4 subtests passed; final 2 nodes and 2 subtests passed after global raw-alias reference
+        guard. Covers lease-deferred publication, postcommit replay, delayed-generation rejection, candidate
+        deletion failure and reclaim. Scoped Pyright 0 errors; no deployment.'
+    - kind: test
+      reference: '2026-11-24 final full cleanup file: tests/services/test_hub_transfer_cleanup.py -n0
+        -q --tb=short --show-capture=no: 12 passed in 59.62s. Includes actual PostgreSQL two-connection
+        lock ordering and resource-binding changes in both cleanup phases. Initial test wrapper kwargs
+        corrected; production lock-order fix unchanged. Scoped Pyright 0 errors, Ruff and structure lint
+        passed.'
+    assessed_by: codex-flow-audit-20261124
+    assessed_at: '2026-11-24T11:20:04.378207Z'
 - id: envelope_encrypted_media_transfer
   category: security
   title: Standalone processed media uses a replay-safe recipient envelope

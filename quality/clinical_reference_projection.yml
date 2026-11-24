@@ -1,7 +1,7 @@
 schema_version: '1.0'
 feature_id: dtypes_study_definitions
 bootstrap_delegates:
-  migrate_reference_catalog:
+  import_reference_catalog:
     owner: host_operations
     purpose: Explicit reconciliation of existing host rows against the versioned lx-dtypes catalogue.
     record_types: []
@@ -234,6 +234,7 @@ collections:
   information_source:
     contract: lx_dtypes.models.contracts.core_concepts.InformationSourceCore
     fields:
+    - date
     - description
     - id
     - information_source_types

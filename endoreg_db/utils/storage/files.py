@@ -20,7 +20,7 @@ from typing import (
     Protocol,
     cast,
 )
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 
 from django.core.files import File
 from endoreg_db.helpers.typing import DjangoFile
@@ -262,6 +262,7 @@ def save_local_file(
     save: bool = False,
     overwrite: bool = False,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
+    before_write: Callable[[str], None] | None = None,
 ) -> str:
     """Hold durable writer ownership before an existing video artifact can change."""
     from endoreg_db.utils.storage.video_fields import video_field_mutation
@@ -276,6 +277,7 @@ def save_local_file(
             save=save,
             overwrite=overwrite,
             chunk_size=chunk_size,
+            before_write=before_write,
         )
 
 
@@ -287,6 +289,7 @@ def _save_local_file_contents(
     save: bool = False,
     overwrite: bool = False,
     chunk_size: int = _DEFAULT_CHUNK_SIZE,
+    before_write: Callable[[str], None] | None = None,
 ) -> str:
     if not source_path.exists():
         raise FileNotFoundError(f"Source path does not exist: {source_path}")
@@ -301,6 +304,8 @@ def _save_local_file_contents(
         )
 
     stored_file = cast(_StoredFieldFile, field_file)
+    if before_write is not None and overwrite:
+        raise ValueError("Publication intent requires a new artifact, not overwrite")
 
     if overwrite:
         try:
@@ -315,6 +320,25 @@ def _save_local_file_contents(
 
     with source_path.open("rb") as source:
         django_file: DjangoFile = File(source, name=filename)
+        if before_write is not None:
+            from endoreg_db.utils.encryption.encrypted import (
+                EncryptedStorage,
+                LazyEncryptedStorage,
+            )
+
+            storage = field_file.storage
+            if not isinstance(storage, (EncryptedStorage, LazyEncryptedStorage)):
+                raise TypeError("Publication intent requires encrypted storage")
+            saved_name = storage.save_with_intent(
+                storage_name,
+                django_file,
+                before_write=before_write,
+                max_length=field_file.field.max_length,
+            )
+            stored_file.name = saved_name
+            if save:
+                stored_file.instance.save(update_fields=[stored_file.field.name])
+            return saved_name
         if has_explicit_storage_path or overwrite:
             saved_name = stored_file.storage.save(storage_name, django_file)
             stored_file.name = str(saved_name)

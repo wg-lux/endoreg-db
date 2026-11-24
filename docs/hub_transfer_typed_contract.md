@@ -115,7 +115,7 @@ Video and report transfers use the same top-level fields:
 | `cleanup_policy` | Conservative default `retain_all` |
 | `payload_schema_version` | Literal `5.0` |
 | `resource_rows` | Payload discriminated by `resource_kind` |
-| `processing_snapshot` | Currently `sender_processing_success: true` |
+| `processing_snapshot` | Currently `sender_processing_success: true`; validated, persisted and part of exact-replay identity, but it does not drive the receiver's processing decision |
 | `provenance` | Optional anonymized transport provenance without local primary keys |
 
 Local database identifiers, absolute paths, and original filenames are not

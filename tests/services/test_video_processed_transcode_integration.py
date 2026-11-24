@@ -143,8 +143,11 @@ def test_real_downsizing_preserves_import_identity_frames_and_playback(
     assert get_video_by_content_hash(source_hash).pk == video.pk
     assert video.processed_video_hash == result.new_hash != source_hash
     history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
-    assert history is not None and len(history) == 1
-    entry = history[0]
+    assert history is not None and len(history) == 2
+    assert history[0].artifact_kind == "raw"
+    assert history[0].before == history[0].after
+    assert history[0].after.content_hash == source_hash
+    entry = history[1]
     assert entry.artifact_kind == "processed"
     assert entry.before.content_hash == source_hash
     assert entry.after.content_hash == result.new_hash
@@ -263,8 +266,14 @@ def test_real_resampling_retains_source_frames_after_coordinate_reset(
     assert result.status == "changed", result
     video.refresh_from_db()
     history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
-    assert history is not None and len(history) == 1
-    entry = history[0]
+    assert history is not None and len(history) == 2
+    assert history[0].artifact_kind == "raw"
+    assert history[0].before == history[0].after
+    assert history[0].after.content_hash == source_hash
+    entry = history[1]
+    assert entry.artifact_kind == "processed"
+    source_timeline = VideoFileMetaPayload.model_validate(video.meta).source_timeline
+    assert source_timeline is not None and source_timeline.artifact_kind == "processed"
     assert len(entry.before.presentation_timestamps) == 60
     assert len(entry.after.presentation_timestamps) == 50
     assert entry.before.content_hash == source_hash

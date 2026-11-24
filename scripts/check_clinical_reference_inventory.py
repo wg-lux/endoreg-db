@@ -140,6 +140,17 @@ def validate_legacy_retirement(root: Path) -> None:
                 raise ValueError(f"Retired loader consumer: {path}")
 
 
+def bootstrap_source(root: Path) -> str:
+    """Inspect both the public bootstrap and its shared command delegation."""
+    return "\n".join(
+        (root / path).read_text(encoding="utf-8")
+        for path in (
+            "endoreg_db/management/commands/load_base_db_data.py",
+            "endoreg_db/management/reference_catalog_command.py",
+        )
+    )
+
+
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     inventory = ClinicalInventory.model_validate(
@@ -151,9 +162,7 @@ def main() -> None:
     )
     validate_inventory(
         inventory,
-        (root / "endoreg_db/management/commands/load_base_db_data.py").read_text(
-            encoding="utf-8"
-        ),
+        bootstrap_source(root),
     )
     validate_compatibility_commands(inventory, root)
     validate_legacy_retirement(root)

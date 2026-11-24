@@ -29,4 +29,9 @@ def test_missing_pinned_package_never_falls_back_to_yaml() -> None:
 @pytest.mark.parametrize("source", ["yaml", "hybrid", "dtypes"])
 def test_legacy_source_switch_is_rejected(source: str) -> None:
     with pytest.raises(TypeError, match="Unknown option"):
-        call_command("load_examination_indication_data", source=source)
+        call_command(
+            "load_examination_indication_data",
+            module="coloreg",
+            module_version="0.3.0",
+            source=source,
+        )

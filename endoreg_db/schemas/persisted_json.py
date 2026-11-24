@@ -39,7 +39,10 @@ from pydantic import (
     model_validator,
 )
 
-from .processed_video_cleanup import ProcessedGenerationCleanupReceipt
+from .processed_video_cleanup import (
+    ProcessedGenerationCleanupReceipt,
+    OutsideFrameBlackeningCheckpoint,
+)
 from .video_storage import (
     CanonicalTimelineHistoryEntry,
     ClinicalFrameQualityEvidence,
@@ -315,6 +318,7 @@ class VideoFileMetaPayload(BaseModel):
     source_timeline: VideoSourceTimelineEvidence | None = None
     clinical_frame_quality: ClinicalFrameQualityEvidence | None = None
     processed_generation_cleanup: list[ProcessedGenerationCleanupReceipt] | None = None
+    outside_frame_blackening: OutsideFrameBlackeningCheckpoint | None = None
     recording_time: VideoRecordingTimeEvidence | None = None
     export_file_name: VideoExportFileName | None = None
 

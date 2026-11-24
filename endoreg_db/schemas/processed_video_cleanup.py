@@ -39,6 +39,39 @@ class ProcessedGenerationCleanupReceipt(BaseModel):
         return value
 
 
+class OutsideFrameBlackeningCheckpoint(BaseModel):
+    """Immutable output evidence; execution status remains in processing history."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    version: Literal[1] = 1
+    source_sha256: Digest
+    output_sha256: Digest
+    output_name: str
+    only_validated: bool
+    intervals: tuple[tuple[int, int], ...]
+
+    @field_validator("output_name")
+    @classmethod
+    def relative_name(cls, value: str) -> str:
+        return ProcessedGenerationCleanupReceipt.relative_name(value)
+
+    @field_validator("intervals")
+    @classmethod
+    def canonical_intervals(
+        cls, value: tuple[tuple[int, int], ...]
+    ) -> tuple[tuple[int, int], ...]:
+        previous_end = -1
+        for start, end in value:
+            if start < 0 or end <= start or start <= previous_end:
+                raise ValueError(
+                    "Blackening intervals must be nonempty, merged and ordered"
+                )
+            previous_end = end
+        if not value:
+            raise ValueError("Blackening checkpoint requires frame intervals")
+        return value
+
+
 def cleanup_receipts(
     meta: Mapping[str, object] | None,
 ) -> list[ProcessedGenerationCleanupReceipt]:

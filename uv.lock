@@ -1,5 +1,5 @@
 version = 1
-revision = 5
+revision = 3
 requires-python = "==3.12.*"
 resolution-markers = [
     "platform_machine == 'x86_64' and platform_python_implementation == 'CPython' and sys_platform == 'linux'",
@@ -779,6 +779,7 @@ dependencies = [
     { name = "celery", extra = ["redis"] },
     { name = "celery-types" },
     { name = "cryptography" },
+    { name = "defusedxml" },
     { name = "django" },
     { name = "django-bootstrap5" },
     { name = "django-cors-headers" },
@@ -808,6 +809,7 @@ dependencies = [
     { name = "optimum" },
     { name = "pandas" },
     { name = "pillow" },
+    { name = "psutil" },
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pytesseract" },
@@ -894,6 +896,7 @@ requires-dist = [
     { name = "celery", extras = ["redis"], specifier = ">=5.5.3" },
     { name = "celery-types", specifier = ">=0.26.0" },
     { name = "cryptography", specifier = ">=44.0.2" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "django", specifier = ">=5.2.4" },
     { name = "django-bootstrap5", specifier = ">=25.2" },
     { name = "django-cors-headers", specifier = ">=4.8.0" },
@@ -917,8 +920,8 @@ requires-dist = [
     { name = "linkify-it-py", marker = "extra == 'docs'", specifier = ">=2.0.3" },
     { name = "llvmlite", specifier = ">=0.44.0" },
     { name = "lx-ai-core", extras = ["torch"], specifier = "==0.0.4" },
-    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.2" },
-    { name = "lx-dtypes", specifier = "==0.7.1" },
+    { name = "lx-anonymizer", extras = ["gpu"], specifier = "==1.1.3" },
+    { name = "lx-dtypes", specifier = ">=0.7.3" },
     { name = "moviepy", specifier = "==2.2.1" },
     { name = "mozilla-django-oidc", specifier = ">=4.0.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.16.0" },
@@ -932,6 +935,7 @@ requires-dist = [
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "pip", marker = "extra == 'dev'", specifier = ">=25.2" },
     { name = "prek", marker = "extra == 'dev'", specifier = ">=0.5.3" },
+    { name = "psutil", specifier = ">=7.2.2" },
     { name = "pydantic", specifier = ">=2.12" },
     { name = "pyinstrument", marker = "extra == 'dev'", specifier = ">=5.1.3" },
     { name = "pyjwt", specifier = ">=2.10.1" },
@@ -1618,7 +1622,7 @@ torch = [
 
 [[package]]
 name = "lx-anonymizer"
-version = "1.1.2"
+version = "1.1.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "certifi" },
@@ -1650,9 +1654,9 @@ dependencies = [
     { name = "ultralytics" },
     { name = "verovio" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/2c/33a2cd871de12274f1376115645e48538ee37477d088636d452ca1a6e280/lx_anonymizer-1.1.2.tar.gz", hash = "sha256:0375030962a0f71f025a55ba1ddfab5fef7faeb3acc964d93acca795c3bb846d", size = 16313157, upload-time = "2026-11-02T11:52:26.614Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/e0/2a/cee0bf92863b8ba38f5454c8353018bd68da05efe7c1ae5a1c763a502d35/lx_anonymizer-1.1.3.tar.gz", hash = "sha256:70621bb598d7a7d98d72c4266033aae48ac9914080f767e6c1db425897f3ae18", size = 16314766, upload-time = "2026-11-24T11:27:53.56Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f4/9c/d21049113bd3b658ac30a5ee39fd25d006a9150562ed84fc213072716746/lx_anonymizer-1.1.2-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:f17a8836052d12443377cd2aa77cb504c18767241db002d0f408ffc21bf0dd62", size = 16205823, upload-time = "2026-11-02T11:52:22.065Z" },
+    { url = "https://files.pythonhosted.org/packages/60/8d/a1d03c270ed9816bc260e5932fc79796bc35862ff3d38132854871d58ee5/lx_anonymizer-1.1.3-cp312-abi3-manylinux_2_34_x86_64.whl", hash = "sha256:efa028608b415c0d334531270de1ced61931dfe2102f41d4cc0de6965a972ef4", size = 16205950, upload-time = "2026-11-24T11:27:49.65Z" },
 ]
 
 [package.optional-dependencies]
@@ -1665,7 +1669,7 @@ gpu = [
 
 [[package]]
 name = "lx-dtypes"
-version = "0.7.1"
+version = "0.7.3"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "bibtexparser" },
@@ -1691,9 +1695,9 @@ dependencies = [
     { name = "tomli-w" },
     { name = "types-pyyaml" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/d6/76/96a36832ad73be779882400649b5194dfd27e850eed71e233056bd47881c/lx_dtypes-0.7.1.tar.gz", hash = "sha256:c78adc4325064353bc24055958ffb9d7075f271dca4f4f3b383ffbf78a2bc84b", size = 5105610, upload-time = "2026-11-20T14:17:58.337Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/78/c8/5a135f7df9b3618610b6a0ea8d389b194008aaac0ee93a7c720c76856135/lx_dtypes-0.7.3.tar.gz", hash = "sha256:6be602f9446c9b3413dbf7feeca80ff2f62d2ebbd1205fadc9d6f9d2345f5201", size = 1020092, upload-time = "2026-11-23T14:07:29.541Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/3a/2f/235318e502daf7e77f3547a8353618142072bf16e45036de63594e440c9f/lx_dtypes-0.7.1-py3-none-any.whl", hash = "sha256:097ed40171ed4fa602cf4b5695b75c34dc803df9c5681216e900eac242acd730", size = 1560828, upload-time = "2026-11-20T14:17:56.008Z" },
+    { url = "https://files.pythonhosted.org/packages/7b/40/69ea0f11cd928dac351ce31e5d2a9d4f6b899c668d26cea3652776d11477/lx_dtypes-0.7.3-py3-none-any.whl", hash = "sha256:1a4fd8f0c0f60c530a033b55bba4746ea59522863b4a46055bef76c1d3c192ec", size = 1588357, upload-time = "2026-11-23T14:07:27.651Z" },
 ]
 
 [[package]]
@@ -2065,6 +2069,9 @@ wheels = [
 name = "nvidia-cufft-cu12"
 version = "11.2.1.3"
 source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "nvidia-nvjitlink-cu12" },
+]
 wheels = [
     { url = "https://files.pythonhosted.org/packages/27/94/3266821f65b92b3138631e9c8e7fe1fb513804ac934485a8d05776e1dd43/nvidia_cufft_cu12-11.2.1.3-py3-none-manylinux2014_x86_64.whl", hash = "sha256:f083fc24912aa410be21fa16d157fed2055dab1cc4b6934a0e03cba69eb242b9", size = 211459117, upload-time = "2024-04-03T20:57:40.402Z" },
 ]

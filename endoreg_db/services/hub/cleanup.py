@@ -413,6 +413,7 @@ def stored_media_name_referenced(
     *,
     prefix: bool = False,
     exclude_upload_job_id: uuid.UUID | None = None,
+    exclude_raw_report_id: int | None = None,
 ) -> bool:
     """Whether an upload, media file or HLS source uses a storage name.
 
@@ -431,10 +432,14 @@ def stored_media_name_referenced(
     uploads = UploadJob.objects.filter(_q("file"))
     if exclude_upload_job_id is not None:
         uploads = uploads.exclude(pk=exclude_upload_job_id)
+    report_references = _q("processed_file")
+    raw_reports = _q("file")
+    if exclude_raw_report_id is not None:
+        raw_reports &= ~Q(pk=exclude_raw_report_id)
     return (
         uploads.exists()
         or VideoFile.objects.filter(_q("raw_file", "processed_file")).exists()
-        or RawPdfFile.objects.filter(_q("file", "processed_file")).exists()
+        or RawPdfFile.objects.filter(report_references | raw_reports).exists()
         or VideoHlsArtifact.objects.filter(_q("source_file_name")).exists()
     )
 

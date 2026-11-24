@@ -7,9 +7,10 @@ import hashlib
 import base64
 import os
 import tempfile
+from datetime import timedelta
 from uuid import NAMESPACE_URL, uuid5
 
-from endoreg_db.utils.hashs import get_hub_record_pseudonym
+from endoreg_db.utils.hashs import get_file_hash, get_hub_record_pseudonym
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, TypedDict, cast
@@ -22,6 +23,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import TestCase
 from django.test.utils import override_settings
+from django.utils import timezone
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.x25519 import X25519PrivateKey
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -44,10 +46,12 @@ from endoreg_db.models import (
     VideoFile,
     VideoState,
 )
+from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
+from endoreg_db.utils.file_operations import atomic_move_file
 from tests.helpers.data_loader import load_gender_data
 
 _ANNOTATIONS_HASH = hashlib.sha256(b"hash-annotations").hexdigest()
@@ -655,8 +659,11 @@ class HubTransferEndpointTests(TestCase):
         assert video.sensitive_meta.patient_last_name is None
         assert video.sensitive_meta.patient_dob is None
         assert video.state is not None
-        assert video.state.processing_started is True
-        assert ProcessingHistory.objects.get(file_hash="hash-1").success is True
+        assert video.state.processing_started is False
+        assert video.state.anonymization_validated is False
+        assert not ProcessingHistory.objects.filter(
+            file_hash="hash-1", success=True
+        ).exists()
         transfer_job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
         assert transfer_job.case_resolution_status == "linked"
         assert transfer_job.linked_patient_id is not None
@@ -957,7 +964,7 @@ class HubTransferEndpointTests(TestCase):
         assert video.state is not None
         video.state.refresh_from_db()
         assert video.state.frame_annotations_generated is True
-        assert video.state.segment_annotations_validated is True
+        assert video.state.segment_annotations_validated is False
 
         segment = LabelVideoSegment.objects.select_related(
             "state", "source", "label"
@@ -1760,10 +1767,12 @@ class HubTransferEndpointTests(TestCase):
         assert report.anonymized_text == "Receiver-preserved anonymized report"
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
-    def test_transfer_skips_reprocessing_when_local_success_exists(self):
+    def test_existing_video_success_without_receipt_still_requires_media(self):
         video = VideoFile.objects.create(
             raw_video_hash="hash-3",
             center=self.center,
+            processed_video_hash=self._sha256(b"processed-video"),
+            fps=12.0,
             processed_file=SimpleUploadedFile(
                 "hash-3-processed.mp4",
                 b"processed-video",
@@ -1775,6 +1784,7 @@ class HubTransferEndpointTests(TestCase):
         payload = self._video_transfer_payload(
             transfer_key="site-a__video__hash-3",
             raw_video_hash="hash-3",
+            transfer_mode="metadata_and_processed_media",
         )
 
         response = self._secure_post(
@@ -1786,18 +1796,146 @@ class HubTransferEndpointTests(TestCase):
 
         assert response.status_code == 201, response.content
         body = response.json()
-        assert body["transfer_status"] == "applied"
-        assert body["processing_decision"] == "skip_processing_existing_success"
+        assert body["transfer_status"] == "awaiting_media"
+        assert body["processing_decision"] == "wait_for_missing_media"
+        video.refresh_from_db()
+        assert video.processed_video_hash == self._sha256(b"processed-video")
+        assert video.fps == 12.0
+        assert get_file_hash(video.processed_file) == video.processed_video_hash
 
         status_response = self._secure_get(
             f"/api/media/hub/transfers/{payload['transfer_key']}/status/",
             headers=self._auth_headers(),
         )
         assert status_response.status_code == 200, status_response.content
-        assert (
-            status_response.json()["processing_decision"]
-            == "skip_processing_existing_success"
+        assert status_response.json()["processing_decision"] == "wait_for_missing_media"
+        uploaded = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data=self._enveloped_upload_data(
+                transfer_key=payload["transfer_key"],
+                plaintext=b"processed:hash-3",
+                filename="replacement.bin",
+            ),
+            headers=self._auth_headers(),
         )
+        assert uploaded.status_code == 200, uploaded.content
+        assert uploaded.json()["transfer_status"] == "applied"
+        video.refresh_from_db()
+        assert video.fps == payload["resource_rows"]["video_file"]["fps"]
+        assert get_file_hash(video.processed_file) == self._sha256(b"processed:hash-3")
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_video_publication_defers_active_media_leases_and_retries(self):
+        for lease_type in (
+            MediaOperationLease.LEASE_STREAM,
+            MediaOperationLease.LEASE_SEGMENT_UPDATE,
+        ):
+            with self.subTest(lease_type=lease_type):
+                raw_hash = f"lease-{lease_type}"
+                previous_bytes = f"previous-approved-video-{lease_type}".encode()
+                video = VideoFile.objects.create(
+                    raw_video_hash=raw_hash,
+                    center=self.center,
+                    processed_video_hash=self._sha256(previous_bytes),
+                    processed_file=SimpleUploadedFile("previous.mp4", previous_bytes),
+                )
+                previous_name = video.processed_file.name
+                payload = self._video_transfer_payload(
+                    transfer_key=f"site-a__video__{raw_hash}",
+                    raw_video_hash=raw_hash,
+                    transfer_mode="metadata_and_processed_media",
+                )
+                registered = self._secure_post(
+                    "/api/media/hub/transfers/",
+                    data=payload,
+                    content_type="application/json",
+                    headers=self._auth_headers(),
+                )
+                assert registered.status_code == 201, registered.content
+                lease = MediaOperationLease.objects.create(
+                    video=video,
+                    lease_type=lease_type,
+                    expires_at=timezone.now() + timedelta(minutes=5),
+                )
+                upload_data = self._enveloped_upload_data(
+                    transfer_key=payload["transfer_key"],
+                    plaintext=f"processed:{raw_hash}".encode(),
+                    filename="replacement.bin",
+                )
+                url = f"/api/media/hub/transfers/{payload['transfer_key']}/media/"
+                deferred = self._secure_post(
+                    url, data=upload_data, headers=self._auth_headers()
+                )
+                assert deferred.status_code == 409, deferred.content
+                job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+                assert job.transfer_status == TransferJob.TransferStatus.AWAITING_MEDIA
+                assert not job.operation_candidate_name
+                assert job.attempt_id is None
+                video.refresh_from_db()
+                assert video.processed_file.name == previous_name
+                assert video.processed_video_hash == self._sha256(previous_bytes)
+                assert get_file_hash(video.processed_file) == video.processed_video_hash
+                lease.delete()
+                retried = self._secure_post(
+                    url, data=upload_data, headers=self._auth_headers()
+                )
+                assert retried.status_code == 200, retried.content
+                assert retried.json()["transfer_status"] == "applied"
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_report_registration_preserves_previous_processed_generation(self):
+        report = RawPdfFile.objects.create(
+            pdf_hash="existing-processed-report",
+            center=self.center,
+            anonymized_text="Previously approved report text",
+            processed_file=SimpleUploadedFile("approved.pdf", b"approved-report"),
+        )
+        previous_name = report.processed_file.name
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__existing-processed",
+            pdf_hash=report.pdf_hash,
+            transfer_mode="metadata_and_processed_media",
+        )
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert response.status_code == 201, response.content
+        assert response.json()["transfer_status"] == "awaiting_media"
+        report.refresh_from_db()
+        assert report.anonymized_text == "Previously approved report text"
+        assert report.processed_file.name == previous_name
+        assert get_file_hash(report.processed_file) == self._sha256(b"approved-report")
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_existing_report_raw_success_does_not_attest_processed_receipt(self):
+        report = RawPdfFile.objects.create(
+            pdf_hash="existing-raw-report",
+            center=self.center,
+            file=SimpleUploadedFile("raw.pdf", b"raw-report"),
+        )
+        ProcessingHistory.mark_success(file_hash=report.pdf_hash, obj=report)
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__existing-raw",
+            pdf_hash=report.pdf_hash,
+            transfer_mode="metadata_and_processed_media",
+        )
+        payload["resource_rows"]["raw_pdf_file"]["state_report_processed"] = True
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert response.status_code == 201, response.content
+        assert response.json()["transfer_status"] == "awaiting_media"
+        assert response.json()["processing_decision"] == "wait_for_missing_media"
+        report.refresh_from_db()
+        assert report.state_report_processed is False
+        assert report.state is not None
+        assert report.state.anonymization_validated is False
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_transfers_for_same_patient_join_by_persistent_uuid(self):
@@ -2368,6 +2506,242 @@ class HubTransferEndpointTests(TestCase):
         video.refresh_from_db()
         assert str(video.processed_file.name) == canonical_name
         assert not staging_directory.exists() or not any(staging_directory.iterdir())
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_delayed_transfer_cannot_replace_intervening_verified_generation(
+        self,
+    ) -> None:
+        resource_hash = self._sha256(b"shared-source-report")
+        payloads = [
+            self._report_transfer_payload(
+                transfer_key=f"site-a__report__generation-{generation}",
+                pdf_hash=resource_hash,
+                transfer_mode="metadata_and_processed_media",
+                processed_file_sha256=self._sha256(generation.encode()),
+            )
+            for generation in ("a", "b")
+        ]
+        for payload in payloads:
+            response = self._secure_post(
+                "/api/media/hub/transfers/",
+                data=payload,
+                content_type="application/json",
+                headers=self._auth_headers(),
+            )
+            assert response.status_code == 201, response.content
+
+        for generation, expected_status in (("b", 200), ("a", 400)):
+            transfer_key = f"site-a__report__generation-{generation}"
+            uploaded = self._secure_post(
+                f"/api/media/hub/transfers/{transfer_key}/media/",
+                data=self._enveloped_upload_data(
+                    transfer_key=transfer_key,
+                    plaintext=generation.encode(),
+                    filename="ciphertext.bin",
+                ),
+                headers=self._auth_headers(),
+            )
+            assert uploaded.status_code == expected_status, uploaded.content
+        report = RawPdfFile.objects.get(pdf_hash=resource_hash)
+        assert get_file_hash(report.processed_file) == self._sha256(b"b")
+        applied = TransferJob.objects.get(transfer_key=payloads[1]["transfer_key"])
+        assert applied.transfer_status == TransferJob.TransferStatus.APPLIED
+        rejected = TransferJob.objects.get(transfer_key=payloads[0]["transfer_key"])
+        assert rejected.transfer_status == TransferJob.TransferStatus.FAILED
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_sender_cannot_supply_receiver_publication_predecessor(self) -> None:
+        payload = self._report_transfer_payload(
+            transfer_key="forged-publication-predecessor", pdf_hash="forged-predecessor"
+        )
+        payload["provenance"] = {
+            "publication_predecessor": {
+                "processed_file_name": "",
+                "processed_content_hash": "",
+            }
+        }
+        response = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert response.status_code == 409, response.content
+        assert not TransferJob.objects.filter(
+            transfer_key=payload["transfer_key"]
+        ).exists()
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_interrupted_candidate_publication_is_owned_and_reclaimed(self) -> None:
+        processed_bytes = b"processed-report-candidate"
+        payload = self._report_transfer_payload(
+            transfer_key="site-a__report__interrupted-candidate",
+            pdf_hash=self._sha256(b"source-report-candidate"),
+            transfer_mode="metadata_and_processed_media",
+            processed_file_sha256=self._sha256(processed_bytes),
+        )
+        registered = self._secure_post(
+            "/api/media/hub/transfers/",
+            data=payload,
+            content_type="application/json",
+            headers=self._auth_headers(),
+        )
+        assert registered.status_code == 201, registered.content
+        upload_data = self._enveloped_upload_data(
+            transfer_key=payload["transfer_key"],
+            plaintext=processed_bytes,
+            filename="ciphertext.bin",
+        )
+
+        def interrupt_after_storage_write(*, source: Path, destination: Path) -> None:
+            atomic_move_file(source=source, destination=destination)
+            raise SystemExit("simulated worker exit after storage publication")
+
+        with (
+            patch(
+                "endoreg_db.utils.encryption.encrypted.atomic_move_file",
+                side_effect=interrupt_after_storage_write,
+            ),
+            self.assertRaisesRegex(SystemExit, "simulated worker exit"),
+        ):
+            self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data=upload_data,
+                headers=self._auth_headers(),
+            )
+
+        job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
+        report = RawPdfFile.objects.get(pk=job.target_object_id)
+        orphaned_name = job.operation_candidate_name
+        assert orphaned_name
+        assert report.processed_file.storage.exists(orphaned_name)
+        assert not report.processed_file
+        assert job.transfer_status == TransferJob.TransferStatus.RUNNING
+        TransferJob.objects.filter(pk=job.pk).update(
+            operation_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        alias = RawPdfFile.objects.create(
+            pdf_hash=self._sha256(b"legacy-raw-alias"),
+            center=self.center,
+            file=orphaned_name,
+        )
+        with self.assertRaisesRegex(RuntimeError, "cannot delete published media"):
+            self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data=upload_data,
+                headers=self._auth_headers(),
+            )
+        job.refresh_from_db()
+        assert job.operation_candidate_name == orphaned_name
+        assert report.processed_file.storage.exists(orphaned_name)
+        RawPdfFile.objects.filter(pk=alias.pk).update(file="")
+        TransferJob.objects.filter(pk=job.pk).update(
+            operation_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        with (
+            patch(
+                "endoreg_db.utils.encryption.encrypted.safe_unlink_file",
+                side_effect=OSError("candidate unlink failed"),
+            ),
+            self.assertRaisesRegex(OSError, "candidate unlink failed"),
+        ):
+            self._secure_post(
+                f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+                data=upload_data,
+                headers=self._auth_headers(),
+            )
+        job.refresh_from_db()
+        assert job.operation_candidate_name == orphaned_name
+        assert report.processed_file.storage.exists(orphaned_name)
+        assert job.transfer_status == TransferJob.TransferStatus.RUNNING
+        TransferJob.objects.filter(pk=job.pk).update(
+            operation_lease_expires_at=timezone.now() - timedelta(seconds=1)
+        )
+
+        retried = self._secure_post(
+            f"/api/media/hub/transfers/{payload['transfer_key']}/media/",
+            data=upload_data,
+            headers=self._auth_headers(),
+        )
+        assert retried.status_code == 200, retried.content
+        assert retried.json()["transfer_status"] == "applied"
+        report.refresh_from_db()
+        assert not report.processed_file.storage.exists(orphaned_name)
+        assert get_file_hash(report.processed_file) == self._sha256(processed_bytes)
+        job.refresh_from_db()
+        assert job.operation_candidate_name == ""
+
+    @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
+    def test_envelope_cleanup_failure_preserves_published_receipt_and_replay(
+        self,
+    ) -> None:
+        for resource_kind in ("video", "report"):
+            with self.subTest(resource_kind=resource_kind):
+                processed_bytes = b"approved-processed-media"
+                processed_hash = self._sha256(processed_bytes)
+                resource_hash = self._sha256(resource_kind.encode())
+                transfer_key = f"site-a__{resource_kind}__cleanup-failure"
+                if resource_kind == "video":
+                    payload = self._video_transfer_payload(
+                        transfer_key=transfer_key,
+                        raw_video_hash=resource_hash,
+                        transfer_mode="metadata_and_processed_media",
+                        processed_video_hash=processed_hash,
+                    )
+                else:
+                    payload = self._report_transfer_payload(
+                        transfer_key=transfer_key,
+                        pdf_hash=resource_hash,
+                        transfer_mode="metadata_and_processed_media",
+                        processed_file_sha256=processed_hash,
+                    )
+                registered = self._secure_post(
+                    "/api/media/hub/transfers/",
+                    data=payload,
+                    content_type="application/json",
+                    headers=self._auth_headers(),
+                )
+                assert registered.status_code == 201, registered.content
+                upload_data = self._enveloped_upload_data(
+                    transfer_key=transfer_key,
+                    plaintext=processed_bytes,
+                    filename="ciphertext.bin",
+                )
+                with (
+                    patch(
+                        "endoreg_db.services.hub.transfer_envelope.safe_unlink_file",
+                        side_effect=OSError("ciphertext cleanup failed"),
+                    ),
+                    self.assertRaisesRegex(OSError, "ciphertext cleanup failed"),
+                ):
+                    self._secure_post(
+                        f"/api/media/hub/transfers/{transfer_key}/media/",
+                        data=upload_data,
+                        headers=self._auth_headers(),
+                    )
+
+                job = TransferJob.objects.get(transfer_key=transfer_key)
+                assert job.transfer_status == TransferJob.TransferStatus.APPLIED
+                media = (
+                    VideoFile.objects.get(pk=job.target_object_id)
+                    if resource_kind == "video"
+                    else RawPdfFile.objects.get(pk=job.target_object_id)
+                )
+                canonical_name = media.processed_file.name
+                assert get_file_hash(media.processed_file) == processed_hash
+                receipt = job.provenance["media_uploads"][-1]["envelope_receipt"]
+                replay = self._secure_post(
+                    f"/api/media/hub/transfers/{transfer_key}/media/",
+                    data=upload_data,
+                    headers=self._auth_headers(),
+                )
+                assert replay.status_code == 200, replay.content
+                assert replay.json()["envelope_receipt"] == receipt
+                media.refresh_from_db()
+                assert media.processed_file.name == canonical_name
+                assert get_file_hash(media.processed_file) == processed_hash
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
     def test_failed_authenticated_publication_preserves_previous_generation(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 # pyright: reportUnknownMemberType=false
+# pyright: reportPrivateUsage=false
 
 import json
 import hashlib
@@ -13,6 +14,7 @@ from unittest.mock import patch
 
 import pytest
 from django.test import TestCase, override_settings
+from django.db import transaction
 
 from endoreg_db.models import (
     Center,
@@ -24,14 +26,69 @@ from endoreg_db.models import (
 )
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.services.hub import process_preanonymized_watcher_file
+from endoreg_db.services.hub import ingest
+from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.watcher_handoff import WatcherFileNotReadyError
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.services.raw_pdf_files.validation import (
+    validate_report_metadata_annotation,
+)
+from tests.helpers.pdf import render_single_page_pdf
+
+
+@pytest.mark.django_db(transaction=True)
+def test_preanonymized_report_after_commit_failure_preserves_published_file(
+    tmp_path: Path,
+) -> None:
+    center = Center.objects.create(name="post-commit-preanonymized-center")
+    source = tmp_path / "report.pdf"
+    source.write_bytes(b"%PDF-1.4\n%%EOF\n")
+
+    def fail_after_commit() -> None:
+        raise OSError("post-commit cleanup failed")
+
+    def schedule_failed_cleanup(_report: RawPdfFile) -> None:
+        transaction.on_commit(fail_after_commit)
+
+    with (
+        patch.object(ingest, "record_report_finding_presence", schedule_failed_cleanup),
+        pytest.raises(OSError, match="post-commit cleanup failed"),
+    ):
+        ingest._finalize_preanonymized_report(
+            source_path=source, center=center, payload=None, delete_source=True
+        )
+    report = RawPdfFile.objects.get()
+    assert get_file_hash(report.processed_file) == get_file_hash(source)
+    assert source.exists()
+
+
+@pytest.mark.parametrize(
+    "approved, matching_hash", [(False, True), (True, False), (True, True)]
+)
+def test_preanonymized_approval_requires_content_bound_evidence(
+    approved: bool, matching_hash: bool
+) -> None:
+    payload = PreanonymizedIngestPayload.model_validate(
+        {
+            "human_anonymization_validated": approved,
+            "file_sha256": "a" * 64 if matching_hash else "b" * 64,
+            "validated_by": "reviewer",
+            "validated_at": "2026-11-24T12:00:00Z",
+        }
+    )
+    assert ingest._preanonymized_approval_matches(payload, "a" * 64) is (
+        approved and matching_hash
+    )
 
 
 def test_preanonymized_video_streamable_sync_failure_is_not_suppressed() -> None:
     import endoreg_db.services.hub.ingest as ingest_module
 
     class DummyState:
+        def mark_processing_not_started(self) -> None:
+            return None
+
         def mark_processing_started(self) -> None:
             return None
 
@@ -76,6 +133,63 @@ class PreanonymizedWatcherIngestTests(TestCase):
             display_name="Preanonymized Center",
         )
         Gender.objects.create(name="female", abbreviation="f")
+
+    def test_preanonymized_txt_is_published_as_encrypted_pdf(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "report.txt"
+            content = "Anonymisierter Befund ohne Patientenidentitaet."
+            source.write_text(content, encoding="utf-8")
+            source_hash = get_file_hash(source)
+            job = process_preanonymized_watcher_file(
+                file_path=source, center=self.center
+            )
+            report = RawPdfFile.objects.get()
+            assert report.pdf_hash == source_hash == job.content_hash
+            with report.processed_file.open("rb") as stored:
+                assert stored.read(5) == b"%PDF-"
+            assert job.is_successful
+            assert not report.get_or_create_state().anonymization_validated
+            assert not source.exists()
+            source.write_text(content, encoding="utf-8")
+            replay = process_preanonymized_watcher_file(
+                file_path=source, center=self.center
+            )
+            assert replay.pk == job.pk
+            assert RawPdfFile.objects.count() == UploadJob.objects.count() == 1
+            assert not source.exists()
+
+    def test_preanonymized_replay_cannot_reassign_report_center(self) -> None:
+        other_center = Center.objects.create(name="other-preanonymized-center")
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "report.pdf"
+            source.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            report = ingest._finalize_preanonymized_report(
+                source_path=source,
+                center=self.center,
+                payload=None,
+                delete_source=False,
+            )
+            report.get_or_create_state().mark_anonymization_validated()
+            report.file.name = report.processed_file.name
+            report.save(update_fields=["file"])
+            report = ingest._finalize_preanonymized_report(
+                source_path=source,
+                center=self.center,
+                payload=None,
+                delete_source=False,
+            )
+            assert not report.file.name
+            assert not report.get_or_create_state().anonymization_validated
+            with pytest.raises(ValueError, match="another center"):
+                ingest._finalize_preanonymized_report(
+                    source_path=source,
+                    center=other_center,
+                    payload=None,
+                    delete_source=True,
+                )
+            report.refresh_from_db()
+            assert report.center_id == self.center.pk
+            assert source.exists()
 
     def test_streamable_sync_failure_quarantines_source_and_removes_new_target(
         self,
@@ -130,7 +244,7 @@ class PreanonymizedWatcherIngestTests(TestCase):
         with tempfile.TemporaryDirectory() as temp_dir_name:
             temp_dir = Path(temp_dir_name)
             report_path = temp_dir / "incoming.pdf"
-            report_path.write_bytes(b"%PDF-1.4\n%%EOF\n")
+            report_path.write_bytes(render_single_page_pdf("already anonymized"))
             sidecar_path = report_path.with_suffix(".json")
             sidecar_path.write_text(
                 json.dumps(
@@ -163,7 +277,8 @@ class PreanonymizedWatcherIngestTests(TestCase):
         assert sensitive_meta.external_id.external_id == "ext-42"
         assert sensitive_meta.external_id.origin == "hospital"
         assert report.anonymized_text == "already anonymized"
-        assert report.get_or_create_state().anonymization_validated is True
+        # Metadata alone is not a content-bound human approval receipt.
+        assert report.get_or_create_state().anonymization_validated is False
         assert PatientExternalID.objects.filter(
             origin="hospital",
             external_id="ext-42",
@@ -187,6 +302,21 @@ class PreanonymizedWatcherIngestTests(TestCase):
         assert upload_job.source_file_delete_eligible_at is not None
         assert upload_job.source_file_persisted is True
         assert upload_job.file.name != ""
+        assert not report.file.name
+        processed_hash = get_file_hash(report.processed_file)
+        with self.captureOnCommitCallbacks(execute=True):
+            assert validate_report_metadata_annotation(
+                report,
+                {
+                    "patient_first_name": "Alice",
+                    "patient_last_name": "Miller",
+                    "patient_dob": "1980-01-01",
+                    "examination_date": "2024-05-17",
+                    "anonymized_text": "already anonymized",
+                },
+            )
+        report.refresh_from_db()
+        assert get_file_hash(report.processed_file) == processed_hash
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
     def test_local_study_server_requires_validated_sidecar(self) -> None:

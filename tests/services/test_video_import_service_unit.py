@@ -551,6 +551,34 @@ class TestStorageBudget:
 
 
 class TestExistingCompletedVideoLookup:
+    def test_direct_creator_rejects_cross_center_reuse_before_staging(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        from endoreg_db.services.video_files import _imports
+
+        video = VideoFile(
+            id=7,
+            raw_video_hash=CONTENT_HASH,
+            center=Center(name="test-center", center_key="owning-center"),
+        )
+        monkeypatch.setattr(
+            _imports, "_existing_readable_video", Mock(return_value=video)
+        )
+        prepare = Mock()
+        monkeypatch.setattr(_imports, "_prepare_import_staging", prepare)
+        with pytest.raises(ValueError, match="different center"):
+            _imports._create_from_file(
+                VideoFile,
+                tmp_path / "source.mp4",
+                "test-center",
+                "processor",
+                CONTENT_HASH,
+                center_key="requesting-center",
+            )
+        prepare.assert_not_called()
+
     def test_skips_database_lookup_without_a_string_hash(self, tmp_path: Path) -> None:
         # Arrange
         ctx = _context(tmp_path / "input.mp4")
@@ -604,7 +632,9 @@ class TestExistingCompletedVideoLookup:
     ) -> None:
         # Arrange
         ctx = _context(tmp_path / "input.mp4", file_hash="content-hash")
-        existing_video = VideoFile(id=7, raw_video_hash="content-hash")
+        existing_video = VideoFile(
+            id=7, raw_video_hash="content-hash", center=Center(name="test-center")
+        )
         service = sut.VideoImportService()
 
         def has_history_for_hash(*, file_hash: str, success: bool) -> bool:
@@ -637,6 +667,79 @@ class TestExistingCompletedVideoLookup:
         # Assert
         assert result is None
         assert ctx.current_video is existing_video
+
+    @pytest.mark.parametrize("has_raw", [False, True])
+    @pytest.mark.parametrize("has_checkpoint", [False, True])
+    def test_cross_center_history_is_rejected_before_integrity_or_resume(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        has_raw: bool,
+        has_checkpoint: bool,
+    ) -> None:
+        ctx = _context(
+            tmp_path / "input.mp4",
+            file_hash=CONTENT_HASH,
+            center_key="requesting-center",
+        )
+        video = VideoFile(
+            id=7,
+            raw_video_hash=CONTENT_HASH,
+            center=Center(name="test-center", center_key="owning-center"),
+            raw_file="raw/source.mp4" if has_raw else "",
+        )
+        monkeypatch.setattr(
+            sut.ProcessingHistory, "has_history_for_hash", Mock(return_value=True)
+        )
+        monkeypatch.setattr(sut, "get_video_by_content_hash", Mock(return_value=video))
+        monkeypatch.setattr(
+            sut, "has_pending_import_checkpoint", Mock(return_value=has_checkpoint)
+        )
+        integrity = Mock()
+        monkeypatch.setattr(sut, "check_video_media_integrity", integrity)
+        with pytest.raises(ValueError, match="different center"):
+            sut.VideoImportService()._get_existing_completed_video(ctx)
+        integrity.assert_not_called()
+        assert ctx.current_video is None
+
+    def test_checkpoint_resume_does_not_copy_or_budget_original_again(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        video = VideoFile(id=7, center=Center(name="test-center"))
+        ctx = _context(
+            tmp_path / "input.mp4",
+            execution_guard=_test_guard,
+            mutation_guard=nullcontext,
+        )
+        ctx.current_video = video
+        monkeypatch.setattr(
+            sut, "has_pending_import_checkpoint", Mock(return_value=True)
+        )
+        monkeypatch.setattr(
+            sut,
+            "create_or_retrieve_video_file",
+            Mock(return_value=(video, False, True)),
+        )
+        monkeypatch.setattr(
+            sut,
+            "get_or_create_video_state",
+            Mock(return_value=SimpleNamespace(anonymization_validated=False)),
+        )
+        copy = Mock(side_effect=AssertionError("checkpoint must not copy source"))
+        monkeypatch.setattr(sut, "create_sensitive_copy", copy)
+        service = sut.VideoImportService()
+        budget = Mock(
+            side_effect=AssertionError("checkpoint must not budget fresh encode")
+        )
+        monkeypatch.setattr(service, "_ensure_pipeline_storage_budget", budget)
+        monkeypatch.setattr(
+            service, "_anonymize_and_finalize", Mock(return_value=video)
+        )
+        assert service._run_owned_import(ctx) is video
+        copy.assert_not_called()
+        budget.assert_not_called()
 
 
 class TestReanonymizationInputBoundaries:
@@ -1478,7 +1581,9 @@ class TestCompletedLookupAndDuplicateCleanup:
     ) -> None:
         # Arrange
         ctx = _context(tmp_path / "input.mp4", file_hash=CONTENT_HASH)
-        video = VideoFile(id=7, raw_video_hash=CONTENT_HASH)
+        video = VideoFile(
+            id=7, raw_video_hash=CONTENT_HASH, center=Center(name="test-center")
+        )
         monkeypatch.setattr(
             sut.ProcessingHistory, "has_history_for_hash", Mock(return_value=True)
         )

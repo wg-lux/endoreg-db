@@ -5,6 +5,8 @@ from typing import Any, cast
 from lx_dtypes.models.contracts.json_types import JsonObject
 from pydantic import ConfigDict, TypeAdapter
 
+from .temporal_inference import UploadPredictionOperation
+
 
 _JSON_OBJECT_ADAPTER: TypeAdapter[JsonObject] = TypeAdapter(
     JsonObject,
@@ -21,6 +23,18 @@ def validate_video_processing_history_config(value: Any) -> JsonObject:
     """
 
     validated: JsonObject = _JSON_OBJECT_ADAPTER.validate_python(value, strict=True)
+    if validated.get("upload_prediction") is not None:
+        identity = UploadPredictionOperation.model_validate(
+            validated["upload_prediction"]
+        )
+        if (
+            validated.get("kind") != "lx_ai_core_temporal_inference"
+            or validated.get("model_meta_id") != identity.model_meta_id
+        ):
+            raise ValueError(
+                "Upload prediction identity must match its temporal operation"
+            )
+        validated["upload_prediction"] = identity.to_dict()
     return cast(JsonObject, _JSON_OBJECT_ADAPTER.dump_python(validated, mode="json"))
 
 

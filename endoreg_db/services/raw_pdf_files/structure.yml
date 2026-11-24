@@ -21,9 +21,9 @@ files:
 - file: imports.py
   role: Exports create_raw_pdf_file_from_path, create_initialized_raw_pdf_file_from_path, initialize_raw_pdf_file.
 - file: integrity.py
-  role: Exports verify_processed_report_path, verify_processed_report_artifact, verify_and_persist_processed_report_sha256.
+  role: Verifies processed PDF bytes and hashes; require_reusable_completed_report also requires retained clinical evidence before new import completion, while historical completion may survive artifact cleanup.
 - file: io.py
-  role: Exports get_raw_pdf_plaintext_path, get_processed_pdf_plaintext_path, set_raw_pdf_file_path.
+  role: Protected report access and row-locked raw reference removal; shared media references preserve bytes through the common hub reference query.
 - file: metadata.py
   role: Exports prepare_raw_pdf_before_save, process_raw_pdf_file, build_report_reader_config.
 - file: queries.py
@@ -39,6 +39,7 @@ dependencies:
   - endoreg_db/services/cases
   - endoreg_db/models
   - endoreg_db/services/centers
+  - endoreg_db/services/hub
   - endoreg_db/services/media
   - endoreg_db/services/patient_identity
   - endoreg_db/services/secret_rotation
@@ -56,8 +57,9 @@ contracts:
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_center_defaults.py tests/services/test_report_import_service_unit.py
-    tests/services/test_media_security_lifecycle.py
+    tests/services/test_media_security_lifecycle.py tests/services/test_report_artifact_integrity.py
   files:
   - tests/services/test_center_defaults.py
   - tests/services/test_report_import_service_unit.py
   - tests/services/test_media_security_lifecycle.py
+  - tests/services/test_report_artifact_integrity.py

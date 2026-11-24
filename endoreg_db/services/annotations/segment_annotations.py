@@ -37,10 +37,7 @@ def _normalized_annotator(annotator: str | None) -> str | None:
 
 
 def _model_meta_id(segment: LabelVideoSegment) -> int | None:
-    try:
-        model_meta = segment.get_model_meta()
-    except Exception:
-        return None
+    model_meta = segment.get_model_meta()
     if model_meta is None:
         return None
     return int(model_meta.pk)
@@ -134,6 +131,63 @@ def _existing_annotation_keys(
         ) in annotation_rows
         if label_id is not None
     }
+
+
+def segment_annotation_integrity_errors(
+    segments: Sequence[LabelVideoSegment],
+    *,
+    annotator: str | None,
+) -> list[dict[str, object]]:
+    """Check the same completion evidence in request and worker execution."""
+    normalized_annotator = _normalized_annotator(annotator)
+    frames_by_segment = _frames_by_segment(segments)
+    annotated_keys = _existing_annotation_keys(
+        frame_ids=[
+            frame_id for frames in frames_by_segment.values() for frame_id, _ in frames
+        ],
+        annotator=normalized_annotator,
+    )
+    errors: list[dict[str, object]] = []
+    for segment in segments:
+        segment_id = int(segment.pk)
+        label = segment.label
+        source = segment.source
+        frames = frames_by_segment[segment_id]
+        if label is None:
+            errors.append({"segment_id": segment_id, "reason": "missing_label"})
+            continue
+        if source is None:
+            errors.append(
+                {"segment_id": segment_id, "reason": "missing_information_source"}
+            )
+            continue
+        expected_count = int(segment.end_frame_number) - int(segment.start_frame_number)
+        if not frames or len(frames) != expected_count:
+            errors.append({"segment_id": segment_id, "reason": "missing_frames"})
+            continue
+        model_meta_id = _model_meta_id(segment)
+        missing = [
+            frame_number
+            for frame_id, frame_number in frames
+            if (
+                frame_id,
+                int(label.pk),
+                int(source.pk),
+                model_meta_id,
+                normalized_annotator,
+            )
+            not in annotated_keys
+        ]
+        if missing:
+            errors.append(
+                {
+                    "segment_id": segment_id,
+                    "reason": "missing_frame_annotations",
+                    "missing_frame_numbers": missing[:10],
+                    "missing_count": len(missing),
+                }
+            )
+    return errors
 
 
 def _manual_preferred_frame_ids(

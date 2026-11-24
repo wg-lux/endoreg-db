@@ -288,6 +288,32 @@ def idle_upload_job_recovery_filter() -> Q:
     )
 
 
+def retained_source_recovery_filter() -> Q:
+    """Shared admission for automatic recovery from a job's own retained source."""
+    return (
+        idle_upload_job_recovery_filter()
+        & Q(
+            source_center__isnull=False,
+            source_file_persisted=True,
+            overview_dismissed_at__isnull=True,
+        )
+        & ~Q(file="")
+        & ~Q(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+    )
+
+
+def retained_video_source_recovery_filter() -> Q:
+    """Video jobs fenced by the upload-job lease with a verifiable source hash.
+
+    Report execution is owned by ``ReportImportAttempt`` leases instead and is
+    recovered only through ``recover_persisted_import_stacks``.
+    """
+    return retained_source_recovery_filter() & Q(
+        content_type__startswith="video/",
+        content_hash__regex=r"^[0-9a-f]{64}$",
+    )
+
+
 def upload_job_recovery_filter(*, include_queued: bool = False) -> Q:
     """Canonical persisted recovery policy; native reducers validate transitions."""
     eligible = Q(

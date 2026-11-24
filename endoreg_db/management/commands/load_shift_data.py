@@ -5,6 +5,7 @@ from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 
 
 class Command(ReferenceCatalogCommand):
+    default_version = "1.0.0"
     default_module = "endoreg_workforce"
     record_types = (
         ReferenceKind.SHIFT_TYPE,

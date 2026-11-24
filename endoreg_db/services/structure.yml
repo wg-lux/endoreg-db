@@ -149,6 +149,8 @@ rules:
   und kanonischer Import verwenden dasselbe Modulobjekt.
 - Das Paket cases reicht die bisherigen Lifecycle-Symbole weiter und erhält seine Untermodule.
 domains:
+  electrical:
+    purpose: Elektrochirurgische Messungen und Aktivierungsprotokolle mit Videozeitbezug
   datasets:
     purpose: Trainingsauswahl, Active Learning und Datensatzexporte
   annotations:

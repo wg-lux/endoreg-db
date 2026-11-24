@@ -17,25 +17,25 @@ entrypoints:
   purpose: Compare the selected versioned reference catalog with current persisted rows.
 - name: reuse_current_catalog
   file: catalog.py
-  purpose: Skip row comparison when a receipt with the identical digest and all bound rows exists.
+  purpose: Skip row comparison when catalogue and clinical package receipts match and all bound rows exist.
 - name: import_clinical_references
   file: clinical_projection.py
-  purpose: Validate and transactionally project the resolved clinical knowledge graph.
+  purpose: Validate and transactionally project the resolved clinical knowledge graph, including composition inside the shared catalogue transaction.
 files:
 - file: package_deployment.py
   role: Publish validated package archives and folders atomically through protected host filesystem operations.
 - file: __init__.py
   role: Klinische Referenzen und versionierte Referenzkataloge.
 - file: catalog.py
-  role: Transactional projection of the complete, versioned reference catalogue.
+  role: Atomic application catalogue and pinned terminology projection; clinical selectors import full dependency closure and application-only selectors retain required terminology links.
 - file: catalog_export.py
   role: Lossless natural-key representation for catalogue reconciliation and export.
 - file: catalog_migration.py
-  role: One-time atomic reconciliation of legacy colorectal indication links.
+  role: Historical digest-bound colorectal reconciliation for existing receipt compatibility; current CLI provisioning uses catalog.py.
 - file: catalog_models.py
   role: Explicit reference-catalog model bindings; YAML cannot import model classes.
 - file: clinical_projection.py
-  role: Fail-closed projection of a resolved, versioned clinical knowledge graph.
+  role: Fail-closed clinical graph projection and receipt-backed package reuse under the catalogue transaction.
 dependencies:
   internal:
   - endoreg_db/helpers

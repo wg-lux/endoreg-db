@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Literal, cast
+from uuid import UUID
 
 from lx_dtypes.models.contracts.json_types import JsonObject
 from pydantic import BaseModel, ConfigDict, Field
@@ -27,4 +28,17 @@ class CanonicalTemporalOptions(BaseModel):
         return cast(JsonObject, self.model_dump(mode="json"))
 
 
-__all__ = ["CanonicalTemporalOptions"]
+class UploadPredictionOperation(BaseModel):
+    """Content-bound automatic prediction identity, separate from execution state."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    upload_job_id: UUID
+    model_meta_id: int = Field(gt=0, strict=True)
+    raw_video_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    processed_video_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    def to_dict(self) -> JsonObject:
+        return cast(JsonObject, self.model_dump(mode="json"))
+
+
+__all__ = ["CanonicalTemporalOptions", "UploadPredictionOperation"]

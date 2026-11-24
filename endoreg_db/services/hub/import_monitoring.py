@@ -29,6 +29,12 @@ logger = logging.getLogger(__name__)
 DEFAULT_RETRY_DELAY_SECONDS = 30
 MAX_RETRY_DELAY_SECONDS = 15 * 60
 RETRY_HANDOFF_TIMEOUT_SECONDS = 60
+# Recovery clocks: a broker handoff without worker ownership is rediscovered
+# after RETRY_HANDOFF_TIMEOUT_SECONDS, and a leased video import is fenced when
+# its heartbeat-renewed lease (DEFAULT_VIDEO_IMPORT_LEASE_SECONDS) expires.
+# STALE_UPLOAD_JOB_AGE applies only to an unleased pending/processing job found
+# again by re-delivery, so it must exceed both.
+STALE_UPLOAD_JOB_AGE = timedelta(hours=2)
 STORAGE_RETRY_MAX_RETRIES = 96
 INSUFFICIENT_STORAGE_ERROR_PREFIX = "Insufficient pipeline storage."
 

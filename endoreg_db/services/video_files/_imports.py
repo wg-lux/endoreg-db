@@ -282,6 +282,9 @@ def _create_from_file(
             raw_video_hash=raw_video_hash,
         )
         if existing_video is not None:
+            from endoreg_db.import_files.context.ensure_center import ensure_center
+
+            ensure_center(existing_video, center_name, center_key=center_key)
             return existing_video
 
         temp_output_path, transcoded_file_path, storage_name, normalization_evidence = (
@@ -340,11 +343,31 @@ def _create_from_file(
 
         _verify_completed_file(canonical_source_path)
 
+        from endoreg_db.models.hub.upload_job_file import UploadJobFile
+        from endoreg_db.services.hub.upload_job_files import (
+            current_upload_job_id,
+            register_upload_job_file,
+        )
+
+        upload_job_id = current_upload_job_id()
+
+        def record_raw_candidate(actual_name: str) -> None:
+            assert upload_job_id is not None
+            register_upload_job_file(
+                upload_job_id,
+                Path(video.raw_file.storage.path(actual_name)),
+                # Publication may commit before the worker can promote inventory.
+                # A crash must never make a canonical raw file disposable.
+                role=UploadJobFile.Role.RETAINED,
+                planned=True,
+            )
+
         save_local_file(
             video.raw_file,
             canonical_source_path,
             name=storage_name,
             save=False,
+            before_write=record_raw_candidate if upload_job_id is not None else None,
         )
 
         # Validate through storage after save_local_file. This catches broken encryption/save.

@@ -234,7 +234,7 @@ def persist_report_pdf_artifact(
     pdf_filename = canonical_media_name(pdf_hash, ".pdf")
 
     # Keep full report file in sync too (optional but useful for timeline/display)
-    full_report.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
+    full_report.file.save(pdf_filename, ContentFile(pdf_bytes), save=False)
     full_report.save()
 
     raw_pdf = RawPdfFile.objects.filter(anonym_examination_report=full_report).first()
@@ -283,7 +283,7 @@ def persist_report_pdf_artifact(
 
     raw_pdf.file.save(
         canonical_media_name(raw_pdf.pdf_hash, ".pdf"),
-        ContentFile[bytes](pdf_bytes),
+        ContentFile(pdf_bytes),
         save=False,
     )
     raw_pdf.save()

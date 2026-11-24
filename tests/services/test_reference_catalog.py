@@ -14,6 +14,7 @@ from lx_dtypes.models.contracts.reference_catalog import (
 )
 from lx_dtypes.models.contracts.reference_catalog_snapshot import (
     ReferenceCatalogSnapshot,
+    ReferenceCatalogReceipt,
 )
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -32,7 +33,20 @@ pytestmark = pytest.mark.django_db
 
 def snapshot(module: str = "endoreg_reference") -> ReferenceCatalogSnapshot:
     root = Path(str(files("lx_dtypes").joinpath("data")))
-    kb = DataLoader(input_dirs=[root]).load_knowledge_base(module)
+    if module == "endoreg_reference":
+        from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
+
+        root = get_packaged_knowledge_base(module, "1.0.0").installed_data_root()
+    from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
+
+    kb = DataLoader(
+        input_dirs=[
+            root / "terminology" / module if module != "endoreg_reference" else root,
+            get_packaged_knowledge_base(
+                "endoreg_reference", "1.0.0"
+            ).installed_data_root(),
+        ]
+    ).load_knowledge_base(module)
     return catalog_snapshot(kb)
 
 
@@ -105,8 +119,15 @@ def test_catalog_row_drift_is_reported_and_never_overwritten():
 
 def test_bootstrap_uses_registered_catalog_without_legacy_loader() -> None:
     call_command("load_base_db_data", stdout=StringIO())
-    assert len(export_reference_catalog().records) == 673
-    assert ReferenceCatalogImport.objects.get().module == "endoreg_reference"
+    receipt = ReferenceCatalogImport.objects.get()
+    assert receipt.module == "endoreg_reference"
+    assert receipt.version == "2.0.0"
+    assert (
+        ReferenceCatalogReceipt.model_validate(
+            receipt.payload
+        ).snapshot.clinical_package
+        is not None
+    )
 
 
 def test_selected_catalogue_closes_dependencies_and_full_import_reuses_rows() -> None:
@@ -179,7 +200,7 @@ def test_all_optional_compatibility_commands_can_bootstrap_together() -> None:
         "load_base_db_data",
     ):
         call_command(command, stdout=StringIO())
-    assert len(export_reference_catalog().records) == 865
+    assert len(export_reference_catalog().records) == 541
     for command in (
         "load_profession_data",
         "load_qualification_data",
@@ -188,7 +209,7 @@ def test_all_optional_compatibility_commands_can_bootstrap_together() -> None:
         "load_base_db_data",
     ):
         call_command(command, stdout=StringIO())
-    assert len(export_reference_catalog().records) == 865
+    assert len(export_reference_catalog().records) == 541
 
 
 def test_inactive_workforce_reference_is_not_hidden_during_reconciliation() -> None:
@@ -294,3 +315,60 @@ def test_catalog_entries_without_name_de_import_null_and_export_unchanged() -> N
     ]
     assert labels and all("name_de" not in record for record in labels)
     assert canonical(export_reference_catalog()) == canonical(source.payload)
+
+
+@pytest.mark.parametrize(
+    "module,version",
+    [("dgvs_reporting", "0.1.0"), ("dgvs_reporting", "0.2.0"), ("coloreg", "0.3.0")],
+)
+def test_dependency_only_reference_catalogue_accepts_clinical_packages(
+    packaged_registry: Path,
+    module: str,
+    version: str,
+) -> None:
+    from lx_dtypes.packages import load_registered_package
+    from lx_dtypes.models.contracts.reference_catalog import (
+        TERMINOLOGY_REFERENCE_MODELS,
+    )
+    from endoreg_db.services.reference_data.clinical_projection import (
+        import_clinical_package,
+    )
+
+    del packaged_registry
+    kb = load_registered_package("endoreg_reference", version="2.0.0")
+    selected = catalog_snapshot(kb)
+    assert selected.clinical_package is not None
+    assert not any(
+        record.kind in TERMINOLOGY_REFERENCE_MODELS
+        for record in selected.payload.records
+    )
+    assert plan_reference_catalog(selected).can_import
+    import_reference_catalog(selected)
+    replay_plan = plan_reference_catalog(selected)
+    assert replay_plan.can_import, replay_plan.model_dump_json()
+    assert import_reference_catalog(selected).unchanged
+    result = import_clinical_package(load_registered_package(module, version=version))
+    assert result.can_import
+    assert import_reference_catalog(selected).unchanged
+
+
+def test_catalogue_dependency_failure_rolls_back_application_records(
+    packaged_registry: Path,
+) -> None:
+    from lx_dtypes.packages import load_registered_package
+    from endoreg_db.models.other.unit import Unit
+
+    del packaged_registry
+    selected = catalog_snapshot(
+        load_registered_package("endoreg_reference", version="2.0.0")
+    )
+    Unit.objects.create(
+        name="miligram", abbreviation="wrong", description="conflicting unit"
+    )
+    plan = plan_reference_catalog(selected)
+    assert not plan.can_import
+    assert plan.clinical_plan is not None
+    with pytest.raises(ValueError, match="conflicts"):
+        import_reference_catalog(selected)
+    assert not ReferenceCatalogImport.objects.exists()
+    assert Unit.objects.get(name="miligram").abbreviation == "wrong"

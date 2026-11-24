@@ -8,6 +8,8 @@ responsibilities:
 boundaries:
 - Feature scope and readiness evidence belong in feature-tracking YAML.
 files:
+- file: package_kinds_host_guide.md
+  role: Host behavior per lx-dtypes package kind, deployment roles, projection receipts and conflict handling; the kind contract stays in lx-dtypes.
 - file: electrosurgical_video_alignment.md
   role: Electrosurgical import, on-demand PTS alignment, API contract and open questions; readiness stays in feature YAML.
 - file: code_quality.md

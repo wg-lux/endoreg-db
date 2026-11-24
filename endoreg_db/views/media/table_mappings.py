@@ -11,6 +11,7 @@ import yaml
 from django.contrib.auth.models import Group, User
 from django.core.files.uploadedfile import UploadedFile
 from django.http import Http404
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.table_import import (
     TableExtractionError,
     TableMapping,
@@ -28,6 +29,7 @@ from endoreg_db.models.other.gender import Gender
 from endoreg_db.openapi import OpenApiAPIView
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.services.studies.table_mappings import (
+    cohort_table_packages,
     list_table_mappings,
     mapping_path,
     mapping_vocabulary,
@@ -82,14 +84,54 @@ class TableMappingsView(OpenApiAPIView):
         if allowed is not None:
             centers = centers.filter(pk__in=allowed)
         template = _template_mapping()
+        packages: list[KnowledgeBaseIdentity] = []
+        selected: KnowledgeBaseIdentity | None = None
+        scoped = request.query_params.get("cohort_id")
+        if scoped is not None:
+            try:
+                packages = cohort_table_packages(
+                    cast(int, request.user.pk), int(scoped)
+                )
+                module, version = (
+                    request.query_params.get("module"),
+                    request.query_params.get("version"),
+                )
+                if module or version:
+                    if not module or not version:
+                        raise ValueError("An exact package identity is required")
+                    selected = KnowledgeBaseIdentity(
+                        knowledge_base_module=module, knowledge_base_version=version
+                    )
+                    if selected not in packages:
+                        raise ValueError(
+                            "Mapping package must match the cohort requirements"
+                        )
+                elif len(packages) == 1:
+                    selected = packages[0]
+                if selected is not None:
+                    template = template.model_copy(update={"knowledge_base": selected})
+            except PermissionError:
+                return Response({"detail": "Cohort access denied."}, status=403)
+            except ValueError:
+                return Response(
+                    {
+                        "detail": "Choose a package declared by the cohort.",
+                        "code": "cohort_package_mismatch",
+                    },
+                    status=409,
+                )
         return Response(
             {
+                "packages": [item.model_dump(mode="json") for item in packages],
                 "template": yaml.safe_dump(
                     template.model_dump(mode="json"), sort_keys=False
-                ),
+                )
+                if scoped is None or selected is not None
+                else "",
                 "mappings": [
                     {"id": str(spec.mapping_id), "name": spec.name}
                     for spec in list_table_mappings(cast(int, request.user.pk))
+                    if scoped is None or spec.knowledge_base in packages
                 ],
                 "centers": list(
                     centers.order_by("name").values("id", "name", "center_key")
@@ -142,6 +184,8 @@ class _InspectionOptions(BaseModel):
         default_factory=list, max_length=MAX_INSPECTED_VALUE_COLUMNS
     )
     prefill: bool = False
+    cohort_id: int | None = Field(default=None, gt=0)
+    knowledge_base: KnowledgeBaseIdentity | None = None
 
 
 class TableMappingInspectionView(OpenApiAPIView):
@@ -184,7 +228,26 @@ class TableMappingInspectionView(OpenApiAPIView):
                 prefill_rules=default_prefill_rules() if options.prefill else None,
                 patient_extractor=spacy_patient_extractor,
             )
-            vocabulary = mapping_vocabulary(_template_mapping().knowledge_base)
+            identity = options.knowledge_base
+            if options.cohort_id is not None:
+                packages = cohort_table_packages(
+                    cast(int, request.user.pk), options.cohort_id
+                )
+                if identity is None and len(packages) == 1:
+                    identity = packages[0]
+                if identity not in packages:
+                    return Response(
+                        {
+                            "detail": "Choose a package declared by the cohort.",
+                            "code": "cohort_package_mismatch",
+                        },
+                        status=409,
+                    )
+            vocabulary = mapping_vocabulary(
+                identity or _template_mapping().knowledge_base
+            )
+        except PermissionError:
+            return Response({"detail": "Cohort access denied."}, status=403)
         except TableExtractionError as error:
             return Response(
                 {

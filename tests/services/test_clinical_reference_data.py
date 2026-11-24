@@ -15,7 +15,7 @@ from lx_dtypes.models.knowledge_base.examination import (
     Examination as ExaminationDefinition,
 )
 from lx_dtypes.packages import create_package
-from lx_dtypes.packages import load_package
+from lx_dtypes.packages import load_package, load_registered_package
 from lx_dtypes.models.contracts.package_snapshot import build_package_snapshot
 from lx_dtypes.models.knowledge_base.pydantic_main import KB_MODEL_NAMES_ORDERED
 from lx_dtypes.models.knowledge_base.study_preset import StudyPreset
@@ -278,7 +278,7 @@ def test_historical_graph_receipt_requires_explicit_complete_package_migration()
     None
 ):
     import_clinical_references(clinical_snapshot(package()))
-    with pytest.raises(ValueError, match="no complete package"):
+    with pytest.raises(ValueError, match="complete package snapshot"):
         load_imported_package("clinical_test", "1.0.0")
 
 
@@ -329,6 +329,7 @@ def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinitio
         records=[
             TimeReference(
                 name="video_to_generator",
+                name_de="Zeitbezug zwischen Video und Generator",
                 reference_kind="pts",
                 target_kind="electrosurgery",
                 examples=[
@@ -341,6 +342,7 @@ def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinitio
             ),
             ElectricalCurveProfile(
                 name="power_response",
+                name_de="Leistungsantwort",
                 curve_quantities=["power", "voltage_peak"],
                 response_quantities=["power"],
                 predictor_quantities=["voltage_peak"],
@@ -360,7 +362,7 @@ def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinitio
         name="preset",
         version="1.0.0",
         depends_on=["timing_terms"],
-        records=[StudyPreset(name="collection")],
+        records=[StudyPreset(name="collection", name_de="Studiensammlung")],
     )
     kb = load_package(manifest)
     import_clinical_package(kb)
@@ -423,21 +425,62 @@ def test_equivalent_new_version_preserves_existing_rows_and_both_snapshots() -> 
     assert Examination.objects.get(name="inspection").pk == row_id
 
 
-def test_legacy_bootstrap_reconciliation_is_read_only_and_rejects_semantic_changes() -> (
-    None
-):
-    call_command("load_base_db_data", stdout=StringIO())
+@pytest.mark.parametrize(
+    "bootstrap", ["development", "reference_catalog", "dgvs_reporting_0_1_0"]
+)
+def test_legacy_bootstrap_reconciliation_is_read_only_and_rejects_semantic_changes(
+    bootstrap: str,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    if bootstrap == "development":
+        call_command("load_base_db_data", module_version="1.0.0", stdout=StringIO())
+    elif bootstrap == "dgvs_reporting_0_1_0":
+        import_clinical_package(
+            load_registered_package("dgvs_reporting", version="0.1.0")
+        )
+    else:
+        from endoreg_db.services.reference_data.catalog import (
+            catalog_snapshot,
+            import_reference_catalog,
+        )
+
+        from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
+
+        root = get_packaged_knowledge_base(
+            "endoreg_reference", "1.0.0"
+        ).installed_data_root()
+        import_reference_catalog(
+            catalog_snapshot(
+                DataLoader(input_dirs=[root]).load_knowledge_base("endoreg_reference")
+            )
+        )
     before = dict(Examination.objects.values_list("name", "id"))
-    loader = DataLoader(input_dirs=[Path(str(files("lx_dtypes").joinpath("data")))])
-    loader.load_module_configs()
-    snapshot = clinical_snapshot(loader.load_knowledge_base("coloreg"))
+    before_receipts = list(
+        ClinicalReferenceImport.objects.values_list("payload", flat=True)
+    )
+    snapshot = clinical_snapshot(load_registered_package("coloreg", version="0.3.0"))
     plan = plan_clinical_reference_import(snapshot, adopt_existing=True)
     conflicts = [change for change in plan.changes if change.action == "conflict"]
+    if bootstrap == "dgvs_reporting_0_1_0":
+        # Finding membership is package-specific; genuine descriptor changes
+        # between historical releases still block shared clinical rows.
+        assert not any(item.name == "colonoscopy" for item in conflicts)
     assert conflicts
+    assert not any(
+        detail.field == "description"
+        and detail.existing in (None, "", "unknown")
+        and detail.proposed in (None, "", "unknown")
+        for change in conflicts
+        for detail in change.differences
+    )
     with pytest.raises(ValueError, match="conflicts"):
         import_clinical_references(snapshot, adopt_existing=True)
     assert dict(Examination.objects.values_list("name", "id")) == before
-    assert not ClinicalReferenceImport.objects.exists()
+    assert (
+        list(ClinicalReferenceImport.objects.values_list("payload", flat=True))
+        == before_receipts
+    )
     print(
         "Legacy reconciliation:",
         {
@@ -445,7 +488,48 @@ def test_legacy_bootstrap_reconciliation_is_read_only_and_rejects_semantic_chang
             for action in ("create", "adopt", "reuse", "conflict")
         },
     )
+    import json
+
     print(
-        "Clinical conflicts:",
-        [(c.model.value, c.name, c.differing_fields) for c in conflicts[:10]],
+        "ALIGNMENT_REPORT:"
+        + json.dumps(
+            {
+                "baseline": bootstrap,
+                "package": "coloreg@0.3.0",
+                "snapshot_id": snapshot.snapshot_id,
+                "conflicts": [
+                    change.model_dump(mode="json", exclude={"row_id"})
+                    for change in conflicts
+                ],
+            }
+        )
     )
+
+
+@pytest.mark.parametrize("existing,proposed", [("", "unknown"), ("unknown", "")])
+def test_placeholder_description_is_equivalent_without_rewriting_receipts(
+    existing: str, proposed: str
+) -> None:
+    first = clinical_snapshot(package(description=existing))
+    import_clinical_references(first)
+    before = list(ClinicalReferenceImport.objects.values_list("payload", flat=True))
+    next_snapshot = clinical_snapshot(package(version="2.0.0", description=proposed))
+    plan = plan_clinical_reference_import(next_snapshot)
+    assert plan.can_import
+    import_clinical_references(next_snapshot)
+    assert Examination.objects.get(name="inspection").description == existing
+    assert (
+        list(
+            ClinicalReferenceImport.objects.order_by("pk").values_list(
+                "payload", flat=True
+            )
+        )[:1]
+        == before
+    )
+
+
+def test_unknown_description_does_not_mask_real_description_change() -> None:
+    import_clinical_references(clinical_snapshot(package(description="unknown")))
+    plan = plan_clinical_reference_import(clinical_snapshot(package(version="2.0.0")))
+    assert not plan.can_import
+    assert any("description" in change.differing_fields for change in plan.changes)

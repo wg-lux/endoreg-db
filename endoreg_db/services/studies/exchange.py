@@ -24,7 +24,9 @@ from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceI
 from endoreg_db.models.other.study import Study
 from endoreg_db.models.other.study_cohort import StudyCohort
 from endoreg_db.models.other.study_collection_entry import StudyCollectionEntry
-from endoreg_db.schemas.clinical_reference import ClinicalReferenceReceipt
+from endoreg_db.services.reference_data.clinical_projection import (
+    require_clinical_package,
+)
 
 
 def _study_definition(study: Study) -> StudyDefinition:
@@ -45,12 +47,7 @@ def _cohort_definition(cohort: StudyCohort) -> CohortDefinitionFields:
 
 
 def _snapshot(receipt: ClinicalReferenceImport) -> PackageSnapshot:
-    snapshot = ClinicalReferenceReceipt.model_validate(receipt.payload).package_snapshot
-    if snapshot is None:
-        raise ValueError(
-            "Study exchange requires a complete installed package snapshot"
-        )
-    return snapshot
+    return require_clinical_package(receipt.module, receipt.version)[1]
 
 
 @transaction.atomic
@@ -119,10 +116,8 @@ def export_study_exchange(
     )
     for definition in metadata:
         for requirement in definition.terminology_requirements:
-            snapshot = _snapshot(
-                ClinicalReferenceImport.objects.get(
-                    module=requirement.module, version=requirement.version
-                )
+            _, snapshot = require_clinical_package(
+                requirement.module, requirement.version
             )
             packages[snapshot.snapshot_id] = snapshot
     return parse_study_exchange(
@@ -176,11 +171,12 @@ def import_study_exchange(
             )
     receipts: dict[str, ClinicalReferenceImport] = {}
     for snapshot in bundle.packages:
-        receipt = ClinicalReferenceImport.objects.select_for_update().get(
-            module=snapshot.identity.knowledge_base_module,
-            version=snapshot.identity.knowledge_base_version,
+        receipt, installed = require_clinical_package(
+            snapshot.identity.knowledge_base_module,
+            snapshot.identity.knowledge_base_version,
+            lock=True,
         )
-        if _snapshot(receipt).snapshot_id != snapshot.snapshot_id:
+        if installed.snapshot_id != snapshot.snapshot_id:
             raise ValueError("Installed package differs from study exchange snapshot")
         receipts[snapshot.snapshot_id] = receipt
     studies: dict[UUID, Study] = {}
@@ -314,16 +310,12 @@ def capture_study_examinations(
         record = DtypesRecordPersistencePayload.model_validate_json(
             json.dumps(examination.dtypes_record)
         )
-        try:
-            receipt = ClinicalReferenceImport.objects.get(
-                module=record.knowledge_base_module,
-                version=record.knowledge_base_version,
-            )
-        except ClinicalReferenceImport.DoesNotExist as error:
-            raise ValueError(
-                "Install the exact ledger terminology package before capturing study evidence"
-            ) from error
-        prepared.append((examination, record, receipt, _snapshot(receipt).snapshot_id))
+        if not record.knowledge_base_module or not record.knowledge_base_version:
+            raise ValueError("Study capture requires an exact ledger package identity")
+        receipt, snapshot = require_clinical_package(
+            record.knowledge_base_module, record.knowledge_base_version
+        )
+        prepared.append((examination, record, receipt, snapshot.snapshot_id))
     result: list[StudyCollectionEntry] = []
     for examination, record, receipt, snapshot_id in prepared:
         replay = None

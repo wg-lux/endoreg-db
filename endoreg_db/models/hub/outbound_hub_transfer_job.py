@@ -7,6 +7,7 @@ from uuid import UUID
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
+from django.core.validators import RegexValidator
 from django.db import models
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -105,6 +106,15 @@ class OutboundHubTransferJob(models.Model):
     transfer_key: models.CharField[str, str] = models.CharField(
         max_length=255, unique=True, db_index=True
     )
+    processed_media_hash: models.CharField[str, str] = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        validators=[RegexValidator(r"^[0-9a-f]{64}$")],
+    )
+    source_node_key: models.CharField[str, str] = models.CharField(
+        max_length=255, blank=True, default=""
+    )
     transfer_mode: models.CharField[str, str] = models.CharField(
         max_length=48,
         choices=TransferMode.choices,
@@ -201,12 +211,22 @@ class OutboundHubTransferJob(models.Model):
         ordering = ["-created_at"]
         constraints = [
             models.UniqueConstraint(
-                fields=["video_file", "target_node", "transfer_mode"],
-                name="endoreg_outbound_hub_transfer_unique_video_target_mode",
+                fields=[
+                    "video_file",
+                    "target_node",
+                    "transfer_mode",
+                    "processed_media_hash",
+                ],
+                name="endoreg_outbound_video_generation",
             ),
             models.UniqueConstraint(
-                fields=["raw_pdf_file", "target_node", "transfer_mode"],
-                name="endoreg_outbound_hub_transfer_unique_report_target_mode",
+                fields=[
+                    "raw_pdf_file",
+                    "target_node",
+                    "transfer_mode",
+                    "processed_media_hash",
+                ],
+                name="endoreg_outbound_report_generation",
             ),
         ]
 
@@ -284,18 +304,10 @@ class OutboundHubTransferJob(models.Model):
 
             resource = self.video_file if has_video else self.raw_pdf_file
             resource_hash_field = "raw_video_hash" if has_video else "pdf_hash"
-            processed_hash = (
-                str(getattr(resource, "processed_video_hash", "") or "").strip()
-                if has_video
-                else str(
-                    getattr(
-                        getattr(resource, "state", None),
-                        "processed_file_sha256",
-                        "",
-                    )
-                    or "",
-                ).strip()
-            )
+            # A receipt proves its immutable transfer generation, not whatever
+            # generation the clinical resource currently references. Old rows
+            # without a snapshot retain their authenticated receipt as history.
+            processed_hash = self.processed_media_hash or receipt.processed_media_hash
             expected = {
                 "transfer_key": str(self.transfer_key),
                 "target_node_key": str(self.target_node.node_key),
@@ -308,6 +320,8 @@ class OutboundHubTransferJob(models.Model):
                 ),
                 "processed_media_hash": processed_hash,
             }
+            if self.source_node_key:
+                expected["source_node_key"] = self.source_node_key
             mismatches = [
                 field_name
                 for field_name, expected_value in expected.items()
@@ -329,5 +343,19 @@ class OutboundHubTransferJob(models.Model):
                 )
 
     def save(self, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
+        if not self._state.adding:
+            previous = (
+                type(self)
+                .objects.filter(pk=self.pk)
+                .values_list("processed_media_hash", "source_node_key")
+                .first()
+            )
+            if previous is not None and previous != (
+                self.processed_media_hash,
+                self.source_node_key,
+            ):
+                raise ValidationError(
+                    "An outbound transfer generation and source are immutable."
+                )
         self.full_clean()
         super().save(**kwargs)

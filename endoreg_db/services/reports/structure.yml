@@ -21,7 +21,7 @@ files:
 - file: concept_embeddings.py
   role: Validated anonymized span capture, deployment-provisioned German model inference and scoped similarity export.
 - file: completion.py
-  role: Read-only canonical attempt and extraction receipt projections for job/API completion.
+  role: Read-only canonical attempt and immutable extraction receipt projections; unchanged published completion survives successful content reuse without authorizing stale writers.
 - file: __init__.py
   role: Berichtimport, klinischer Kontext, Persistenz und PDF-Ausgabe.
 - file: finding_extraction.py

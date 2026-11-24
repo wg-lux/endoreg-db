@@ -176,9 +176,20 @@ def require_usable_completed_report(
     return verify_and_persist_processed_report_sha256(report)
 
 
+def require_reusable_completed_report(
+    report: "RawPdfFile", *, source_sha256: str
+) -> str:
+    """New import completion requires retained clinical evidence and usable bytes."""
+    require_usable_completed_report(
+        report, source_sha256=source_sha256, require_artifact=False
+    )
+    return verify_and_persist_processed_report_sha256(report)
+
+
 __all__ = [
     "ProcessedReportIntegrityError",
     "require_usable_completed_report",
+    "require_reusable_completed_report",
     "verify_and_persist_processed_report_sha256",
     "verify_processed_report_artifact",
     "verify_processed_report_path",

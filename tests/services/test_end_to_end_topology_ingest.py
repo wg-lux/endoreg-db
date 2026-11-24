@@ -22,6 +22,9 @@ from endoreg_db.models import Center, RawPdfFile, UploadJob
 from endoreg_db.services.hub.ingest import process_watcher_file
 from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.imports.processing import record_published_import
+from endoreg_db.services.raw_pdf_files.integrity import (
+    verify_and_persist_processed_report_sha256,
+)
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
@@ -64,6 +67,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             *,
             file_path: str | Path,
             center_name: str,
+            center_key: str,
             retry: bool,
         ) -> RawPdfFile:
             normalized_file_path = Path(file_path)
@@ -73,6 +77,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             )
             assert normalized_file_path.name == first_drop.name
             assert center_name == center.name
+            assert center_key == center.center_key
             assert retry is True
             file_hash = get_file_hash(normalized_file_path)
             fence = acquire_report_import_fence(file_hash)
@@ -103,6 +108,9 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 ).model_dump(mode="json")
             }
             report.save()
+            # Extraction is stubbed, but duplicate reuse must verify real stored
+            # PDF bytes against the persisted publication digest.
+            assert verify_and_persist_processed_report_sha256(report) == file_hash
             report.get_or_create_state().mark_anonymization_validated()
             # The stub publishes without preparation, so adopt it like any
             # independently verified artifact before the lifecycle completes.
@@ -124,7 +132,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
         return content_hash
 
     monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        "endoreg_db.services.jobs.report_llm_jobs.require_reusable_completed_report",
         _verified_processed_report_hash,
     )
     monkeypatch.setattr(

@@ -104,6 +104,10 @@ class FhirProcedure(FhirResource):
     code: FhirCodeableConcept
     subject: FhirReference
     performed_period: FhirPeriod | None = Field(default=None, alias="performedPeriod")
+    # Examination indications; omitted rather than empty, as FHIR JSON forbids [].
+    reason_code: list[FhirCodeableConcept] | None = Field(
+        default=None, alias="reasonCode", min_length=1
+    )
 
 
 class FhirObservationComponent(FhirR4Model):
@@ -277,9 +281,167 @@ def dump_fhir_r4_bundle(bundle: FhirBundle) -> dict[str, object]:
     return bundle.model_dump(mode="json", by_alias=True, exclude_none=True)
 
 
+# --- Read-only FHIR REST API wire models -----------------------------------
+
+
+class FhirTerminologyResource(FhirR4Model):
+    """CodeSystem or ValueSet produced by the lx-dtypes terminology export.
+
+    lx-dtypes owns the resource content; the host checks only the identity
+    fields it routes on and passes the remaining elements through unchanged.
+    """
+
+    model_config = ConfigDict(extra="allow", populate_by_name=True)
+
+    resource_type: Literal["CodeSystem", "ValueSet"] = Field(alias="resourceType")
+    id: str
+    url: str = Field(min_length=1)
+
+    @field_validator("id")
+    @classmethod
+    def validate_id(cls, value: str) -> str:
+        if _FHIR_ID_PATTERN.fullmatch(value) is None:
+            raise ValueError("FHIR id contains invalid characters or exceeds 64 chars")
+        return value
+
+
+FhirReadableResource = Annotated[
+    FhirPatient
+    | FhirProcedure
+    | FhirObservation
+    | FhirDiagnosticReport
+    | FhirImagingStudy
+    | FhirTerminologyResource,
+    Field(discriminator="resource_type"),
+]
+
+
+class FhirBundleLink(FhirR4Model):
+    relation: Literal["self", "next", "previous"]
+    url: str = Field(min_length=1)
+
+
+class FhirBundleSearch(FhirR4Model):
+    mode: Literal["match", "include"]
+
+
+class FhirSearchBundleEntry(FhirR4Model):
+    full_url: str = Field(alias="fullUrl", min_length=1)
+    resource: FhirReadableResource
+    search: FhirBundleSearch
+
+
+class FhirSearchBundle(FhirR4Model):
+    resource_type: Literal["Bundle"] = Field(default="Bundle", alias="resourceType")
+    type: Literal["searchset"] = "searchset"
+    total: int = Field(ge=0)
+    link: list[FhirBundleLink] = Field(min_length=1)
+    # Omitted when the page is empty: FHIR JSON forbids empty arrays.
+    entry: list[FhirSearchBundleEntry] | None = Field(default=None, min_length=1)
+
+    @model_validator(mode="after")
+    def validate_entries(self) -> Self:
+        entries = self.entry or []
+        if len(entries) > self.total:
+            raise ValueError("searchset page cannot exceed the reported total")
+        urls = [item.full_url for item in entries]
+        if len(urls) != len(set(urls)):
+            raise ValueError("Bundle fullUrl values must be unique")
+        for item in entries:
+            expected_url = f"{item.resource.resource_type}/{item.resource.id}"
+            if item.full_url != expected_url:
+                raise ValueError(
+                    "Bundle fullUrl must match the contained resource identity: "
+                    f"expected {expected_url}"
+                )
+        if not any(link.relation == "self" for link in self.link):
+            raise ValueError("searchset Bundle requires a self link")
+        return self
+
+
+class FhirOperationOutcomeIssue(FhirR4Model):
+    severity: Literal["fatal", "error", "warning", "information"]
+    code: Literal[
+        "invalid", "not-found", "not-supported", "forbidden", "processing", "exception"
+    ]
+    diagnostics: str | None = None
+
+
+class FhirOperationOutcome(FhirR4Model):
+    resource_type: Literal["OperationOutcome"] = Field(
+        default="OperationOutcome", alias="resourceType"
+    )
+    issue: list[FhirOperationOutcomeIssue] = Field(min_length=1)
+
+
+class FhirCapabilitySearchParam(FhirR4Model):
+    name: str = Field(min_length=1)
+    type: Literal["token", "reference", "uri", "number"]
+    documentation: str | None = None
+
+
+class FhirCapabilityInteraction(FhirR4Model):
+    code: Literal["read", "search-type"]
+
+
+class FhirCapabilityOperation(FhirR4Model):
+    name: str = Field(min_length=1)
+    definition: str = Field(min_length=1)
+
+
+class FhirCapabilityResource(FhirR4Model):
+    type: str = Field(min_length=1)
+    interaction: list[FhirCapabilityInteraction] = Field(min_length=1)
+    search_param: list[FhirCapabilitySearchParam] | None = Field(
+        default=None, alias="searchParam", min_length=1
+    )
+    operation: list[FhirCapabilityOperation] | None = Field(default=None, min_length=1)
+
+
+class FhirCapabilityRest(FhirR4Model):
+    mode: Literal["server"] = "server"
+    documentation: str | None = None
+    resource: list[FhirCapabilityResource] = Field(min_length=1)
+
+
+class FhirCapabilityStatement(FhirR4Model):
+    resource_type: Literal["CapabilityStatement"] = Field(
+        default="CapabilityStatement", alias="resourceType"
+    )
+    status: Literal["active"] = "active"
+    published: date = Field(alias="date")
+    kind: Literal["instance"] = "instance"
+    fhir_version: Literal["4.0.1"] = Field(default="4.0.1", alias="fhirVersion")
+    format: list[str] = Field(min_length=1)
+    rest: list[FhirCapabilityRest] = Field(min_length=1)
+
+
+def dump_fhir_r4_resource(
+    resource: FhirR4Model,
+) -> dict[str, object]:
+    """Dump any FHIR R4 wire model by canonical element names."""
+
+    return resource.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
 __all__ = [
     "FhirBundle",
     "FhirBundleEntry",
+    "FhirBundleLink",
+    "FhirBundleSearch",
+    "FhirCapabilityInteraction",
+    "FhirCapabilityOperation",
+    "FhirCapabilityResource",
+    "FhirCapabilityRest",
+    "FhirCapabilitySearchParam",
+    "FhirCapabilityStatement",
+    "FhirOperationOutcome",
+    "FhirOperationOutcomeIssue",
+    "FhirReadableResource",
+    "FhirSearchBundle",
+    "FhirSearchBundleEntry",
+    "FhirTerminologyResource",
+    "dump_fhir_r4_resource",
     "FhirCodeableConcept",
     "FhirCoding",
     "FhirDiagnosticReport",
