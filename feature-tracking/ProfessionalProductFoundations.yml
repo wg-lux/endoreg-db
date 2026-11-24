@@ -329,16 +329,39 @@ definition_of_done:
         Kennung fuer Erfolgs-/Fehlerstatus, Payload-Ausschluss, Fehlerweitergabe, Kontextreset, parallele
         Threads, Django-Async-Adapter und unverbrauchte Streaming-Antworten. Ruff fuer vier betroffene
         Python-Dateien bestanden.'
-    note: 'CI-Gates und einzelne pytest-Ausfuehrung bleiben vorhanden. Dead-Code-Guard nach quellengestuetztem
-      Einzelreview repariert: 34 akzeptierte Befunde, keine neuen/veralteten/abgelaufenen akzeptierten
-      Eintraege. Fuenf Protokollparameter besitzen reale Keyword-Aufrufer; drei ersetzte Reportparameter
-      und ein nicht mehr gemeldeter Framework-Parameter wurden aus der Baseline entfernt, keine Laufzeitloeschung.
-      Die separate Exception-/Typsuppressionsbaseline blockiert weiterhin (416/406, 109/140). Historischer
-      Vergleich zeigt bereits in ihrem letzten Aenderungscommit eine Diskrepanz; neue Handler protokollieren
-      Fehler und werfen sie weiter. Kein numerisches Baseline-Refresh ohne vollstaendiges Review. Hosted-CI-,
-      Release- und Rollback-Nachweise sowie ueberfaellige Kompatibilitaetsreviews bleiben offen.'
-    assessed_by: codex-professional-foundations-20260909
-    assessed_at: '2026-09-09T09:54:29.956418Z'
+    - kind: command
+      reference: '2026-10-23, HEAD 87f571379b96cfd12f57d1729c1de43a3f2d9b38 plus Arbeitsbaum: scripts/check_quality_boundaries.py
+        zunaechst DRIFT und EXPIRED (review_after 2026-10-17; erwartet 389/109, tatsaechlich 354/109).
+        Signaturvergleich gegen letzten Baseline-Commit 2a3a195b (dort tatsaechlich 387): 63 hinzugefuegte,
+        96 entfernte Handler-Signaturen, ueberwiegend Modulverlagerungen; neue Grenzen einzeln geprueft.
+        Zwei neue Suppressions aus 87f57137 durch explizite cast nach isinstance ersetzt. Danach exit
+        0: 354 broad handlers, 107 type suppressions reviewed; review_after 2026-11-20.'
+    - kind: command
+      reference: '2026-10-23: scripts/check_dead_code.py zunaechst 3 NEW, 4 STALE, 23 EXPIRED. Vier nicht
+        mehr gemeldete flat-Eintraege entfernt, checks.py-Callbacks auf occurrences 2, NativeBatchProcessor.master_keys
+        als Protokollsignatur aufgenommen, abgelaufene Begruendungen einzeln bestaetigt. Danach: 31 reviewed
+        findings, no new/stale/expired entries; 0 confirmed deletion candidates, 2 candidates total.'
+    - kind: test
+      reference: '2026-10-23: .devenv/state/venv/bin/pyright: 1 error, 24 warnings; einziger Fehler reportPrivateUsage
+        in tests/views/test_central_hub_training_access.py:311 aus bereits uncommitteter Nutzeraenderung,
+        keiner in geaenderten Dateien. Danach .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py
+        tests/scripts/test_check_documentation_governance.py tests/scripts/test_check_quality_boundaries.py
+        tests/services/test_clinical_lifecycle_facts.py tests/services/test_clinical_lifecycle_state_machine.py
+        tests/services/test_clinical_lifecycle_legacy_exemption.py -q: 216 passed in 58.04s. Ruff check/format
+        der zwei geaenderten Pythondateien bestanden.'
+    - kind: command
+      reference: '2026-10-23: DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test manage.py makemigrations
+        --check --dry-run: fehlgeschlagen, ausstehende Migration 0109_alter_center_center_key (Center.center_key
+        in d2c1adab ohne unique=True, Datenbank erzwingt weiterhin Eindeutigkeit). Nicht automatisch erzeugt;
+        Entscheidung ueber Eindeutigkeit des Zentrumsschluessels offen.'
+    note: 'Quality-Boundary- und Dead-Code-Baseline am 2026-10-23 nach Einzelreview wieder sauber (354/107;
+      31 akzeptierte Befunde). Dokumentationsgovernance 0 Fehler. Blockiert: makemigrations --check scheitert
+      an ausstehender center_key-Migration; Pyright meldet einen Fehler in einer uncommitteten Testaenderung.
+      Hosted-CI-Lauf der konkreten Revision, versioniertes Release-Artefakt und kontrollierter Rollback
+      bleiben unbelegt; die Exception-Baseline bleibt technische Schuld, insbesondere Fehlertext in der
+      Prediction-Refresh-Payload.'
+    assessed_by: claude-ppf-20261023
+    assessed_at: '2026-10-23T07:27:08.751903Z'
 - id: maintainable_contracts_documentation
   category: documentation
   title: Architecture, interfaces, and operational behavior are maintainable
@@ -365,12 +388,25 @@ definition_of_done:
     - kind: command
       reference: '.devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository
         endoreg-db: exit 0, 258 inventory entries, 0 error(s), 0 warning(s), 2026-09-09.'
-    note: API-Matrix und Modulkarte dokumentieren Authentifizierung, Statuscodes, snake_case-Vertraege
-      und Modulgrenzen. Dokumentationsgovernance besteht mit 258 Inventareintraegen, 0 Fehlern und 0 Warnungen.
-      Dokumentierte Kopplung ist keine abgeschlossene Entkopplung. Betriebsabgleich mit konkreter Installation
-      und benannte Eskalations-/Recovery-Verantwortung bleiben nachzuweisen.
-    assessed_by: codex-professional-foundations-20260909
-    assessed_at: '2026-09-09T09:40:00.158099Z'
+    - kind: command
+      reference: '2026-10-23, HEAD 87f571379b96cfd12f57d1729c1de43a3f2d9b38 plus Arbeitsbaum: .devenv/state/venv/bin/python
+        scripts/check_documentation_governance.py --repository endoreg-db zunaechst 4 Fehler (drei tote
+        Links in docs/patient_matching_2pc_assessment.md auf in a965c674 entfernte 2PC-Referenzdateien;
+        docs/source_patient_matching.md nicht englisch). Nach Korrektur: 288 inventory entries, 0 error(s),
+        0 warning(s). scripts/lint_structure.py: 67 manifests valid.'
+    - kind: document
+      reference: docs/source_patient_matching.md ins Englische uebertragen, Inhalt und Bezeichner unveraendert;
+        docs/patient_matching_2pc_assessment.md verweist fuer Referenzskript, Tests und 2PC-Circuit nun
+        auf Commit d2c1adab als historische, aus dem aktuellen Baum nicht reproduzierbare Evidenz.
+    note: 'API-Matrix und Modulkarte dokumentieren Authentifizierung, Statuscodes, snake_case-Vertraege
+      und Modulgrenzen. Dokumentationsgovernance besteht am 2026-10-23 erneut mit 288 Inventareintraegen,
+      0 Fehlern und 0 Warnungen. Offen: feature-tracking/HubTransfer.yml fuehrt fuer existing_hmac_2pc_evaluation
+      weiterhin die entfernten Dateien tests/scripts/test_patient_matching_2pc_reference.py und scripts/patient_matching_2pc.mpc
+      als Evidenz (nicht in diesem Lock geaendert). Dokumentierte Kopplung ist keine abgeschlossene Entkopplung.
+      Betriebsabgleich mit konkreter Installation und benannte Eskalations-/Recovery-Verantwortung bleiben
+      nachzuweisen.'
+    assessed_by: claude-ppf-20261023
+    assessed_at: '2026-10-23T07:26:52.500253Z'
 - id: production_operational_readiness
   category: operations
   title: Deployment and incident operations are safe and repeatable
@@ -433,7 +469,7 @@ definition_of_done:
     - kind: test
       reference: '2026-09-09, Arbeitsbaum auf HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: globale .devenv/state/venv/bin/pyright:
         0 errors, 1 warning (fehlende externe Typstubs lx_anonymizer.anonymization.detector_video_masking).
-        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.postgresql
         .devenv/state/venv/bin/pytest mit 19 Dateien: tests/import_files/test_report_anonymization_contract.py;
         tests/management/commands/test_train_phi_region_detector.py; tests/services/test_report_patient_context.py;
         tests/views/report/test_patient_examination_report_ninja_api.py; tests/ai/test_aidataset_active_learning.py;
@@ -488,7 +524,7 @@ definition_of_done:
     - kind: test
       reference: '2026-09-09, Arbeitsbaum auf HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: globale .devenv/state/venv/bin/pyright:
         0 errors, 1 warning (fehlende externe Typstubs lx_anonymizer.anonymization.detector_video_masking).
-        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.postgresql
         .devenv/state/venv/bin/pytest mit 19 Dateien: tests/import_files/test_report_anonymization_contract.py;
         tests/management/commands/test_train_phi_region_detector.py; tests/services/test_report_patient_context.py;
         tests/views/report/test_patient_examination_report_ninja_api.py; tests/ai/test_aidataset_active_learning.py;
@@ -552,7 +588,7 @@ definition_of_done:
     - kind: test
       reference: '2026-09-09, Arbeitsbaum auf HEAD e547189103a3ff5c084878fc9cfc23023f1d1fef: globale .devenv/state/venv/bin/pyright:
         0 errors, 1 warning (fehlende externe Typstubs lx_anonymizer.anonymization.detector_video_masking).
-        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.sqlite3
+        Danach SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true TEST_DB_ENGINE=django.db.backends.postgresql
         .devenv/state/venv/bin/pytest mit 19 Dateien: tests/import_files/test_report_anonymization_contract.py;
         tests/management/commands/test_train_phi_region_detector.py; tests/services/test_report_patient_context.py;
         tests/views/report/test_patient_examination_report_ninja_api.py; tests/ai/test_aidataset_active_learning.py;
@@ -573,7 +609,7 @@ definition_of_done:
         34 reviewed findings, keine neuen/veralteten/abgelaufenen Eintraege.'
     - kind: test
       reference: '2026-09-10: Vollstaendige .devenv/state/venv/bin/pyright: 0 errors, 1 bestehende MissingTypeStubs-Warnung
-        fuer lx_anonymizer.anonymization.detector_video_masking. Danach TEST_DB_ENGINE=django.db.backends.sqlite3
+        fuer lx_anonymizer.anonymization.detector_video_masking. Danach TEST_DB_ENGINE=django.db.backends.postgresql
         SKIP_EXPENSIVE_TESTS=false RUN_VIDEO_TESTS=true USE_STUB_MODEL_META=true .devenv/state/venv/bin/pytest
         tests/services/test_aidataset_training_selection.py tests/ai/test_aidataset_training_manifest.py
         tests/ai/test_multilabel_data_loader_video_ids.py tests/services/test_model_training_jobs.py tests/views/misc/test_application_settings_endpoints.py
@@ -584,7 +620,7 @@ definition_of_done:
         fuer 11 geaenderte Pythondateien bestanden. scripts/check_django_startup_imports.py: startup-smoke
         ok, 7 root URL patterns. git diff --check bestanden.'
     - kind: document
-      reference: docs/annotation_training_selection.yml
+      reference: docs/annotation_training_selection.md
     note: Gemeinsame Quellenfreigabe manual_or_confirmed_v1 fuer Trainingsbuilder, Trainingsframe-Vorbereitung
       und HTTP-Manifest umgesetzt. Direkte manuelle Annotationen sowie manuelle oder einzeln bestaetigte
       Segmente bleiben innerhalb des ausgewaehlten AIDataSet. Unbestaetigte und mehrdeutig klassifizierte

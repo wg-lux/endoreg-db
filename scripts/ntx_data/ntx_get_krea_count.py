@@ -1,6 +1,7 @@
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable, TypedDict, cast
+from typing import Any, TypedDict, cast
+from collections.abc import Callable
 
 import pandas as pd
 from tqdm import tqdm
@@ -34,7 +35,7 @@ with open(lab_data_path, "r", encoding="utf-8") as f:
     for line in tqdm(f):
         lab_data_list.append(LabData.model_validate_json(line))
 
-# create dictionary: {patient_id_ntx: List[LabData]}
+# create dictionary: {patient_id_ntx: list[LabData]}
 lab_data_by_patient_id_ntx: dict[str | None, list[LabData]] = {}
 for lab_data in tqdm(lab_data_list):
     if lab_data.test_name != lab_value_name:
@@ -106,7 +107,7 @@ def create_fu_years_dict(
 #              ...
 #         },
 #     "lab_counts_by_fu_year": {
-#         "1": List[LabData]
+#         "1": list[LabData]
 #     }
 # }
 # }

@@ -7,15 +7,29 @@ from __future__ import annotations
 import sys
 from contextlib import nullcontext
 from pathlib import Path
+
 from types import ModuleType, SimpleNamespace
 from typing import cast
 from unittest.mock import Mock, call
 
 import pytest
+from endoreg_db.services.imports.execution import ImportExecutionFence
+
+
+def _test_guard() -> None:
+    pass
+
+
+def _test_fence() -> ImportExecutionFence:
+    return ImportExecutionFence("a" * 32, _test_guard, nullcontext)
+
+
+from django.test import override_settings
 from pydantic import ValidationError
 
 from endoreg_db.import_files import video_import_service as sut
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.models import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
 
@@ -40,6 +54,11 @@ def _patch_import_boundaries(
     existing_video: object | None = None,
 ) -> None:
     """Replace every external import boundary with an in-process unit seam."""
+    monkeypatch.setattr(
+        sut, "prepared_import_artifact", lambda ctx, prepare: nullcontext(prepare(ctx))
+    )
+    monkeypatch.setattr(sut, "clear_import_checkpoint", Mock())
+    monkeypatch.setattr(sut, "has_pending_import_checkpoint", Mock(return_value=False))
     monkeypatch.setattr(
         sut.VideoImportService,
         "_verified_local_raw_source",
@@ -182,7 +201,7 @@ class TestLocalRawSourceResolution:
         raw_path = tmp_path / "raw.mp4"
 
         class VideoLike:
-            def ensure_local_raw_file(self):  # type: ignore[no-untyped-def]
+            def ensure_local_raw_file(self):
                 return nullcontext(raw_path)
 
         # Act
@@ -395,22 +414,50 @@ class TestImportInputBoundaries:
 
         # Act / Assert
         with pytest.raises(TypeError):
-            service.import_and_anonymize(
-                cast(str, None), "test-center", "test-processor"
+            service.import_and_anonymize_fenced(
+                cast(str, None),
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
             )
 
-    @pytest.mark.parametrize("field", ["center_name", "processor_name"])
-    def test_rejects_empty_required_names(self, field: str, tmp_path: Path) -> None:
+    def test_rejects_empty_processor_name(self, tmp_path: Path) -> None:
         # Arrange
         source_path = tmp_path / "input.mp4"
         service = sut.VideoImportService()
 
         # Act / Assert
-        with pytest.raises(ValidationError, match=field):
-            if field == "center_name":
-                service.import_and_anonymize(source_path, "  ", "test-processor")
-            else:
-                service.import_and_anonymize(source_path, "test-center", "  ")
+        with pytest.raises(ValidationError, match="processor_name"):
+            service.import_and_anonymize_fenced(
+                source_path, "test-center", "  ", execution_fence=_test_fence()
+            )
+
+    def test_empty_center_uses_local_default_before_import(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        service = sut.VideoImportService()
+        from endoreg_db.models.administration.center.center import Center
+
+        Center.objects.create(name="Site A", center_key="other-site")
+        source = tmp_path / "input.mp4"
+        source.write_bytes(b"source")
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        captured: list[ImportContext] = []
+
+        def stop_at_lookup(ctx: ImportContext) -> None:
+            captured.append(ctx)
+            raise RuntimeError("lookup boundary")
+
+        monkeypatch.setattr(service, "_get_existing_completed_video", stop_at_lookup)
+        with override_settings(
+            LX_ANNOTATE_DEFAULT_CENTER="site-a", CENTER_NAME="Site A"
+        ):
+            with pytest.raises(RuntimeError, match="lookup boundary"):
+                service.import_and_anonymize_fenced(
+                    source, "  ", "test-processor", execution_fence=_test_fence()
+                )
+        assert captured[0].center_name == "Site A"
+        assert captured[0].center_key == "site-a"
 
     def test_fenced_entrypoint_forwards_one_complete_execution_capability(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -438,7 +485,7 @@ class TestImportInputBoundaries:
             "_get_existing_completed_video",
             existing_completed,
         )
-        monkeypatch.setattr(sut, "ensure_video_hls", lambda _video: None)
+        monkeypatch.setattr(sut, "ensure_video_hls", Mock())
         monkeypatch.setattr(
             sut.VideoImportService,
             "_cleanup_duplicate_staging",
@@ -451,9 +498,10 @@ class TestImportInputBoundaries:
             source_path,
             "test-center",
             "test-processor",
-            execution_fence=sut.VideoImportExecutionFence(
+            execution_fence=ImportExecutionFence(
                 attempt_id=attempt_id,
                 guard=lambda: guard_calls.append("guard"),
+                mutation_guard=nullcontext,
             ),
         )
 
@@ -463,8 +511,12 @@ class TestImportInputBoundaries:
         assert guard_calls == ["guard", "guard"]
 
     def test_execution_fence_rejects_an_empty_attempt_id(self) -> None:
-        with pytest.raises(ValueError, match="requires an attempt_id"):
-            sut.VideoImportExecutionFence(attempt_id="  ", guard=lambda: None)
+        with pytest.raises(
+            ValueError, match="requires a lowercase UUID hex attempt_id"
+        ):
+            ImportExecutionFence(
+                attempt_id="  ", guard=lambda: None, mutation_guard=nullcontext
+            )
 
 
 class TestStorageBudget:
@@ -596,7 +648,9 @@ class TestReanonymizationInputBoundaries:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
-            service.reanonymize_existing_video(video, source_path=missing_path)
+            service.reanonymize_existing_video_fenced(
+                video, source_path=missing_path, execution_fence=_test_fence()
+            )
 
     def test_resolves_managed_source_when_no_explicit_path_is_given(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -613,7 +667,9 @@ class TestReanonymizationInputBoundaries:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
-            service.reanonymize_existing_video(video)
+            service.reanonymize_existing_video_fenced(
+                video, execution_fence=_test_fence()
+            )
 
 
 class TestRemainingDependencyBoundaries:
@@ -705,7 +761,7 @@ class TestRemainingDependencyBoundaries:
         ctx = _context(tmp_path / "input.mp4")
 
         # Act
-        sut._require_execution_ownership(ctx)
+        ctx.require_execution_ownership()
 
         # Assert
         assert ctx.execution_guard is None
@@ -793,6 +849,62 @@ class TestNormalizationExecution:
 
 
 class TestImportOrchestration:
+    def test_duplicate_streaming_rejects_lost_execution_ownership(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from endoreg_db.import_files.file_storage import state_management
+
+        def reject() -> None:
+            raise RuntimeError("import ownership lost")
+
+        ctx = _context(tmp_path / "input.mp4", execution_guard=reject)
+        video = VideoFile(id=7, raw_file="raw/source.mp4")
+        materialize = Mock()
+        monkeypatch.setattr(state_management, "materialize_video_hls", materialize)
+
+        with pytest.raises(RuntimeError, match="import ownership lost"):
+            sut.VideoImportService._ensure_duplicate_streaming(ctx, video)
+
+        materialize.assert_not_called()
+
+    @pytest.mark.parametrize("lost_after_staging_cleanup", [False, True])
+    def test_duplicate_cleanup_preserves_source_after_ownership_loss(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        lost_after_staging_cleanup: bool,
+    ) -> None:
+        from endoreg_db.import_files.file_storage import cleanup
+
+        monkeypatch.setattr(cleanup, "staging_cleanup_roots", lambda: (tmp_path,))
+        source = tmp_path / "input.mp4"
+        source.write_bytes(b"retained source")
+        staging = tmp_path / "staging.mp4"
+        staging.write_bytes(b"retained staging")
+        guard_calls = 0
+
+        def guard() -> None:
+            nonlocal guard_calls
+            guard_calls += 1
+            if guard_calls > int(lost_after_staging_cleanup):
+                raise RuntimeError("import ownership lost")
+
+        ctx = _context(
+            source,
+            original_path=source,
+            sensitive_path=staging,
+            execution_guard=guard,
+        )
+        monkeypatch.setattr(sut, "_video_import_dir", lambda: tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        service = sut.VideoImportService(anonymizer=Mock())
+
+        with pytest.raises(RuntimeError, match="import ownership lost"):
+            service._cleanup_duplicate_staging(ctx)
+
+        assert source.read_bytes() == b"retained source"
+        assert staging.exists() is (not lost_after_staging_cleanup)
+
     @pytest.mark.parametrize("renamed_source", [False, True])
     def test_repeated_completed_import_preserves_external_source_and_skips_heavy_work(
         self,
@@ -826,15 +938,23 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=anonymizer)
 
         # Act
-        first = service.import_and_anonymize(source, "test-center", "test-processor")
-        second = service.import_and_anonymize(
-            second_source, "test-center", "test-processor"
+        first = service.import_and_anonymize_fenced(
+            source, "test-center", "test-processor", execution_fence=_test_fence()
+        )
+        second = service.import_and_anonymize_fenced(
+            second_source,
+            "test-center",
+            "test-processor",
+            execution_fence=_test_fence(),
         )
 
         # Assert
         assert first is second is video
         assert source.read_bytes() == second_source.read_bytes() == b"video"
-        assert ensure_hls.call_args_list == [call(video), call(video)]
+        assert ensure_hls.call_args_list == [
+            call(video, execution_guard=_test_guard),
+            call(video, execution_guard=_test_guard),
+        ]
         budget.assert_not_called()
         stage.assert_not_called()
         create.assert_not_called()
@@ -866,7 +986,9 @@ class TestImportOrchestration:
 
         # Act
         with pytest.raises(type(error)) as raised:
-            service.import_and_anonymize(source, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source, "test-center", "test-processor", execution_fence=_test_fence()
+            )
 
         # Assert
         assert raised.value is error
@@ -874,12 +996,17 @@ class TestImportOrchestration:
         assert source.read_bytes() == b"video"
 
         # Act: redeliver after streaming becomes available.
-        result = service.import_and_anonymize(source, "test-center", "test-processor")
+        result = service.import_and_anonymize_fenced(
+            source, "test-center", "test-processor", execution_fence=_test_fence()
+        )
 
         # Assert
         assert result is video
         cleanup.assert_called_once()
-        assert ensure_hls.call_args_list == [call(video), call(video)]
+        assert ensure_hls.call_args_list == [
+            call(video, execution_guard=_test_guard),
+            call(video, execution_guard=_test_guard),
+        ]
         anonymizer.anonymize_video.assert_not_called()
 
     def test_rejects_a_missing_source_path(
@@ -892,7 +1019,12 @@ class TestImportOrchestration:
 
         # Act / Assert
         with pytest.raises(FileNotFoundError, match="Video file not found"):
-            service.import_and_anonymize(source_path, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source_path,
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
+            )
 
     def test_returns_newly_anonymized_video_after_all_mutation_checkpoints(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -904,6 +1036,7 @@ class TestImportOrchestration:
         video = SimpleNamespace(
             raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
+            processed_file="",
             state=SimpleNamespace(anonymization_validated=False),
         )
         events: list[str] = []
@@ -947,8 +1080,8 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=anonymizer)
 
         # Act
-        result = service.import_and_anonymize(
-            source_path, "test-center", "test-processor"
+        result = service.import_and_anonymize_fenced(
+            source_path, "test-center", "test-processor", execution_fence=_test_fence()
         )
 
         # Assert
@@ -999,13 +1132,13 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=Mock())
 
         # Act
-        result = service.import_and_anonymize(
-            source_path, "test-center", "test-processor"
+        result = service.import_and_anonymize_fenced(
+            source_path, "test-center", "test-processor", execution_fence=_test_fence()
         )
 
         # Assert
         assert result is video
-        ensure_hls.assert_called_once_with(video)
+        ensure_hls.assert_called_once_with(video, execution_guard=_test_guard)
         cleanup.assert_called_once()
 
     def test_retry_resets_invalid_processing_before_anonymizing(
@@ -1017,6 +1150,7 @@ class TestImportOrchestration:
         video = SimpleNamespace(
             raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
+            processed_file="",
             state=SimpleNamespace(anonymization_validated=False),
         )
         _patch_import_boundaries(monkeypatch, tmp_path)
@@ -1044,14 +1178,79 @@ class TestImportOrchestration:
         service = sut.VideoImportService(anonymizer=anonymizer)
 
         # Act
-        result = service.import_and_anonymize(
-            source_path, "test-center", "test-processor", retry=True
+        result = service.import_and_anonymize_fenced(
+            source_path,
+            "test-center",
+            "test-processor",
+            retry=True,
+            execution_fence=_test_fence(),
         )
 
         # Assert
         assert result is video
         assert create_video.call_count == 2
         reset_failure.assert_called_once()
+
+    def test_failure_history_recovers_state_without_forcing_another_reset(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        from endoreg_db.import_files.file_storage import (
+            create_video_file,
+            state_management,
+        )
+        from endoreg_db.models.state.video import VideoState
+
+        source = tmp_path / "failed.mp4"
+        source.write_bytes(b"failed source")
+        video = VideoFile(raw_video_hash=CONTENT_HASH)
+        state = VideoState(processing_error=True)
+        monkeypatch.setattr(state, "save", Mock())
+        _patch_import_boundaries(monkeypatch, tmp_path)
+        monkeypatch.setattr(sut, "validate_directories", Mock())
+        monkeypatch.setattr(
+            sut.VideoImportService, "_ensure_pipeline_storage_budget", Mock()
+        )
+        monkeypatch.setattr(sut, "create_sensitive_copy", Mock(return_value=None))
+        monkeypatch.setattr(
+            create_video_file, "_load_current_video", Mock(return_value=video)
+        )
+        history_cleanup = Mock()
+        monkeypatch.setattr(create_video_file, "finalize_failure", history_cleanup)
+        extra_cleanup = Mock()
+        monkeypatch.setattr(sut, "_finalize_video_failure_if_owned", extra_cleanup)
+        monkeypatch.setattr(sut, "get_or_create_video_state", Mock(return_value=state))
+        monkeypatch.setattr(
+            state_management, "_ensure_instance_state", Mock(return_value=state)
+        )
+        monkeypatch.setattr(
+            state_management, "require_reusable_video_raw_source", Mock()
+        )
+
+        def retrieve(ctx: ImportContext) -> tuple[VideoFile, bool, bool]:
+            create_video_file._handle_failure_history(ctx, CONTENT_HASH)
+            return video, False, True
+
+        def process(ctx: ImportContext) -> VideoFile:
+            assert ctx.retry is True
+            assert ctx.force_reprocess is False
+            state_management.mark_instance_processing_started(video, ctx)
+            return video
+
+        retrieve_mock = Mock(side_effect=retrieve)
+        monkeypatch.setattr(sut, "create_or_retrieve_video_file", retrieve_mock)
+        service = sut.VideoImportService()
+        monkeypatch.setattr(service, "_anonymize_and_finalize", process)
+        assert (
+            service.import_and_anonymize_fenced(
+                source, "test-center", "test-processor", execution_fence=_test_fence()
+            )
+            is video
+        )
+        assert state.processing_error is False
+        assert state.processing_started is True
+        retrieve_mock.assert_called_once()
+        history_cleanup.assert_called_once()
+        extra_cleanup.assert_not_called()
 
     def test_state_initialization_failure_prevents_anonymization(
         self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
@@ -1088,7 +1287,12 @@ class TestImportOrchestration:
 
         # Act / Assert
         with pytest.raises(ValueError, match="has no video state"):
-            service.import_and_anonymize(source_path, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source_path,
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
+            )
 
     @pytest.mark.parametrize("ownership_lost", [False, True])
     def test_finalizes_processing_failure_or_propagates_lost_ownership(
@@ -1103,6 +1307,7 @@ class TestImportOrchestration:
         video = SimpleNamespace(
             raw_video_hash=CONTENT_HASH,
             original_file_name="input.mp4",
+            processed_file="",
             state=SimpleNamespace(anonymization_validated=False),
         )
         _patch_import_boundaries(monkeypatch, tmp_path)
@@ -1135,7 +1340,12 @@ class TestImportOrchestration:
         # Act / Assert
         expected = "lease lost" if ownership_lost else "processing failed"
         with pytest.raises(RuntimeError, match=expected) as exc_info:
-            service.import_and_anonymize(source_path, "test-center", "test-processor")
+            service.import_and_anonymize_fenced(
+                source_path,
+                "test-center",
+                "test-processor",
+                execution_fence=_test_fence(),
+            )
         finalizer.assert_called_once()
         if ownership_lost:
             assert isinstance(exc_info.value.__cause__, RuntimeError)
@@ -1153,7 +1363,10 @@ class TestReanonymizationOrchestration:
         # Arrange
         raw_path = tmp_path / "raw.mp4"
         raw_path.write_bytes(b"video")
-        video = VideoFile(raw_video_hash="video")
+        video = VideoFile(
+            raw_video_hash="video",
+            center=Center(name="test-center", center_key="test-center"),
+        )
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
         monkeypatch.setattr(sut, "content_hash_lock", lambda _hash: nullcontext())
@@ -1163,6 +1376,12 @@ class TestReanonymizationOrchestration:
             lambda _video: ("test-center", "test-processor"),
         )
         monkeypatch.setattr(sut, "mark_instance_processing_started", Mock())
+        monkeypatch.setattr(
+            sut,
+            "prepared_import_artifact",
+            lambda ctx, prepare: nullcontext(prepare(ctx)),
+        )
+        monkeypatch.setattr(sut, "clear_import_checkpoint", Mock())
         normalize = Mock()
         success = Mock()
         failure = Mock()
@@ -1181,7 +1400,9 @@ class TestReanonymizationOrchestration:
         # Act / Assert
         if anonymization_fails:
             with pytest.raises(RuntimeError, match="anonymization failed"):
-                service.reanonymize_existing_video(video, source_path=raw_path)
+                service.reanonymize_existing_video_fenced(
+                    video, source_path=raw_path, execution_fence=_test_fence()
+                )
             failure.assert_called_once()
             assert failure.call_args.kwargs == {
                 "preserve_existing_video_artifacts": True
@@ -1189,7 +1410,9 @@ class TestReanonymizationOrchestration:
             normalize.assert_not_called()
             success.assert_not_called()
         else:
-            result = service.reanonymize_existing_video(video, source_path=raw_path)
+            result = service.reanonymize_existing_video_fenced(
+                video, source_path=raw_path, execution_fence=_test_fence()
+            )
             assert result is video
             normalize.assert_called_once()
             success.assert_called_once()
@@ -1201,7 +1424,11 @@ class TestReanonymizationOrchestration:
         # Arrange
         raw_path = tmp_path / "raw.mp4"
         raw_path.write_bytes(b"video")
-        video = VideoFile(raw_video_hash="video", video_meta_id=1)
+        video = VideoFile(
+            raw_video_hash="video",
+            video_meta_id=1,
+            center=Center(name="test-center", center_key="test-center"),
+        )
 
         monkeypatch.setattr(sut, "validate_directories", Mock())
         monkeypatch.setattr(sut, "file_lock", lambda _path: nullcontext())
@@ -1222,7 +1449,9 @@ class TestReanonymizationOrchestration:
 
         # Act / Assert
         with pytest.raises(RuntimeError, match="changed during VideoMeta extraction"):
-            service.reanonymize_existing_video(video, source_path=raw_path)
+            service.reanonymize_existing_video_fenced(
+                video, source_path=raw_path, execution_fence=_test_fence()
+            )
         initialize.assert_called_once_with(video, local_raw_path=raw_path)
 
 
@@ -1287,8 +1516,12 @@ class TestCompletedLookupAndDuplicateCleanup:
             original_path=source_path,
             sensitive_path=sensitive_path,
         )
-        cleanup = Mock()
-        monkeypatch.setattr(sut, "safe_cleanup_staging_file", cleanup)
+        from endoreg_db.import_files.file_storage import cleanup
+        from endoreg_db.utils.file_operations import atomic_write_file
+
+        atomic_write_file(destination=source_path, content=[b"source"])
+        atomic_write_file(destination=sensitive_path, content=[b"snapshot"])
+        monkeypatch.setattr(cleanup, "staging_cleanup_roots", lambda: (tmp_path,))
         monkeypatch.setattr(sut, "_video_import_dir", lambda: import_dir)
         monkeypatch.setattr(sut, "validate_directories", Mock())
         service = sut.VideoImportService(anonymizer=Mock())
@@ -1297,19 +1530,32 @@ class TestCompletedLookupAndDuplicateCleanup:
         service._cleanup_duplicate_staging(ctx)
 
         # Assert
-        expected = [
-            call(
-                sensitive_path,
-                label="duplicate video sensitive copy",
-                missing_ok=False,
-            )
-        ]
-        if source_in_import_directory:
-            expected.append(
-                call(
-                    source_path,
-                    label="duplicate video import source",
-                    missing_ok=False,
-                )
-            )
-        assert cleanup.call_args_list == expected
+        assert not sensitive_path.exists()
+        assert source_path.exists() is not source_in_import_directory
+
+
+@pytest.mark.parametrize("field", ["execution_guard", "mutation_guard"])
+@pytest.mark.parametrize("value", ["invalid", False, 42])
+def test_import_context_rejects_non_callable_guards(
+    tmp_path: Path, field: str, value: object
+) -> None:
+    with pytest.raises(ValidationError, match="callable"):
+        _context(tmp_path / "input.mp4", **{field: value})
+    ctx = _context(tmp_path / "input.mp4")
+    with pytest.raises(ValidationError, match="callable"):
+        setattr(ctx, field, value)
+    assert getattr(ctx, field) is None
+
+
+def test_import_context_validates_callback_reassignment(tmp_path: Path) -> None:
+    ctx = _context(tmp_path / "input.mp4")
+    guard = Mock()
+    ctx.execution_guard = guard
+    ctx.require_execution_ownership()
+    guard.assert_called_once_with()
+    ctx.mutation_guard = nullcontext
+    with ctx.mutation_guard():
+        pass
+    ctx.execution_guard = None
+    ctx.require_execution_ownership()
+    guard.assert_called_once_with()

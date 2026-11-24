@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from uuid import UUID, uuid4
 
 import pytest
+from django.db import OperationalError, close_old_connections, connection, transaction
 from django.utils import timezone
 
 from endoreg_db.exceptions import MediaOperationDeferred
@@ -40,7 +42,7 @@ from endoreg_db.services.hub.storage_transfer import (
     record_stored_transfer_evidence,
     record_verified_transfer_evidence,
 )
-from endoreg_db.services.media_operation_gate import create_video_stream_lease
+from endoreg_db.services.media.operation_gate import create_video_stream_lease
 
 
 def _placement_pair(
@@ -220,6 +222,42 @@ def test_transition_replay_is_exact_and_changed_evidence_is_rejected() -> None:
             idempotency_key="transition-copying",
         )
     assert changed.value.code is RotationErrorCode.IDEMPOTENCY_CONFLICT
+
+
+@pytest.mark.django_db(transaction=True)
+def test_transition_holds_target_reservation_lock_until_commit() -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("Row-lock verification requires PostgreSQL")
+
+    source, target = _placement_pair()
+    rotation = request_storage_rotation(request=_request(source.pk, target.pk))
+    reservation_id = target.reservation_id
+    assert reservation_id is not None
+
+    def attempt_reservation_lock() -> None:
+        close_old_connections()
+        try:
+            with pytest.raises(OperationalError, match="could not obtain lock"):
+                with transaction.atomic():
+                    StorageReservation.objects.select_for_update(nowait=True).get(
+                        pk=reservation_id
+                    )
+        finally:
+            connection.close()
+
+    with transaction.atomic():
+        advance_storage_rotation(
+            rotation_id=rotation.pk,
+            expected_state=StorageRotation.State.REQUESTED,
+            target_state=StorageRotation.State.COPYING,
+            idempotency_key="transition-copying-lock",
+        )
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            executor.submit(attempt_reservation_lock).result(timeout=10)
+
+    # A fresh transaction can acquire the reservation once the transition commits.
+    with transaction.atomic():
+        StorageReservation.objects.select_for_update(nowait=True).get(pk=reservation_id)
 
 
 @pytest.mark.django_db

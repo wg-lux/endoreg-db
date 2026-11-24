@@ -44,17 +44,17 @@ def build_multilingual_response(
     if hasattr(obj, "required"):
         required_obj = cast(_RequiredSource, obj)
         data["required"] = required_obj.required
+
     if include_choices:
+        choice_classification_id = classification_id or obj.id
         data["choices"] = [
             build_multilingual_response(
                 choice,
-                include_choices=False,
-                classification_id=classification_id or obj.id,
+                classification_id=choice_classification_id,
             )
             for choice in obj.get_choices()
         ]
-        for choice_dict in data["choices"]:
-            choice_dict["classification_id"] = classification_id or obj.id
-    if classification_id is not None and not include_choices:
+    elif classification_id is not None:
         data["classification_id"] = classification_id
+
     return data

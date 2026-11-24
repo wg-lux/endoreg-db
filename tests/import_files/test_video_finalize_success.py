@@ -1,13 +1,14 @@
+from datetime import UTC, datetime
 from contextlib import contextmanager, nullcontext
 from collections.abc import Callable
-from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from types import SimpleNamespace
-from typing import NoReturn, cast
+from typing import cast
 
 import pytest
 from pytest import MonkeyPatch
+from django.test import TestCase
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage.state_management import finalize_video_success
@@ -18,13 +19,15 @@ from endoreg_db.schemas.video_storage import (
     VideoTimelineContract,
 )
 from endoreg_db.utils import paths as paths_module
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 
 @pytest.fixture(autouse=True)
 def dummy_video_writer_scope(monkeypatch: MonkeyPatch) -> None:
     # These unit fixtures replace VideoFile with DummyVideo and have no database.
     # Real lease admission and release are covered in test_video_artifact_writer_entry.
-    from endoreg_db.services import media_operation_gate
+    from endoreg_db.services.media import operation_gate as media_operation_gate
 
     def writer_scope(*, video_id: int) -> nullcontext[None]:
         assert video_id > 0
@@ -47,7 +50,7 @@ def _runtime_storage_root() -> Path:
     return paths_module.EndoregPathsModel.from_environment().storage
 
 
-def _normalization_evidence() -> VideoStorageNormalizationEvidence:
+def build_normalization_evidence() -> VideoStorageNormalizationEvidence:
     timeline = VideoTimelineContract(
         fps_num=25,
         fps_den=1,
@@ -297,6 +300,7 @@ def test_failed_video_finalization_preserves_previous_generation(
         raising=True,
     )
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
@@ -307,7 +311,9 @@ def test_failed_video_finalization_preserves_previous_generation(
     ctx.current_video = cast(VideoFile, video)
     ctx.anonymized_path = anonymized_path
     ctx.sensitive_path = sensitive_path
-    ctx.storage_normalization_evidence = _normalization_evidence()
+    ctx.storage_normalization_evidence = normalization_evidence_fixture(
+        source_path, anonymized_path
+    )
 
     with pytest.raises(RuntimeError, match=f"{failure_boundary} unavailable"):
         finalize_video_success(ctx)
@@ -345,6 +351,8 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     temp_anonymized = tmp_path / "processing" / "anon_temp.mp4"
     temp_anonymized.parent.mkdir(parents=True, exist_ok=True)
     temp_anonymized.write_bytes(b"anonymized")
+    other_attempt = temp_anonymized.parent / "other-attempt.mp4"
+    other_attempt.write_bytes(b"other attempt")
     import_file = tmp_path / "import" / "exam.mp4"
     import_file.parent.mkdir(parents=True, exist_ok=True)
     import_file.write_bytes(b"import")
@@ -396,19 +404,10 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     def fake_processed_video_dir() -> Path:
         return anonym_dir
 
-    def fail_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
-        raise AssertionError("finalize_video_success must not nuke global transcoding")
-
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
         fake_processed_video_dir,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        state_management_module,
-        "nuke_transcoding_dir",
-        fail_nuke_transcoding_dir,
         raising=True,
     )
     monkeypatch.setattr(
@@ -425,7 +424,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         return {"streams": [{"codec_type": "video"}]}
 
     def fake_staging_cleanup_roots() -> tuple[Path, ...]:
-        return (sensitive_dir,)
+        return (sensitive_dir, temp_anonymized.parent)
 
     monkeypatch.setattr(
         state_management_module.ProcessingHistory,
@@ -483,7 +482,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
         force: bool = False,
         execution_guard: Callable[[], None] | None = None,
     ) -> None:
-        assert force is True
+        assert force is False
         hls_calls.append(int(video_arg.pk))
 
     monkeypatch.setattr(
@@ -494,6 +493,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     )
     video = DummyVideo()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
@@ -503,9 +503,12 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     ctx.current_video = cast(VideoFile, video)
     ctx.sensitive_path = sensitive_working_copy
     ctx.anonymized_path = temp_anonymized
-    ctx.storage_normalization_evidence = _normalization_evidence()
+    ctx.storage_normalization_evidence = normalization_evidence_fixture(
+        import_file, temp_anonymized
+    )
 
-    finalize_video_success(ctx)
+    with TestCase.captureOnCommitCallbacks(execute=True):
+        finalize_video_success(ctx)
 
     final_anonymized = _runtime_storage_root() / video.processed_file.name
     assert final_anonymized.parent == anonym_dir
@@ -514,10 +517,15 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
     assert raw_path.exists()
     assert final_anonymized.exists()
     assert not sensitive_working_copy.exists()
+    assert other_attempt.read_bytes() == b"other attempt"
     assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
     assert store_calls == [(final_anonymized, video.processed_file.name)]
     assert ownership_checks >= 5
     assert hls_calls == [1]
+    history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert history is not None and len(history) == 1
+    assert history[0].artifact_kind == "processed"
+    assert history[0].after.content_hash == video.processed_video_hash
 
 
 @pytest.mark.unit
@@ -593,19 +601,10 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
     def fake_processed_video_dir() -> Path:
         return anonym_dir
 
-    def fail_nuke_transcoding_dir(*args: object, **kwargs: object) -> NoReturn:
-        raise AssertionError("finalize_video_success must not nuke global transcoding")
-
     monkeypatch.setattr(
         state_management_module,
         "_processed_video_dir",
         fake_processed_video_dir,
-        raising=True,
-    )
-    monkeypatch.setattr(
-        state_management_module,
-        "nuke_transcoding_dir",
-        fail_nuke_transcoding_dir,
         raising=True,
     )
     monkeypatch.setattr(
@@ -636,6 +635,7 @@ def test_finalize_video_success_rejects_unprobeable_final_output(
 
     video = DummyVideo()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
@@ -741,6 +741,7 @@ def test_finalize_video_success_rejects_missing_anonymized_output(
 
     video = DummyVideo()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=import_file,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",

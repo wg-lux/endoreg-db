@@ -14,7 +14,7 @@ from endoreg_db.models.medical.examination.examination_indication import (
 class _IndicationChoiceRow(TypedDict):
     id: int
     name: str
-    name_de: str
+    name_de: str | None
     name_en: str
     classification_ids: list[int]
 
@@ -22,7 +22,8 @@ class _IndicationChoiceRow(TypedDict):
 class _LocalizedCatalogRow(TypedDict):
     id: int
     name: str
-    name_de: str
+    # Catalogue German name, or None; never the identifier.
+    name_de: str | None
     name_en: str
     description: str | None
 
@@ -45,7 +46,7 @@ def _localized_catalog_item(value: object) -> _LocalizedCatalogRow:
     return {
         "id": _int_pk(getattr(value, "pk")),
         "name": name,
-        "name_de": name_de if name_de and name_de != "unknown" else name,
+        "name_de": name_de if name_de and name_de != "unknown" else None,
         "name_en": name_en if name_en and name_en != "unknown" else name,
         "description": description or None,
     }
@@ -107,7 +108,7 @@ def get_indication_choices(request: HttpRequest, indication_id: int) -> Response
             {
                 "id": int(row["id"]),
                 "name": str(row["name"]),
-                "name_de": str(row["name_de"]),
+                "name_de": row["name_de"],
                 "name_en": str(row["name_en"]),
                 "classification_ids": classification_ids,
             }

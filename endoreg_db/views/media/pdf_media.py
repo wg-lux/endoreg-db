@@ -124,8 +124,7 @@ class PdfMediaView(APIView):
 
             pdf_data: dict[str, JsonValue] = {
                 "id": cast(int | None, pdf.pk),
-                "filename": cast(str | None, getattr(file_obj, "name", None))
-                or "Unknown",
+                "filename": f"report-{pdf.pk}.pdf",
                 "file_size": _safe_get_file_size(file_obj),
                 "pdf_hash": pdf_hash,
                 "uploaded_at": (
@@ -173,7 +172,7 @@ class PdfMediaView(APIView):
         except (Http404, PermissionDenied):
             raise
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 f"Unexpected error in report detail view for ID {pk}: {str(exc)}"
             )
             return Response(
@@ -224,8 +223,7 @@ class PdfMediaView(APIView):
 
                 result: dict[str, JsonValue] = {
                     "id": cast(int | None, pdf.pk),
-                    "filename": cast(str | None, getattr(file_obj, "name", None))
-                    or "Unknown",
+                    "filename": f"report-{pdf.pk}.pdf",
                     "file_size": _safe_get_file_size(file_obj),
                     "pdf_hash": cast(str | None, getattr(pdf, "pdf_hash", None)),
                     "has_anonymized_text": bool(resolved_anonymized_text),
@@ -255,7 +253,7 @@ class PdfMediaView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
         except Exception as exc:
-            logger.error(f"Unexpected error in report list view: {str(exc)}")
+            logger.exception(f"Unexpected error in report list view: {str(exc)}")
             return Response(
                 {"error": "Failed to retrieve report list"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -325,7 +323,7 @@ class PdfMediaView(APIView):
         )
 
     def delete(self, request: Request, pk: int) -> Response:
-        force_remove_path = endoreg_api_path(f"media-management/force-remove/{pk}/")
+        force_remove_path = endoreg_api_path(f"media-management/force-remove/pdf/{pk}/")
         return Response(
             {
                 "error": "report deletion not yet implemented",

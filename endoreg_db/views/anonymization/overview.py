@@ -1,5 +1,6 @@
 # endoreg_db/api/views/anonymization_overview.py
 
+from collections.abc import Mapping
 from typing import Any, Protocol, cast
 from uuid import UUID
 from django.db import transaction
@@ -12,22 +13,25 @@ from endoreg_db.openapi import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
-from rest_framework.pagination import PageNumberPagination
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.permissions import IsAuthenticated
 
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    anonymization_phase,
+)
 from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
-from endoreg_db.services.anonymization import AnonymizationService
-from endoreg_db.services.polling_coordinator import (
+from endoreg_db.services.privacy.workflow import AnonymizationService
+from endoreg_db.services.runtime.polling_coordinator import (
     PollingCoordinator,
     ProcessingLockContext,
 )
-from endoreg_db.services.center_access import resolve_allowed_center_ids
+from endoreg_db.services.centers.access import resolve_allowed_center_ids
+from endoreg_db.services.imports.processing import import_source_hash
 from endoreg_db.services.hub import hub_mode_enabled
 from endoreg_db.services.hub.import_monitoring import (
     is_retryable_storage_failure,
@@ -48,11 +52,13 @@ from endoreg_db.serializers.misc.file_overview import (
     overview_upload_job_summary,
     overview_upload_job_retry_summary,
     safe_upload_job_original_filename,
+    overview_upload_job_media_type,
 )
 from ...serializers import VoPPatientDataSerializer
 from endoreg_db.utils.operation_log import (
     record_operation,
     ACTION_ANONYMIZATION_START,
+    ACTION_ANONYMIZATION_START_REQUESTED,
     STATUS_NOT_STARTED,
     STATUS_PROCESSING,
 )
@@ -67,12 +73,26 @@ from lx_dtypes.models.contracts.anonymization_overview import (
 logger = logging.getLogger(__name__)
 PERMS = DEBUG_PERMISSIONS  # shorten
 
+# Attempts still doing or awaiting work stay visible so operators can act on them.
+_ACTIVE_UPLOAD_JOB_STATUSES = frozenset(
+    {
+        UploadJob.Status.PENDING,
+        UploadJob.Status.PROCESSING,
+        UploadJob.Status.RETRYING,
+        UploadJob.Status.CANCEL_REQUESTED,
+    }
+)
+# Finished attempts are history once another row represents the same source.
+_FINISHED_UPLOAD_JOB_STATUSES = frozenset(
+    {
+        UploadJob.Status.ERROR,
+        UploadJob.Status.LOST,
+        UploadJob.Status.CANCELLED,
+    }
+)
+
 
 # ---------- overview ----------------------------------------------------
-class NoPagination(PageNumberPagination):
-    page_size = None
-
-
 class _OverviewItem(Protocol):
     sensitive_meta_id: int | None
     center_id: int | None
@@ -98,6 +118,10 @@ def _overview_content_hash(item: VideoFile | RawPdfFile) -> str:
     return getattr(item, "pdf_hash", "") or ""
 
 
+def _overview_media_type(item: VideoFile | RawPdfFile) -> str:
+    return "video" if isinstance(item, VideoFile) else "pdf"
+
+
 def _attach_overview_upload_jobs(
     items: list[VideoFile | RawPdfFile],
 ) -> None:
@@ -117,7 +141,9 @@ def _attach_overview_upload_jobs(
     if sensitive_meta_ids:
         filters |= Q(sensitive_meta_id__in=sensitive_meta_ids)
     if content_hashes:
-        filters |= Q(content_hash__in=content_hashes)
+        filters |= Q(content_hash__in=content_hashes) | Q(
+            processing_stack__source_sha256__in=content_hashes
+        )
 
     upload_jobs = (
         UploadJob.objects.select_related("source_center")
@@ -126,34 +152,43 @@ def _attach_overview_upload_jobs(
         .order_by("-updated_at", "-created_at")
     )
 
-    by_sensitive_meta_id: dict[tuple[int | None, int], UploadJob] = {}
-    by_content_hash: dict[tuple[int | None, str], UploadJob] = {}
+    by_sensitive_meta_id: dict[tuple[int | None, str, int], list[UploadJob]] = {}
+    by_content_hash: dict[tuple[int | None, str, str], UploadJob] = {}
     for upload_job in upload_jobs:
         upload_job_like = cast(_OverviewUploadJobLike, upload_job)
         center_id = upload_job_like.source_center_id
-        if (
-            upload_job_like.sensitive_meta_id
-            and (center_id, upload_job_like.sensitive_meta_id)
-            not in by_sensitive_meta_id
-        ):
-            by_sensitive_meta_id[(center_id, upload_job_like.sensitive_meta_id)] = (
-                upload_job
-            )
-        if (
-            upload_job_like.content_hash
-            and (center_id, upload_job_like.content_hash) not in by_content_hash
-        ):
-            by_content_hash[(center_id, upload_job_like.content_hash)] = upload_job
+        content_hash = import_source_hash(upload_job)
+        media_type = overview_upload_job_media_type(upload_job.content_type)
+        if upload_job_like.sensitive_meta_id:
+            by_sensitive_meta_id.setdefault(
+                (center_id, media_type, upload_job_like.sensitive_meta_id), []
+            ).append(upload_job)
+        if content_hash:
+            identity = (center_id, media_type, content_hash)
+            attached = by_content_hash.get(identity)
+            # Jobs arrive newest first; an active attempt outranks a newer finished one.
+            if attached is None or (
+                upload_job.status in _ACTIVE_UPLOAD_JOB_STATUSES
+                and attached.status not in _ACTIVE_UPLOAD_JOB_STATUSES
+            ):
+                by_content_hash[identity] = upload_job
 
     for item in items:
         overview_item = cast(_OverviewItem, item)
         sensitive_meta_id = overview_item.sensitive_meta_id
         content_hash = _overview_content_hash(item)
-        upload_job = (
-            by_sensitive_meta_id.get((overview_item.center_id, sensitive_meta_id))
-            if sensitive_meta_id is not None
-            else None
-        ) or by_content_hash.get((overview_item.center_id, content_hash))
+        media_type = _overview_media_type(item)
+        upload_job = by_content_hash.get(
+            (overview_item.center_id, media_type, content_hash)
+        )
+        # Patient/examination metadata alone does not identify a source document.
+        # Only legacy media without a digest may use one unambiguous typed job.
+        if not content_hash and sensitive_meta_id is not None:
+            candidates = by_sensitive_meta_id.get(
+                (overview_item.center_id, media_type, sensitive_meta_id), []
+            )
+            if len(candidates) == 1:
+                upload_job = candidates[0]
         carrier = cast(_OverviewUploadJobCarrier, item)
         setattr(carrier, "_overview_upload_job", upload_job)
 
@@ -199,6 +234,11 @@ class AnonymizationOverviewView(APIView):
                 allowed_center_ids=allowed_center_ids,
             )
         )
+        # One Rust-owned phase per row so clients never keep their own status lists.
+        for row in serializer_data:
+            row["anonymization_phase"] = anonymization_phase(
+                str(row["anonymization_status"])
+            ).value
         serializer_data.sort(
             key=lambda item: str(item.get("created_at") or ""),
             reverse=True,
@@ -229,13 +269,8 @@ class AnonymizationOverviewView(APIView):
             UploadJob.objects.select_related("source_center")
             .filter(
                 status__in=(
-                    UploadJob.Status.PENDING,
-                    UploadJob.Status.PROCESSING,
-                    UploadJob.Status.RETRYING,
-                    UploadJob.Status.ERROR,
-                    UploadJob.Status.LOST,
-                    UploadJob.Status.CANCEL_REQUESTED,
-                    UploadJob.Status.CANCELLED,
+                    *_ACTIVE_UPLOAD_JOB_STATUSES,
+                    *_FINISHED_UPLOAD_JOB_STATUSES,
                 )
             )
             .exclude(pk__in=attached_job_ids)
@@ -245,14 +280,42 @@ class AnonymizationOverviewView(APIView):
         if allowed_center_ids is not None:
             retry_jobs = retry_jobs.filter(source_center_id__in=allowed_center_ids)
 
+        def _job_identity(job: UploadJob) -> tuple[int | None, str, str]:
+            return (
+                cast(_OverviewUploadJobLike, job).source_center_id,
+                overview_upload_job_media_type(job.content_type),
+                import_source_hash(job),
+            )
+
+        # One source gets one row. A finished attempt only needs its own row while
+        # nothing else represents that source; jobs without a digest cannot be matched.
+        jobs = list(retry_jobs)
+        represented = {
+            (item.center_id, _overview_media_type(item), _overview_content_hash(item))
+            for item in items
+            if _overview_content_hash(item)
+        }
+        represented.update(
+            _job_identity(job)
+            for job in jobs
+            if job.status in _ACTIVE_UPLOAD_JOB_STATUSES and import_source_hash(job)
+        )
         used_ids = {int(item.pk) for item in items}
         rows: list[dict[str, object]] = []
-        for upload_job in retry_jobs:
+        for upload_job in jobs:
+            if (
+                upload_job.status in _FINISHED_UPLOAD_JOB_STATUSES
+                and import_source_hash(upload_job)
+            ):
+                identity = _job_identity(upload_job)
+                if identity in represented:
+                    continue
+                represented.add(identity)
             synthetic_id = -(upload_job.id.int % 2_000_000_000 + 1)
             while synthetic_id in used_ids:
                 synthetic_id -= 1
             used_ids.add(synthetic_id)
-            media_type = "pdf" if "pdf" in upload_job.content_type.lower() else "video"
+            media_type = overview_upload_job_media_type(upload_job.content_type)
             filename = safe_upload_job_original_filename(cast(Any, upload_job))
             rows.append(
                 {
@@ -268,14 +331,13 @@ class AnonymizationOverviewView(APIView):
                         else AnonymizationState.PROCESSING_ANONYMIZING
                     ),
                     "annotation_status": "",
+                    "ai_prediction_status": None,
                     "created_at": upload_job.created_at,
                     "sensitive_meta_id": None,
                     "file_size": 0,
                     "upload_job": overview_upload_job_retry_summary(upload_job),
                     "hls_materializations": [],
                     "document_type": None,
-                    "patient_hash_display": None,
-                    "examination_hash_display": None,
                     "pseudo_patient_id": None,
                     "pseudo_examination_id": None,
                     "import_only": True,
@@ -468,12 +530,53 @@ class UploadJobRetryView(APIView):
         ):
             raise PermissionDenied("Upload job is outside the assigned center scope.")
 
+        from endoreg_db.services.imports.checkpoints import checkpoint_retry_media
+        from endoreg_db.services.imports.processing import prioritize_checkpoint
+        from pydantic import (
+            BaseModel,
+            ConfigDict,
+            StrictBool,
+            ValidationError as PayloadValidationError,
+        )
+
+        class PriorityRequest(BaseModel):
+            model_config = ConfigDict(extra="forbid")
+            prioritize: StrictBool
+
+        if request.data:
+            try:
+                priority_request = PriorityRequest.model_validate(request.data)
+            except PayloadValidationError:
+                return Response({"detail": "Expected prioritize=true."}, status=400)
+            if not priority_request.prioritize or not prioritize_checkpoint(upload_job):
+                return Response(
+                    {"detail": "This import cannot currently be prioritized."},
+                    status=409,
+                )
+            return Response(
+                {"detail": "Import priority recorded.", "priority": True}, status=202
+            )
+
         if (
             upload_job.status == UploadJob.Status.RETRYING.value
             and upload_job.retryable
         ):
             upload_job.next_retry_at = timezone.now()
             upload_job.save(update_fields=["next_retry_at", "updated_at"])
+        elif checkpoint_retry_media(upload_job) is not None:
+            from endoreg_db.services.hub.upload_job_state_machine import (
+                admit_upload_job_recovery,
+            )
+
+            if not admit_upload_job_recovery(
+                upload_job,
+                "Operator requested recovery from a completed import checkpoint.",
+                delay_seconds=1,
+            ):
+                return Response(
+                    {"detail": "The retry limit has been exhausted."},
+                    status=status.HTTP_409_CONFLICT,
+                )
         elif is_retryable_storage_failure(upload_job):
             if not schedule_storage_retry(
                 upload_job,
@@ -501,6 +604,33 @@ class UploadJobRetryView(APIView):
 
 
 # ---------- status with polling protection ------------------------------
+def _requested_anonymization_kind(request: Request, file_id: int) -> str | None:
+    payload = cast(object, request.data)
+    if not isinstance(payload, Mapping):
+        raise ValidationError({"media_type": "Expected a request object."})
+    request_payload = cast(Mapping[str, object], payload)
+    hints = [request.query_params.get("kind"), request_payload.get("media_type")]
+    kinds: set[str] = set()
+    for hint in hints:
+        if hint is None:
+            continue
+        if not isinstance(hint, str) or hint not in ("pdf", "report", "video"):
+            raise ValidationError({"media_type": "Expected video, pdf or report."})
+        kinds.add("report" if hint == "pdf" else hint)
+    if len(kinds) > 1:
+        raise ValidationError({"media_type": "Conflicting media identities."})
+    if kinds:
+        return kinds.pop()
+    if (
+        VideoFile.objects.filter(pk=file_id).exists()
+        and RawPdfFile.objects.filter(pk=file_id).exists()
+    ):
+        raise ValidationError(
+            {"media_type": "This identifier is ambiguous; specify video or pdf."}
+        )
+    return None
+
+
 @api_view(["GET"])
 @permission_classes(PERMS)
 def anonymization_status(request: Request, file_id: int) -> Response:
@@ -508,7 +638,8 @@ def anonymization_status(request: Request, file_id: int) -> Response:
     Get anonymization status with polling rate limiting.
     """
     # Ermittele erst den echten Typ und Status
-    info = AnonymizationService.get_status(file_id)
+    kind = _requested_anonymization_kind(request, file_id)
+    info = AnonymizationService.get_status(file_id, kind=kind)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -532,22 +663,17 @@ def anonymization_status(request: Request, file_id: int) -> Response:
         or "not_started"
     )
 
-    # processing_locked als Ableitung des Status interpretieren
-    processing_statuses = {
-        "processing_anonymization",
-        "extracting_frames",
-        "predicting_segments",
-    }
-    processing_locked_derived = status_val in processing_statuses
-
     return Response(
         {
             "file_id": file_id,
             "file_type": file_type,
             "anonymization_status": status_val,
+            "anonymization_phase": anonymization_phase(status_val).value,
             "integrity_status": status_info.get("integrity_status", ""),
             "integrity_error": status_info.get("integrity_error", ""),
-            "processing_locked": processing_locked_derived,
+            "processing_locked": PollingCoordinator.is_processing_locked(
+                file_id, file_type
+            ),
         }
     )
 
@@ -559,8 +685,19 @@ def start_anonymization(request: Request, file_id: int) -> Response:
     """
     Start anonymization with processing lock to prevent duplicates.
     """
+    if not transaction.get_autocommit():
+        return Response(
+            {
+                "detail": (
+                    "Synchronous anonymization requires autocommit so its start-request "
+                    "audit is durable before processing begins."
+                )
+            },
+            status=status.HTTP_503_SERVICE_UNAVAILABLE,
+        )
     # First check what type of file this is
-    info = AnonymizationService.get_status(file_id)
+    kind = _requested_anonymization_kind(request, file_id)
+    info = AnonymizationService.get_status(file_id, kind=kind)
     if not info:
         return Response({"detail": "File not found"}, status=status.HTTP_404_NOT_FOUND)
 
@@ -595,10 +732,21 @@ def start_anonymization(request: Request, file_id: int) -> Response:
                 status=status.HTTP_409_CONFLICT,
             )
 
+        # Direct import requires autocommit for independently visible ownership.
+        # Audit the request before any irreversible processing can begin.
+        record_operation(
+            request,
+            action=ACTION_ANONYMIZATION_START_REQUESTED,
+            resource_type=file_type,
+            resource_id=file_id,
+            status_before=status_val,
+            status_after=status_val,
+        )
+
         # Proceed with starting anonymization
         service = AnonymizationService()
-        kind = service.start(file_id)
-        if not kind:
+        started_kind = service.start(file_id, kind=file_type)
+        if not started_kind:
             return Response(
                 {"detail": "Failed to start anonymization"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -606,7 +754,7 @@ def start_anonymization(request: Request, file_id: int) -> Response:
 
         # Re-read status AFTER starting
         try:
-            AnonymizationService.get_status(file_id)
+            AnonymizationService.get_status(file_id, kind=file_type)
         except Exception:
             logger.exception(
                 "Failed to refresh anonymization status for file %s", file_id
@@ -616,7 +764,7 @@ def start_anonymization(request: Request, file_id: int) -> Response:
         record_operation(
             request,
             action=ACTION_ANONYMIZATION_START,
-            resource_type=kind,  # 'video' or 'pdf' as returned by service.start
+            resource_type=started_kind,
             resource_id=file_id,
             status_before=STATUS_NOT_STARTED,
             status_after=STATUS_PROCESSING,
@@ -627,9 +775,9 @@ def start_anonymization(request: Request, file_id: int) -> Response:
 
         return Response(
             {
-                "detail": f"Anonymization started for {kind} file",
+                "detail": f"Anonymization started for {started_kind} file",
                 "file_id": file_id,
-                "file_type": kind,
+                "file_type": started_kind,
                 "processing_locked": True,
             }
         )
@@ -665,7 +813,7 @@ def anonymization_current(request: Request, file_id: int) -> Response:
         pass
 
     except (ValueError, TypeError, AttributeError) as e:
-        logger.error(f"Error in set_current_for_validation: {e}")
+        logger.exception(f"Error in set_current_for_validation: {e}")
         return Response({"status": "error", "message": str(e)}, status=500)
 
     return Response({"status": "error", "message": "File not found"}, status=404)
@@ -683,7 +831,7 @@ def polling_coordinator_info(request: Request) -> Response:
         info = PollingCoordinator.get_processing_locks_info()
         return Response(info)
     except Exception as e:
-        logger.error(f"Error getting polling coordinator info: {e}")
+        logger.exception(f"Error getting polling coordinator info: {e}")
         return Response(
             {"error": "Failed to get coordinator info"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -709,7 +857,7 @@ def clear_processing_locks(request: Request) -> Response:
             }
         )
     except Exception as e:
-        logger.error(f"Error clearing processing locks: {e}")
+        logger.exception(f"Error clearing processing locks: {e}")
         return Response(
             {"error": "Failed to clear locks"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

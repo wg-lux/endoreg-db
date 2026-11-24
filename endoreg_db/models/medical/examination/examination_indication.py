@@ -51,6 +51,10 @@ class ExaminationIndication(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
     classifications: "models.ManyToManyField[ExaminationIndicationClassification, ExaminationIndicationClassification]" = models.ManyToManyField(
@@ -141,6 +145,10 @@ class ExaminationIndicationClassification(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     choices: "models.ManyToManyField[ExaminationIndicationClassificationChoice, ExaminationIndicationClassificationChoice]" = models.ManyToManyField(
         "ExaminationIndicationClassificationChoice",
@@ -203,6 +211,10 @@ class ExaminationIndicationClassificationChoice(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
     numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 

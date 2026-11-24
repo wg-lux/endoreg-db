@@ -13,8 +13,8 @@ from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
-from endoreg_db.services.report_patient_context import update_report_patient_context
-from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.services.reports.patient_context import update_report_patient_context
+from endoreg_db.services.reports.persistence import save_report_submission
 
 pytestmark = pytest.mark.django_db
 

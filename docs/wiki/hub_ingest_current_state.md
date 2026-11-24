@@ -9,7 +9,31 @@ It is a current-state engineering and operator note. It describes the code that
 exists now, not the full target architecture from
 `endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`.
 
-## Short Answer
+## Ingest code navigation
+
+Start with the [hub module map](../../endoreg_db/services/hub/structure.yml).
+Requirements and evidence for this split live in
+[ImportPipelineRobustness.yml](../../feature-tracking/ImportPipelineRobustness.yml),
+criterion `ingest_helper_modules`.
+
+- `ingest.py` owns upload and watcher entrypoints, center resolution, dispatch,
+  publication transactions and cleanup sequencing. The package-level exports in
+  `hub/__init__.py` continue to resolve these entrypoints.
+- `ingest_provenance.py` owns the existing `UploadProvenance` type and provenance
+  helpers, including active-learning selection recording.
+- `preanonymized_metadata.py` owns sensitive-metadata normalization and external
+  patient/examination identity linking. Its caller must hold the publication
+  transaction; the identity helper retains its own atomic transaction and center
+  row lock for direct callers.
+
+Historical helper imports from `ingest.py` remain explicit re-exports of the
+same objects, with unchanged signatures. New helper consumers can import their
+owning module directly. The extracted modules do not import the orchestrator.
+Patch dependencies in their owning module when testing helper internals; the
+orchestrator still resolves its helper calls through its historical names.
+The module map lists focused regression tests for each responsibility.
+
+## Entry boundaries
 
 The repository already supports a hub-aware ingest model with three entry
 boundaries:
@@ -42,7 +66,7 @@ Current role-dependent behavior:
 - `central_hub` enables hub-mode API upload policy
 - `central_hub` exposes `/api/media/hub/transfers/`
 - `standalone` and `site_node` keep the transfer endpoints disabled with `404`
-- production `central_hub` settings require a non-SQLite database
+
 - production `central_hub` settings also require secure transport plus mTLS
   configuration for transfer traffic
 
@@ -379,7 +403,7 @@ Relevant files:
 - `endoreg_db/models/hub/transfer_job.py`
 
 Upload source deletion runs through the typed Django-storage wrapper in
-`endoreg_db.utils.file_operations` and emits both structured file-operation and
+`endoreg_db.utils.filesystem.file_operations` and emits both structured file-operation and
 hub audit events. The lx-annotate administration view exposes recent outbound
 transfers with local/remote correlation and cleanup state.
 

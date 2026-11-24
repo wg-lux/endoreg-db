@@ -34,7 +34,7 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):
     """
     Retrieve and update PatientExamination instances.
     GET /api/examinations/{id}/
@@ -51,7 +51,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
             serializer = PatientExaminationSerializer(instance)
             return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
         except Exception as e:
-            logger.error(f"Error retrieving examination: {str(e)}")
+            logger.exception(f"Error retrieving examination: {str(e)}")
             return Response(
                 {"error": "Failed to retrieve examination"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -62,7 +62,10 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
         try:
             instance = self.get_object()
             serializer = PatientExaminationSerializer(
-                instance, data=request.data, partial=True
+                instance,
+                data=request.data,
+                partial=True,
+                context=self.get_serializer_context(),
             )
 
             if serializer.is_valid():
@@ -87,7 +90,7 @@ class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamina
                 )
 
         except Exception as e:
-            logger.error(f"Error updating examination: {str(e)}")
+            logger.exception(f"Error updating examination: {str(e)}")
             return Response(
                 {"error": "Failed to update examination", "message": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

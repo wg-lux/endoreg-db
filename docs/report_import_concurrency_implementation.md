@@ -1,13 +1,25 @@
 # Implementation Guide for Stable Concurrent Report Imports
 
-This guide defines the target architecture for PDF report imports in
-`endoreg-db` and the call boundary to `lx-anonymizer`. It is a technical
-contract, not a progress checklist. Scope, acceptance criteria, and production
+This guide describes the current PDF/TXT import boundaries and the stricter
+snapshot design target. The sections below distinguish implemented behavior
+from that target. Scope, acceptance criteria, and production
 approval are tracked only in
 [`feature-tracking/Reporting.yml`](../feature-tracking/Reporting.yml).
 
 The corresponding library-side contract lives in the `lx-anonymizer`
 repository at `docs/report_import_concurrency_contract.md`.
+
+## Current source map
+
+| File | Responsibility | Diagnose here when |
+| --- | --- | --- |
+| [`report_import_service.py`](../endoreg_db/import_files/report_import_service.py) | PDF/TXT intake, snapshot, deduplication, fenced preparation and publication | An import stalls or a retry unexpectedly prepares again. |
+| [`report_anonymization.py`](../endoreg_db/import_files/processing/report_processing/report_anonymization.py) | Typed library call, extraction receipt and staged-output validation | Extraction or redaction fails before publication. |
+| [`import_fencing.py`](../endoreg_db/services/reports/import_fencing.py) | Content ownership, heartbeat and mutation guards | An owner expires or concurrent attempts contend. |
+| [`import_state_machine.py`](../endoreg_db/services/reports/import_state_machine.py) and [`processing.py`](../endoreg_db/services/imports/processing.py) | Adapt and persist Rust-authorized transitions | State or stage admission is rejected. |
+| [`state_management.py`](../endoreg_db/import_files/file_storage/state_management.py) | Commit artifacts, state and history under the current owner | Files exist but completion is not established. |
+
+A preparation receipt or historical success row is not current publication proof.
 
 ## Goal and scope
 
@@ -16,9 +28,10 @@ workers overlap, a source changes, a job is retried, or identical content is
 uploaded more than once. It may publish at most one canonical anonymized report
 and must never mark a partially written artifact as successful.
 
-Native Rust functions should perform large local file operations outside the
-Python Global Interpreter Lock. Rust does not own domain state transitions,
-database transactions, or publication policy.
+Rust owns lifecycle reduction and import-stage ordering. Python persists the
+validated transitions, holds database fences and performs publication side effects.
+Native file operations can release the Python Global Interpreter Lock; that does
+not make database transactions or publication native operations.
 
 This guide covers source claiming, sensitive working snapshots, content-based
 deduplication, retries, the typed `lx-anonymizer` boundary, PDF validation and
@@ -80,36 +93,32 @@ source-path claim
 
 A later stage must never acquire an earlier lock in reverse order.
 
+An explicit retry clears readiness and enters processing under the current
+content fence. This reset retains source snapshots, staged candidates and prior
+processing history; it does not invoke terminal failure cleanup. Terminal failure
+finalization runs only after an actual owned attempt error. Normal successful
+publication and cleanup still apply to the new attempt.
+
 ## Native snapshot contract
 
-The Rust implementation belongs in `rust/endoreg_rust_backend`. Python calls it
-through a typed filesystem wrapper; import services do not call the PyO3 module
-directly for mutations.
+The current call path is `storage.create_snapshot` →
+`utils.file_operations.atomic_report_source_snapshot`. It returns the frozen
+Pydantic `schemas.import_file.SourceSnapshot`: `contract_version`, `path`,
+`size_bytes`, `modified_time_ns` and `sha256`.
 
-A versioned result type contains at least:
+The wrapper validates a regular source and free space, hashes the source, copies
+it in bounded chunks, then compares metadata, size and the copied content hash.
+It publishes through a no-overwrite hard link, removes temporary output and logs
+structured success or failure. The default snapshot mode is `0600`. Errors
+propagate; failed temporary files are removed.
 
-```python
-@dataclass(frozen=True)
-class ReportSourceSnapshot:
-    contract_version: Literal["report_source_snapshot_v1"]
-    staging_path: Path
-    size_bytes: int
-    modified_time_ns: int
-    sha256: str
-```
-
-The native operation, conceptually
-`stable_snapshot_to_path(source, temporary_target, chunk_size)`, must open the
-source exactly once; reject symbolic links and non-regular files; compare
-device, inode, size, and nanosecond modification time before and after reading;
-verify that the path still identifies the same file; copy and calculate SHA-256
-in one pass while releasing the Python Global Interpreter Lock; reject short
-writes and premature end-of-file; synchronize file and directory; publish only
-by atomic rename within one filesystem; and clean up unpublished temporary
-targets on error. It never mutates database or canonical application state.
-
-The Python boundary maps Rust failures to concrete typed errors. Broad
-`RuntimeError` handling or string inspection is not the durable contract.
+This implementation hashes and copies in separate passes. It is **not** the
+single-open, native copy-and-hash operation previously proposed in this guide.
+The design target additionally requires one open source descriptor, device/inode
+and timestamp checks before and after reading, path-identity verification,
+full synchronization and equivalent typed errors. Do not infer that those target
+guarantees were exercised merely from the `report_source_snapshot_v1` result tag
+or the `atomic_copy_rust_hash` log label.
 
 ## Locks, leases, and fencing
 
@@ -146,22 +155,17 @@ owns canonical publication.
 
 ## Python fallback and production profile
 
-The Python fallback must be explicit, enforce the same postconditions as the
-native implementation, emit a structured event and metric, and produce the same
-hashes and error classes in parity tests.
+The snapshot path above uses the Python filesystem wrapper and the shared hash
+backend. There is no selectable native-versus-Python snapshot mode in that wrapper.
+Earlier proposals for a native snapshot capability gate and development-only
+fallback are not an operational configuration instruction.
 
-In the target production profile, `report_source_snapshot_v1` is a required
-native capability and its absence fails readiness. A development profile may
-use the fallback but cannot claim to have tested native concurrency. The native
-module exposes a machine-readable capability function, for example:
-
-```text
-native_capabilities()
-  -> [("report_source_snapshot_v1", contract_version, implementation_version)]
-```
-
-This remains target behavior until the corresponding criterion in
-`Reporting.yml` has verified evidence; this guide is not deployment evidence.
+Lifecycle reduction and the durable import stack require their native
+capabilities; they do not gain a Python fallback from the snapshot implementation.
+Check the installed extension through `endoreg_db.utils.rust_backend.native_capabilities`
+and deploy compatible package versions. Readiness and target requirements remain
+in [Reporting.yml](../feature-tracking/Reporting.yml) and
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml).
 
 ## Failure and cleanup matrix
 
@@ -174,15 +178,15 @@ This remains target behavior until the corresponding criterion in
 | Result PDF is invalid | Quarantine or clean the attempt according to policy; never mark success |
 | Database fails after file publication | Detect an unreferenced artifact; reconciliation attaches it or quarantines fail-closed |
 | Worker loses its lease | Reject every subsequent state mutation and publication |
-| Native capability is missing | Reject production startup; only an explicit development profile may fall back |
+| Required lifecycle or import-stack capability is missing | Reject the operation; no Python lifecycle fallback |
 
 Cleanup operates only below a resolved approved root and never removes the only
 validated canonical result.
 
 ## Concurrency, observability, and verification
 
-File copies and hashing run natively without the Python Global Interpreter
-Lock. Database transactions remain short and exclude optical character
+Inspect the actual filesystem/hash call path before attributing time to native
+work; the current report snapshot copies through Python. Database transactions remain short and exclude optical character
 recognition, language models, and full-file copies. Per-host anonymization and
 nested native or machine-learning thread pools have explicit limits. Queue
 backpressure is preferred to an unbounded local executor. Cancellation
@@ -211,9 +215,123 @@ and post-reconciliation cleanup.
 Continuous Integration builds from a clean checkout, runs Rust tests,
 regenerates stubs with an empty diff, builds and installs the wheel in a fresh
 environment, invokes the capability and snapshot functions from that wheel,
-tests Python fallback parity, and exercises the oldest supported and current
+tests any explicitly supported fallback for parity, and exercises the oldest supported and current
 `lx-anonymizer` versions. An unversioned local shared object is not evidence.
 
 Implementation order and readiness remain in `Reporting.yml`. Every stage must
 remain importable, leave existing stream endpoints unchanged, and retain a safe
 rollback to the previous fully validated state.
+
+## Shared lease mechanisms and report job integration
+
+The local implementation shares primitives with the upload job adapter in
+`services/import_lease.py`: typed database time, owner/token/expiry checks,
+heartbeat, and error propagation. Domain state transitions remain in their
+respective services. `ImportExecutionFence` from `services/import_execution.py`
+is the shared contract for attempts, synchronous checks, and transactional
+mutation. The report service binds its content owner to it; video requires the
+same contract at the processing entry point and receives it from the upload or
+transfer adapter. The report fence protects a content hash even without an
+UploadJob; the upload lease protects a job with queue handoff, cancellation,
+and source cleanup. Combining the ownership ledgers would lose these distinct
+protection scopes.
+
+`ReportImportLifecycle` connects report jobs to the internally acquired content
+lease. The service calls `started` inside the mutation guard, `succeeded` inside
+the completion guard, and `failed` only while it still owns failure finalization.
+Reimport removes old sensitive metadata only in the `started` callback. Removal
+errors propagate and roll back the transaction. Report and job success are
+written together under the content fence; even a reused result requires a
+verified content fence for job completion. Preliminary errors must not change
+another owner's report or its linked jobs.
+
+Detected database outages are not reclassified as proof of lost ownership. A
+background error becomes visible at the next synchronous guard. The heartbeat
+connection belongs exclusively to its thread; the caller must make the lease
+visible through autocommit before starting that thread.
+
+The current file entry point accepts PDF and TXT. TXT is converted completely
+and reproducibly into PDF. CSV, FHIR exports, and structured LXDM reports require
+their own validated adapters and must not be passed to the PDF/TXT entry point
+solely because their domain role is a report. Shared overview:
+[state management](endoreg_db_state_management.md).
+Acceptance and evidence for these boundaries:
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml)
+and [LongRunningServiceStateMachines.yml](../feature-tracking/LongRunningServiceStateMachines.yml).
+
+
+## Extraction evidence and native lifecycle authority
+
+The `report_anonymization_v2` boundary requires explicit extraction evidence.
+`findings` counts meaningful extracted metadata entries, not clinical findings;
+`empty` means a configured provider returned a validated empty result. `fallback`
+means the explicitly permitted deterministic spaCy/regex extraction completed and
+validated, possibly without metadata. Provider errors cannot masquerade as empty
+results. An attempted provider followed by fallback retains a bounded failure code.
+
+The host revalidates the complete result before metadata mutation, checks requested
+provider policy, and stores a content-free `raw_meta.report_extraction_receipt` under
+the existing ownership guard. It retains unrelated metadata. Its attempt ID is the
+canonical content-fence owner; its staged artifact hash describes the validated
+plaintext staging artifact, not encrypted storage bytes or publication evidence.
+A receipt is an observation and may exist before publication. It does not establish
+success. Artifact parsing, hash checks, ownership checks and final publication
+remain independently required. Rust's existing lifecycle reducer exclusively
+authorizes success, failure, lost ownership and retry of `ReportImportAttempt`.
+
+Deploy matching lx-data-models, lx-anonymizer and endoreg-db builds together; older
+wire contracts are rejected and no Python lifecycle fallback is introduced. No
+historical extraction receipt is synthesized. Existing successful-history reuse
+remains a legacy compatibility path, and previously completed job projections do
+not establish new extraction evidence. Retrospective reconciliation and packaged
+worker failure injection remain separate readiness requirements in
+`report_extraction_outcome_rust_authority` in
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml).
+
+A validated empty provider response may continue the configured local extraction
+chain. In that case fallback records `provider_attempted=true` without a failure
+code; this distinguishes normal empty-response fallback from provider failure.
+
+
+## Current completion projections and preserved history
+
+New report jobs retain an immutable content hash, fencing token and owner reference
+inside their validated result. Fresh processing also binds the receipt owner and
+staged artifact digest; completed-record reuse is explicitly recorded as `reused`.
+The API adds `completion_evidence`: its `canonical_status` is read from the current
+persisted Rust-authorized attempt only when its fencing token matches the job.
+The existing top-level job `status` remains historical for compatibility. Consumers
+must not interpret historical `status=success` as proof of current completion.
+No frontend adoption of the additive projection is assumed by this backend change.
+
+A historical job without an attempt reference is `legacy_unverified`; a reference
+to an older epoch is `superseded`. Neither claims current canonical success. A new
+job that explicitly reuses validated historical content can complete under a new
+canonical attempt while reporting extraction as `legacy_unverified`. This does
+not manufacture a receipt. Fresh processing without an owner-bound receipt fails
+inside the finalization transaction. Extraction outcomes/counts describe metadata
+extraction, not clinical findings or clinical approval.
+
+A duplicate task delivery verifies the committed canonical reference and report
+integrity before returning success. Unverified historical or superseded deliveries
+raise a typed nonretryable refusal without changing the historical job. Admission
+is checked under the canonical attempt lock before expiry handling and again
+before a new claim, so a stale queued duplicate cannot advance the winning epoch.
+The same native lifecycle reducer continues to authorize every persisted transition.
+Read-only API evidence is a conservative observation, not a durable concurrency
+snapshot. Task completion takes the canonical row lock while verifying its evidence.
+
+The retained-report integrity policy remains unchanged: `require_artifact=False`
+allows approved processed-file cleanup when retained anonymized text/identity is
+usable. When an artifact exists its parser and persisted plaintext digest are still
+checked; the job's committed digest and extraction staging digest must agree.
+
+## Local candidate packages
+
+The coordinated unpublished candidates are lx-dtypes `0.5.4.dev1`, lx-anonymizer
+`1.0.9.dev1`, and endoreg-db `1.5.8.dev1`. Endoreg-db retains an exact anonymizer pin
+and requires the new lx-dtypes minimum. There is no published-registry claim and no
+production activation. Existing operator lockfile edits are preserved; ordinary
+registry lock synchronization requires the prereleases to become available or a
+reviewed private wheel source. Local tests install the exact staged wheel artifacts
+and record their hashes instead of changing the production dependency source.

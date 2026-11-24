@@ -312,7 +312,6 @@ class Command(BaseCommand):
             required_tables.append("django_cache_table")
 
         cursor = connection.cursor()
-        cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
         existing_tables = [row[0] for row in cursor.fetchall()]
 
         missing_tables = [

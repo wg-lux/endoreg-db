@@ -7,13 +7,13 @@ from django.conf import settings
 from rest_framework import serializers
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     post_validation_rebuild_summary,
     resolve_segment_annotation_status,
     segment_annotations_are_final,
 )
 from endoreg_db.serializers.video.video_file_brief import VideoBriefSerializer
-from ...utils.calc_duration_seconds import _calc_duration_vf
+from ...utils.calc_duration_seconds import calc_duration_vf
 
 
 class _VideoStateLike(Protocol):
@@ -102,7 +102,7 @@ class VideoDetailSerializer(VideoBriefSerializer):
         Returns:
             float or None: Duration of the video in seconds, or None if unavailable.
         """
-        return obj.duration or _calc_duration_vf(obj)
+        return obj.duration or calc_duration_vf(obj)
 
     def get_segment_annotations_validated(self, obj: VideoFile) -> bool:
         return bool(segment_annotations_are_final(obj))

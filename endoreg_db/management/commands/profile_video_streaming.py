@@ -27,7 +27,10 @@ from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.hls_media import HLS_CONTENT_KEY_BYTES, hls_playlist_path
+from endoreg_db.services.streaming.hls_media import (
+    HLS_CONTENT_KEY_BYTES,
+    hls_playlist_path,
+)
 from endoreg_db.services.video_files import (
     VideoArtifactKind,
     get_video_stream_relative_path,

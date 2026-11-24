@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import uuid as uuid_lib
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Callable, TypedDict, Unpack, cast
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
+from collections.abc import Callable
 
 from django.core.exceptions import ValidationError
 from django.core.validators import FileExtensionValidator
@@ -80,11 +81,13 @@ class RawPdfFile(models.Model):
         processed_file: ReportArtifactFieldFile
     else:
         file: models.FileField = models.FileField(
+            max_length=500,
             upload_to=get_runtime_paths().sensitive_report.name,
             storage=LazyEncryptedStorage(),
             validators=[FileExtensionValidator(allowed_extensions=["pdf"])],
         )
         processed_file: models.FileField = models.FileField(
+            max_length=500,
             upload_to=get_runtime_paths().anonym_report.name,
             storage=LazyEncryptedStorage(),
             validators=[FileExtensionValidator(allowed_extensions=["pdf"])],

@@ -1,8 +1,6 @@
-# pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportMissingTypeStubs=false
-from typing import cast, TYPE_CHECKING
+# pyright: reportUnusedFunction=false, reportMissingTypeStubs=false
+from typing import TYPE_CHECKING
 
-from endoreg_db.serializers.misc.translatable_field_mix_in import TranslatableFieldMixin
-from endoreg_db.serializers.misc.translatable_field_mix_in import _TranslatableFieldLike
 from endoreg_db.models.medical.patient.patient_finding_intervention import (
     PatientFindingIntervention,
 )
@@ -16,24 +14,30 @@ else:
 
 
 class PatientFindingInterventionSerializer(
-    serializers.ModelSerializer[PatientFindingIntervention], TranslatableFieldMixin
+    serializers.ModelSerializer[PatientFindingIntervention]
 ):
-    """Optimierter Serializer für PatientFindingIntervention"""
+    """Optimierter Serializer für PatientFindingIntervention.
+
+    ``intervention_name`` is the identifier; ``intervention_name_de`` the German
+    display name, or null when the catalogue carries none.
+    """
 
     intervention_name = serializers.SerializerMethodField()
+    intervention_name_de = serializers.SerializerMethodField()
 
     class Meta(_ModelSerializerMeta):
         model = PatientFindingIntervention  # pyright: ignore[reportAssignmentType]
-        fields = ["id", "intervention", "intervention_name", "state"]
+        fields = [
+            "id",
+            "intervention",
+            "intervention_name",
+            "intervention_name_de",
+            "state",
+        ]
 
     def get_intervention_name(self, obj: PatientFindingIntervention) -> str:
-        """
-        Return the localized name of the intervention associated with the given object.
+        return str(getattr(obj.intervention, "name", "") or "")
 
-        Parameters:
-            obj: The object containing the intervention to be localized.
-
-        Returns:
-            str: The localized name of the intervention.
-        """
-        return self.get_localized_name(cast(_TranslatableFieldLike, obj.intervention))
+    def get_intervention_name_de(self, obj: PatientFindingIntervention) -> str | None:
+        name_de = getattr(obj.intervention, "name_de", None)
+        return name_de if isinstance(name_de, str) and name_de.strip() else None

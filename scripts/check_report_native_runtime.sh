@@ -18,11 +18,8 @@ for linker_flag in $(python3-config --embed --ldflags); do
   python_embed_rustflags+=" -C link-arg=$linker_flag"
 done
 
-# PyO3's extension-module feature intentionally omits libpython from extension
-# linkage. Rust test binaries and the stub generator embed Python, so link those
-# two Cargo invocations explicitly while leaving the maturin wheel unchanged.
-RUSTFLAGS="$python_embed_rustflags" \
-  cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
+scripts/run_rust_tests.sh
+# The stub generator embeds Python like the test binaries; see run_rust_tests.sh.
 RUSTFLAGS="$python_embed_rustflags" \
   cargo run --manifest-path rust/endoreg_rust_backend/Cargo.toml --bin stub_gen
 cp endoreg_db/endoreg_rust_backend.pyi "$expected_stub"
@@ -49,10 +46,26 @@ from pathlib import Path
 
 import endoreg_db.endoreg_rust_backend as native
 
-capability = ("report_source_snapshot", "report_source_snapshot_v1", "0.1.0")
-assert capability in native.native_capabilities()
-hls_capability = ("hls_state_machine", "hls_state_v1", "0.1.0")
-assert hls_capability in native.native_capabilities()
+# Contracts are versioned independently of the crate implementation version.
+contracts = {(name, contract) for name, contract, _version in native.native_capabilities()}
+for required in (
+    ("report_source_snapshot", "report_source_snapshot_v1"),
+    ("hls_state_machine", "hls_state_v1"),
+    ("lifecycle_state_machine", "lifecycle_state_v3"),
+    ("state_vocabulary", "state_vocabulary_v1"),
+    ("hub_transfer_state_machine", "hub_transfer_state_v2"),
+    ("hls_artifact_transition", "hls_artifact_transition_v1"),
+    ("status_transition", "status_transition_v1"),
+):
+    assert required in contracts, required
+vocabularies = dict(native.native_state_vocabularies())
+assert "materializing" in vocabularies["hls_in_flight_status"]
+assert "transient_retry" in vocabularies["hub_failure_class"]
+assert native.reduce_hub_transfer_event("completed", None, "fail", None, "transient_retry") == ("completed", None, False)
+assert native.decide_hls_artifact_transition("validated", "ready") is True
+assert native.decide_status_transition("upload_job_source_cleanup", "completed", "skipped") is False
+assert native.reduce_hub_transfer_event("failed", "integrity_inconsistency", "retry") == ("failed", "integrity_inconsistency", False)
+assert native.transition_operation_lifecycle("queued", "claim") == "claimed"
 assert (
     native.derive_hls_reservation_action("materializing", False, True, True)
     == "already_in_flight"
@@ -63,17 +76,12 @@ assert (
 )
 assert native.derive_hls_reconciliation_action("queued", True) == "fail_and_cleanup"
 
+# Report snapshots copy atomically in Python and hash through this native identity.
 root = Path(tempfile.mkdtemp(dir="."))
 source = root / "source.pdf"
-target = root / "snapshot.pdf"
 payload = b"%PDF-1.4\nwheel-runtime-check\n%%EOF\n"
 source.write_bytes(payload)
-size_bytes, _modified_time_ns, digest = native.stable_snapshot_to_path(
-    str(source),
-    str(target),
-    4096,
-)
+size_bytes, _modified_time_ns, digest = native.stable_file_identity(source, 4096)
 assert size_bytes == len(payload)
 assert digest == hashlib.sha256(payload).hexdigest()
-assert target.read_bytes() == payload
 '

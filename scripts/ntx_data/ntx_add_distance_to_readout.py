@@ -1,5 +1,4 @@
 import json
-from typing import List
 
 import pandas as pd
 from icecream import ic
@@ -16,7 +15,7 @@ readout_data_path = processed_data_dir / "readout_data.jsonl"
 readout_df_excel_export_path = processed_data_dir / "readout_with_distances.xlsx"
 readout_df_csv_export_path = processed_data_dir / "readout_with_distances.csv"
 readout_df_jsonl_export_path = processed_data_dir / "readout_with_distances.jsonl"
-readout_data_list: List[ReadoutData] = []
+readout_data_list: list[ReadoutData] = []
 
 # EXAMPLE
 # {
@@ -45,11 +44,14 @@ with open(readout_data_path, "r", encoding="utf-8") as f:
 
 
 def add_distances_to_readout_data(
-    readout_data: ReadoutData, post_code_distances_cache: dict
-):
+    readout_data: ReadoutData,
+    post_code_distances_cache: dict[str, dict[str, float | None]],
+) -> None:
     plz = readout_data.post_code
+    if plz is None:
+        return
 
-    distance_dict = post_code_distances_cache.get(plz, None)
+    distance_dict = post_code_distances_cache.get(plz)
     if not distance_dict:
         return None
     distance = distance_dict["distance_car_mean"]

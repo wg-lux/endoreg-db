@@ -20,7 +20,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.models.state.audit_ledger import AuditLedger
-from endoreg_db.services.audit_integrity import (
+from endoreg_db.services.audit.integrity import (
     AUDIT_LEDGER_INTEGRITY_CACHE_KEY,
     AUDIT_LEDGER_INTEGRITY_LOCK_KEY,
     refresh_audit_ledger_integrity_status,

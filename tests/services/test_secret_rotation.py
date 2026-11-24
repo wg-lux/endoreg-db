@@ -23,7 +23,8 @@ from endoreg_db.utils.encryption.encryption import (
     unwrap_file_dek,
 )
 from endoreg_db.utils.encryption.rotation import rotate_encrypted_file
-from endoreg_db.utils.filesystem.file_operations import atomic_write_file
+from endoreg_db.utils.file_operations import atomic_write_file
+from tests.helpers.legacy_encryption import legacy_v1_encrypted
 
 
 def write_ring(
@@ -97,6 +98,28 @@ def test_rotation_preserves_plaintext_changes_data_key_and_resumes(
     ).changed
 
 
+def test_same_key_legacy_upgrade_is_explicit_and_idempotent(tmp_path: Path) -> None:
+    key, payload = b"k" * 32, b"legacy payload" * 8
+    path = atomic_write_file(
+        destination=tmp_path / "legacy",
+        content=[legacy_v1_encrypted(payload, key, chunk_size=32)],
+        file_mode=0o600,
+    )
+    original = path.read_bytes()
+    assert not rotate_encrypted_file(path, active_key=key, retiring_keys=()).changed
+    assert path.read_bytes() == original
+    assert rotate_encrypted_file(
+        path, active_key=key, retiring_keys=(), apply=True
+    ).changed
+    upgraded = path.read_bytes()
+    assert read_header(BytesIO(upgraded))[0].version == 2
+    assert b"".join(iter_decrypted_chunks(BytesIO(upgraded), master_key=key)) == payload
+    assert not rotate_encrypted_file(
+        path, active_key=key, retiring_keys=(), apply=True
+    ).changed
+    assert path.read_bytes() == upgraded
+
+
 @pytest.mark.parametrize("failure", ["wrong_key", "tamper", "publication"])
 def test_failure_retains_original(tmp_path: Path, failure: str) -> None:
     path = encrypted_file(tmp_path / "artifact", b"clinical payload" * 20, b"o" * 32)
@@ -149,12 +172,13 @@ def test_live_storage_observes_keyring_and_keeps_stream_generation(
 
 
 def test_default_salt_is_only_explicit_retiring_material(tmp_path: Path) -> None:
-    path = write_ring(tmp_path, b"new-test-salt", (b"default_salt",), kind="identity")
+    active = bytes(range(32)).hex().encode()
+    path = write_ring(tmp_path, active, (b"default_salt",), kind="identity")
     with pytest.raises(ValueError, match="explicitly enrolled"):
         load_keyring(path, kind="identity")
     path = write_ring(
         tmp_path,
-        b"new-test-salt",
+        active,
         (b"default_salt",),
         kind="identity",
         allow_legacy=True,
@@ -163,7 +187,7 @@ def test_default_salt_is_only_explicit_retiring_material(tmp_path: Path) -> None
     path = write_ring(
         tmp_path,
         b"default_salt",
-        (b"new-test-salt",),
+        (active,),
         kind="identity",
         allow_legacy=True,
     )
@@ -180,34 +204,38 @@ def test_keyring_rejects_public_files_and_duplicate_keys(tmp_path: Path) -> None
         load_keyring(path, kind="master")
 
 
-def test_signing_overlap_and_compromised_key_revocation(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+@pytest.mark.parametrize("retain_previous", [True, False])
+def test_signing_rotation_rejects_previous_signatures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, retain_previous: bool
 ) -> None:
     old, new = b"old-test-signing-material" * 3, b"new-test-signing-material" * 3
     signed = Signer(key=old.decode(), fallback_keys=[]).sign("test-session")
-    path = write_ring(tmp_path, new, (old,), kind="signing")
+    path = write_ring(tmp_path, new, (old,) if retain_previous else (), kind="signing")
     monkeypatch.setenv("DJANGO_SIGNING_KEYRING_FILE", str(path))
     keys = configured_signing_keys()
     assert keys is not None
-    assert (
-        Signer(key=keys[0], fallback_keys=[*keys[1]]).unsign(signed) == "test-session"
-    )
-    write_ring(tmp_path, new, (), kind="signing")
-    keys = configured_signing_keys()
-    assert keys is not None
+    assert keys == (new.decode(), [])
+    signer = Signer(key=keys[0], fallback_keys=[*keys[1]])
+    assert signer.unsign(signer.sign("test-session")) == "test-session"
     with pytest.raises(BadSignature):
-        Signer(key=keys[0], fallback_keys=[*keys[1]]).unsign(signed)
+        signer.unsign(signed)
 
 
 def test_authoritative_hash_rejects_missing_complete_chunks(tmp_path: Path) -> None:
     import hashlib
 
+    from tests.helpers.legacy_encryption import legacy_v1_encrypted
+
     payload = b"x" * 64
-    path = encrypted_file(tmp_path / "artifact", payload, b"o" * 32)
+    path = atomic_write_file(
+        destination=tmp_path / "artifact",
+        content=[legacy_v1_encrypted(payload, b"o" * 32)],
+        file_mode=0o600,
+    )
     with path.open("rb") as source:
         _, _ = read_header(source)
         header_end = source.tell()
-    # Remove one complete record: legacy LXENC01 has no authenticated EOF.
+    # Remove one complete record: version one has no authenticated EOF.
     truncated = path.read_bytes()[: header_end + 4 + 32 + 16]
     atomic_write_file(destination=path, content=[truncated], file_mode=0o600)
     with pytest.raises(ValueError, match="authoritative"):
@@ -221,11 +249,31 @@ def test_authoritative_hash_rejects_missing_complete_chunks(tmp_path: Path) -> N
     assert path.read_bytes() == truncated
 
 
+def test_version_two_rejects_missing_complete_chunks_without_reference(
+    tmp_path: Path,
+) -> None:
+    payload = b"x" * 64
+    path = encrypted_file(tmp_path / "artifact", payload, b"o" * 32)
+    with path.open("rb") as source:
+        _, _ = read_header(source)
+        header_end = source.tell()
+    truncated = path.read_bytes()[: header_end + 4 + 32 + 16]
+    atomic_write_file(destination=path, content=[truncated], file_mode=0o600)
+    with pytest.raises(InvalidTag):
+        rotate_encrypted_file(
+            path,
+            active_key=b"n" * 32,
+            retiring_keys=(b"o" * 32,),
+            apply=True,
+        )
+    assert path.read_bytes() == truncated
+
+
 def test_streaming_content_keys_remain_readable_during_overlap(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-    from endoreg_db.services.hls_media import (
+    from endoreg_db.services.streaming.hls_media import (
         HLS_KEY_WRAP_ALGORITHM,
         hls_uses_active_master_key,
         unwrap_hls_content_key,
@@ -267,7 +315,7 @@ def test_online_storage_rotation_defers_playback_and_preserves_video_hash(
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.secret_rotation import storage as service
-    from endoreg_db.services.media_operation_gate import (
+    from endoreg_db.services.media.operation_gate import (
         create_video_stream_lease,
         release_media_operation_lease,
     )

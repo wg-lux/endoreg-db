@@ -20,6 +20,10 @@ class ProductGroup(models.Model):
     objects = ProductGroupManager()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     if TYPE_CHECKING:
         reference_product: "ReferenceProduct"

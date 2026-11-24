@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferSensitiveMetaPayloadData as _SensitiveMetaPayload,
+    HubTransferStudyTransferPayload,
+)
+
 from typing import TypedDict, cast
 
 from rest_framework import serializers
 
+from endoreg_db.services.hub.payloads import reject_transferred_identity_hashes
+
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
-from endoreg_db.models.state.anonymization import AnonymizationState
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    derive_video_anonymization_state,
+    derive_report_anonymization_state,
+)
 from endoreg_db.schemas import (
     validate_transfer_processing_snapshot,
     validate_transfer_resource_rows,
@@ -21,11 +32,6 @@ class _VideoFilePayload(TypedDict):
 
 class _ReportFilePayload(TypedDict):
     pdf_hash: str
-
-
-class _SensitiveMetaPayload(TypedDict, total=False):
-    patient_hash: str
-    examination_hash: str
 
 
 class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
@@ -68,9 +74,9 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
 
     def validate_payload_schema_version(self, value: str) -> str:
         normalized = value.strip()
-        if normalized != "3.0":
+        if normalized != "7.0":
             raise serializers.ValidationError(
-                "Only privacy-preserving hub payload_schema_version '3.0' is accepted."
+                "Only privacy-preserving hub payload_schema_version '7.0' is accepted."
             )
         return normalized
 
@@ -85,6 +91,10 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         return normalized
 
     def validate(self, attrs: dict[str, object]) -> dict[str, object]:
+        try:
+            reject_transferred_identity_hashes(attrs)
+        except ValueError as exc:
+            raise serializers.ValidationError(str(exc)) from exc
         transfer_mode = str(attrs["transfer_mode"])
         self._validate_transfer_mode(transfer_mode)
 
@@ -123,7 +133,21 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 source_node_key=source_node.node_key,
             )
 
-        self._validate_sensitive_meta_linkage(validated_resource_rows)
+        if resource_kind == TransferJob.ResourceKind.STUDY.value:
+            try:
+                HubTransferStudyTransferPayload.model_validate(
+                    {
+                        **attrs,
+                        "source_center_key": source_center.center_key
+                        if source_center
+                        else "",
+                        "target_node_key": target_node.node_key,
+                    }
+                )
+            except ValueError as exc:
+                raise serializers.ValidationError({"resource_rows": str(exc)}) from exc
+        else:
+            self._validate_sensitive_meta_linkage(validated_resource_rows)
 
         attrs["source_node"] = source_node
         attrs["target_node"] = target_node
@@ -295,6 +319,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         self._validate_transfer_eligible_anonymization_status(
             anonymization_status=anonymization_status,
             resource_kind="video",
+            state_payload=video_state_payload,
         )
         self._validate_processed_state_hash(
             video_state_payload,
@@ -365,6 +390,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         self._validate_transfer_eligible_anonymization_status(
             anonymization_status=anonymization_status,
             resource_kind="report",
+            state_payload=report_state_payload,
         )
         self._validate_processed_state_hash(
             report_state_payload,
@@ -441,6 +467,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         *,
         anonymization_status: AnonymizationState,
         resource_kind: str,
+        state_payload: dict[str, object],
     ) -> None:
         if anonymization_status not in self._TRANSFER_ELIGIBLE_ANONYMIZATION_STATES:
             raise serializers.ValidationError(
@@ -453,55 +480,53 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
                 }
             )
 
+        required_fields = [
+            "anonymized",
+            "sensitive_meta_processed",
+            "anonymization_validated",
+        ]
+        if resource_kind == "video":
+            required_fields.append("outside_segments_removed")
+        if any(state_payload.get(field) is not True for field in required_fields):
+            raise serializers.ValidationError(
+                {
+                    "resource_rows": f"{resource_kind} transfer requires completed and validated anonymization stages: {', '.join(required_fields)}"
+                }
+            )
+
     @staticmethod
     def _resolve_video_anonymization_status(
         video_state_payload: dict[str, object],
     ) -> AnonymizationState:
-        if not video_state_payload:
-            return AnonymizationState.NOT_STARTED
-        if bool(video_state_payload.get("processing_error")):
-            return AnonymizationState.FAILED
-        if bool(video_state_payload.get("anonymization_validated")):
-            return AnonymizationState.VALIDATED
-        if bool(video_state_payload.get("sensitive_meta_processed")):
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
-        if bool(video_state_payload.get("frames_extracted")) and not bool(
-            video_state_payload.get("anonymized")
-        ):
-            return AnonymizationState.PROCESSING_ANONYMIZING
-        if bool(video_state_payload.get("was_created")) and not bool(
-            video_state_payload.get("frames_extracted")
-        ):
-            return AnonymizationState.EXTRACTING_FRAMES
-        if bool(video_state_payload.get("processing_started")):
-            return AnonymizationState.STARTED
-        if bool(video_state_payload.get("anonymized")):
-            return AnonymizationState.ANONYMIZED
-        return AnonymizationState.NOT_STARTED
+        return derive_video_anonymization_state(
+            processing_error=bool(video_state_payload.get("processing_error")),
+            anonymization_validated=bool(
+                video_state_payload.get("anonymization_validated")
+            ),
+            sensitive_meta_processed=bool(
+                video_state_payload.get("sensitive_meta_processed")
+            ),
+            frames_extracted=bool(video_state_payload.get("frames_extracted")),
+            anonymized=bool(video_state_payload.get("anonymized")),
+            was_created=bool(video_state_payload.get("was_created")),
+            processing_started=bool(video_state_payload.get("processing_started")),
+        )
 
     @staticmethod
     def _resolve_report_anonymization_status(
         report_state_payload: dict[str, object],
     ) -> AnonymizationState:
-        if not report_state_payload:
-            return AnonymizationState.NOT_STARTED
-        if bool(report_state_payload.get("anonymization_validated")):
-            return AnonymizationState.VALIDATED
-        if bool(report_state_payload.get("sensitive_meta_processed")):
-            return AnonymizationState.DONE_PROCESSING_ANONYMIZATION
-        if (
-            bool(report_state_payload.get("processing_started"))
-            and not bool(report_state_payload.get("processing_error"))
-            and not bool(report_state_payload.get("anonymized"))
-        ):
-            return AnonymizationState.PROCESSING_ANONYMIZING
-        if bool(report_state_payload.get("processing_error")):
-            return AnonymizationState.FAILED
-        if bool(report_state_payload.get("processing_started")):
-            return AnonymizationState.STARTED
-        if bool(report_state_payload.get("anonymized")):
-            return AnonymizationState.ANONYMIZED
-        return AnonymizationState.NOT_STARTED
+        return derive_report_anonymization_state(
+            processing_error=bool(report_state_payload.get("processing_error")),
+            anonymization_validated=bool(
+                report_state_payload.get("anonymization_validated")
+            ),
+            sensitive_meta_processed=bool(
+                report_state_payload.get("sensitive_meta_processed")
+            ),
+            anonymized=bool(report_state_payload.get("anonymized")),
+            processing_started=bool(report_state_payload.get("processing_started")),
+        )
 
     def _validate_sensitive_meta_linkage(
         self, resource_rows: dict[str, object]
@@ -512,19 +537,12 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
         if sensitive_meta is None or not sensitive_meta:
             return
 
-        has_hashes = bool(
-            sensitive_meta.get("patient_hash", "").strip()
-            and sensitive_meta.get("examination_hash", "").strip()
-        )
-        if not has_hashes:
+        # Shared resource-row validation already enforces patient and examination UUIDs.
+        if not sensitive_meta.get("patient_uuid") or not sensitive_meta.get(
+            "examination_uuid"
+        ):
             raise serializers.ValidationError(
-                {
-                    "resource_rows": (
-                        "resource_rows.sensitive_meta must include patient_hash "
-                        "and examination_hash; direct identity derivation fields "
-                        "are prohibited"
-                    )
-                }
+                "Source patient and examination UUIDs are required"
             )
 
     def _validate_privacy_boundary(self, resource_rows: dict[str, object]) -> None:
@@ -533,7 +551,7 @@ class TransferJobCreateSerializer(serializers.Serializer[dict[str, object]]):
             sensitive_meta_fields = cast(dict[str, object], sensitive_meta)
             direct_identity_fields = sorted(
                 set(sensitive_meta_fields).difference(
-                    {"patient_hash", "examination_hash"}
+                    {"patient_uuid", "examination_uuid"}
                 )
             )
             if direct_identity_fields:

@@ -10,8 +10,8 @@ from django.conf import settings
 from django.core.cache import cache
 
 from endoreg_db.models.state.audit_ledger import AuditLedger, LedgerHead
-from endoreg_db.services import audit_integrity
-from endoreg_db.services.audit_integrity import (
+from endoreg_db.services.audit import integrity as audit_integrity
+from endoreg_db.services.audit.integrity import (
     AUDIT_LEDGER_INTEGRITY_CACHE_KEY,
     AUDIT_LEDGER_INTEGRITY_LOCK_KEY,
     get_audit_ledger_integrity_status,
@@ -46,7 +46,8 @@ def test_celery_beat_routes_integrity_to_separate_queue():
     assert route["queue"] == settings.CELERY_MAINTENANCE_QUEUE
     assert beat_entry["task"] == "endoreg_db.refresh_audit_ledger_integrity_status"
     assert beat_entry["options"]["queue"] == settings.CELERY_MAINTENANCE_QUEUE
-    assert settings.CELERY_FRAME_EXTRACTION_QUEUE in queue_names
+    assert "frame_extraction" not in queue_names
+    assert "endoreg_db.frame_extraction_request" not in settings.CELERY_TASK_ROUTES
     assert settings.CELERY_FFMPEG_MEDIA_QUEUE in queue_names
     assert settings.CELERY_INFERENCE_QUEUE in queue_names
     assert settings.CELERY_TRAINING_QUEUE in queue_names
@@ -192,7 +193,7 @@ def test_refresh_once_releases_lock_after_exception():
 
 def test_refresh_task_delegates_to_locked_refresh():
     with patch(
-        "endoreg_db.services.audit_integrity.refresh_audit_ledger_integrity_status_once",
+        "endoreg_db.services.audit.integrity.refresh_audit_ledger_integrity_status_once",
         return_value={"status": "verified"},
     ) as refresh:
         payload = refresh_audit_ledger_integrity_status_task.run()
@@ -220,7 +221,7 @@ def test_video_post_validation_task_delegates_to_runner():
 
 def test_video_temporal_inference_task_delegates_to_runner():
     with patch(
-        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
+        "endoreg_db.services.video_files.temporal_inference.run_video_temporal_inference",
         return_value=True,
     ) as runner:
         result = cast(

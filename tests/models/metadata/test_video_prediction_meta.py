@@ -15,10 +15,6 @@ def _prediction_str(prediction_meta: VideoPredictionMeta) -> str:
     return "prediction"
 
 
-def _constant_fps(video: object) -> float:
-    return 2.0
-
-
 def test_confidence_array_ignores_out_of_bounds_predictions() -> None:
     confidences = _confidence_array_from_predictions(
         [(-1, 0.1), (1, 0.8), (3, 0.9)],
@@ -63,16 +59,10 @@ def test_create_video_segments_delegates_each_non_empty_label(
         "create_video_segments_for_label",
         create_for_label,
     )
-    monkeypatch.setattr(prediction_module, "get_video_fps", _constant_fps)
-    find_segments = Mock(side_effect=[[(1, 2)], []])
-    monkeypatch.setattr(
-        prediction_module,
-        "find_segments_in_prediction_array",
-        find_segments,
-    )
+    find_segments = Mock(return_value=[[(1, 3)], []])
+    monkeypatch.setattr(prediction_module, "prediction_segments", find_segments)
 
     prediction_meta.create_video_segments(segment_length_threshold_in_s=1.0)
 
-    assert find_segments.call_count == 2
-    assert all(call.args[1] == 2 for call in find_segments.call_args_list)
-    create_for_label.assert_called_once_with([(1, 2)], first_label)
+    find_segments.assert_called_once_with("video", prediction_array, 1.0)
+    create_for_label.assert_called_once_with([(1, 3)], first_label)

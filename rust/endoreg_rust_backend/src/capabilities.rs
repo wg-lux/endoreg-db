@@ -6,6 +6,16 @@ const BACKEND_IMPLEMENTATION_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub(crate) fn native_capabilities() -> Vec<(String, String, String)> {
     vec![
         (
+            "hub_transfer_state_machine".to_owned(),
+            "hub_transfer_state_v2".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
+            "import_processing_stack".to_owned(),
+            "import_processing_stack_v1".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
             "report_source_snapshot".to_owned(),
             "report_source_snapshot_v1".to_owned(),
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),
@@ -21,8 +31,23 @@ pub(crate) fn native_capabilities() -> Vec<(String, String, String)> {
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),
         ),
         (
+            "hls_artifact_transition".to_owned(),
+            "hls_artifact_transition_v1".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
+            "status_transition".to_owned(),
+            "status_transition_v1".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
             "lifecycle_state_machine".to_owned(),
             "lifecycle_state_v3".to_owned(),
+            BACKEND_IMPLEMENTATION_VERSION.to_owned(),
+        ),
+        (
+            "state_vocabulary".to_owned(),
+            "state_vocabulary_v1".to_owned(),
             BACKEND_IMPLEMENTATION_VERSION.to_owned(),
         ),
     ]

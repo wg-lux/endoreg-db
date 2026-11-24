@@ -3,7 +3,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db import DatabaseError
 
 from endoreg_db.schemas.processed_video_cleanup import ReapProcessedGenerationOptions
-from endoreg_db.services.processed_video_cleanup import (
+from endoreg_db.services.video_storage.generation_cleanup import (
     cleanup_processed_video_generations,
 )
 

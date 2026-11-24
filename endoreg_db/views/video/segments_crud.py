@@ -48,26 +48,32 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.segment_annotations import (
+from endoreg_db.services.annotations.segment_annotations import (
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
 )
-from endoreg_db.services.segment_frame_annotations import (
+from endoreg_db.services.annotations.label_presentation import (
+    parse_study_cohort_id,
+    require_study_labels,
+)
+from endoreg_db.services.annotations.segment_frame_annotations import (
     delete_frame_annotations_for_segment as service_delete_frame_annotations_for_segment,
     sync_frame_annotations_for_segment as service_sync_frame_annotations_for_segment,
 )
 
-from endoreg_db.services.video_segments_bulk_mutation import (
+from endoreg_db.services.annotations.segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
+    validate_bulk_segment_mutation_payload,
 )
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     mark_segment_annotations_complete_without_cleanup,
     mark_segment_annotations_pending_cleanup,
     mark_segment_annotations_stale,
     resolve_segment_annotation_status,
+    resolve_segment_validation_frames,
 )
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     video_segment_mutation,
 )
@@ -79,10 +85,8 @@ from endoreg_db.services.jobs.video_fps_normalization_jobs import (
     dispatch_video_fps_normalization,
     normalization_status,
 )
-from endoreg_db.services.video_files import (
-    get_or_create_video_state,
-    video_seconds_to_frame_number,
-)
+from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.timeline_index import VideoTimelineIndexCache
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from endoreg_db.serializers.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
@@ -732,7 +736,7 @@ def video_segments_stats(request: Request) -> Response:
         raise
 
     except Exception as e:
-        logger.error(f"Error fetching video segment stats: {e}")
+        logger.exception(f"Error fetching video segment stats: {e}")
         return Response(
             {"error": "Failed to fetch segment statistics"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -774,6 +778,17 @@ def video_segments_collection(request: Request) -> Response:
             return ai_dataset_error
         data = crud_payload.serializer_payload()
 
+        require_study_labels(
+            request,
+            crud_payload.study_cohort_id,
+            label_ids=[
+                value
+                for value in (crud_payload.label_id, crud_payload.label)
+                if value is not None
+            ],
+            label_names=[crud_payload.label_name] if crud_payload.label_name else [],
+        )
+
         target_video_id = crud_payload.video_id or crud_payload.video_file
         if target_video_id is None:
             return Response(
@@ -796,7 +811,7 @@ def video_segments_collection(request: Request) -> Response:
                 except MediaOperationDeferred:
                     raise
                 except Exception as e:
-                    logger.error(f"Error creating video segment: {str(e)}")
+                    logger.exception(f"Error creating video segment: {str(e)}")
                     return Response(
                         {"error": f"Failed to create segment: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -815,7 +830,11 @@ def video_segments_collection(request: Request) -> Response:
         except PydanticValidationError as exc:
             return _pydantic_error_response(exc, message="Invalid query parameters")
 
-        queryset = LabelVideoSegment.objects.select_related("video_file", "label").all()
+        # Prefetch shares one video per distinct id; joining it duplicates the
+        # complete timeline JSON for every segment.
+        queryset = LabelVideoSegment.objects.select_related("label").prefetch_related(
+            "video_file"
+        )
 
         if query.video_id is not None:
             try:
@@ -887,8 +906,10 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
         except PydanticValidationError as exc:
             return _pydantic_error_response(exc, message="Invalid query parameters")
 
-        queryset = LabelVideoSegment.objects.filter(video_file=video).select_related(
-            "video_file", "label"
+        queryset = (
+            LabelVideoSegment.objects.filter(video_file=video)
+            .select_related("label")
+            .prefetch_related("video_file")
         )
 
         if query.label:
@@ -928,6 +949,17 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
             return ai_dataset_error
         data = crud_payload.serializer_payload(video_id=pk)
 
+        require_study_labels(
+            request,
+            crud_payload.study_cohort_id,
+            label_ids=[
+                value
+                for value in (crud_payload.label_id, crud_payload.label)
+                if value is not None
+            ],
+            label_names=[crud_payload.label_name] if crud_payload.label_name else [],
+        )
+
         with video_segment_mutation(video_id=int(video.pk)):
             serializer = LabelVideoSegmentSerializer(data=data)
             if serializer.is_valid():
@@ -946,7 +978,7 @@ def video_segments_by_video(request: Request, pk: int) -> Response:
                 except MediaOperationDeferred:
                     raise
                 except Exception as e:
-                    logger.error(f"Error creating segment for video {pk}: {str(e)}")
+                    logger.exception(f"Error creating segment for video {pk}: {str(e)}")
                     return Response(
                         {"error": f"Failed to create segment: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1000,6 +1032,50 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
     """
     video = get_object_or_404(VideoFile, id=pk)
     try:
+        raw_payload = _request_payload(request)
+        cohort_id = parse_study_cohort_id(raw_payload.get("study_cohort_id"))
+        if cohort_id is not None:
+            # Validate labels before the bulk service begins any writes.
+            mutation = validate_bulk_segment_mutation_payload(raw_payload)
+            label_ids: list[int] = []
+            label_names: list[str] = []
+            segment_ids: list[int] = []
+            for items, updating in (
+                (mutation.creates, False),
+                (mutation.updates, True),
+            ):
+                for raw_item in items:
+                    if not isinstance(raw_item, Mapping):
+                        return Response(
+                            {"error": "Segment items must be objects."}, status=400
+                        )
+                    item = cast(Mapping[str, Any], raw_item)
+                    item_payload = validate_segment_crud_payload(item)
+                    label_ids.extend(
+                        value
+                        for value in (item_payload.label_id, item_payload.label)
+                        if value is not None
+                    )
+                    if item_payload.label_name:
+                        label_names.append(item_payload.label_name)
+                    if updating and not (
+                        item_payload.label_id
+                        or item_payload.label
+                        or item_payload.label_name
+                    ):
+                        segment_ids.extend(
+                            validate_segment_bulk_validation_payload(
+                                {"segment_ids": [item.get("id")]}
+                            ).segment_ids
+                        )
+            require_study_labels(
+                request,
+                cohort_id,
+                label_ids=label_ids,
+                label_names=label_names,
+                segment_ids=segment_ids,
+                video_id=pk,
+            )
         response_data = bulk_mutate_video_segments(
             video=video,
             payload=_request_payload(request),
@@ -1013,6 +1089,8 @@ def video_segments_bulk_mutation(request: Request, pk: int) -> Response:
             exc.response_data,
             status=exc.status_code,
         )
+    except PydanticValidationError as exc:
+        return _pydantic_error_response(exc)
 
     return Response(
         response_data,
@@ -1054,6 +1132,13 @@ def import_prediction_segments_to_manual(request: Request, pk: int) -> Response:
             message="Invalid segment import payload",
         )
 
+    require_study_labels(
+        request,
+        import_payload.study_cohort_id,
+        label_names=[
+            item.label_name or item.label or "" for item in import_payload.segments
+        ],
+    )
     correction_source, _ = InformationSource.objects.get_or_create(
         name=PREDICTION_CORRECTION_SOURCE_NAME,
         defaults={
@@ -1172,6 +1257,22 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
             return ai_dataset_error
         data = crud_payload.serializer_payload()
 
+        require_study_labels(
+            request,
+            crud_payload.study_cohort_id,
+            label_ids=[
+                value
+                for value in (crud_payload.label_id, crud_payload.label)
+                if value is not None
+            ],
+            label_names=[crud_payload.label_name] if crud_payload.label_name else [],
+            segment_ids=[segment_id]
+            if not (
+                crud_payload.label_id or crud_payload.label or crud_payload.label_name
+            )
+            else [],
+            video_id=pk,
+        )
         with video_segment_mutation(video_id=int(video.pk)):
             old_snapshot = _segment_snapshot(segment)
             serializer = LabelVideoSegmentSerializer(segment, data=data, partial=True)
@@ -1191,7 +1292,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
                 except MediaOperationDeferred:
                     raise
                 except Exception as e:
-                    logger.error(f"Error updating segment {segment_id}: {str(e)}")
+                    logger.exception(f"Error updating segment {segment_id}: {str(e)}")
                     return Response(
                         {"error": f"Failed to update segment: {str(e)}"},
                         status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1230,7 +1331,7 @@ def video_segment_detail(request: Request, pk: int, segment_id: int) -> Response
         except MediaOperationDeferred:
             raise
         except Exception as e:
-            logger.error(f"Error deleting segment {segment_id}: {str(e)}")
+            logger.exception(f"Error deleting segment {segment_id}: {str(e)}")
             return Response(
                 {"error": f"Failed to delete segment: {str(e)}"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1282,6 +1383,12 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
     )
 
     # for operation log table
+    require_study_labels(
+        request,
+        parse_study_cohort_id(_request_payload(request).get("study_cohort_id")),
+        segment_ids=[segment_id],
+        video_id=pk,
+    )
     status_before = (
         STATUS_VALIDATED
         if (segment.state and segment.state.is_validated)
@@ -1303,11 +1410,12 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
         with video_segment_mutation(video_id=int(video.pk)):
             if annotation_input is not None:
                 segment_video = _segment_video_file(segment)
-                new_start = video_seconds_to_frame_number(
-                    segment_video, annotation_input.start_time
-                )
-                new_end = video_seconds_to_frame_number(
-                    segment_video, annotation_input.end_time
+                timeline = VideoTimelineIndexCache().for_video(segment_video)
+                new_start, new_end = resolve_segment_validation_frames(
+                    segment_video,
+                    timeline,
+                    start_time=annotation_input.start_time,
+                    end_time=annotation_input.end_time,
                 )
                 _validate_segment_frame_range(
                     new_start,
@@ -1327,50 +1435,21 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
             )
             segment_id = segment.pk
 
-            def _log_after_commit():
-                # re-read from DB to get the REAL final state
-                segment.refresh_from_db()
-                state = segment.state
-
-                status_after = (
-                    STATUS_VALIDATED
-                    if (state and state.is_validated)
-                    else STATUS_UNVALIDATED
-                )
-
-                record_operation(
-                    cast(HttpRequest, request),
-                    action=ACTION_SEGMENT_ANNOTATED,
-                    resource_type="video_segment",
-                    resource_id=segment.pk,
-                    status_before=status_before,
-                    status_after=status_after,
-                    meta={
-                        "video_id": video.pk,
-                        "label": _segment_label_name(segment),
-                        "information_source": information_source_name,
-                        "annotator": annotation_annotator,
-                    },
-                )
-
-            transaction.on_commit(_log_after_commit)
-
-            """
-            status_after = STATUS_VALIDATED if is_validated else STATUS_UNVALIDATED
-
+            segment.refresh_from_db()
             record_operation(
-                request,
+                cast(HttpRequest, request),
                 action=ACTION_SEGMENT_ANNOTATED,
                 resource_type="video_segment",
                 resource_id=segment.pk,
                 status_before=status_before,
-                status_after=status_after,
+                status_after=_segment_validation_status_before(segment),
                 meta={
                     "video_id": video.pk,
-                    "label": segment.label.name if segment.label else None,
+                    "label": _segment_label_name(segment),
                     "information_source": information_source_name,
+                    "annotator": annotation_annotator,
                 },
-            )"""
+            )
         annotation_task_id, expansion_completed = (
             _dispatch_segment_annotation_expansion(
                 video_id=int(video.pk),
@@ -1410,7 +1489,7 @@ def video_segment_validate(request: Request, pk: int, segment_id: int) -> Respon
     except MediaOperationDeferred:
         raise
     except Exception as e:
-        logger.error(f"Error validating segment {segment_id} in video {pk}: {e}")
+        logger.exception(f"Error validating segment {segment_id} in video {pk}: {e}")
         return Response(
             {"error": f"Validation failed: {str(e)}"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -1446,7 +1525,9 @@ def _bulk_validation_segments(
         LabelVideoSegment.objects.filter(
             pk__in=segment_ids,
             video_file=video,
-        ).select_related("state", "video_file")
+        )
+        .select_related("state")
+        .prefetch_related("video_file")
     )
 
 
@@ -1455,6 +1536,7 @@ def _apply_bulk_segment_timing(
     segment: LabelVideoSegment,
     timing_data: Any,
     video_id: int,
+    timeline_indexes: VideoTimelineIndexCache,
 ) -> None:
     if timing_data is None:
         return
@@ -1462,13 +1544,12 @@ def _apply_bulk_segment_timing(
     if annotation_input is None:
         return
     segment_video = _segment_video_file(segment)
-    new_start = video_seconds_to_frame_number(
+    timeline = timeline_indexes.for_video(segment_video)
+    new_start, new_end = resolve_segment_validation_frames(
         segment_video,
-        annotation_input.start_time,
-    )
-    new_end = video_seconds_to_frame_number(
-        segment_video,
-        annotation_input.end_time,
+        timeline,
+        start_time=annotation_input.start_time,
+        end_time=annotation_input.end_time,
     )
     _validate_segment_frame_range(
         new_start,
@@ -1490,7 +1571,7 @@ def _segment_validation_status_before(segment: LabelVideoSegment) -> str:
     return STATUS_UNVALIDATED
 
 
-def _register_bulk_validation_audit(
+def _record_bulk_validation_audit(
     *,
     request: Request,
     segment_id: int,
@@ -1499,25 +1580,22 @@ def _register_bulk_validation_audit(
     information_source_name: str | None,
     annotator: str | None,
 ) -> None:
-    def _log_after_commit() -> None:
-        segment = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
-        status_after = _segment_validation_status_before(segment)
-        record_operation(
-            cast(HttpRequest, request),
-            action=ACTION_SEGMENT_ANNOTATED,
-            resource_type="video_segment",
-            resource_id=_segment_pk(segment),
-            status_before=status_before,
-            status_after=status_after,
-            meta={
-                "video_id": video_id,
-                "bulk": True,
-                "information_source": information_source_name,
-                "annotator": annotator,
-            },
-        )
-
-    transaction.on_commit(_log_after_commit)
+    segment = LabelVideoSegment.objects.select_related("state").get(pk=segment_id)
+    status_after = _segment_validation_status_before(segment)
+    record_operation(
+        cast(HttpRequest, request),
+        action=ACTION_SEGMENT_ANNOTATED,
+        resource_type="video_segment",
+        resource_id=_segment_pk(segment),
+        status_before=status_before,
+        status_after=status_after,
+        meta={
+            "video_id": video_id,
+            "bulk": True,
+            "information_source": information_source_name,
+            "annotator": annotator,
+        },
+    )
 
 
 def _validate_one_bulk_segment(
@@ -1529,34 +1607,38 @@ def _validate_one_bulk_segment(
     is_validated: bool,
     information_source_name: str,
     annotator: str | None,
+    timeline_indexes: VideoTimelineIndexCache,
 ) -> bool:
     try:
-        _apply_bulk_segment_timing(
-            segment=segment,
-            timing_data=timing_data,
-            video_id=video_id,
-        )
-        status_before = _segment_validation_status_before(segment)
-        segment.mark_validated(
-            is_validated=is_validated,
-            information_source_name=(
-                information_source_name if is_validated else str(None)
-            ),
-        )
-        _register_bulk_validation_audit(
-            request=request,
-            segment_id=_segment_pk(segment),
-            status_before=status_before,
-            video_id=video_id,
-            information_source_name=information_source_name,
-            annotator=annotator,
-        )
-        return True
+        with transaction.atomic():
+            _apply_bulk_segment_timing(
+                segment=segment,
+                timing_data=timing_data,
+                video_id=video_id,
+                timeline_indexes=timeline_indexes,
+            )
+            status_before = _segment_validation_status_before(segment)
+            segment.mark_validated(
+                is_validated=is_validated,
+                information_source_name=(
+                    information_source_name if is_validated else str(None)
+                ),
+            )
     except MediaOperationDeferred:
         raise
     except Exception as exc:
-        logger.error("Error validating segment %s: %s", segment.pk, exc)
+        logger.exception("Error validating segment %s: %s", segment.pk, exc)
         return False
+
+    _record_bulk_validation_audit(
+        request=request,
+        segment_id=_segment_pk(segment),
+        status_before=status_before,
+        video_id=video_id,
+        information_source_name=information_source_name,
+        annotator=annotator,
+    )
+    return True
 
 
 def _update_bulk_segments_atomically(
@@ -1571,6 +1653,7 @@ def _update_bulk_segments_atomically(
 ) -> tuple[int, list[int]]:
     updated_count = 0
     failed_ids: list[int] = []
+    timeline_indexes = VideoTimelineIndexCache()
     with video_segment_mutation(video_id=int(video.pk)):
         for segment in segments:
             segment_id = _segment_pk(segment)
@@ -1582,6 +1665,7 @@ def _update_bulk_segments_atomically(
                 is_validated=is_validated,
                 information_source_name=information_source_name,
                 annotator=annotator,
+                timeline_indexes=timeline_indexes,
             )
             if succeeded:
                 updated_count += 1
@@ -1753,7 +1837,10 @@ def _bulk_validation_response(
     post_processing: _BulkValidationPostProcessing,
 ) -> Response:
     response_data: dict[str, object] = {
-        "message": f"Bulk validation completed. {updated_count} segments updated.",
+        "message": (
+            f"Segment review saved for {updated_count} segments. "
+            "Transfer readiness depends on successful media post-processing."
+        ),
         "updated_count": updated_count,
         "requested_count": requested_count,
         "is_validated": is_validated,
@@ -1811,6 +1898,7 @@ def _execute_bulk_validation(
     is_validated = payload.is_validated
     information_source_name = payload.information_source_name
     annotation_annotator = payload.annotator
+    updated_count = 0
     try:
         segments = _bulk_validation_segments(
             video=video,
@@ -1854,6 +1942,9 @@ def _execute_bulk_validation(
                 annotator=annotation_annotator,
             )
             if post_processing.error_response is not None:
+                post_processing.error_response.data.setdefault(
+                    "updated_count", updated_count
+                )
                 return post_processing.error_response
         return _bulk_validation_response(
             video=video,
@@ -1867,13 +1958,22 @@ def _execute_bulk_validation(
     except MediaOperationDeferred:
         raise
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Error in bulk validation for video %s: %s",
             video_id,
             exc,
         )
         return Response(
-            {"error": f"Bulk validation failed: {str(exc)}"},
+            {
+                "error": (
+                    "Segment review saved; media post-processing failed."
+                    if updated_count
+                    else "Bulk validation failed."
+                ),
+                "detail": str(exc),
+                "updated_count": updated_count,
+                "video_id": video_id,
+            },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
         )
 
@@ -1909,6 +2009,12 @@ def video_segments_validate_bulk(request: Request, pk: int) -> Response:
     if payload_error is not None:
         return payload_error
     assert payload is not None
+    require_study_labels(
+        request,
+        payload.study_cohort_id,
+        segment_ids=payload.segment_ids,
+        video_id=pk,
+    )
     return _execute_bulk_validation(
         request=request,
         video=video,
@@ -2016,6 +2122,9 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
             return _pydantic_error_response(exc)
 
         # Mark all segments as validated
+        cohort_id = parse_study_cohort_id(
+            _request_payload(request).get("study_cohort_id")
+        )
         label_name = payload.label_name
         segments_query = LabelVideoSegment.objects.filter(
             video_file=video
@@ -2026,6 +2135,12 @@ def video_segments_validation_status(request: Request, pk: int) -> Response:
 
         segments = segments_query.all()
 
+        if cohort_id is not None:
+            require_study_labels(
+                request,
+                cohort_id,
+                label_names=segments.values_list("label__name", flat=True),
+            )
         if not segments.exists():
             return Response(
                 {

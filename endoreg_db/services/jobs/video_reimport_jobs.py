@@ -4,12 +4,12 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import Mapping
+from datetime import timedelta
 from typing import Any, Literal, cast
 
 from django.conf import settings
 from django.db import transaction
 from django.db.models import Q
-from django.utils import timezone
 from lx_dtypes.models.contracts.video_reimport import (
     VideoReimportDispatchResult,
     VideoReimportHistoryConfig,
@@ -21,6 +21,17 @@ from lx_dtypes.models.contracts.video_reimport import (
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
 
+from endoreg_db.services.jobs.timeouts import is_processing_timeout
+from endoreg_db.services.jobs.processing_history import (
+    set_history_task_id as _set_history_task_id,
+)
+from endoreg_db.services.jobs.error_handling import is_insufficient_storage
+from endoreg_db.services.jobs.video_reimport_budget import (
+    MAX_REIMPORT_SOFT_SECONDS,
+    REIMPORT_CLEANUP_SECONDS,
+    video_reimport_budget,
+)
+from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.config.env import (
     env_choice,
     env_int,
@@ -30,6 +41,7 @@ from endoreg_db.config.env import (
 from endoreg_db.models.administration.ai.ai_model import AiModel
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
@@ -43,10 +55,10 @@ from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
 from endoreg_db.services.hub.upload_job_state_machine import (
-    validate_upload_job_status_transition,
+    transition_reimport_upload_jobs,
 )
-from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
-from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
+from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.services.video_files import (
     initialize_video_frames,
     initialize_video_specs as initialize_video_file_specs,
@@ -54,7 +66,9 @@ from endoreg_db.services.video_files import (
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.services.video_temporal_inference import (
+from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
+from endoreg_db.services.video_files.temporal_inference import (
     TemporalInferenceConfigError,
     dispatch_video_temporal_inference,
     extract_temporal_options,
@@ -119,7 +133,9 @@ def _as_bool(value: Any, *, default: bool) -> bool:
     return default
 
 
-def _config_from_payload(payload: Any, *, queue: str) -> VideoReimportHistoryConfig:
+def _config_from_payload(
+    payload: Mapping[str, VideoReimportJsonValue], *, queue: str
+) -> VideoReimportHistoryConfig:
     request_payload = validate_video_reimport_request_payload(payload)
     safe_payload = dump_video_reimport_request_payload(request_payload)
     return VideoReimportHistoryConfig(
@@ -216,23 +232,19 @@ def _select_reimport_upload_jobs(video: VideoFile) -> list[UploadJob]:
     return selected_jobs
 
 
-def _update_reimport_upload_jobs(video: VideoFile, **updates: Any) -> int:
-    target_status = updates.get("status")
-    if not isinstance(target_status, str):
-        raise ValueError("video re-import UploadJob update requires a status")
+def _update_reimport_upload_jobs(
+    video: VideoFile,
+    *,
+    status: UploadJob.Status,
+    error_detail: str = "",
+    sensitive_meta_id: int | None = None,
+) -> int:
     with transaction.atomic():
-        selected_jobs = _select_reimport_upload_jobs(video)
-        if not selected_jobs:
-            return 0
-        for upload_job in selected_jobs:
-            validate_upload_job_status_transition(
-                current_status=upload_job.status,
-                target_status=target_status,
-            )
-        selected_ids = [upload_job.pk for upload_job in selected_jobs]
-        return UploadJob.objects.filter(pk__in=selected_ids).update(
-            **updates,
-            updated_at=timezone.now(),
+        return transition_reimport_upload_jobs(
+            _select_reimport_upload_jobs(video),
+            status=status,
+            error_detail=error_detail,
+            sensitive_meta_id=sensitive_meta_id,
         )
 
 
@@ -262,15 +274,8 @@ def _reset_reimport_state(video: VideoFile) -> int:
         )
         video.sensitive_meta = None
         video.save(update_fields=["sensitive_meta"])
-        try:
-            SensitiveMeta.objects.filter(id=old_meta_id).delete()
-            logger.info("Deleted old SensitiveMeta %s", old_meta_id)
-        except Exception as exc:
-            logger.warning(
-                "Could not delete old SensitiveMeta %s: %s",
-                old_meta_id,
-                exc,
-            )
+        SensitiveMeta.objects.filter(id=old_meta_id).delete()
+        logger.info("Deleted old SensitiveMeta %s", old_meta_id)
 
     reset_count = _update_reimport_upload_jobs(
         video,
@@ -312,6 +317,45 @@ def _mark_upload_jobs_lost(video: VideoFile, error_detail: str) -> int:
         status=UploadJob.Status.LOST,
         error_detail=error_detail,
     )
+
+
+def _finalize_reimport_storage_failure(
+    video: VideoFile | None,
+    history: VideoProcessingHistory | None,
+) -> None:
+    """Keep a usable published generation normal while recording failed work."""
+    with transaction.atomic():
+        if video is not None:
+            current_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+            state = get_or_create_video_state(current_video)
+            state = VideoState.objects.select_for_update().get(pk=state.pk)
+            ready = False
+            if not _video_has_integrity_loss(current_video):
+                try:
+                    get_ready_hls_artifact(video=current_video)
+                except (VideoHlsArtifact.DoesNotExist, FileNotFoundError):
+                    ready = False
+                else:
+                    ready = True
+            if ready:
+                state.processing_error = False
+                state.processing_started = False
+                state.was_created = False
+                state.anonymized = True
+                state.save(
+                    update_fields=[
+                        "processing_error",
+                        "processing_started",
+                        "was_created",
+                        "anonymized",
+                        "date_modified",
+                    ]
+                )
+                _mark_upload_jobs_anonymized(current_video)
+            else:
+                state.mark_processing_failed()
+                _mark_upload_jobs_error(current_video, "insufficient_storage")
+        _mark_history_failure(history, "insufficient_storage")
 
 
 def _video_has_integrity_loss(video: VideoFile) -> bool:
@@ -381,6 +425,12 @@ def _reserve_reimport_history(
                 if recover_stale_video_processing_history(
                     history,
                     job_name="video re-import",
+                    protect_running=True,
+                    stale_timeout=timedelta(
+                        seconds=MAX_REIMPORT_SOFT_SECONDS
+                        + REIMPORT_CLEANUP_SECONDS
+                        + 3600
+                    ),
                 ):
                     continue
                 return history, RESERVATION_ALREADY_QUEUED
@@ -394,13 +444,6 @@ def _reserve_reimport_history(
             config=config.model_dump(mode="json"),
         )
         return history, RESERVATION_CREATED
-
-
-def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
-    if history.task_id == task_id:
-        return
-    history.task_id = task_id
-    history.save(update_fields=["task_id"])
 
 
 def _get_processing_history(
@@ -459,7 +502,7 @@ def _processor_name(video: VideoFile) -> str:
 
 def _prediction_refresh_payload(
     *,
-    status: str,
+    status: Literal["skipped", "not_queued", "failed"],
     queued: bool,
     **extra: VideoReimportJsonValue,
 ) -> dict[str, VideoReimportJsonValue]:
@@ -479,8 +522,32 @@ def _run_prediction_refresh(
             queued=False,
             reason="disabled",
         )
-    raw_result = _dispatch_prediction_refresh(video, dict(config.prediction_payload))
-    return video_reimport_json_safe_dict(raw_result)
+    try:
+        raw_result = _dispatch_prediction_refresh(
+            video, dict(config.prediction_payload)
+        )
+        return video_reimport_json_safe_dict(raw_result)
+    except (
+        AiModel.DoesNotExist,
+        ModelMeta.DoesNotExist,
+        TemporalInferenceConfigError,
+        ValueError,
+    ) as exc:
+        logger.warning(
+            "Video re-import completed but prediction refresh was not queued: video=%s",
+            video.pk,
+        )
+        return _prediction_refresh_payload(
+            status="not_queued", queued=False, error=str(exc)
+        )
+    except Exception as exc:
+        logger.exception(
+            "Video re-import completed but prediction dispatch failed: video=%s",
+            video.pk,
+        )
+        return _prediction_refresh_payload(
+            status="failed", queued=False, error=str(exc)
+        )
 
 
 def _regenerate_reimport_hls_artifacts(
@@ -498,7 +565,10 @@ def _regenerate_reimport_hls_artifacts(
         raise ValueError("Cannot regenerate HLS for an unsaved video.") from exc
 
     try:
-        from endoreg_db.services.hls_media import materialize_video_hls
+        from endoreg_db.services.streaming.hls_media import (
+            hls_result_is_ready,
+            materialize_video_hls,
+        )
 
         result = materialize_video_hls(
             video_id,
@@ -510,6 +580,10 @@ def _regenerate_reimport_hls_artifacts(
             "Processed HLS source is missing after video re-import."
         ) from exc
 
+    if not hls_result_is_ready(result.status):
+        raise RuntimeError(
+            f"Processed HLS is not ready after video re-import: {result.status}"
+        )
     payload = video_reimport_json_safe_dict(
         cast(Mapping[str, JsonValue], result.as_dict())
     )
@@ -522,6 +596,7 @@ def _regenerate_reimport_hls_artifacts(
     return payload
 
 
+@profiled_function
 def _run_video_reimport_job(
     video_id: int,
     *,
@@ -547,10 +622,14 @@ def _run_video_reimport_job(
         )
 
         with ensure_local_file(video.raw_file) as raw_file_path:
-            with transaction.atomic():
-                reset_upload_jobs = _reset_reimport_state(video)
+            reset_upload_jobs = 0
+            owned_video = video
 
-            video.refresh_from_db()
+            def prepare_reimport() -> None:
+                nonlocal reset_upload_jobs
+                reset_upload_jobs = _reset_reimport_state(owned_video)
+                owned_video.refresh_from_db()
+
             logger.info(
                 "Starting asynchronous VideoImportService re-anonymization for %s",
                 video.raw_video_hash,
@@ -558,6 +637,7 @@ def _run_video_reimport_job(
             VideoImportService().reanonymize_existing_video(
                 video,
                 source_path=raw_file_path,
+                prepare=prepare_reimport,
             )
 
         video.refresh_from_db()
@@ -594,7 +674,17 @@ def _run_video_reimport_job(
         )
         raise
     except Exception as exc:
-        error_detail = str(exc)
+        if is_insufficient_storage(exc):
+            # Source materialization and encrypted upload creation can fail
+            # before the processing service enters its failure finalizer.
+            # Persist all visible failure states together; retain valid media.
+            _finalize_reimport_storage_failure(video, history)
+            logger.exception(
+                "Insufficient storage during video re-import for video %s.",
+                video_id,
+            )
+            raise
+        error_detail = "processing_timeout" if is_processing_timeout(exc) else str(exc)
         if video is not None:
             _mark_upload_jobs_error(video, error_detail)
         _mark_history_failure(history, error_detail)
@@ -606,6 +696,7 @@ def _run_video_reimport_job(
         raise
 
 
+@profiled_function
 def dispatch_video_reimport(
     *,
     video_id: int,
@@ -669,7 +760,9 @@ def dispatch_video_reimport(
                 video_id=int(video_id),
                 queue=ffmpeg_media_queue,
                 history_id=history.pk,
-                reason=str(exc),
+                reason="insufficient_storage"
+                if is_insufficient_storage(exc)
+                else str(exc),
             )
         return _job_dispatch_result(
             task_id=task_id,
@@ -683,6 +776,7 @@ def dispatch_video_reimport(
     try:
         from endoreg_db.tasks import run_video_reimport_task
 
+        budget = video_reimport_budget(video.frame_count)
         ensure_secure_transport_for_job_kind(HeavyJobKind.VIDEO_REIMPORT)
         async_result = run_video_reimport_task.apply_async(
             args=(int(video_id),),
@@ -690,6 +784,8 @@ def dispatch_video_reimport(
             queue=ffmpeg_media_queue,
             routing_key=ffmpeg_media_queue,
             countdown=get_video_reimport_dispatch_delay_seconds(),
+            soft_time_limit=budget.soft_seconds,
+            time_limit=budget.hard_seconds,
         )
         _set_history_task_id(history, str(async_result.id))
         return _job_dispatch_result(

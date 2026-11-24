@@ -12,7 +12,10 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, Max, Min, fields
 from django.utils.timezone import is_aware, make_naive
 
-from endoreg_db.utils.file_operations import atomic_write_file, ensure_directory
+from endoreg_db.utils.file_operations import (
+    atomic_write_file,
+    ensure_directory,
+)
 
 type SummaryCell = str | int
 type CsvSummaryRow = tuple[str, str]
@@ -133,7 +136,7 @@ class Command(BaseCommand):
 
 def _create_workbook() -> DbSummaryWorkbook:
     try:
-        from openpyxl import Workbook  # type: ignore[import-untyped]
+        from openpyxl import Workbook
     except ImportError as exc:
         raise CommandError(
             "openpyxl is required to export the database summary workbook."

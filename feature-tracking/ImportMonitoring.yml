@@ -312,9 +312,28 @@ definition_of_done:
     evidence:
     - kind: test
       reference: /dev/lx-annotate/tests/api/test_quarantine_api.py
-    note: Center-Scope und Pfadbereinigung getestet; formales Security-Review ausstehend.
-    assessed_by: Codex
-    assessed_at: '2026-07-21T08:29:49.630358Z'
+    - kind: code
+      reference: endoreg_db/services/hub/import_monitoring.py; tests/services/test_import_monitoring.py
+    - kind: command
+      reference: '2026-10-16: .devenv/state/venv/bin/pyright: 0 errors, 24 warnings; abschließender fokussierter
+        Pyright-Lauf über alle sieben geänderten Python-Dateien: 0 errors, 0 warnings (durch koordinierenden
+        Parent-Agent ausgeführt).'
+    - kind: test
+      reference: '2026-10-16: Koordinierte PostgreSQL-Regression über acht Testdateien für Lifecycle,
+        Import-Monitoring, Upload-Zustandsmaschine, Import-Leases einschließlich Prozesstests, Cancellation,
+        Hub-Dispatch und Anonymisierungsübersicht: 261 passed, 1 plugin warning, 69.26s, keine Skips,
+        Exit 0. RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false; PATH und LD_LIBRARY_PATH mit Projektprofil,
+        PYTHONPATH mit Repository-Wurzel. Nach dem Ergebnis bestehende temporäre Cleanup-Warnungen. Durch
+        koordinierenden Parent-Agent ausgeführt.'
+    note: 'Center-Scope und Pfadbereinigung getestet; formales Security-Review ausstehend. Ergänzung 2026-10-16:
+      Die Monitoringprojektion enthält für import_interrupted eine feste, sichere Aufforderung zum Bedienerreview
+      vor Wiederaufnahme. Alle definierten Fehlercodes sind abgedeckt; der leere Erfolgscode bleibt leer,
+      unbekannte Codes werden ohne Offenlegung des Eingabewerts abgelehnt. Der Regressionstest durchläuft
+      den vorhandenen Rust-validierten Übergang von processing nach error und bewahrt technische Details
+      ausschließlich im geschützten Job-Ledger. Keine neue Python-Übergangspolitik; kein vollständiges
+      Security-Review behauptet.'
+    assessed_by: codex-20261016-monitoring-fsm
+    assessed_at: '2026-10-16T07:52:35.536342Z'
 - id: metrics_and_alerts
   category: observability
   title: Importdurchsatz, Wiederholungen, Fehler und Quarantäne sind messbar

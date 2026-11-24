@@ -18,7 +18,7 @@ from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.operation_lease import MediaOperationLease
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder

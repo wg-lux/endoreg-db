@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
+from scripts import check_dead_code
 from scripts.check_dead_code import (
     AcceptedDeadCodeFinding,
     DeadCodeBaseline,
@@ -125,3 +127,59 @@ def test_baseline_counts_confirmed_deletion_candidates_separately() -> None:
     )
 
     assert baseline.confirmed_deletion_count == 1
+
+
+def _candidate(*, review_after: date) -> DeadCodeDeletionCandidate:
+    return DeadCodeDeletionCandidate(
+        path="endoreg_db/compat.py",
+        line_range="1-4",
+        symbol="public export shim",
+        classification="compatibility_contract",
+        evidence=["External consumers have not been excluded."],
+        reason="The package path may be imported downstream.",
+        recommended_action="verify_consumers",
+        risk="medium",
+        owner="endoreg_db maintainers",
+        review_after=review_after,
+    )
+
+
+@pytest.mark.parametrize(
+    ("review_after", "expired"),
+    [(date(2026, 7, 16), True), (date(2026, 7, 17), False), (date(2026, 7, 18), False)],
+)
+def test_candidate_review_expiry_applies_without_vulture_findings(
+    review_after: date, expired: bool
+) -> None:
+    candidate = _candidate(review_after=review_after)
+    baseline = _baseline().model_copy(update={"deletion_candidates": (candidate,)})
+
+    comparison = compare_findings((), baseline, today=date(2026, 7, 17))
+
+    assert comparison.expired_candidates == ((candidate,) if expired else ())
+    assert comparison.is_clean is not expired
+
+
+def test_main_rejects_expired_candidate_with_actionable_diagnostic(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    candidate = _candidate(review_after=date(2000, 1, 1))
+    baseline = _baseline().model_copy(update={"deletion_candidates": (candidate,)})
+
+    def load_baseline(_path: Path) -> DeadCodeBaseline:
+        return baseline
+
+    def run_vulture(_config: DeadCodeToolConfig) -> tuple[()]:
+        return ()
+
+    monkeypatch.setattr(check_dead_code.sys, "argv", ["check_dead_code.py"])
+    monkeypatch.setattr(check_dead_code, "load_baseline", load_baseline)
+    monkeypatch.setattr(check_dead_code, "run_vulture", run_vulture)
+
+    result = check_dead_code.main()
+
+    assert result == 1
+    output = capsys.readouterr().out
+    assert "EXPIRED CANDIDATE endoreg_db/compat.py: public export shim" in output
+    assert "review_after=2000-01-01, owner=endoreg_db maintainers" in output
+    assert "baseline clean" not in output

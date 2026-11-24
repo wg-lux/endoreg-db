@@ -1,10 +1,71 @@
-# Hub Ingest Operations Manual
+# Hub ingest operations
 
-This document is the operations and incident runbook for controlled Site-Node-to-Central-Hub ingestion. Completion status is maintained exclusively in [`feature-tracking/done/HubIngest.yml`](https://www.google.com/search?q=../feature-tracking/done/HubIngest.yml).
+Run commands in the installed environment. Start with
+[diagnostics](#diagnostics-and-restart), the [recovery matrix](#binding-recovery-matrix),
+or the [incident workflow](#incident-workflow).
+Readiness evidence belongs to [HubIngest](../feature-tracking/done/HubIngest.yml)
+and [ImportMonitoring](../feature-tracking/ImportMonitoring.yml).
+For sender implementation, use the [typed transfer contract](hub_transfer_typed_contract.md)
+and its [English version](hub_transfer_typed_contract.en.md).
+HTTP Live Streaming (HLS) storage rules belong to the
+[video runbook](video_storage_normalization.md).
 
-For sender implementers and reviewers, [`hub_transfer_typed_contract.md`](https://www.google.com/search?q=hub_transfer_typed_contract.md) describes the currently binding, typed Wire Contract `3.0`, full video and report examples, the mTLS transport type, and how to port older `data-transfer-nginx-mtls` approaches. A complete [`English version`](https://www.google.com/search?q=hub_transfer_typed_contract.en.md) is also available.
+## Continuous folder import
 
-Production-critical import monitoring—including transient errors, quarantine, and HTTP Live Streaming (HLS) materialization—is evaluated exclusively in [`feature-tracking/ImportMonitoring.yml`](https://www.google.com/search?q=../feature-tracking/ImportMonitoring.yml). This runbook describes operations, but does not maintain a parallel completion status.
+Use four input folders; extensions select formats within each folder.
+Scope: [continuous_format_folder_ingestion](../feature-tracking/ImportPipelineRobustness.yml).
+
+| Desktop shortcut | Destination | Processing |
+| --- | --- | --- |
+| `Report_Input` | Configured report input of the file mover → `report_import` | Anonymize PDF and TXT |
+| `Video_Input` | Configured video input of the file mover → `video_import` | MP4, AVI, MOV, MKV, WEBM, and M4V through existing video import |
+| `preanonymized_import` | `preanonymized_import` | PDF, TXT, and MP4 with an associated metadata file |
+| `sap_import` | `sap_import` | Convert SAP ZIP to TXT reports with metadata files |
+
+- `Report_Input` replaces the shortcut `PDF_Input` without changing its path.
+  Existing subdirectories remain readable and are retained.
+- Keep preanonymized payloads and their JSON or YAML metadata together. Their
+  approval contract differs from raw input, even for the same extension.
+- Supply related SAP tables as a ZIP or use `import_sap_ish_txt`; SAP TXT tables
+  are not ordinary reports. General CSV, FHIR and individual-image folder
+  imports are not implemented.
+- Write temporary names, then atomically rename completed inputs. Temporary
+  files/directories and symlinks are skipped. Subdirectories are read recursively.
+
+The mover publishes complete report batches atomically in unique subdirectories,
+then handles videos. Repeated names cannot overwrite earlier batches; changed
+sources remain for a later run. Systemd reacts to folder changes; watcher timers
+catch missed, unstable and nested inputs. SAP runs five minutes after completion,
+with up to 30 seconds of random delay.
+
+Deploy the backend, LX-Annotate watcher and LuxNix configuration together.
+NixOS `tmpfiles` uses mode `0770` and the service group: source directories belong
+to `root`, internal inputs to the service user. Handoff can remove an input after
+copying to encrypted storage, before anonymization finishes. Check the UploadJob
+for completion.
+
+### Native frame rates and interrupted ownership
+
+Directory transcoding accepts valid positive frame rates and preserves source
+timestamps. The annotation target is not an intake limit; codec, pixel-format,
+integrity and complete timestamp-equivalence checks still apply. The mover does
+not quarantine for frame rate, including legacy rejection reports. Separate
+pre-annotation resampling requires its coordinate prerequisites.
+
+Atomic source claims protect later arrivals and existing outputs. Files complete
+independently; changed sources and failures remain, with bounded retry delays.
+
+The retry dispatcher reconciles bounded batches of expired raw-video owners under
+row locks: it advances fencing and records `import_interrupted`, retaining media
+and cancellation intent. This proves neither success nor plaintext cleanup.
+Broker redelivery, ordinary retry and reimport cannot clear the marker. Inspect
+the previous process, attempt files and source before a separately reviewed
+recovery action; there is no automatic reset or workspace cleanup.
+
+The mover stop recorded on 2026-10-15 was temporary: reboot or activation may
+restart enabled units. Deploy native-rate acceptance, lease migration and mover
+changes together before restoring intake. Local tests neither reconcile live
+jobs nor attest staging encryption.
 
 ## Import Monitoring and State Axes
 
@@ -18,9 +79,34 @@ Import attempt, anonymization, HLS materialization, and cleanup are monitored se
 | `anonymized` | Generation fully published; raw and processed HLS are ready for video | None | Verify generation correlation and cleanup axis |
 | `error` | Terminal, stably coded error | No automatic retry | Check error code; correct configuration or plan safe re-import |
 | `lost` | Source or ledger is inconsistent | Fail-closed | Secure logs and storage; never manually set to success |
+| `cancel_requested` | Operator cancelled while a worker still owns the import | The owner unwinds at its next checkpoint | Wait for `cancelled`; an expired owner becomes an interruption `error` |
+| `cancelled` | Cancellation acknowledged; no execution owns the job | None | Terminal; start a new upload to import again |
 | Quarantine | Protected source isolated from active import flow | No automatic deletion | Reconcile ledger and document review decision |
 
 Allowed main transitions are `pending -> processing -> anonymized`, `processing -> retrying -> processing`, and `retrying -> error` once attempts are exhausted. `lost` is terminal. A quarantine entry has its own review lifecycle and does not overwrite an upload job status.
+
+Rust `lifecycle_state_v3` owns transitions. Python's
+`endoreg_db/services/hub/upload_job_state_machine.py` validates through
+`validate_upload_job_status_transition` before persistence, including cancellation:
+
+| UploadJob status | Native operation state |
+| --- | --- |
+| `pending` | `queued` |
+| `processing`, `cancel_requested` | `running` |
+| `retrying` | `retry_wait` |
+| `anonymized` | `succeeded` |
+| `error` | `failed` |
+| `lost` | `lost` |
+| `cancelled` | `cancelled` |
+
+`cancel_requested` shares `running` with `processing`, so the state machine adds one rule: a cancellation request can only become `cancelled`, an interruption `error`, or `lost`. It can never return to `processing`, `retrying` or `pending`. A native `cancelled` state accepts no further transitions.
+
+Anonymization has a separate native phase: `not_started`, `in_progress`,
+`awaiting_validation`, `validated` or `failed`. Filters, statistics, reconciliation,
+deletion and transfer use `anonymization_phase` or `anonymization_states_in_phase`.
+Here `anonymized` means in progress, not approved for transfer. See
+[StateMachineConformance.yml](../feature-tracking/StateMachineConformance.yml)
+for the unresolved destructive-cleanup policy.
 
 The retry policy starts at 30 seconds, doubles the delay per attempt, is capped at 15 minutes, and defaults to three attempts. The periodic task `endoreg_db.retry_due_upload_jobs` claims due jobs under a database lock and hands them off idempotently to the pipeline queue.
 
@@ -40,7 +126,12 @@ The monitoring API provides exclusively approved operator messages. Absolute pat
 
 ### HLS Materialization
 
-Raw and processed HLS are displayed separately as `queued`, `materializing`, `ready`, or `failed`. Each entry contains the upload job correlation, an opaque source generation, target generation, segment count, and timestamps. `ready` is only permissible following validated, atomic publication of a complete playlist, key, and segment generation. On failure, a stable code is emitted (`dispatch_failed`, `materialization_failed`, `inconsistent_artifact`, or `stale_attempt`); a previous valid generation is restored and preserved. Playback and segment update leases, as well as atomic publication details, are defined in canonical [`video_storage_normalization.md`](https://www.google.com/search?q=video_storage_normalization.md).
+Raw and processed HLS each report `queued`, `materializing`, `ready` or `failed`,
+with job correlation, opaque source/target generation, segment count and timestamps.
+`ready` requires validated atomic publication of a complete playlist, key and
+segments. Failures preserve the previous valid generation and report
+`dispatch_failed`, `materialization_failed`, `inconsistent_artifact` or `stale_attempt`.
+See [publication and leases](video_storage_normalization.md).
 
 ### Diagnostics and Restart
 
@@ -136,26 +227,28 @@ If certificate material or proxy attestation is missing, transfer must fail-clos
 
 ## Transfer Verification and Correlation
 
-The following identities ensure complete traceability:
+Correlate the administration view, sender log `lx_annotate.hub_export.audit`,
+hub log `endoreg_db.hub.audit`, and file events `endoreg_db.utils.file_operations`:
 
-* `outbound_job_id` on sender,
-* `transfer_key` as an idempotent business transfer identity,
-* `TransferJob.id` / `remote_transfer_id` on the hub,
-* `resource_hash` as content identity,
-* `source_center_key`, `source_node_key`, and `target_node_key`,
-* `local_cleanup_status` and hub `cleanup_status`.
+- Sender `outbound_job_id`; hub `TransferJob.id` / `remote_transfer_id`.
+- Idempotency `transfer_key`, content `resource_hash`, source center/node and target node keys.
+- Sender `local_cleanup_status` and hub `cleanup_status`.
 
-The lx-annotate admin panel displays local and remote correlations along with cleanup states. Sender logs (`lx_annotate.hub_export.audit`), hub logs (`endoreg_db.hub.audit`), and structured file system events (`endoreg_db.utils.file_operations`) must correlate using these IDs.
+Only a matching `transfer_status=applied` acknowledgment completes transfer.
+`awaiting_media` is intermediate; `failed`, `inconsistent`, hash mismatch or
+conflicting snapshots require incident handling.
 
-A successful transfer completes only upon receiving a hub acknowledgment with `transfer_status=applied`. `awaiting_media` is an intermediate state; `failed`, `inconsistent`, hash mismatches, and conflicting snapshots are incident states that must not be treated as success.
-
-The acknowledgment includes the expected hash of the anonymized processed medium. The sender must validate transfer ID, transfer key, source/target nodes, source center, resource type, resource hash, processed media hash, transfer mode, and payload schema version against its immutable local job. Only a fully matching `applied` status permits completing the local job or marking it eligible for cleanup. Mismatches represent terminal integrity errors and are not retried automatically.
+Compare the acknowledgment against the immutable sender job: transfer ID/key,
+source/target nodes, source center, resource type/hash, processed-media hash,
+transfer mode and schema version. Any mismatch is a terminal integrity error,
+not an automatic retry. Only a fully matching acknowledgment permits local
+completion or cleanup eligibility.
 
 ## Cleanup and Quarantine
 
 * Upload sources require explicit cleanup eligibility, including the verified repeated-import rule below; interrupted `deleting` receipts can resume.
 * `preserve_source` is respected; `delete_after_success` becomes cleanup-eligible only after verified media integrity.
-* Outbound processed media are retained by default. A policy of `eligible_after_verified_apply` merely signals local release after confirmed `applied`; it does not un-controlledly delete the sole copy.
+* Outbound processed media are retained by default. A policy of `eligible_after_verified_apply` merely signals local release after confirmed `applied`; it does not automatically delete the sole copy.
 * Hub transfer cleanup remains explicitly traceable as operator intent or `not_requested`.
 * Quarantine deletion requires a documented review decision, explicit approval, and a separate reap step.
 
@@ -171,8 +264,9 @@ due date on the failed job still applies. Both jobs must have no pending retry
 or active processing lease. Apply locks both records and rechecks the evidence
 before deletion, including the existing target integrity and video playback gates.
 
-Only the failed job's own persisted upload path may be removed, with no other
-upload or canonical media reference to it. The error status, error details, and
+The failed job's own persisted upload path and verified additional video-source
+copies may be removed, with no other upload or canonical media reference to them.
+The error status, error details, and
 audit record remain intact. `lost` jobs, unidentified legacy paths, quarantine,
 and arbitrary temporary directories are excluded. Missing repeat evidence yields
 `successful_replacement_missing`; shared files yield `source_still_referenced`.
@@ -182,13 +276,55 @@ and verification are tracked in
 
 The source reaper operates in read-only mode by default. Individual selection uses the UploadJob UUID; batch runs strictly require a positive limit. Output contains only UploadJob ID, decision code, stable block reason, media type, ingest mode, age, and byte count—omitting absolute paths, content, patient data, or content hashes.
 
+For video jobs, additional copies are selected from the persisted `watched_path`,
+`watcher_processing_path`, `stored_upload_path`, `legacy_source_path`, and
+`migrated_destination_path` provenance fields. Only upload, video input,
+preanonymized input, anonymized-video input, and migration-staging directories
+under the configured runtime root are eligible. Each existing copy must match
+the source content hash and have no foreign references or symbolic links.
+Copies are deleted before the primary upload; a partial failure retains the
+cleanup receipt and primary source for retry. Quarantine and external archives
+are not additional source roots.
+
+The `endoreg_db.cleanup_media_sources` Celery task runs every fifteen minutes on
+the maintenance queue, inspecting at most 25 source jobs and 25 videos with pending
+generation receipts per invocation. It applies by default; setting
+`UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=false` turns every lane into a dry run. Generation retirement
+also removes temporary key, plaintext-source, and output directories of matching
+failed or superseded HTTP Live Streaming (HLS) attempts. Current masters,
+unmatched attempts, active leases, and unrecorded historical files remain
+protected. Scope is recorded in the source-reaper YAML above and
+[`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml).
+
+The same task, under the same gate, also reclaims staging that the ledger
+reaper cannot reach. The grace period `ENDOREG_STAGING_CLEANUP_GRACE_SECONDS` defaults to 24 hours and
+must be at least 6 hours, the worker hard time limit. Each pass deletes at most
+25 entries per run, revalidates each entry immediately before deletion, and
+emits a summary event with reclaimable and retained bytes.
+
+- **Orphaned upload directories**
+  (`endoreg_db/services/hub/upload_staging_orphans.py`, event
+  `upload_staging_orphan_cleanup_summary`): a directory
+  `upload_jobs/<tier>/<id prefix>/<upload job id>/` is deleted only if that
+  UploadJob no longer exists and no other job's file, provenance path, inventory
+  entry (including entries recorded as removed) or video/report field points into
+  it. It must also contain no in-progress handoff file or symbolic link, and be
+  unchanged for the grace period. Directories whose UploadJob still exists stay
+  with the ledger reaper. For example, `preserve_source` jobs are retained by
+  policy and reported as `job_exists`. Files outside the job layout are
+  reported as `unrecognized_layout` and never deleted.
+- **Abandoned temporary attempt artifacts** (`storage/temp`, event
+  `transient_artifact_cleanup_summary`): see the "Abandoned temporary
+  artifacts" section of
+  [`video_storage_normalization.md`](video_storage_normalization.md).
+
 ```sh
 python manage.py reap_upload_job_sources --upload-job-id <uuid> --json
 python manage.py reap_upload_job_sources --limit 25 --json
 
 ```
 
-Before applying, set `UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true` in runtime configuration and run the same limited dry run. The apply flag is explicitly required:
+Run the same limited dry run first. The command still deletes only with the explicit `--apply` flag, and refuses it on hosts where `UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=false`:
 
 ```sh
 python manage.py reap_upload_job_sources --limit 25 --apply --json
@@ -196,7 +332,27 @@ python manage.py reap_upload_job_sources --limit 25 --repeat-until-empty --apply
 
 ```
 
-Invalid or conflicting selectors, disabled apply mode, or non-positive limits cause non-zero exits. Safely blocked candidates are valid diagnostic results and remain preserved with their blocking code. Applying authorizes deletions under database lock, persisting a receipt containing DB timestamp, fencing token, opaque source identity, and size. Immediately before mutation, the system re-verifies status, retention, due date, retry, processing lease, fencing, target integrity, `ProcessingHistory`, video HLS generations, media operation leases, storage boundary, and file identity. File deletion occurs exclusively via audited file operation wrappers.
+Invalid or conflicting selectors, disabled apply mode, or non-positive limits cause non-zero exits. Safely blocked candidates are valid diagnostic results and remain preserved with their blocking code. Applying authorizes deletions under database lock, persisting a receipt containing DB timestamp, fencing token, opaque source identity, and size. Immediately before mutation, the system re-verifies status, retention, due date, retry, processing lease, fencing, target integrity, `ProcessingHistory`, video HLS generations, media operation leases, and storage boundary. Additional source ownership and content-identity evidence is required only for undocumented legacy files. File deletion occurs exclusively via audited file operation wrappers.
+
+### Central file inventory
+
+`UploadJobFile` records sources, sidecars, work files, quarantine and retained
+media through `files`, separately from mutable `processing_provenance`. Apply
+migration `0091_upload_job_file` before new workers.
+
+`services/hub/upload_job_files.py` serves both cleanup modules. Registered
+associations are authoritative: they need no additional provenance or content
+rehash. Sidecars and work outputs need not match the source hash. Only undocumented
+legacy paths require that evidence. Existing registered sources are adopted
+without per-entry existence queries; staging cleanup reads inventory once per job
+and only the supplied paths' work directories. Explicit external workspaces are
+still scanned for undocumented outputs from interrupted tools.
+
+Execution registers atomic writers, planned temporary files and external-tool
+workspaces; removed files remain traceable. Registration cannot override retention,
+leases or canonical-media protection. Shared paths, symlinks and paths outside
+cleanup boundaries remain protected. See
+[UploadJobSourceReaperSafety.yml](../feature-tracking/UploadJobSourceReaperSafety.yml).
 
 Recovery aligns with stable block codes:
 
@@ -258,14 +414,17 @@ df -B1 /var/lib/lx-annotate/data/hub/backup/snapshots
 
 ## Backup and Restore
 
-A Hub backup always comprises two coupled components:
+A restore point couples a consistent native PostgreSQL backup with encrypted
+media/quarantine, storage names and permissions. Database-only or unmatched
+media/ledger backups are insufficient.
 
-1. Consistent, native PostgreSQL database backup,
-2. Backup of the encrypted, protected media/quarantine boundary including storage names and permissions.
+LuxNix starts `postgresqlBackup.service` before `lx-annotate-hub-backup.service`.
+The unprivileged backup service receives the readable compressed dump as a private
+credential, validates gzip, copies it to `database/all.sql.gz` in a pending media
+snapshot, and adds checksums and a JSON manifest. Only then does it atomically
+update `latest`. Missing, corrupt or failed dumps preserve the previous restore point.
 
-LuxNix publishes these as a single restore point. Invoking `lx-annotate-hub-backup.service` (manually or via timer) first executes `postgresqlBackup.service`. Upon successful creation of a readable compressed PostgreSQL dump, systemd passes it as a private credential to the unprivileged hub backup service. The service validates gzip formatting, copies the dump as `database/all.sql.gz` into the pending media snapshot, and registers it in the checksum list and JSON manifest. Only then does the atomic `latest` symlink update to the new restore point. Missing, corrupt, or failed database dumps leave the existing `latest` restore point unchanged.
-
-Operator verification on the Central Hub:
+Verify on the central hub:
 
 ```sh
 sudo systemctl start lx-annotate-hub-backup.service
@@ -276,18 +435,20 @@ sudo sh -c 'cd /var/lib/lx-annotate/data/hub/backup/snapshots/latest && sha256su
 
 ```
 
-The selected manifest entry must specify `database/all.sql.gz` for `database_dump.relative_path`, `postgresql-pg_dumpall-sql-gzip` for `format`, and a matching SHA-256 hash. Manifests and checksum files belong strictly to the timestamp referenced by `latest`—do not combine multiple timestamps.
+Use the manifest and checksums for the exact `latest` timestamp, never mixed
+snapshots. `database_dump.relative_path` must be `database/all.sql.gz`, its format
+`postgresql-pg_dumpall-sql-gzip`, and its SHA-256 must match.
 
-Restore Dry-Run Procedure:
+Restore drill:
 
-1. Select the target path from `latest`, along with its matching JSON manifest and checksum file, validating completely via `sha256sum --check` prior to restore.
-2. In an isolated environment, restore `database/all.sql.gz` using PostgreSQL utilities, then extract the snapshot into the protected media/quarantine boundary for that exact timestamp.
-3. Run migrations and execute Central Hub production checks.
-4. Refresh audit ledger integrity and verify system health.
-5. Cross-verify `resource_hash`, transfer snapshot, stored medium, and acknowledgment.
-6. Treat missing or unreadable artifacts as `LOST`/inconsistent and preserve logs; avoid unsafe auto-recovery.
-
-A database without corresponding media, or media lacking a consistent ledger, does not constitute a successful restore.
+1. Resolve `latest` and validate its matching manifest with `sha256sum --check`.
+2. In isolation, restore the dump with PostgreSQL tools and the same timestamp's
+   snapshot into protected media/quarantine storage.
+3. Run migrations and central-hub production checks.
+4. Refresh audit integrity and verify system health.
+5. Compare `resource_hash`, transfer snapshot, stored medium and acknowledgment.
+6. Mark missing/unreadable artifacts `LOST` or inconsistent and preserve logs;
+   do not attempt unsafe automatic recovery.
 
 ## Incident Workflow
 
@@ -312,6 +473,47 @@ A database without corresponding media, or media lacking a consistent ledger, do
 
 ## References
 
-* [`docs/wiki/hub_ingest_current_state.md`](https://www.google.com/search?q=wiki/hub_ingest_current_state.md)
-* [`docs/deployment_note_hub_contract.md`](https://www.google.com/search?q=deployment_note_hub_contract.md)
-* [`endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`](https://www.google.com/search?q=../endoreg_db/import_files/multi_centre_storage_hub_roadmap.md)
+* [`docs/wiki/hub_ingest_current_state.md`](wiki/hub_ingest_current_state.md)
+* [`docs/deployment_note_hub_contract.md`](deployment_note_hub_contract.md)
+* [`endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`](../endoreg_db/import_files/multi_centre_storage_hub_roadmap.md)
+## Completed-stage import checkpoints
+
+Imports persist `import_checkpoint` after preparation: anonymization and storage
+normalization for video; redaction, extraction and sensitive metadata for reports.
+The receipt identifies a separate immutable encrypted copy, plaintext digest,
+source, sensitive metadata and preparation evidence.
+
+Ordinary retry acquires the content/execution fence, validates source and metadata,
+authenticates the checkpoint and skips preparation. Reports adopt extraction under
+the new fence, retaining its original receipt until publication commits. All
+publication, streaming and clinical approval gates still apply.
+
+Failed publication keeps the checkpoint. Successful publication schedules deletion
+after transaction commit. Missing bytes, failed authentication or identity mismatch
+raise errors, never completion or fallback. Explicit reprocessing invalidates the
+checkpoint; imports without one restart preparation. Interrupted preparation also
+restarts: this is not frame-level video resumption.
+
+`UploadJob.processing_stack` stores Rust-owned stage order, priority, normalized
+source digest and an upload-job UUID checkpoint reference. Python validates
+persisted JSON and saves native transitions under execution fences. The canonical
+media row links to the encrypted identity receipt; stack completion commits with
+fenced upload completion.
+
+Worker startup and periodic maintenance rediscover retained stacks. Video recovery
+uses upload leases. Report recovery uses normalized PDF identity (including text
+imports), fences expired content owners and commits source binding with its lease.
+After the handoff grace period it reuses persisted report jobs and Celery task
+references. Live leases remain protected.
+
+The overview exposes stage, completion time, `can_prioritize` and `prioritized`
+(Axios converts keys to camelCase). **Priorisieren** posts `{"prioritize": true}`
+to the upload-job retry endpoint; **Priorisiert** confirms acknowledgment.
+Priority affects the next maintenance dispatch, never preempts running work or
+raises retry limits. Automatic recovery needs no browser action.
+
+Cancellation, active ownership/cleanup, missing sources, integrity/lost errors and
+exhausted retry budgets block admission; rejected priority requests return HTTP 409.
+Worker entry rechecks source bytes and ownership. Checkpoints confer no clinical
+approval. Evidence: `import_reconciliation_and_recovery` in
+[ImportPipelineRobustness.yml](../feature-tracking/ImportPipelineRobustness.yml).

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Sequence
+from collections.abc import Sequence
 from typing import TypedDict, cast
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
@@ -13,7 +13,9 @@ from endoreg_db.management.commands._profiling import (
     run_with_optional_profile,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.segment_annotations import ensure_segment_annotations
+from endoreg_db.services.annotations.segment_annotations import (
+    ensure_segment_annotations,
+)
 
 
 type _CommandOption = None | bool | int | list[int] | str

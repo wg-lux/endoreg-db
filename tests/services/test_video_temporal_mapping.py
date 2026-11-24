@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     VideoStorageNormalizationError,
     segment_timeline_references,
     timeline_from_video_metadata,

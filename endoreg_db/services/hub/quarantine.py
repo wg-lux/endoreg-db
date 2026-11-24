@@ -3,7 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING, Iterable, cast
+from typing import TYPE_CHECKING, cast
+from collections.abc import Iterable
 
 from django.db import transaction
 from django.db.models import QuerySet
@@ -13,7 +14,11 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.models.hub.quarantine_item import QuarantineItem
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.utils.file_operations import ensure_directory, safe_unlink_file
+from endoreg_db.services.runtime.status_writers import set_quarantine_item_status
+from endoreg_db.utils.file_operations import (
+    ensure_directory,
+    safe_unlink_file,
+)
 from endoreg_db.utils.paths import get_runtime_paths
 
 if TYPE_CHECKING:
@@ -82,6 +87,17 @@ def _relative_quarantine_path(path: Path, *, root: Path | None = None) -> str:
     root_path = ensure_directory(root or quarantine_dir()).resolve()
     resolved = _validate_quarantine_path(path, root=root_path)
     return resolved.relative_to(root_path).as_posix()
+
+
+_REVIEW_DECISION_FIELDS = [
+    "status",
+    "decision_reason",
+    "reviewed_by",
+    "reviewed_at",
+    "delete_eligible_at",
+    "error_detail",
+    "updated_at",
+]
 
 
 def _active_statuses() -> tuple[str, ...]:
@@ -175,14 +191,16 @@ def index_quarantine_file(
     item.metadata = {**item.metadata, **metadata}
     if upload_job is not None:
         item.source_upload_job = upload_job
-    if item.status in {
-        QuarantineItem.Status.DELETED.value,
-        QuarantineItem.Status.MISSING.value,
-    }:
-        item.status = QuarantineItem.Status.PENDING_REVIEW.value
-        item.deleted_at = None
-        item.error_detail = ""
-    item.save()
+    with transaction.atomic():
+        if item.status in {
+            QuarantineItem.Status.DELETED.value,
+            QuarantineItem.Status.MISSING.value,
+        } and set_quarantine_item_status(
+            item, QuarantineItem.Status.PENDING_REVIEW.value
+        ):
+            item.deleted_at = None
+            item.error_detail = ""
+        item.save()
     return item, False
 
 
@@ -217,12 +235,16 @@ def sync_quarantine_inventory(*, now: datetime | None = None) -> QuarantineSyncR
             continue
         if Path(item.path).exists():
             continue
-        item.status = QuarantineItem.Status.MISSING.value
-        item.error_detail = "Quarantine file was not found during inventory sync."
-        item.last_seen_at = sync_now
-        item.save(
-            update_fields=["status", "error_detail", "last_seen_at", "updated_at"]
-        )
+        with transaction.atomic():
+            if not set_quarantine_item_status(
+                item, QuarantineItem.Status.MISSING.value
+            ):
+                continue
+            item.error_detail = "Quarantine file was not found during inventory sync."
+            item.last_seen_at = sync_now
+            item.save(
+                update_fields=["status", "error_detail", "last_seen_at", "updated_at"]
+            )
         missing_count += 1
 
     return QuarantineSyncResult(
@@ -280,30 +302,18 @@ def approve_quarantine_item(
         raise ValueError("decision_reason is required")
     if delete_after_days < 0:
         raise ValueError("delete_after_days must not be negative")
-    if item.status in {
-        QuarantineItem.Status.DELETED.value,
-        QuarantineItem.Status.MISSING.value,
-    }:
-        raise ValueError(f"Cannot approve quarantine item in status {item.status}")
 
     decision_time = now or _now()
-    item.status = QuarantineItem.Status.APPROVED_FOR_DELETION.value
-    item.decision_reason = decision_reason
-    item.reviewed_by = reviewed_by
-    item.reviewed_at = decision_time
-    item.delete_eligible_at = decision_time + timedelta(days=delete_after_days)
-    item.error_detail = ""
-    item.save(
-        update_fields=[
-            "status",
-            "decision_reason",
-            "reviewed_by",
-            "reviewed_at",
-            "delete_eligible_at",
-            "error_detail",
-            "updated_at",
-        ]
-    )
+    with transaction.atomic():
+        set_quarantine_item_status(
+            item, QuarantineItem.Status.APPROVED_FOR_DELETION.value
+        )
+        item.decision_reason = decision_reason
+        item.reviewed_by = reviewed_by
+        item.reviewed_at = decision_time
+        item.delete_eligible_at = decision_time + timedelta(days=delete_after_days)
+        item.error_detail = ""
+        item.save(update_fields=_REVIEW_DECISION_FIELDS)
     delete_eligible_at = item.delete_eligible_at
     emit_hub_audit_event(
         "hub.quarantine_item_approved_for_deletion",
@@ -327,26 +337,15 @@ def retain_quarantine_item(
     decision_reason = reason.strip()
     if not decision_reason:
         raise ValueError("decision_reason is required")
-    if item.status == QuarantineItem.Status.DELETED.value:
-        raise ValueError("Cannot retain a deleted quarantine item")
 
-    item.status = QuarantineItem.Status.RETAINED.value
-    item.decision_reason = decision_reason
-    item.reviewed_by = reviewed_by
-    item.reviewed_at = now or _now()
-    item.delete_eligible_at = None
-    item.error_detail = ""
-    item.save(
-        update_fields=[
-            "status",
-            "decision_reason",
-            "reviewed_by",
-            "reviewed_at",
-            "delete_eligible_at",
-            "error_detail",
-            "updated_at",
-        ]
-    )
+    with transaction.atomic():
+        set_quarantine_item_status(item, QuarantineItem.Status.RETAINED.value)
+        item.decision_reason = decision_reason
+        item.reviewed_by = reviewed_by
+        item.reviewed_at = now or _now()
+        item.delete_eligible_at = None
+        item.error_detail = ""
+        item.save(update_fields=_REVIEW_DECISION_FIELDS)
     emit_hub_audit_event(
         "hub.quarantine_item_retained",
         quarantine_item_id=str(item.pk),
@@ -420,9 +419,16 @@ def reap_approved_quarantine_items(
         if not path.exists():
             missing_count += 1
             if not dry_run:
-                item.status = QuarantineItem.Status.MISSING.value
-                item.error_detail = "Approved quarantine file was already missing."
-                item.save(update_fields=["status", "error_detail", "updated_at"])
+                with transaction.atomic():
+                    if set_quarantine_item_status(
+                        item, QuarantineItem.Status.MISSING.value
+                    ):
+                        item.error_detail = (
+                            "Approved quarantine file was already missing."
+                        )
+                        item.save(
+                            update_fields=["status", "error_detail", "updated_at"]
+                        )
             continue
         if not path.is_file():
             raise ValueError(f"Approved quarantine path is not a file: {path}")
@@ -434,15 +440,19 @@ def reap_approved_quarantine_items(
         try:
             safe_unlink_file(path, missing_ok=False)
         except Exception as exc:
-            item.status = QuarantineItem.Status.FAILED.value
-            item.error_detail = str(exc)
-            item.save(update_fields=["status", "error_detail", "updated_at"])
+            with transaction.atomic():
+                if set_quarantine_item_status(item, QuarantineItem.Status.FAILED.value):
+                    item.error_detail = str(exc)
+                    item.save(update_fields=["status", "error_detail", "updated_at"])
             raise
 
-        item.status = QuarantineItem.Status.DELETED.value
-        item.deleted_at = reap_now
-        item.error_detail = ""
-        item.save(update_fields=["status", "deleted_at", "error_detail", "updated_at"])
+        with transaction.atomic():
+            set_quarantine_item_status(item, QuarantineItem.Status.DELETED.value)
+            item.deleted_at = reap_now
+            item.error_detail = ""
+            item.save(
+                update_fields=["status", "deleted_at", "error_detail", "updated_at"]
+            )
         deleted.append(item)
         emit_hub_audit_event(
             "hub.quarantine_item_deleted",

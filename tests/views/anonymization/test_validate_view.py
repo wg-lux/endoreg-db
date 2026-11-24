@@ -15,6 +15,7 @@ from datetime import date, datetime
 from collections.abc import Callable, Mapping
 from typing import Any, Literal, Protocol, TypedDict, cast
 from unittest.mock import patch
+from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
 import pytest
 from django.contrib.auth.models import Group, User
@@ -39,6 +40,7 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.tag import Tag
+from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
 
 logger = logging.getLogger(__name__)
@@ -427,6 +429,38 @@ class TestAnonymizationValidateView:
             assert response.status_code == status.HTTP_400_BAD_REQUEST
             assert "Video validation failed" in error_text
 
+    def test_validate_pdf_rejects_unusable_transfer_artifact(
+        self, factory: APIRequestFactory, user: User, pdf_file: _MediaFileFixture
+    ) -> None:
+        data = {
+            "patient_first_name": "Max",
+            "patient_last_name": "Mustermann",
+            "patient_dob": "21.03.1994",
+            "patient_gender": "männlich",
+            "casenumber": "",
+            "examination_date": "15.02.2024",
+            "file_type": "pdf",
+            "document_type": "report_final",
+        }
+        with patch(
+            "endoreg_db.views.anonymization.validate.validate_report_metadata_annotation",
+            side_effect=ProcessedReportIntegrityError("missing artifact"),
+        ) as validate:
+            request = self._post_request(
+                factory, f"/api/anonymization/{pdf_file.id}/validate/", data
+            )
+            self._force_authenticate(request, user)
+            response = self._call_view(
+                self._validate_view(), request, file_id=pdf_file.id
+            )
+            response_payload = cast(Mapping[str, object], response.data)
+            assert response.status_code == status.HTTP_409_CONFLICT, response_payload
+            assert (
+                response_payload["error_code"]
+                == "processed_report_artifact_unavailable"
+            )
+            assert validate.call_args.kwargs["enforce_processed_artifact"] is True
+
     def test_validate_pdf_with_german_dates(
         self, factory: APIRequestFactory, user: User, pdf_file: _MediaFileFixture
     ) -> None:
@@ -700,7 +734,7 @@ class TestAnonymizationValidateView:
             *,
             enforce_processed_artifact: bool,
         ) -> bool:
-            assert enforce_processed_artifact is False
+            assert enforce_processed_artifact is True
             sensitive_meta = instance.sensitive_meta
             assert sensitive_meta is not None
             sensitive_meta.patient_first_name = "Mutated"
@@ -803,8 +837,8 @@ class TestAnonymizationValidateView:
             "file_type": "video",
         }
 
-        def check_payload(payload: Mapping[str, object]) -> bool:
-            assert payload.get("is_verified") is False
+        def check_payload(payload: VideoTextMetaPayload) -> bool:
+            assert payload.root.get("is_verified") is False
             return True
 
         with patch.object(
@@ -823,22 +857,30 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
 
+    @pytest.mark.parametrize("patient_dob", ["21.03.1994", "1994-03-21"])
     def test_validate_video_injects_center_name_and_drops_unknown_gender(
-        self, factory: APIRequestFactory, user: User, video_file: _MediaFileFixture
+        self,
+        factory: APIRequestFactory,
+        user: User,
+        video_file: _MediaFileFixture,
+        patient_dob: str,
     ) -> None:
         data = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",
-            "patient_dob": "21.03.1994",
+            "patient_dob": patient_dob,
             "examination_date": "15.02.2024",
             "casenumber": "12345",
             "patient_gender": "not-a-gender",
             "file_type": "video",
         }
 
-        def check_payload(payload: Mapping[str, object]) -> bool:
-            assert payload.get("center_name") == "Test Center"
-            assert "patient_gender" not in payload
+        def check_payload(payload: VideoTextMetaPayload) -> bool:
+            assert isinstance(payload, VideoTextMetaPayload)
+            assert payload.root.get("center_name") == "Test Center"
+            assert "patient_gender" not in payload.root
+            assert payload.to_dict()["patient_dob"] == "1994-03-21"
+            assert payload.to_dict()["examination_date"] == "2024-02-15"
             return True
 
         with patch.object(
@@ -857,7 +899,7 @@ class TestAnonymizationValidateView:
 
             assert response.status_code == status.HTTP_200_OK
 
-    def test_validate_video_persists_tags_and_validation_comment(
+    def test_validate_video_persists_tags_and_erases_free_text_comment(
         self, factory: APIRequestFactory, user: User, video_file: _MediaFileFixture
     ) -> None:
         data = {
@@ -888,9 +930,8 @@ class TestAnonymizationValidateView:
         video_file.refresh_from_db()
         sensitive_meta = video_file.sensitive_meta
         assert sensitive_meta is not None
-        assert sensitive_meta.validation_comment == (
-            "Bitte vor Freigabe nochmal ansehen."
-        )
+        # Free text is erased by the shared direct-identifier policy.
+        assert sensitive_meta.validation_comment == ""
         assert set(sensitive_meta.tags.values_list("name", flat=True)) == {
             "Nochmal Überprüfen",
             "Ausgeschlossen",
@@ -1006,8 +1047,8 @@ class TestAnonymizationValidateView:
             "patient_gender": "male",
         }
 
-        def check_is_verified(payload: Mapping[str, object]) -> bool:
-            assert payload.get("is_verified") is True
+        def check_is_verified(payload: VideoTextMetaPayload) -> bool:
+            assert payload.root.get("is_verified") is True
             return True
 
         with patch.object(

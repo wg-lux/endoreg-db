@@ -57,7 +57,7 @@ Apply these field rules:
   test.
 
 `PatientExamination` no longer exposes a `.links` model property. Load the graph
-through `endoreg_db.services.patient_examination_links.load_patient_examination_for_links`
+through `endoreg_db.services.cases.examination_links.load_patient_examination_for_links`
 and pass the result to `build_patient_examination_links`. The loader performs the
 bounded object-graph query plan; service-owned aggregation then performs zero
 additional queries and fails loudly for an incompletely loaded instance. This
@@ -167,7 +167,7 @@ The first reference execution cohort is exactly
 
 - current and canonical contract:
   `endoreg_db.schemas.medical_ledger.MedicalLedgerRecordIds`;
-- consumers: `endoreg_db.services.medical_ledger` create/replay paths and the
+- consumers: `endoreg_db.services.interoperability.medical_ledger` create/replay paths and the
   medical-ledger API;
 - migration: `0058_medicalledgerwritereceipt`, dependent on the published
   medical-ledger contract used by the service;
@@ -189,10 +189,10 @@ dependency search of the `lx_dtypes` source tree are required cohort evidence.
 Run the guard and its focused verification from the repository root:
 
 ```bash
-devenv shell -- .devenv/state/venv/bin/python \
+.devenv/state/venv/bin/python \
   scripts/check_lx_dtypes_model_inventory.py
 .devenv/state/venv/bin/pyright
-devenv shell -- .devenv/state/venv/bin/pytest \
+.devenv/state/venv/bin/pytest \
   tests/scripts/test_check_lx_dtypes_model_inventory.py -q
 ```
 
@@ -279,6 +279,13 @@ retired and should not be reintroduced.
 The import barrel at `endoreg_db/models/__init__.py` amplifies this risk by
 pulling broad subpackages into otherwise small imports.
 
+`endoreg_db/models/state/clinical_workflow.py` is persistence-only and must stay
+that way: it imports Django alone, stores workflow tokens as plain strings, and
+is written exclusively by `endoreg_db/services/clinical_lifecycle/persistence.py`
+(compare-and-swap on `version`, append-only transitions). Token validation stays
+in the service until the lx-data-models contract provides database choices
+(`feature-tracking/MediaWorkflowStateMachine.yml`).
+
 ## Primary Hot Spots
 
 | Area | Current role | First files to inspect |
@@ -290,7 +297,7 @@ pulling broad subpackages into otherwise small imports.
 | Segment annotations | segment lifecycle, validation, frame extraction/deletion, generated annotations | `endoreg_db/models/label/label_video_segment/label_video_segment.py` |
 | Frame annotation queue | task queueing, selection, serialization, annotation sync | `endoreg_db/models/state/frame_annotation.py` |
 | AI datasets | active learning, manifests, frame buckets, export artifacts | `endoreg_db/models/aidataset/aidataset.py` |
-| Sensitive metadata | patient and examination identity, hashes, pseudo-patient creation | `endoreg_db/models/metadata/sensitive_meta.py:27`, `endoreg_db/models/metadata/sensitive_meta_logic.py:153` |
+| Sensitive metadata | patient and examination identity, hashes, pseudo-patient creation; dictionary ingestion moved to `endoreg_db/services/patient_identity/sensitive_meta_ingestion.py` | `endoreg_db/models/metadata/sensitive_meta.py:27`, `endoreg_db/models/metadata/sensitive_meta_logic.py:441` |
 | Hub uploads/transfers | persisted provenance JSON, transfer status, raw-transfer policy surface | `endoreg_db/models/hub/upload_job.py:149`, `endoreg_db/models/hub/transfer_job.py:17` |
 
 ## Model Files Importing Services, Utils, Import Files, Helpers
@@ -313,9 +320,8 @@ thin callers only where backward compatibility requires it.
 | `media/video/storage_mode.py` | utils | `endoreg_db/models/media/video/storage_mode.py:5` |
 | `media/video/video_file.py` | services, utils | `endoreg_db/models/media/video/video_file.py:17`, `:21`, `:37`, `:200` through `:739` |
 | `metadata/model_meta_logic.py` | utils | `endoreg_db/models/metadata/model_meta_logic.py:13` |
-| `metadata/sensitive_meta_logic.py` | utils | `endoreg_db/models/metadata/sensitive_meta_logic.py:12`, `:15` |
+| `metadata/sensitive_meta_logic.py` | services (secret_rotation), utils; lazy aliases to services/patient_identity | `endoreg_db/models/metadata/sensitive_meta_logic.py:14`, `:21`, `:25`, `:28` |
 | `metadata/video_prediction_meta.py` | services | `endoreg_db/models/metadata/video_prediction_meta.py:9` |
-| `metadata/video_prediction_logic.py` | services | `endoreg_db/models/metadata/video_prediction_logic.py:6` |
 | `state/frame_annotation.py` | services, utils | `endoreg_db/models/state/frame_annotation.py:14`, `:15`, `:156` |
 | `state/video_segment_validation.py` | services | `endoreg_db/models/state/video_segment_validation.py:10` |
 | `state/processing_history/processing_history.py` | utils | `endoreg_db/models/state/processing_history/processing_history.py:5` |
@@ -419,8 +425,8 @@ Primary references:
 - `endoreg_db/models/aidataset/aidataset.py:20`
 - `endoreg_db/models/label/label_video_segment/label_video_segment.py:10`
 - `endoreg_db/models/state/frame_annotation.py:83`
-- `endoreg_db/services/aidataset_exports.py:13`
-- `endoreg_db/services/aidataset_frame_buckets.py:11`
+- `endoreg_db/services/datasets/exports.py:13`
+- `endoreg_db/services/datasets/frame_buckets.py:11`
 
 The `AIDataSet` model imports neutral export and frame-bucket contracts directly
 from their owning `lx_dtypes.models.contracts` modules. Only the three retained
@@ -438,7 +444,7 @@ This ranking is based on workflow responsibility, not just line count.
 5. `endoreg_db/models/label/label_video_segment/label_video_segment.py` - segment lifecycle, validation, frame actions, generated annotations.
 6. `endoreg_db/services/video_files/_anonymization.py` - anonymized artifact generation and raw cleanup.
 7. `endoreg_db/services/video_files/_frames/_extract_frames.py` - frame extraction and cache integrity.
-8. `endoreg_db/models/metadata/sensitive_meta_logic.py:153` - patient identity and pseudonymization workflow logic.
+8. `endoreg_db/models/metadata/sensitive_meta_logic.py:441` - patient identity hashing and save-time pseudonymization logic (dictionary ingestion already extracted).
 9. `endoreg_db/models/state/video.py:19` - video processing state transitions and export readiness.
 10. `endoreg_db/models/hub/transfer_job.py:17` - transfer policy/status model and provenance validation boundary.
 
@@ -465,10 +471,14 @@ This ranking is based on workflow responsibility, not just line count.
 
 1. Add or keep import-boundary checks before moving behavior. Use a temporary
    allowlist for current debt instead of allowing new debt.
-   - Current check: `tests/app/test_model_import_boundaries.py` records the
-     existing `endoreg_db.models -> endoreg_db.services` import debt as an AST
-     allowlist. Update the allowlist only when removing existing debt or when a
-     consciously accepted compatibility wrapper is added.
+   - Current checks: `tests/app/test_clean_layer_cohorts.py` enforces the
+     established model/service and serializer/workflow boundaries for reviewed
+     cohorts. `scripts/check_lx_dtypes_model_inventory.py` checks registered
+     models, current consumers and shared/local contract ownership against
+     `quality/lx_dtypes_model_inventory.yml`; its regression tests are in
+     `tests/scripts/test_check_lx_dtypes_model_inventory.py`. The former
+     `test_model_import_boundaries.py` allowlist has been retired. These checks
+     do not imply a repository-wide ban on existing model/service imports.
 2. Replace barrel imports in touched service files with explicit leaf imports.
    Start with `endoreg_db/services`, then serializers, then views.
 3. Move neutral payload schemas out of service packages if models need them for

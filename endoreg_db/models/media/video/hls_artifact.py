@@ -2,13 +2,10 @@ from __future__ import annotations
 
 import uuid as uuid_lib
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 from django.core.exceptions import ValidationError
 from django.db import models
-
-if TYPE_CHECKING:
-    pass
 
 
 class VideoHlsArtifact(models.Model):
@@ -147,15 +144,15 @@ class VideoHlsArtifact(models.Model):
             )
         if self.key_nonce is not None and len(self.key_nonce) != 12:
             errors["key_nonce"] = "HLS key nonce must be 12 bytes."
-        if self.iv_hex:
-            if len(self.iv_hex) != 32:
-                errors["iv_hex"] = "HLS IV must be 32 hexadecimal characters."
-            elif any(char not in "0123456789abcdefABCDEF" for char in self.iv_hex):
-                errors["iv_hex"] = "HLS IV must be hexadecimal."
-        if self.status == self.Status.FAILED.value and not self.error_code:
-            errors["error_code"] = "Failed HLS artifacts require an error code."
-        if self.status != self.Status.FAILED.value and self.error_code:
-            errors["error_code"] = "Only failed HLS artifacts may have an error code."
+        if self.iv_hex and (
+            len(self.iv_hex) != 32
+            or any(char not in "0123456789abcdefABCDEF" for char in self.iv_hex)
+        ):
+            errors["iv_hex"] = "HLS IV must be 32 hexadecimal characters."
+        if (self.status == self.Status.FAILED.value) != bool(self.error_code):
+            errors["error_code"] = (
+                "An error code is required exactly when HLS has failed."
+            )
         if errors:
             raise ValidationError(errors)
 

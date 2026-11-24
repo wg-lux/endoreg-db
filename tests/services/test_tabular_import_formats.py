@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from endoreg_db.services.tabular_import_formats import (
+from endoreg_db.services.imports.tabular_import_formats import (
     build_preanonymized_payload,
     load_document_templates,
     normalize_document_row,

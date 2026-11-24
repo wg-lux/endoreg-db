@@ -11,11 +11,10 @@ from typing import (
     Any,
     TYPE_CHECKING,
     Protocol,
-    Sequence,
-    TypedDict,
     Unpack,
     cast,
 )
+from collections.abc import Sequence
 
 import numpy as np
 from django.core.exceptions import ValidationError
@@ -88,6 +87,7 @@ def get_default_joined_dataset_id() -> int:
 
 
 if TYPE_CHECKING:
+    from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
     from endoreg_db.models.label.label_video_segment.label_video_segment import (
         LabelVideoSegment,
     )
@@ -96,6 +96,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.metadata.model_meta import ModelMeta
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
     from endoreg_db.models.state.video import VideoState
+    from endoreg_db.services.video_files.imports import CreateVideoFileFromPathKwargs
 
 
 class VideoFrameScoreResult(Protocol):
@@ -116,10 +117,6 @@ class VideoFrameScoreResult(Protocol):
 
     @property
     def timestamps(self) -> list[float] | None: ...
-
-
-class _VideoFileCreateKwargs(TypedDict, total=False):
-    pass
 
 
 class VideoFile(models.Model):
@@ -302,6 +299,7 @@ class VideoFile(models.Model):
 
     if TYPE_CHECKING:
         pk: int
+        hls_artifacts: models.Manager[VideoHlsArtifact]
         sensitive_meta_id: int | None
         center_id: int
         processor_id: int | None
@@ -612,7 +610,7 @@ class VideoFile(models.Model):
 
         return get_processed_video_file_path(self)
 
-    def anonymize(self, delete_original_raw: bool = True) -> bool:
+    def anonymize(self, delete_original_raw: bool = False) -> bool:
         from endoreg_db.services.video_files import anonymize_video_file
 
         return anonymize_video_file(self, delete_original_raw=delete_original_raw)
@@ -632,7 +630,7 @@ class VideoFile(models.Model):
         n_test_frames: int = 10,
         return_frame_scores: bool = False,
         frame_source_mode: "FrameSourceMode" = "stream",
-        frame_source_file_type: str = "raw",
+        frame_source_file_type: str | None = None,
     ) -> "dict[str, list[tuple[int, int]]] | VideoFrameScoreResult":
         from endoreg_db.services.video_files import predict_video
 
@@ -696,7 +694,7 @@ class VideoFile(models.Model):
         cls,
         file_path: str | Path,
         center_name: str,
-        **kwargs: Unpack[_VideoFileCreateKwargs],
+        **kwargs: Unpack[CreateVideoFileFromPathKwargs],
     ) -> "VideoFile | None":
         from endoreg_db.services.video_files import create_video_file_from_path
 
@@ -716,6 +714,8 @@ class VideoFile(models.Model):
         raw_video_hash: str,
         save_video_file: bool = True,
         initialize: bool = True,
+        *,
+        center_key: str | None = None,
     ) -> "VideoFile":
         """
         Creates a VideoFile instance from a given video file path.
@@ -734,6 +734,7 @@ class VideoFile(models.Model):
             save_video_file=save_video_file,
             initialize=initialize,
             model_cls=cls,
+            center_key=center_key,
         )
 
     def delete(
@@ -748,12 +749,7 @@ class VideoFile(models.Model):
     ) -> bool:
         from endoreg_db.services.video_files import validate_video_metadata_annotation
 
-        payload: VideoTextMetaPayload | None = (
-            extracted_data_dict.model_dump()
-            if extracted_data_dict is not None
-            else None
-        )
-        return validate_video_metadata_annotation(self, payload)
+        return validate_video_metadata_annotation(self, extracted_data_dict)
 
     def initialize(self) -> "VideoFile":
         from endoreg_db.services.video_files import initialize_video_file
@@ -832,7 +828,7 @@ class VideoFile(models.Model):
 
         Overrides the default save method to persist changes to the VideoFile model.
         """
-        from endoreg_db.services.media_operation_gate import video_file_save_guard
+        from endoreg_db.services.media.operation_gate import video_file_save_guard
 
         with video_file_save_guard(self, update_fields=kwargs.get("update_fields")):
             if self.joined_dataset_id is None:

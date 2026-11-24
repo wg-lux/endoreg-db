@@ -9,7 +9,7 @@ import pytest
 from django.core.management import CommandError, call_command
 
 from endoreg_db.management.commands import run_offline_batch as command_module
-from endoreg_db.services.offline_batch_runner import (
+from endoreg_db.services.runtime.offline_batch_runner import (
     OfflineBatchAlreadyRunning,
     OfflineBatchRunResult,
     OfflineBatchRunnerConfig,

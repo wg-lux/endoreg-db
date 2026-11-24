@@ -10,8 +10,8 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.hls_media import materialize_video_hls
-from endoreg_db.services.streamable_media import (
+from endoreg_db.services.streaming.hls_media import materialize_video_hls
+from endoreg_db.services.streaming.streamable_media import (
     sync_video_streamable_artifacts,
 )
 

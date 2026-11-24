@@ -66,3 +66,11 @@ class ReapProcessedGenerationOptions(BaseModel):
     model_config = ConfigDict(extra="ignore")
     video_id: int = Field(gt=0)
     apply: bool = False
+
+
+class PeriodicMediaCleanupCursor(BaseModel):
+    """Scheduling progress only; never an authority for filesystem deletion."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal[1] = 1
+    video_id: int = Field(default=0, ge=0, strict=True)

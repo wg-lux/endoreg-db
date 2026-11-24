@@ -1,11 +1,14 @@
 import os
 from pathlib import Path
 from endoreg_db.config.identity_hashing import load_identity_salt
-from endoreg_db.config.secret_keyring import configured_signing_keys, read_private_file
+from endoreg_db.config.secret_keyring import (
+    configured_master_keys,
+    configured_signing_keys,
+)
 
 from .base import *  # noqa: F401,F403
 from .base import (
-    BASE_DIR,
+    BASE_DIR as BASE_DIR,
     ENDOREG_ENABLE_HUB_TRANSFERS,
     ENDOREG_DEPLOYMENT_ROLE,
     REST_FRAMEWORK,
@@ -28,6 +31,8 @@ from . import keycloak as KEYCLOAK
 pytest_active = "PYTEST_CURRENT_TEST" in os.environ
 
 DJANGO_SALT = load_identity_salt(required=True, allow_inline=False)
+# Production validation must remain strict even when loaded by a test process.
+configured_master_keys(allow_inline=False)
 
 DEBUG = False if pytest_active else env_bool("DJANGO_DEBUG", False)
 REPORT_IMPORT_REQUIRE_NATIVE_SNAPSHOT = env_bool(
@@ -46,23 +51,9 @@ if WATCHER_CELERY_INLINE_FALLBACK_ENABLED:
     )
 
 _signing_keys = configured_signing_keys()
-_secret_key_file = env_str("DJANGO_SECRET_KEY_FILE")
-_secret_key = (
-    _signing_keys[0]
-    if _signing_keys is not None
-    else read_private_file(Path(_secret_key_file), limit=4096).decode("utf-8").strip()
-    if _secret_key_file
-    else env_str("DJANGO_SECRET_KEY")
-)
-if not _secret_key:
-    if pytest_active:
-        _secret_key = "test-secret-key"
-    else:
-        raise ValueError(
-            "DJANGO_SECRET_KEY environment variable must be set in production"
-        )
-SECRET_KEY = _secret_key
-SECRET_KEY_FALLBACKS = _signing_keys[1] if _signing_keys is not None else []
+if _signing_keys is None:
+    raise ValueError("A configured Django signing key is required in production")
+SECRET_KEY, SECRET_KEY_FALLBACKS = _signing_keys
 
 _allowed_hosts = [h for h in env_str("DJANGO_ALLOWED_HOSTS", "").split(",") if h]
 if not _allowed_hosts:
@@ -74,36 +65,20 @@ if not _allowed_hosts:
         )
 ALLOWED_HOSTS = _allowed_hosts
 
-# Require explicit DB engine in production (no default to SQLite)
 _db_engine = env_str("DB_ENGINE")
 if not _db_engine:
     if pytest_active:
-        _db_engine = "django.db.backends.sqlite3"
+        _db_engine = "django.db.backends.postgresql"
     else:
         raise ValueError("DB_ENGINE must be set in production")
 DB_ENGINE = _db_engine
 
-# For non-sqlite engines, require DB_NAME; for sqlite, allow default to a file under BASE_DIR
-if DB_ENGINE.endswith("sqlite3"):
-    _db_name = env_str("DB_NAME", str(BASE_DIR / "prod_sim_db.sqlite3"))
-else:
-    _db_name = env_str("DB_NAME")
-    if not _db_name:
-        raise ValueError(
-            "DB_NAME must be set when using a non-sqlite database engine in production"
-        )
+
+_db_name = env_str("DB_NAME")
+if not _db_name:
+    raise ValueError("DB_NAME must be set when in production")
 DB_NAME = _db_name
 
-_ROLE_REQUIRES_PRODUCTION_DB = {"central_hub", "local_study_server"}
-
-# require production DB in central-hub and local-study-server modes
-if ENDOREG_DEPLOYMENT_ROLE in _ROLE_REQUIRES_PRODUCTION_DB and DB_ENGINE.endswith(
-    "sqlite3"
-):
-    raise ValueError(
-        f"ENDOREG_DEPLOYMENT_ROLE={ENDOREG_DEPLOYMENT_ROLE} requires a non-SQLite production database. "
-        "Use PostgreSQL or another durable multi-user database engine."
-    )
 
 # Credentials and connection params are only included when configured.
 DB_USER = env_str("DB_USER", "")
@@ -115,15 +90,14 @@ _db_config = {
     "ENGINE": DB_ENGINE,
     "NAME": DB_NAME,
 }
-if not DB_ENGINE.endswith("sqlite3"):
-    if DB_USER:
-        _db_config["USER"] = DB_USER
-    if DB_PASSWORD:
-        _db_config["PASSWORD"] = DB_PASSWORD
-    if DB_HOST:
-        _db_config["HOST"] = DB_HOST
-    if DB_PORT:
-        _db_config["PORT"] = DB_PORT
+if DB_USER:
+    _db_config["USER"] = DB_USER
+if DB_PASSWORD:
+    _db_config["PASSWORD"] = DB_PASSWORD
+if DB_HOST:
+    _db_config["HOST"] = DB_HOST
+if DB_PORT:
+    _db_config["PORT"] = DB_PORT
 
 DATABASES = {"default": _db_config}
 

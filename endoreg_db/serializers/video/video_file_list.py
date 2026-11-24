@@ -7,15 +7,19 @@ import logging
 from rest_framework import serializers
 
 if TYPE_CHECKING:
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
+    )
+
     _ModelSerializerMeta = serializers.ModelSerializer.Meta
 else:
     _ModelSerializerMeta = object
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.frame_annotation_workflow import (
+from endoreg_db.services.annotations.workflow import (
     validated_annotators_for_video,
 )
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     post_validation_rebuild_summary,
     resolve_segment_annotation_status,
     segment_annotations_are_final,
@@ -23,6 +27,7 @@ from endoreg_db.services.video_segment_validation_workflow import (
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
 )
+from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
 from lx_dtypes.models.contracts.video_segment_validation import (
     PostValidationRebuildSummaryData,
 )
@@ -41,6 +46,7 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     """
 
     # Add computed fields for video status
+    original_file_name = serializers.SerializerMethodField()
     status = serializers.SerializerMethodField()
     assigned_user = serializers.SerializerMethodField()
     anonymized = serializers.SerializerMethodField()
@@ -51,12 +57,15 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
     outside_segments_removed = serializers.SerializerMethodField()
     post_validation_rebuild = serializers.SerializerMethodField()
     validated_annotators = serializers.SerializerMethodField()
-    segments = LabelVideoSegmentTimelineSerializer(
-        many=True, read_only=True, source="label_video_segments"
-    )
+    segments = serializers.SerializerMethodField()
+    timeline_error = serializers.SerializerMethodField()
+    _timeline_error: str | None = None
     center_key = serializers.CharField(source="center.center_key", read_only=True)
     center_name = serializers.CharField(source="center.display_name", read_only=True)
     processor_name = serializers.SerializerMethodField()
+
+    def get_original_file_name(self, obj: VideoFile) -> str:
+        return f"video-{obj.pk}"
 
     class Meta(_ModelSerializerMeta):
         model = VideoFile  # pyright: ignore[reportAssignmentType]
@@ -76,9 +85,35 @@ class VideoFileListSerializer(serializers.ModelSerializer[VideoFile]):
             "post_validation_rebuild",
             "validated_annotators",
             "segments",
+            "timeline_error",
             "export_segments_by_video",
             "processor_name",
         ]
+
+    def get_segments(self, obj: VideoFile) -> object:
+        self._timeline_error = None
+        try:
+            serializer = cast(
+                "serializers.ListSerializer[LabelVideoSegment]",
+                LabelVideoSegmentTimelineSerializer(many=True, context=self.context),
+            )
+            return serializer.to_representation(obj.label_video_segments.all())
+        except VideoTimelineMappingError as exc:
+            self._timeline_error = str(exc)
+            logger.error(
+                "Video timeline unavailable for VideoFile(id=%s): %s", obj.pk, exc
+            )
+            return None
+
+    def get_timeline_error(self, obj: VideoFile) -> str | None:
+        return self._timeline_error
+
+    def to_representation(self, instance: VideoFile) -> dict[str, object]:
+        data = super().to_representation(instance)
+        if self._timeline_error is not None:
+            data["status"] = "failed"
+            data["anonymized"] = False
+        return data
 
     # --- internal helper -------------------------------------------------
     def _get_video_state(self, obj: VideoFile):
@@ -271,4 +306,5 @@ class CrossCenterProcessedVideoSerializer(VideoFileListSerializer):
             "segment_annotations_validated",
             "segment_annotation_status",
             "segments",
+            "timeline_error",
         ]

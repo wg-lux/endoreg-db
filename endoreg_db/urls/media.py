@@ -1,7 +1,30 @@
+from endoreg_db.views.video.provenance_recovery import VideoProvenanceRecoveryView
+from endoreg_db.views.video.electrical_measurements import (
+    VideoElectricalAlignedFramesView,
+    VideoElectricalMeasurementsView,
+)
 from django.urls import URLPattern, path
+from endoreg_db.views.media.finding_suggestions import FindingSuggestionsView
+from endoreg_db.views.media.export_downloads import VideoExportDownloadView
+from endoreg_db.views.media.frame_annotation_export_downloads import (
+    FrameAnnotationExportRunArchiveView,
+    FrameAnnotationExportRunFilesView,
+    FrameAnnotationExportRunFileView,
+)
+from endoreg_db.views.media.frame_annotation_export_jobs import (
+    FrameAnnotationExportJobDetailView,
+    FrameAnnotationExportJobListView,
+    FrameAnnotationExportJobStartView,
+    FrameAnnotationExportJobValidateView,
+)
 
 from endoreg_db.views.media.frame_media import DecodedFrameStreamView, FrameStreamView
 from endoreg_db.views.media.export_ready import VideoMarkReadyForExportView
+from endoreg_db.views.media.clinical_workflow import (
+    ClinicalWorkflowStagesView,
+    ClinicalWorkflowView,
+)
+from endoreg_db.services.clinical_lifecycle.state_machine import ClinicalRecordKind
 from endoreg_db.views.media.hub import (
     HubTransferCreateView,
     HubTransferMediaUploadView,
@@ -15,6 +38,12 @@ from endoreg_db.views.media.hub import (
 from endoreg_db.views.media.patient_media_timeline import PatientMediaTimelineView
 from endoreg_db.views.media.anonymization_metrics import AnonymizationMetricsView
 from endoreg_db.views.media.study_cohort import StudyCohortPreviewView
+from endoreg_db.views.media.studies import StudiesView, StudyDetailView
+from endoreg_db.views.media.table_mappings import (
+    TableMappingInspectionView,
+    TableMappingsView,
+    TableMappingDetailView,
+)
 from endoreg_db.views.media.pdf_media import (
     PdfMediaView,  # Alias to avoid conflict with legacy pdf.reportMediaView
 )
@@ -31,7 +60,7 @@ from endoreg_db.views.media.sensitive_metadata import (
 )
 from endoreg_db.views.media.video_media import VideoMediaView
 from endoreg_db.views.report.reimport import ReportLlmJobStatusView, ReportReimportView
-from endoreg_db.views.report.pdf_redaction import (
+from endoreg_db.views.pdf.pdf_redaction import (
     PdfApplyRedactionsView,
     PdfProcessingHistoryView,
 )
@@ -72,6 +101,8 @@ from endoreg_db.views.video.ai import (
     prediction_model_list,
     rerun_prediction_segments,
 )
+from endoreg_db.views.video.ai.label import label_catalog
+from endoreg_db.views.video.masks import VideoMasksView
 from endoreg_db.views.video.correction import (
     VideoApplyMaskView,
     VideoAnonymizationCorrectionView,
@@ -128,6 +159,10 @@ QUARANTINE_URLPATTERNS: list[URLPattern] = [
 ]
 
 MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
+    path("media/studies/", StudiesView.as_view(), name="studies"),
+    path(
+        "media/studies/<int:study_id>/", StudyDetailView.as_view(), name="study-detail"
+    ),
     path(
         "media/studies/cohort-preview/",
         StudyCohortPreviewView.as_view(),
@@ -146,6 +181,13 @@ MEDIA_OVERVIEW_URLPATTERNS: list[URLPattern] = [
 ]
 
 VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
+    path("media/videos/masks/", VideoMasksView.as_view(), name="video-masks"),
+    path(
+        "media/videos/<int:pk>/finding-suggestions/",
+        FindingSuggestionsView.as_view(),
+        {"kind": "videos"},
+        name="video-finding-suggestions",
+    ),
     path("media/videos/", VideoMediaView.as_view(), name="video-list"),
     path(
         "media/videos/<int:pk>/", VideoStreamView.as_view(), name="video-detail-stream"
@@ -235,11 +277,65 @@ VIDEO_MEDIA_URLPATTERNS: list[URLPattern] = [
 
 VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
     path(
+        "media/videos/<int:pk>/timestamps.csv",
+        VideoExportDownloadView.as_view(),
+        {"kind": "timestamps"},
+        name="video-timestamps-download",
+    ),
+    path(
+        "media/videos/<int:pk>/download/",
+        VideoExportDownloadView.as_view(),
+        {"kind": "video"},
+        name="video-download",
+    ),
+    path(
+        "media/videos/<int:pk>/annotations.csv",
+        VideoExportDownloadView.as_view(),
+        {"kind": "annotations"},
+        name="video-annotations-download",
+    ),
+    path(
         "media/videos/export-annotated/",
         export_annotated,
         name="video-annotated-export",
     ),
+    path(
+        "media/videos/export-annotated/jobs/",
+        FrameAnnotationExportJobListView.as_view(),
+        name="video-annotated-export-job-list",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/start/",
+        FrameAnnotationExportJobStartView.as_view(),
+        name="video-annotated-export-job-start",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/validate/",
+        FrameAnnotationExportJobValidateView.as_view(),
+        name="video-annotated-export-job-validate",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/<uuid:job_id>/",
+        FrameAnnotationExportJobDetailView.as_view(),
+        name="video-annotated-export-job-detail",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/<uuid:job_id>/files/",
+        FrameAnnotationExportRunFilesView.as_view(),
+        name="video-annotated-export-job-files",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/<uuid:job_id>/files/<path:relative_path>",
+        FrameAnnotationExportRunFileView.as_view(),
+        name="video-annotated-export-job-file",
+    ),
+    path(
+        "media/videos/export-annotated/jobs/<uuid:job_id>/archive.zip",
+        FrameAnnotationExportRunArchiveView.as_view(),
+        name="video-annotated-export-job-archive",
+    ),
     path("media/videos/labels/list/", label_list, name="get_lvs_list"),
+    path("media/videos/labels/catalog/", label_catalog, name="video-label-catalog"),
     path(
         "media/videos/label-sets/list/",
         label_set_list,
@@ -319,6 +415,21 @@ VIDEO_ANNOTATION_URLPATTERNS: list[URLPattern] = [
         "media/videos/<int:pk>/segments/",
         video_segments_by_video,
         name="video-segments-by-video",
+    ),
+    path(
+        "media/videos/<int:pk>/provenance/recover/",
+        VideoProvenanceRecoveryView.as_view(),
+        name="video-provenance-recovery",
+    ),
+    path(
+        "media/videos/<int:pk>/electrical-measurements/",
+        VideoElectricalMeasurementsView.as_view(),
+        name="video-electrical-measurements",
+    ),
+    path(
+        "media/videos/<int:pk>/electrical-measurements/<int:measurement_id>/frames/",
+        VideoElectricalAlignedFramesView.as_view(),
+        name="video-electrical-aligned-frames",
     ),
     path(
         "media/videos/<int:pk>/segments/blacken-outside/",
@@ -404,6 +515,12 @@ SENSITIVE_METADATA_URLPATTERNS: list[URLPattern] = [
 ]
 
 PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/pdfs/<int:pk>/finding-suggestions/",
+        FindingSuggestionsView.as_view(),
+        {"kind": "pdfs"},
+        name="pdf-finding-suggestions",
+    ),
     path("media/pdfs/", PdfMediaView.as_view(), name="pdf-list"),
     path("media/pdfs/<int:pk>/", PdfMediaView.as_view(), name="pdf-detail"),
     path(
@@ -431,7 +548,45 @@ PDF_REPORT_MEDIA_URLPATTERNS: list[URLPattern] = [
     ),
 ]
 
+STUDY_TABLE_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/studies/table-mappings/",
+        TableMappingsView.as_view(),
+        name="study-table-mappings",
+    ),
+    path(
+        "media/studies/table-mappings/inspect/",
+        TableMappingInspectionView.as_view(),
+        name="study-table-mapping-inspect",
+    ),
+    path(
+        "media/studies/table-mappings/<uuid:mapping_id>/",
+        TableMappingDetailView.as_view(),
+        name="study-table-mapping-detail",
+    ),
+]
+
+# lx-annotate docs/guides/media-workflow-frontend-contract.md
+MEDIA_WORKFLOW_URLPATTERNS: list[URLPattern] = [
+    path(
+        "media/videos/<int:pk>/workflow/",
+        ClinicalWorkflowView.as_view(record_kind=ClinicalRecordKind.VIDEO),
+        name="video-clinical-workflow",
+    ),
+    path(
+        "media/pdfs/<int:pk>/workflow/",
+        ClinicalWorkflowView.as_view(record_kind=ClinicalRecordKind.REPORT),
+        name="pdf-clinical-workflow",
+    ),
+    path(
+        "media/workflow/stages/",
+        ClinicalWorkflowStagesView.as_view(),
+        name="media-workflow-stages",
+    ),
+]
+
 urlpatterns: list[URLPattern] = [
+    *STUDY_TABLE_URLPATTERNS,
     *HUB_TRANSFER_URLPATTERNS,
     *QUARANTINE_URLPATTERNS,
     *MEDIA_OVERVIEW_URLPATTERNS,
@@ -440,4 +595,5 @@ urlpatterns: list[URLPattern] = [
     *VIDEO_SEGMENT_VALIDATION_URLPATTERNS,
     *SENSITIVE_METADATA_URLPATTERNS,
     *PDF_REPORT_MEDIA_URLPATTERNS,
+    *MEDIA_WORKFLOW_URLPATTERNS,
 ]

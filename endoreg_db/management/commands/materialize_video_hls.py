@@ -12,7 +12,7 @@ from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files import VideoArtifactKind
-from endoreg_db.services.hls_media import (
+from endoreg_db.services.streaming.hls_media import (
     coerce_hls_artifact_kind,
     dispatch_video_hls_materialization,
     hls_result_is_ready,
@@ -30,14 +30,7 @@ from endoreg_db.utils.encryption.encryption import load_master_key
 from ._video_command_base import BaseVideoCommand
 
 
-_HLS_STATUS_VALUES = (
-    VideoHlsArtifact.Status.QUEUED.value,
-    VideoHlsArtifact.Status.MATERIALIZING.value,
-    VideoHlsArtifact.Status.VALIDATED.value,
-    VideoHlsArtifact.Status.READY.value,
-    VideoHlsArtifact.Status.SUPERSEDED.value,
-    VideoHlsArtifact.Status.FAILED.value,
-)
+_HLS_STATUS_VALUES = VideoHlsArtifact.Status.values
 _BOTH_ARTIFACT_KINDS = "both"
 
 
@@ -80,7 +73,7 @@ class _RunOptions:
 
 class Command(BaseVideoCommand):
     help = (
-        "Materialize legacy encrypted video media into AES-128 encrypted HLS "
+        "Generate compatible AES-128 encrypted HTTP Live Streaming (HLS) "
         "artifacts. Defaults to dry-run selection; use --apply to dispatch work "
         "to the ffmpeg_media Celery queue. Processed artifacts run before raw "
         "artifacts, with validated or segment-annotated processed videos first."
@@ -253,9 +246,20 @@ class Command(BaseVideoCommand):
         queue: str,
     ) -> list[dict[str, Any]]:
         results: list[dict[str, Any]] = []
+        if run_options.apply_changes:
+            from endoreg_db.services.video_storage.generation_cleanup import (
+                cleanup_validated_raw_video,
+            )
+
+            for video in videos:
+                cleanup_validated_raw_video(int(video.pk), apply=True)
+                video.refresh_from_db()
         # Finish the selected processed pass before starting any raw artifact.
         for artifact_kind in run_options.artifact_kinds:
             for video in videos:
+                # A preceding processed pass may have completed validation cleanup.
+                if run_options.apply_changes:
+                    video.refresh_from_db()
                 if not self._video_has_source(video, artifact_kind=artifact_kind):
                     continue
                 result, stop = self._process_artifact(
@@ -424,14 +428,10 @@ class Command(BaseVideoCommand):
             if parsed_kind == VideoArtifactKind.RAW
             else video.processed_file
         )
-        name = str(getattr(source, "name", "") or "")
-        if not name:
+        if not source.name:
             return False
-        storage = getattr(source, "storage", None)
-        if storage is None or not hasattr(storage, "exists"):
-            return True
         try:
-            return bool(storage.exists(name))
+            return source.storage.exists(source.name)
         except OSError:
             return False
 
@@ -523,12 +523,7 @@ class Command(BaseVideoCommand):
 
         ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
         if ffmpeg_executable is None:
-            ffmpeg_path = ""
-            ffmpeg_available = False
             errors.append("ffmpeg executable is not available")
-        else:
-            ffmpeg_path = ffmpeg_executable
-            ffmpeg_available = True
 
         nginx_enabled = nginx_offload_enabled()
         if not nginx_enabled:
@@ -539,8 +534,8 @@ class Command(BaseVideoCommand):
 
         return _PreflightResult(
             master_key_available=master_key_available,
-            ffmpeg_available=ffmpeg_available,
-            ffmpeg_executable=ffmpeg_path,
+            ffmpeg_available=ffmpeg_executable is not None,
+            ffmpeg_executable=ffmpeg_executable or "",
             nginx_offload_enabled=nginx_enabled,
             nginx_protected_media_url=get_protected_media_url(),
             queue=queue,

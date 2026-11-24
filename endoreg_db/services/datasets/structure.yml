@@ -1,0 +1,62 @@
+version: 1
+tier: service
+path: endoreg_db/services/datasets
+parent: ../structure.yml
+summary: Dataset-scoped training selection, active learning and annotation exports.
+responsibilities:
+- Select dataset-bounded training labels and active-learning candidates.
+- Build annotation exports and training manifests.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: build_export_payload
+  file: exports.py
+  purpose: Build a typed dataset export after validating its center and approval scope.
+- name: build_active_learning_review_shortlist
+  file: active_learning_shortlist.py
+  purpose: Select operator-requested prediction candidates for human review.
+files:
+- file: __init__.py
+  role: Trainingsauswahl, Active Learning und Datensatzexporte.
+- file: active_learning.py
+  role: Exports select_active_learning_candidates_locally, select_active_learning_frame_indices_from_candidates,
+    select_active_learning_frame_indices.
+- file: active_learning_shortlist.py
+  role: Prepare an operator-requested shortlist; predictions remain review suggestions.
+- file: exports.py
+  role: Build scoped dataset exports using the shared batched ledger segment builder and exact timeline coordinates.
+- file: frame_buckets.py
+  role: Exports build_frame_bucket_distribution.
+- file: training_manifests.py
+  role: Exports infer_training_label_set_from_annotations, build_frame_format_manifest, build_frame_multilabel_training_manifest.
+- file: training_selection.py
+  role: Shared, dataset-bounded selection of manual or confirmed training labels.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/annotations
+  - endoreg_db/services/frames
+  - endoreg_db/services/hub
+  - endoreg_db/services/media
+  - endoreg_db/services/video_files
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+  - numpy
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Training annotation source scope
+  doc: docs/annotation_source_scope_training.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_aidataset_training_selection.py tests/services/test_lx_video_contracts.py
+    tests/services/test_aidataset_frame_buckets_unit.py
+  files:
+  - tests/services/test_aidataset_training_selection.py
+  - tests/services/test_lx_video_contracts.py
+  - tests/services/test_aidataset_frame_buckets_unit.py

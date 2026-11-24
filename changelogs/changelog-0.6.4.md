@@ -1,5 +1,7 @@
 # Major Changes
 
+> **Current operator action (2026-11-02, unreleased):** Before upgrading a v1 machine or resuming media migration, read the [LXENC v2 changes](../changelog.md) and [upgrade/resume procedure](../docs/secret_rotation.md#v1-machines-and-interrupted-media-migrations). Preserve existing keys and backups; deploy compatible readers before v2 writes. The historical release content below is unchanged.
+
 > Historical release note: the `Requirement*` models described below existed in version 0.6.4 and were removed by migration `0013_remove_legacy_requirement_models`. They are not part of the current production model.
 
 ## Improve CLI

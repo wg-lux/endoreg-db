@@ -1,0 +1,274 @@
+schema_version: '1.0'
+datum: '2026-11-17'
+host: gc-10
+profil: site-client
+zugriff: Nur lesende Diagnose; keine Bereitstellung und keine Datenlöschung.
+feature: ../HubTransfer.yml
+befehle:
+  - hostname
+  - systemctl is-active lx-annotate.service nginx.service lx-annotate-celery-hub-transfer-worker.service
+  - df -h /var/lib/lx-annotate
+  - sudo du -xh --max-depth=1 /var/lib/lx-annotate/data/storage
+  - systemctl show lx-annotate.service -p ExecStart -p User -p WorkingDirectory
+  - systemctl list-units 'lx-annotate*' --state=failed
+  - systemctl show lx-annotate-identity-salt-migration.service -p Result -p ExecMainStatus
+  - PostgreSQL BEGIN READ ONLY; aggregierte Transferzahlen nach Status und Aufbewahrungsrichtlinie; COMMIT.
+beobachtungen:
+  dienste: Webserver, nginx und Hub-Transfer-Worker aktiv.
+  laufzeitversion_im_startpfad: 1.7.7
+  datentraeger:
+    groesse_gib_gerundet: 747
+    belegt_gib_gerundet: 645
+    verfuegbar_gib_gerundet: 65
+    belegung_prozent: 91
+  video_speicher_gib_gerundet:
+    sensible_videos: 138
+    verarbeitete_videos: 156
+    wiedergabedateien: 189
+    importkopien: 108
+    temporaere_dateien: 38
+    frames: 1.7
+  transferaufnahme:
+    queued_mit_lokaler_aufbewahrung: 9
+    completed_mit_lokaler_aufbewahrung: 1
+    failed: 0
+  weitere_befunde:
+    - lx-annotate-identity-salt-migration.service ist fehlgeschlagen; ExecMainStatus=1.
+    - PostgreSQL meldet eine Abweichung der Kollationsversion (2.40 gegenüber 2.42).
+grenzen:
+  - Die Transferzahlen sind eine Momentaufnahme und kein Nachweis über den späteren Verlauf.
+  - Keine Patienteninhalte, Zugangsdaten, Umgebungsgeheimnisse oder Rohmedien ausgelesen.
+  - Keine Akzeptanzdienste gestartet, keine Warteschlangen verändert und keine Dateien entfernt.
+  - Fehlerursache der Identitätsmigration, Kollationsreparatur und vollständige Hub-Wiederherstellung nicht geprüft.
+folgepruefung:
+  beobachtet_bis_utc: '2026-11-17T11:15:43Z'
+  zugriff: gc-10 über SSH mit geprüftem Hostschlüssel; gc-02 lokal nach explizitem Hostnamenabgleich.
+  logfenster: Vorangegangene 24 Stunden; maximal 8000 Journalnachrichten der ausgewählten Dienste.
+  befehle:
+    - >-
+      journalctl --namespace=+lx-annotate -u lx-annotate-celery-hub-transfer-worker.service
+      -u lx-annotate-hub-export-health.service -u lx-annotate-celery-ffmpeg-worker.service
+      --since '24 hours ago' -n 8000 --no-pager -o json
+    - systemctl show lx-annotate.service lx-annotate-celery-hub-transfer-worker.service lx-annotate-celery-ffmpeg-worker.service -p Id -p ActiveState -p SubState -p Result -p LogNamespace
+    - systemctl list-units --failed --no-pager
+    - df -h /var/lib/lx-annotate/data
+    - findmnt -T /var/lib/lx-annotate/data
+    - lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINTS
+    - free -h
+    - swapon --show
+    - ps -C ffprobe -o pid,ppid,etime,pcpu,stat
+    - systemctl show postgresqlBackup.service -p Result -p ExecMainStatus -p ExecMainExitTimestamp
+    - >-
+      PostgreSQL auf Port 5432, endoregDbLocal, BEGIN READ ONLY: Transferzustände,
+      begrenzte Fehlertexte, technische Videometadaten, Normalisierungsbelege,
+      Hashgleichheit als Boolescher Wert und Medien-Leases; COMMIT.
+  gc10:
+    laufzeit:
+      lx_annotate: 1.7.7
+      endoreg_db: 1.8.2+luxnix.1
+      lx_dtypes: 0.6.4
+      lx_anonymizer: 1.1.2
+    speicher:
+      belegt_prozent: 92
+      verfuegbar_gib_gerundet: 61
+      anwendung_und_datenbank: LUKS-Mapping luxnix-app-storage; separate verschlüsselte Secret-Ablage.
+      aktiver_swap: Ausschließlich zram in dieser Momentaufnahme.
+    transferzustand:
+      completed: 1
+      failed: 3
+      queued: 6
+      aufbewahrung: Alle zehn Datensätze behalten lokale verarbeitete Medien.
+      einschraenkung: Queued beweist keinen ruhenden Worker; zwei Task-Ausnahmen hinterließen diesen Datenbankzustand.
+    fehler:
+      - >-
+        Drei Konfigurationsablehnungen vor Registrierung am Hub: Frame provenance must start
+        at the transferred recording. Der erste gespeicherte Herkunftshash stimmt bei allen
+        sieben Videos mit Normalisierungshistorie nicht mit der Aufnahmeidentität überein.
+      - Vollständige Präsentationszeitstempelprüfung mit vier Decoderthreads überschritt das 3600-Sekunden-Limit.
+      - Ein weiterer Transfertask endete mit MediaOperationDeferred wegen eines exklusiven Transcodes.
+      - >-
+        Ein Postvalidierungs-Rebuild erschöpfte Wiederholungen an einem artifact_write-Lease
+        mit Ablaufdatum 2026-11-16. Der vorhandene Code blockiert absichtlich auch bei abgelaufenen
+        Schreib-Leases bis zur sicheren Reconciliation; bloßes Löschen des Lease ist keine Reparatur.
+      - >-
+        Hub-Export-Health fehlgeschlagen wegen drei kritischer Ablehnungen. Celery meldete
+        einzelne abgelehnte Transfers dennoch als succeeded mit True; dies beweist keinen Hub-Empfang.
+      - >-
+        Identitätssalt-Migration meldet Migration incomplete und verlangt Prüfung fehlender
+        Identitäten, Kollisionen und verknüpfter Untersuchungsevidenz.
+      - PostgreSQL-Kollationsversion 2.40 gegenüber Laufzeit 2.42 weiterhin abweichend.
+    videoprofil:
+      konfigurierte_grenzen:
+        max_bit_rate_bps: 12000000
+        max_bytes_per_second: 1600000
+        fixed_overhead_bytes: 4194304
+        max_width: 4096
+        max_height: 2160
+      vorhandene_belege:
+        anzahl: 7
+        datum: '2026-10-13'
+        profil: clinical_h264_bounded_v1
+        aufloesung: 1920x1080
+        codec: h264
+        min_bit_rate_bps: 5611969
+        max_bit_rate_bps: 7880756
+        min_size_bytes: 761126367
+        max_size_bytes: 3529344637
+        storage_compliant: true
+        temporal_equivalent: true
+      ohne_normalisierungsbeleg: Zwei wartende Videos und der historische abgeschlossene Transfer.
+      einschraenkung: >-
+        Historische Belege sind kein neuer Volltest der aktuellen Dateien. Der aktuelle
+        verarbeitete Hash ließ sich aus canonical_timestamps dieser Belege nicht bestätigen.
+        Kein zusätzlicher Decoderlauf und keine Entschlüsselung großer Medien gestartet.
+    parallelitaet:
+      aktive_ffprobe_prozesse: 4
+      vom_webprozess_gestartet: 3
+      interpretation: Parallele vollständige Probes sind ein weiterer zu prüfender Laufzeitkostentreiber.
+    backup: Lokaler PostgreSQL-Backupdienst meldete am 2026-11-17 Erfolg; Wiederherstellung nicht getestet.
+  gc02:
+    profil: site-client laut Inventar und laufendem Hostnamen; konfiguriertes Hub-Ziel ist gs-02.
+    web_runtime_im_startpfad: 1.8.1
+    verschluesselung:
+      root: crypto_LUKS auf nvme0n1p2 mit aktivem cryptroot-Mapping.
+      abgedeckt: Anwendung, PostgreSQL, lokale PostgreSQL-Backups und persistenter Swap liegen unter cryptroot.
+      separater_encrypted_data_dienst: Inaktiv; dies widerlegt die darunterliegende Root-Verschlüsselung nicht.
+    speicher:
+      belegt_prozent: 84
+      verfuegbar_gib_gerundet: 79
+    dienste:
+      web: aktiv
+      postgresql: aktiv
+      hub_export_health: fehlgeschlagen; ein abgeschlossener Transfer und zwei Konfigurationsablehnungen.
+      identity_salt_migration: fehlgeschlagen; unvollständige Identitätsmigration.
+      lokaler_postgresql_backup: Erfolg am 2026-11-17; Wiederherstellung nicht getestet.
+  empfehlung:
+    - >-
+      gc-10 zuerst Aufnahmeidentität und belegte Transformationskette zusammenführen, ohne Hashes
+      umzubenennen oder die Herkunftsprüfung abzuschalten. Präsentationszeitstempel bleiben autoritativ;
+      keine pauschale Bildratenkonvertierung vorhandener Annotationen.
+    - >-
+      Unterbrochene Schreiboperationen mit Datei-/Datenbankevidenz versöhnen. Probe-Ausnahmen müssen
+      im Rust-autorisierten Transferablauf einen sichtbaren, wiederholbaren Zustand ergeben.
+      Wiederholte Probes derselben Generation erst nach nachgewiesener Integrität sicher zusammenführen.
+    - >-
+      Aktuelle Generationen gegen das gemeinsame Speicherprofil prüfen. Nur tatsächlich übergroße
+      Medien innerhalb der verschlüsselten Ablage begrenzt transkodieren; vollständige Zeitstempel-,
+      Hash-, Qualitäts- und Streamingprüfung vor atomarer Publikation. Keine pauschale Kompression
+      als Reparatur für die beobachteten Herkunftsfehler.
+    - >-
+      Zusammengehörige Sender-, Hub- und Typ-/Rust-Pakete getestet bereitstellen, zunächst einen
+      Transfer bis zur verifizierten Hub-Annahme prüfen und erst danach lokale Komplettbereinigung
+      ermöglichen. Softwareversionsnummern allein beweisen keine Vertragskompatibilität.
+    - >-
+      gc-02 benötigt nach dieser Mountprüfung keine erneute Verschlüsselungskonvertierung.
+      Softwareupdate separat mit überprüfter Sicherung, Wiederherstellungsweg, Migrationsprüfung
+      und Wartungsfenster planen. NixOS-Rollback ersetzt keine Datenbankwiederherstellung.
+    - >-
+      Falls mit dem Server gs-02 gemeint ist, dessen reale Daten-, Datenbank-, Backup- und Swap-Mounts
+      vor einer Entscheidung separat prüfen. Serverrolle ist kein Grund für unverschlüsselte
+      Patientendaten; Kapazität, Schlüsselwiederherstellung und unbeaufsichtigter Neustart gehören
+      jedoch in den Migrationsplan. gs-02 wurde in dieser Diagnose nicht per SSH untersucht.
+  nicht_durchgefuehrt:
+    - Keine Bereitstellung, kein Neustart, kein Transcode, kein Retry-Start, keine Entschlüsselung oder Löschung.
+    - Keine Änderungen an Identitäten, Aufnahmedaten, Präsentationszeitstempeln oder Lease-Zeilen.
+    - Keine erneute vollständige Medienprüfung, kein Hub-Wiederherstellungstest und keine Produktionsfreigabe.
+gs02_nachpruefung:
+  beobachtet_bis_utc: '2026-11-17T11:56:40Z'
+  anlass: Nutzer bestätigt gs-02 als gemeinten zentralen Hub; ergänzt die frühere gc-02-Prüfung.
+  host: gs-02
+  profil: gpu-hub mit lokalem PostgreSQL und zentralem Transferempfang.
+  zugriff: Nur lesendes SSH mit geprüftem Hostschlüssel; keine Geheimniswerte oder Datenbankinhalte ausgegeben.
+  befehle:
+    - hostname
+    - readlink -f /run/current-system
+    - systemctl show lx-annotate.service lx-annotate-encrypted-data.service postgresql.service lx-annotate-hub-backup.service postgresqlBackup.service -p Id -p ActiveState -p SubState -p Result -p ExecMainStatus -p ExecMainExitTimestamp
+    - systemctl show lx-annotate-hub-backup.service postgresqlBackup.service -p Id -p ExecStart -p User -p RequiresMountsFor -p ReadWritePaths
+    - journalctl --namespace=+lx-annotate -u lx-annotate-hub-backup.service --since '48 hours ago' --no-pager -o cat -n 35
+    - systemctl list-units --failed --no-pager
+    - systemctl list-timers --all '*backup*' '*Backup*' --no-pager
+    - findmnt -T /var/lib/lx-annotate/data/storage
+    - findmnt -T /var/lib/postgresql
+    - findmnt -T /var/backup/postgresql
+    - findmnt --fstab --evaluate -o TARGET,SOURCE,FSTYPE
+    - lsblk -o NAME,TYPE,FSTYPE,SIZE,MOUNTPOINTS
+    - df -h / /var/lib/lx-annotate/data /var/lib/postgresql /archive /data2 /data_aux1 /data_aux2
+    - swapon --show
+    - stat -c '%s %a %U:%G %y' /var/backup/postgresql/all.sql.gz
+    - du -xh --max-depth=1 /var/lib/lx-annotate/data/storage /var/lib/lx-annotate/data/hub/backup
+    - Installierte Versionsmetadaten und ausschließlich payload_schema_version-Zeilen der Transferverträge gelesen.
+  laufzeit:
+    nixos_generation: 26.05.20261021.da6dc0e
+    lx_annotate: 1.6.1
+    endoreg_db: 1.6.3
+    lx_dtypes: 0.5.7
+    lx_anonymizer: 1.0.9
+    transfer_schema: '7.0'
+    kompatibilitaetsgrenze: >-
+      gc-10 sendet ebenfalls Schema 7.0. Ältere Paketnummern beweisen daher keinen Schemafehler;
+      vollständige Vertrags- und Regressionskompatibilität wurde hier nicht ausgeführt.
+  dienste:
+    web_und_postgresql: aktiv
+    migrations_und_master_key_gate: Letzte Ausführung erfolgreich.
+    identity_salt_migration: Fehlgeschlagen; Prüfung fehlender Identitäten, Kollisionen und Untersuchungsevidenz erforderlich.
+    hub_backup: Fehlgeschlagen vor Skriptstart mit 243/CREDENTIALS und Argument list too long.
+    postgresql_backup: Letzte Ausführung am 2026-11-17 12:00 CET erfolgreich; kein Wiederherstellungsnachweis.
+  verschluesselung:
+    anwendung_und_live_datenbank: LUKS-Mapping luxnix-app-storage, ext4, 64 GiB.
+    schluesselkonfiguration: Wheel-Konfiguration liegt ebenfalls im verschlüsselten Anwendungsbereich; Vault-Secrets haben ein separates LUKS-Mapping.
+    root_und_grosse_datenvolumes: Btrfs direkt auf Partitionen ohne darunterliegenden LUKS-Layer laut lsblk/findmnt.
+    postgresql_dumps: /var/backup/postgresql liegt auf unverschlüsseltem Root; pg_dumpall schreibt dort gzip-komprimierte SQL-Dumps.
+    dump_rechte: 0600 postgres:postgres; Dateirechte ersetzen keine Verschlüsselung bei physischem Datenträgerzugriff.
+    swap: Nur zram aktiv; vorhandene unverschlüsselte Swap-Partition ist in dieser Momentaufnahme inaktiv.
+    boot_grenze: Mounts sind in fstab eingetragen; Boot-Entsperrung und Schlüsselwiederherstellung nicht praktisch getestet.
+  kapazitaet:
+    anwendungsvolume_gib: 64
+    anwendungsvolume_belegt_gib_gerundet: 16
+    anwendungsvolume_verfuegbar_gib_gerundet: 44
+    verarbeitete_videos_gib_gerundet: 6.6
+    streaming_gib_gerundet: 4.1
+    lokale_hub_backupverzeichnisse_kib_gerundet: 16
+    weitere_freie_volumes_tib_gerundet:
+      data2: 2.7
+      data_aux1: 3.7
+      data_aux2: 3.7
+      archive: 9.2
+    grenze: Freie Kapazität außerhalb des LUKS-Mappings steht dem geschützten Hub-Speicher nicht automatisch zur Verfügung.
+  backup_ursache:
+    dump_bytes: 3633430
+    unit_vertrag: LoadCredential=hub-postgresql.sql.gz:/var/backup/postgresql/all.sql.gz
+    dokumentierte_credential_grenze: 1 MB insgesamt je Unit.
+    quelle: https://www.freedesktop.org/software/systemd/man/latest/systemd.exec.html
+    befund: >-
+      Die Unit verwendet den vollständigen SQL-Dump als Credential. Er überschreitet das Limit;
+      systemd verweigert den Start, bevor das Snapshot-Skript ausgeführt wird. Auch die aktuelle
+      lokale LuxNix-Quelle enthält diese Konstruktion; ein unveränderter Rebuild behebt sie nicht.
+    code:
+      - luxnix-framework/modules/nixos/services/lx-annotate-local/subservices/lx-annotate-hub-backup.nix
+      - luxnix-framework/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix
+  empfohlene_reihenfolge:
+    - >-
+      Backup-Ausgabe einschließlich temporärer und vorheriger Dumps in die verschlüsselte Grenze
+      verlegen. Den großen Dump über streng begrenzten, nur lesenden Dateizugriff oder einen
+      privilegierten Staging-Schritt bereitstellen; Credentials nur für kleine Geheimnisse verwenden.
+      Kein pauschales Öffnen des PostgreSQL-Backupverzeichnisses für andere Benutzer.
+    - >-
+      Gekoppelte Datenbank-/Medien-Sicherung erfolgreich erzeugen, eine unabhängige verschlüsselte
+      Kopie vorhalten und Wiederherstellung nachweisen. Schlüssel separat gesichert wiederherstellbar
+      halten; keinen Langzeitschlüssel als Transfermaterial versenden.
+    - >-
+      Den geschützten Anwendungsbereich auf ein ausreichend großes Datenvolume ausbauen oder migrieren.
+      Bedarf aus Masters, Streamingderivaten, parallelem Staging und Backupaufbewahrung bestimmen;
+      vorhandene freie Partitionen vor jeder destruktiven Entscheidung vollständig inventarisieren.
+    - >-
+      Zusammengehörige getestete Hub-/Sender-/Typ-/Rust-Pakete mit Migrationsvorprüfung und
+      Wartungsfenster aktualisieren. Einen vollständigen Transfer einschließlich verifizierter
+      Hub-Annahme und lokaler Bereinigung prüfen. Bestehende gc-10-Herkunftsfehler separat versöhnen.
+    - >-
+      Kein sofortiger Komplettumbau des Root-Dateisystems allein wegen der Serverrolle.
+      Bestehende Anwendungsverschlüsselung erhalten, ungeschützte Backupgrenze schließen und
+      vor jedem Neustart Entsperrung sowie Offline-Wiederherstellung praktisch absichern.
+      Vollständige Host-/Archivverschlüsselung ist eine eigene geplante Migration.
+  nicht_durchgefuehrt:
+    - Keine Änderungen an Host, Sicherungen, Schlüsseln, Partitionen, Diensten oder Medien.
+    - Kein vollständiger Transfer-, Restore-, Reboot- oder Entsperrtest; keine Produktionsfreigabe.

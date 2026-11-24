@@ -24,7 +24,7 @@ def predict_video(
     n_test_frames: int = 10,
     return_frame_scores: bool = False,
     frame_source_mode: FrameSourceMode = "stream",
-    frame_source_file_type: str = "raw",
+    frame_source_file_type: str | None = None,
 ) -> "VideoPredictionSequenceMap | VideoFrameScoreResult":
     from ._ai import _predict_video_pipeline
 

@@ -25,6 +25,10 @@ class FindingClassificationTypeManager(models.Manager["FindingClassificationType
 
 class FindingClassificationType(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True)
     objects = FindingClassificationTypeManager()
 
@@ -42,6 +46,10 @@ class FindingClassificationManager(models.Manager["FindingClassification"]):
 
 class FindingClassification(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True)
     finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
         models.ManyToManyField(
@@ -114,6 +122,10 @@ class FindingClassificationChoiceManager(models.Manager["FindingClassificationCh
 
 class FindingClassificationChoice(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True)
     subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
     numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)

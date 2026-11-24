@@ -12,7 +12,7 @@ import pytest
 from django.core.management import call_command
 from django.core.management.base import CommandError
 from django.core.exceptions import ValidationError
-from django.db import close_old_connections
+from django.db import close_old_connections, connection
 
 from endoreg_db.models import (
     Disease,
@@ -33,8 +33,10 @@ from endoreg_db.models import (
     PatientMedicationSchedule,
     Unit,
 )
-from endoreg_db.services import medical_ledger
-from endoreg_db.services.medical_ledger import create_patient_medical_ledger
+from endoreg_db.services.interoperability import medical_ledger as medical_ledger
+from endoreg_db.services.interoperability.medical_ledger import (
+    create_patient_medical_ledger,
+)
 from lx_dtypes.models.ledger.medical.Write import PatientMedicalLedgerCreate
 
 
@@ -283,7 +285,10 @@ def test_receipt_backfill_command_reports_then_atomically_upgrades_legacy_rows()
 
 
 @pytest.mark.django_db
-def test_receipt_backfill_aborts_atomically_with_data_minimized_error() -> None:
+@pytest.mark.parametrize("apply", [False, True])
+def test_receipt_backfill_aborts_atomically_with_data_minimized_error(
+    apply: bool,
+) -> None:
     patient = _patient("ReceiptBackfillAbort")
     legacy = MedicalLedgerWriteReceipt(
         patient=patient,
@@ -302,8 +307,18 @@ def test_receipt_backfill_aborts_atomically_with_data_minimized_error() -> None:
     )
     MedicalLedgerWriteReceipt.objects.bulk_create([legacy, invalid])
 
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT name FROM pg_cursors")
+        cursors_before = cursor.fetchall()
+
     with pytest.raises(CommandError) as caught:
-        call_command("backfill_medical_ledger_receipts_v1", "--apply")
+        call_command("backfill_medical_ledger_receipts_v1", apply=apply)
+
+    # The caught exception retains its traceback: cursor cleanup must be immediate,
+    # before rollback, rather than depending on traceback garbage collection.
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT name FROM pg_cursors")
+        assert cursor.fetchall() == cursors_before
 
     message = str(caught.value)
     assert "medical_ledger_receipt_invalid" in message
@@ -471,3 +486,40 @@ def test_parallel_identical_requests_create_one_graph_and_one_receipt() -> None:
         PatientMedicationSchedule.objects.get(patient=patient_id).medication.count()
         == 1
     )
+
+
+def test_completed_case_import_replays_after_closure_without_new_writes() -> None:
+    from django.utils import timezone
+    from endoreg_db.models import Case
+
+    patient = _patient("Closed replay")
+    case = Case.objects.create(patient=patient, start_date=timezone.now())
+    data = _full_payload_data(patient)
+    data["case_id"] = case.pk
+    payload = PatientMedicalLedgerCreate.model_validate(data)
+    original = create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="closed-case-replay"
+    )
+    case.is_closed = True
+    case.save(update_fields=["is_closed"])
+    before = (
+        PatientMedication.objects.count(),
+        PatientLabValue.objects.count(),
+        MedicalLedgerWriteReceipt.objects.count(),
+    )
+    replay = create_patient_medical_ledger(
+        patient=patient, payload=payload, idempotency_key="closed-case-replay"
+    )
+    assert replay.replayed
+    assert replay.ledger.model_dump(mode="json") == original.ledger.model_dump(
+        mode="json"
+    )
+    with pytest.raises(medical_ledger.MedicalLedgerReferenceConflict):
+        create_patient_medical_ledger(
+            patient=patient, payload=payload, idempotency_key="new-write-to-closed-case"
+        )
+    assert (
+        PatientMedication.objects.count(),
+        PatientLabValue.objects.count(),
+        MedicalLedgerWriteReceipt.objects.count(),
+    ) == before

@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -212,10 +212,10 @@ def _normalize_transplant_value(column: str, value: Any) -> Any:
     return value
 
 
-def serialize_fu_tx_distance_df(df: pd.DataFrame) -> List[TransplantData]:
-    fu_tx_distance_data_list: List[TransplantData] = []
+def serialize_fu_tx_distance_df(df: pd.DataFrame) -> list[TransplantData]:
+    fu_tx_distance_data_list: list[TransplantData] = []
     for _, row in df.iterrows():
-        record: Dict[str, Any] = {}
+        record: dict[str, Any] = {}
         for column, value in row.items():
             column_name = str(column)
             record[column_name] = _normalize_transplant_value(column_name, value)
@@ -227,9 +227,9 @@ def serialize_fu_tx_distance_df(df: pd.DataFrame) -> List[TransplantData]:
 
 
 def fu_tx_distance_df_etl(
-    patient_data_list: List[PatientData],
-) -> List[TransplantData]:
-    lookup_patient_id_ntx_for_transplant_id: Dict[str, Optional[str]] = {}
+    patient_data_list: list[PatientData],
+) -> list[TransplantData]:
+    lookup_patient_id_ntx_for_transplant_id: dict[str, Optional[str]] = {}
     for patient_data in patient_data_list:
         for transplant_id in patient_data.transplant_ids:
             if transplant_id:
@@ -254,7 +254,7 @@ def fu_tx_distance_df_etl(
         _lookup_patient_id
     )
 
-    fu_tx_distance_data_list: List[TransplantData] = serialize_fu_tx_distance_df(
+    fu_tx_distance_data_list: list[TransplantData] = serialize_fu_tx_distance_df(
         fu_tx_distance_df
     )
 

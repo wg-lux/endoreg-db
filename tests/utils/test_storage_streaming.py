@@ -1,13 +1,19 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+import asyncio
+import threading
+from collections.abc import AsyncIterator, Iterable, Iterator
 from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
 
 from endoreg_db.utils.storage_streaming import (
+    BoundedStreamingHttpResponse,
     build_partial_content_response,
+    build_partial_content_response_from_path,
     field_file_has_decrypted_range_storage,
     iter_field_file_bytes,
     parse_byte_range,
@@ -150,3 +156,188 @@ def test_build_partial_content_response_sets_expected_range_headers() -> None:
     assert response["Accept-Ranges"] == "bytes"
     assert response["Content-Disposition"] == 'inline; filename="clip.mp4"'
     assert b"".join(cast(Iterable[bytes], response.streaming_content)) == b"2345"
+
+
+@pytest.mark.unit
+def test_async_stream_reads_one_chunk_per_consumer_request() -> None:
+    produced = 0
+    closed = False
+
+    def chunks() -> Iterator[bytes]:
+        nonlocal produced, closed
+        try:
+            for _ in range(64):
+                produced += 1
+                yield b"x" * (1024 * 1024)
+        finally:
+            closed = True
+
+    async def consume() -> None:
+        response = BoundedStreamingHttpResponse(chunks())
+        stream = response.__aiter__()
+        assert len(await anext(stream)) == 1024 * 1024
+        assert produced == 1  # Django's default adapter consumes all 64 chunks.
+        await asyncio.sleep(0)
+        assert produced == 1
+        await stream.aclose()
+        assert closed
+        response.close()
+
+    asyncio.run(consume())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("range_header", [None, "bytes=2-5"])
+@pytest.mark.parametrize("from_path", [False, True])
+def test_async_shared_builders_preserve_bytes_and_ranges(
+    tmp_path: Path, range_header: str | None, from_path: bool
+) -> None:
+    payload = b"0123456789"
+    field_file = _ChunkedFieldFile(payload)
+    if from_path:
+        path = tmp_path / "stream.bin"
+        path.write_bytes(payload)
+        response = build_partial_content_response_from_path(
+            file_path=path,
+            content_type="application/octet-stream",
+            file_size=len(payload),
+            range_header=range_header,
+            disposition="attachment",
+            filename="stream.bin",
+        )
+    else:
+        response = build_partial_content_response(
+            field_file=field_file,
+            content_type="application/octet-stream",
+            file_size=len(payload),
+            range_header=range_header,
+            disposition="attachment",
+            filename="stream.bin",
+        )
+
+    async def consume() -> bytes:
+        return b"".join([chunk async for chunk in response])
+
+    assert asyncio.run(consume()) == (payload[2:6] if range_header else payload)
+    assert response.status_code == (206 if range_header else 200)
+    assert response["Content-Length"] == ("4" if range_header else "10")
+    if not from_path:
+        assert field_file.closed
+    response.close()
+
+
+@pytest.mark.unit
+def test_disconnect_drains_inflight_read_before_closing() -> None:
+    entered, release, closed = threading.Event(), threading.Event(), threading.Event()
+
+    def chunks() -> Iterator[bytes]:
+        try:
+            entered.set()
+            if not release.wait(5):
+                raise TimeoutError("Test did not release reader")
+            yield b"first"
+            raise AssertionError("Disconnect must not read another chunk")
+        finally:
+            closed.set()
+
+    async def consume() -> None:
+        response = BoundedStreamingHttpResponse(chunks())
+        stream = response.__aiter__()
+        pending = asyncio.ensure_future(anext(stream))
+        try:
+            assert await asyncio.to_thread(entered.wait, 5)
+            pending.cancel()
+            await asyncio.sleep(0)
+            pending.cancel()
+            await asyncio.sleep(0)
+            assert not closed.is_set()
+        finally:
+            release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await pending
+        assert closed.is_set()
+        response.close()
+
+    asyncio.run(consume())
+
+
+@pytest.mark.unit
+def test_async_stream_propagates_read_failure_and_closes() -> None:
+    closed = False
+
+    def chunks() -> Iterator[bytes]:
+        nonlocal closed
+        try:
+            yield b"first"
+            raise OSError("read failed")
+        finally:
+            closed = True
+
+    async def consume() -> None:
+        response = BoundedStreamingHttpResponse(chunks())
+        stream = response.__aiter__()
+        assert await anext(stream) == b"first"
+        with pytest.raises(OSError, match="read failed"):
+            await anext(stream)
+        assert closed
+        response.close()
+
+    asyncio.run(consume())
+
+
+@pytest.mark.unit
+def test_native_async_stream_is_not_adapted_to_sync() -> None:
+    async def chunks() -> AsyncIterator[bytes]:
+        yield b"first"
+        yield b"second"
+
+    async def consume() -> None:
+        response = BoundedStreamingHttpResponse(chunks())
+        assert response.is_async
+        assert [chunk async for chunk in response] == [b"first", b"second"]
+        response.close()
+
+    asyncio.run(consume())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("fault", [None, "wrong_key", "tamper"])
+def test_async_stream_uses_authenticated_encrypted_reader(
+    tmp_path: Path, fault: str | None
+) -> None:
+    from cryptography.exceptions import InvalidTag
+    from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+    from endoreg_db.utils.encryption.encryption import encrypt_stream
+
+    path = tmp_path / "ciphertext.bin"
+    with path.open("wb") as destination:
+        encrypt_stream(BytesIO(b"protected bytes"), destination, master_key=b"k" * 32)
+    original = path.read_bytes()
+    assert b"protected bytes" not in original
+    if fault == "tamper":
+        path.write_bytes(original[:-1] + bytes([original[-1] ^ 1]))
+    storage = EncryptedStorage(
+        location=tmp_path, master_key=(b"z" if fault == "wrong_key" else b"k") * 32
+    )
+    response = build_partial_content_response(
+        field_file=SimpleNamespace(storage=storage, name=path.name),
+        content_type="application/octet-stream",
+        file_size=15,
+        range_header=None,
+        disposition="attachment",
+        filename="download.bin",
+    )
+
+    async def consume() -> bytes:
+        try:
+            return b"".join([chunk async for chunk in response])
+        finally:
+            response.close()
+
+    if fault:
+        with pytest.raises((InvalidTag, ValueError, RuntimeError)):
+            asyncio.run(consume())
+    else:
+        assert asyncio.run(consume()) == b"protected bytes"
+        assert path.read_bytes() == original
+    assert list(tmp_path.iterdir()) == [path]

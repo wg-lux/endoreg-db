@@ -35,6 +35,8 @@ class _VideoFileWithMetadata(Protocol):
 
 
 class _WritableFieldFile(Protocol):
+    path: str
+
     def save(self, name: str, content: File[bytes], save: bool = True) -> None: ...
 
 
@@ -46,13 +48,21 @@ def _field_file(field: object) -> _WritableFieldFile:
     return cast(_WritableFieldFile, field)
 
 
+def _store_video_file(field: object, source: Path) -> Path:
+    """Persist the reference used when cleanup reloads the video under its lock."""
+    stored = _field_file(field)
+    with source.open("rb") as stream:
+        stored.save(source.name, File(stream), save=True)
+    return Path(stored.path)
+
+
 @pytest.fixture(autouse=True)
 def ensure_reference_data(base_db_data: object) -> object:
     """Populate default lookup data (centers, genders, etc.) required by validation flows."""
     return base_db_data
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestVideoValidationDeletionBehavior:
     """
     Test suite to verify correct file deletion during validation.
@@ -139,6 +149,10 @@ class TestVideoValidationDeletionBehavior:
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-hash-validation"
         )
+        raw_video_path = _store_video_file(video.raw_file, raw_video_path)
+        processed_video_path = _store_video_file(
+            video.processed_file, processed_video_path
+        )
 
         # Mock the file paths and _update_text_metadata
         with (
@@ -154,7 +168,7 @@ class TestVideoValidationDeletionBehavior:
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
             patch(
-                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                "endoreg_db.services.video_storage.workflow.raw_cleanup_blockers",
                 return_value=(),
             ),
         ):
@@ -251,6 +265,7 @@ class TestVideoValidationDeletionBehavior:
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-hash-only-raw"
         )
+        raw_video_path = _store_video_file(video.raw_file, raw_video_path)
 
         with (
             patch(
@@ -282,7 +297,7 @@ class TestVideoValidationDeletionBehavior:
             assert result is True, "Validation should succeed"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestActiveFileLogicWithValidation:
     """
     Test to ensure active_file logic doesn't interfere with validation deletion.
@@ -368,6 +383,8 @@ class TestActiveFileLogicWithValidation:
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-explicit-raw"
         )
+        raw_path = _store_video_file(video.raw_file, raw_path)
+        processed_path = _store_video_file(video.processed_file, processed_path)
 
         with (
             patch(
@@ -382,7 +399,7 @@ class TestActiveFileLogicWithValidation:
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update,
             patch(
-                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                "endoreg_db.services.video_storage.workflow.raw_cleanup_blockers",
                 return_value=(),
             ),
         ):
@@ -400,7 +417,7 @@ class TestActiveFileLogicWithValidation:
             assert processed_path.exists(), "Processed should remain"
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 class TestValidationDeletion:
     """
     Test validation and gated raw-video cleanup behavior.
@@ -487,6 +504,10 @@ class TestValidationDeletion:
         video = VideoFile.objects.create(
             center=center, processor=processor, raw_video_hash="test-hash-frame-order"
         )
+        raw_video_path = _store_video_file(video.raw_file, raw_video_path)
+        processed_video_path = _store_video_file(
+            video.processed_file, processed_video_path
+        )
 
         # Create mock state that indicates frames not yet extracted
         state = video.get_or_create_state()
@@ -523,7 +544,7 @@ class TestValidationDeletion:
                 "endoreg_db.services.video_files.metadata.update_video_text_metadata"
             ) as mock_update_meta,
             patch(
-                "endoreg_db.services.video_storage_normalization.raw_cleanup_blockers",
+                "endoreg_db.services.video_storage.workflow.raw_cleanup_blockers",
                 return_value=(),
             ),
         ):

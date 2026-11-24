@@ -10,7 +10,9 @@ from typing import TYPE_CHECKING
 
 from endoreg_db.models import VideoPredictionMeta
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_temporal_inference import _run_video_temporal_inference
+from endoreg_db.services.video_files.temporal_inference import (
+    run_video_temporal_inference,
+)
 
 
 class _MaterializesPredictionSegments(Protocol):
@@ -87,7 +89,7 @@ def _test_temporal_prediction_materialization(
 
     if isinstance(video_file, VideoFile):
         _skip_if_real_inference_runtime_unavailable(test)
-        success = _run_video_temporal_inference(
+        success = run_video_temporal_inference(
             video_file.pk,
             model_meta_id=test.ai_model_meta.pk,
             delete_frames_after=True,

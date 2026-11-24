@@ -8,7 +8,9 @@ from urllib.request import Request, urlopen
 
 import pytest
 
-from endoreg_db.services.seekable_media_input import serve_seekable_media_input
+from endoreg_db.services.streaming.seekable_media_input import (
+    serve_seekable_media_input,
+)
 
 
 class _RangeStorage:

@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import escape_pdf_text, render_single_page_pdf
+
 # Direct private-method coverage is intentional in this focused unit suite.
 # pyright: reportPrivateUsage=false, reportMissingTypeStubs=false
-from contextlib import nullcontext
+from collections.abc import Generator, Callable
+from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from typing import Protocol, cast
+from typing import cast
 from unittest.mock import Mock, call
 from uuid import uuid4
 
 import pymupdf
 import pytest
+from django.db import OperationalError
 from pydantic import ValidationError
 
 import endoreg_db.import_files.report_import_service as report_import_module
@@ -20,7 +24,8 @@ from endoreg_db.import_files.report_import_service import (
 )
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
-from endoreg_db.services.report_import_fencing import (
+from endoreg_db.services.raw_pdf_files.types import PdfDocument
+from endoreg_db.services.reports.import_fencing import (
     ReportImportFence,
     StaleReportImportAttemptError,
 )
@@ -30,30 +35,28 @@ CONTENT_HASH = "a" * 64
 CENTER_NAME = "test-center"
 
 
-class _RenderedPdfPage(Protocol):
-    def get_text(self) -> str: ...
-
-
-class _RenderedPdfDocument(Protocol):
-    page_count: int
-
-    def __getitem__(self, index: int) -> _RenderedPdfPage: ...
-
-    def close(self) -> None: ...
-
-
 @pytest.fixture
 def service(monkeypatch: pytest.MonkeyPatch) -> ReportImportService:
     """Construct the service without loading the external anonymizer runtime."""
     monkeypatch.setattr(report_import_module, "validate_directories", Mock())
     monkeypatch.setattr(report_import_module, "ReportAnonymizer", Mock())
-    return ReportImportService()
+
+    def prepared(
+        ctx: ImportContext, prepare: Callable[[ImportContext], ImportContext]
+    ) -> nullcontext[ImportContext]:
+        return nullcontext(prepare(ctx))
+
+    monkeypatch.setattr(report_import_module, "prepared_import_artifact", prepared)
+    monkeypatch.setattr(report_import_module, "clear_import_checkpoint", Mock())
+    instance = ReportImportService()
+    monkeypatch.setattr(instance, "_validate_ocr_runtime", Mock())
+    return instance
 
 
 @pytest.fixture
 def pdf_path(tmp_path: Path) -> Path:
     path = tmp_path / "report.pdf"
-    path.write_bytes(ReportImportService._render_single_page_pdf("test report"))
+    path.write_bytes(render_single_page_pdf("test report"))
     return path
 
 
@@ -93,6 +96,27 @@ class TestInitialization:
         assert result.anonymizer is anonymizer and result.current_report is None
 
 
+@pytest.mark.parametrize("languages", [(), ("deu",), ("eng",), ("deu", "eng")])
+def test_ocr_runtime_requires_both_report_languages(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    languages: tuple[str, ...],
+) -> None:
+    monkeypatch.setenv("TESSDATA_PREFIX", str(tmp_path))
+    for language in languages:
+        (tmp_path / f"{language}.traineddata").touch()
+
+    if len(languages) == 2:
+        ReportImportService._validate_ocr_runtime()
+    else:
+        with pytest.raises(
+            RuntimeError, match="Report OCR runtime is not configured"
+        ) as error:
+            ReportImportService._validate_ocr_runtime()
+        assert isinstance(error.value.__cause__, FileNotFoundError)
+        assert not isinstance(error.value, FileNotFoundError)
+
+
 class TestTextAndPdfHelpers:
     @pytest.mark.parametrize(
         ("payload", "expected"),
@@ -115,7 +139,7 @@ class TestTextAndPdfHelpers:
         # Assert
         assert result == expected
 
-    def test_replaces_invalid_text_when_all_strict_decoders_fail(self) -> None:
+    def test_rejects_text_when_all_strict_decoders_fail(self) -> None:
         # Arrange
         path = Mock(spec=Path)
         decode_error = UnicodeDecodeError(
@@ -133,51 +157,28 @@ class TestTextAndPdfHelpers:
         ]
 
         # Act
-        result = ReportImportService._read_txt_content(path)
+        with pytest.raises(InvalidReportDocumentError, match="losslessly"):
+            ReportImportService._read_txt_content(path)
 
         # Assert
-        assert result == "replacement text"
         assert path.read_text.call_args_list == [
             call(encoding="utf-8"),
             call(encoding="cp1252"),
             call(encoding="latin-1"),
-            call(encoding="utf-8", errors="replace"),
         ]
 
     def test_escapes_pdf_control_characters(self) -> None:
         # Arrange / Act
-        result = ReportImportService._escape_pdf_text("a\\b(c)\r\nd")
+        result = escape_pdf_text("a\\b(c)\r\nd")
 
         # Assert
         assert result == r"a\\b\(c\)  d"
 
-    def test_uses_native_pdf_renderer_when_available(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Arrange
-        native_payload = b"native-pdf"
-        monkeypatch.setattr(
-            report_import_module, "rust_render_pdf", Mock(return_value=native_payload)
-        )
-
+    def test_fixture_renderer_creates_valid_single_page_pdf(self) -> None:
         # Act
-        result = ReportImportService._render_single_page_pdf("report")
-
-        # Assert
-        assert result is native_payload
-
-    def test_fallback_renderer_creates_valid_single_page_pdf(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        # Arrange
-        monkeypatch.setattr(
-            report_import_module, "rust_render_pdf", Mock(return_value=None)
-        )
-
-        # Act
-        payload = ReportImportService._render_single_page_pdf("line one\nline two")
+        payload = render_single_page_pdf("line one\nline two")
         document = cast(
-            _RenderedPdfDocument,
+            PdfDocument,
             pymupdf.open(stream=payload, filetype="pdf"),
         )
 
@@ -188,20 +189,15 @@ class TestTextAndPdfHelpers:
         finally:
             document.close()
 
-    def test_fallback_renderer_limits_content_to_65_lines(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    def test_fixture_renderer_limits_content_to_65_lines(self) -> None:
         # Arrange
-        monkeypatch.setattr(
-            report_import_module, "rust_render_pdf", Mock(return_value=None)
-        )
         text = "\n".join(f"line {index}" for index in range(70))
 
         # Act
         document = cast(
-            _RenderedPdfDocument,
+            PdfDocument,
             pymupdf.open(
-                stream=ReportImportService._render_single_page_pdf(text),
+                stream=render_single_page_pdf(text),
                 filetype="pdf",
             ),
         )
@@ -317,16 +313,32 @@ class TestImportContextValidation:
         with pytest.raises(ValueError, match="only accepts PDF or TXT"):
             service._create_import_context(source, CENTER_NAME)
 
-    @pytest.mark.parametrize("center_name", ["", "   ", None])
-    def test_rejects_empty_or_null_center(
+    @pytest.mark.django_db
+    @pytest.mark.parametrize("center_name", ["", "   "])
+    def test_blank_center_uses_configured_local_default(
         self,
         service: ReportImportService,
         pdf_path: Path,
-        center_name: str | None,
+        center_name: str,
     ) -> None:
-        # Arrange / Act / Assert
+        from django.test import override_settings
+        from endoreg_db.models import Center
+
+        with override_settings(
+            LX_ANNOTATE_DEFAULT_CENTER="report-local", CENTER_NAME="Report Local"
+        ):
+            result = service._create_import_context(pdf_path, center_name)
+        assert result.center_name == "Report Local"
+        assert result.center_key == "report-local"
+        assert Center.objects.get(center_key="report-local").name == "Report Local"
+
+    def test_rejects_null_center_before_default_resolution(
+        self,
+        service: ReportImportService,
+        pdf_path: Path,
+    ) -> None:
         with pytest.raises(ValidationError):
-            service._create_import_context(pdf_path, cast(str, center_name))
+            service._create_import_context(pdf_path, cast(str, None))
 
 
 class TestPublicImportEntryPoint:
@@ -338,7 +350,8 @@ class TestPublicImportEntryPoint:
     ) -> None:
         # Arrange
         validate = Mock()
-        pipeline = Mock(return_value=None)
+        report = RawPdfFile()
+        pipeline = Mock(return_value=report)
         monkeypatch.setattr(service, "_validate_pdf_document", validate)
         monkeypatch.setattr(service, "_process_import_pipeline", pipeline)
 
@@ -346,7 +359,7 @@ class TestPublicImportEntryPoint:
         result = service.import_and_anonymize(pdf_path, CENTER_NAME, retry=True)
 
         # Assert
-        assert result is None
+        assert result is report
         validate.assert_called_once_with(pdf_path)
 
     def test_txt_conversion_is_cleaned_when_pipeline_fails(
@@ -421,13 +434,22 @@ class TestFailureFinalization:
         finalize = Mock(side_effect=finalize_error)
         release = Mock()
         monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
+        monkeypatch.setattr(
+            report_import_module,
+            "report_import_mutation_guard",
+            Mock(return_value=nullcontext()),
+        )
         monkeypatch.setattr(report_import_module, "finalize_failure", finalize)
         monkeypatch.setattr(
             report_import_module, "mark_report_import_fence_failed", release
         )
 
         # Act
-        service._finalize_owned_failure(context, fence)
+        if finalize_error is not None:
+            with pytest.raises(RuntimeError, match="database unavailable"):
+                service._finalize_owned_failure(context, fence)
+        else:
+            service._finalize_owned_failure(context, fence)
 
         # Assert
         finalize.assert_called_once_with(context)
@@ -446,6 +468,11 @@ class TestFailureFinalization:
         finalize = Mock()
         release = Mock()
         monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
+        monkeypatch.setattr(
+            report_import_module,
+            "report_import_mutation_guard",
+            Mock(return_value=nullcontext()),
+        )
         monkeypatch.setattr(report_import_module, "finalize_failure", finalize)
         monkeypatch.setattr(
             report_import_module,
@@ -459,6 +486,45 @@ class TestFailureFinalization:
         # Assert
         finalize.assert_not_called()
         release.assert_called_once_with(fence)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_failure_cleanup_rechecks_owner_after_renewal(
+    service: ReportImportService,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    from datetime import timedelta
+
+    from django.utils import timezone
+
+    from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
+    from endoreg_db.services.reports.import_fencing import acquire_report_import_fence
+
+    fence = acquire_report_import_fence(CONTENT_HASH)
+    context = _context(tmp_path / "report.pdf")
+    context.current_report = Mock(spec=RawPdfFile)
+    finalize = Mock()
+
+    def replace_owner(_fence: ReportImportFence) -> None:
+        ReportImportAttempt.objects.filter(content_hash=CONTENT_HASH).update(
+            # Far beyond application/database clock skew.
+            lease_expires_at=timezone.now() - timedelta(hours=1),
+        )
+        acquire_report_import_fence(CONTENT_HASH)
+
+    monkeypatch.setattr(
+        report_import_module, "renew_report_import_fence", replace_owner
+    )
+    monkeypatch.setattr(report_import_module, "finalize_failure", finalize)
+
+    service._finalize_owned_failure(context, fence)
+
+    finalize.assert_not_called()
+    attempt = ReportImportAttempt.objects.get(content_hash=CONTENT_HASH)
+    assert attempt.status == ReportImportAttempt.STATUS_ACTIVE
+    assert attempt.owner_id != fence.owner_id
+    assert attempt.fencing_token == fence.fencing_token + 1
 
 
 class TestCompletedReportLookup:
@@ -565,7 +631,9 @@ class TestCompletedReportLookup:
 
         # Assert
         assert result is existing
-        require_usable.assert_called_once_with(existing, source_sha256=CONTENT_HASH)
+        require_usable.assert_called_once_with(
+            existing, source_sha256=CONTENT_HASH, require_artifact=False
+        )
 
     @staticmethod
     def _patch_success_history(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -613,12 +681,16 @@ class TestDuplicateCleanup:
         (False, False, True, False, None),
         (True, False, True, False, None),
         (False, True, True, False, None),
+        (True, True, False, False, None),
         (False, False, False, False, None),
+        (True, False, False, False, None),
         (False, False, True, True, None),
         (False, False, True, False, RuntimeError("anonymization failed")),
         (False, False, True, False, StaleReportImportAttemptError("stale attempt")),
+        (False, False, True, False, OperationalError("database unavailable")),
     ],
 )
+@pytest.mark.parametrize("with_lifecycle", [False, True])
 def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     service: ReportImportService,
     monkeypatch: pytest.MonkeyPatch,
@@ -628,6 +700,7 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     needs_processing: bool,
     existing: bool,
     failure: Exception | None,
+    with_lifecycle: bool,
 ) -> None:
     from endoreg_db.schemas.import_file import SourceSnapshot
 
@@ -642,6 +715,29 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         sha256=CONTENT_HASH,
     )
     context = _context(pdf_path)
+    guard_open = False
+
+    @contextmanager
+    def tracked_guard(_fence: ReportImportFence) -> Generator[None]:
+        nonlocal guard_open
+        assert not guard_open
+        guard_open = True
+        try:
+            yield
+        finally:
+            guard_open = False
+
+    def require_guard(_report: RawPdfFile, *, reused: bool = False) -> None:
+        assert guard_open, "Job callbacks must execute inside the content guard"
+
+    lifecycle = Mock()
+    lifecycle.started.side_effect = require_guard
+    lifecycle.succeeded.side_effect = require_guard
+    service.lifecycle = lifecycle if with_lifecycle else None
+    require_completed = Mock()
+    monkeypatch.setattr(
+        report_import_module, "require_usable_completed_report", require_completed
+    )
     report = Mock(spec=RawPdfFile)
     fence = _fence()
     calls = Mock()
@@ -652,6 +748,8 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     finalize = Mock()
     failed = Mock()
     acquire = Mock(return_value=fence)
+    runtime_validation = Mock()
+    monkeypatch.setattr(service, "_validate_ocr_runtime", runtime_validation)
     heartbeat = Mock()
     calls.attach_mock(anonymize, "anonymize")
     calls.attach_mock(finalize, "finalize")
@@ -673,12 +771,12 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     monkeypatch.setattr(
         report_import_module,
         "report_import_mutation_guard",
-        Mock(return_value=nullcontext()),
+        tracked_guard,
     )
     monkeypatch.setattr(
         report_import_module,
         "report_import_finalization_guard",
-        Mock(return_value=nullcontext()),
+        tracked_guard,
     )
     monkeypatch.setattr(report_import_module, "create_or_retrieve_report_file", create)
     monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
@@ -693,6 +791,9 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
         report_import_module, "mark_report_import_fence_failed", release
     )
     monkeypatch.setattr(report_import_module, "finalize_report_success", finalize)
+    extract = Mock(side_effect=require_guard)
+    calls.attach_mock(extract, "extract_findings")
+    monkeypatch.setattr(report_import_module, "record_report_finding_presence", extract)
     monkeypatch.setattr(
         service,
         "_get_existing_completed_report",
@@ -707,30 +808,197 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
             service._process_import_pipeline(context, retry)
         anonymize.assert_called_once_with(context)
         finalize.assert_not_called()
-        if isinstance(failure, StaleReportImportAttemptError):
+        if isinstance(failure, (StaleReportImportAttemptError, OperationalError)):
             failed.assert_not_called()
         else:
-            failed.assert_called_once_with(context, fence)
-        assert not snapshot_path.exists()
+            failed.assert_called_once_with(context, fence, error=failure)
+        assert snapshot_path.exists() is isinstance(failure, OperationalError)
     else:
         assert service._process_import_pipeline(context, retry) is report
-        if existing or not needs_processing:
+        if existing or (not needs_processing and not retry):
             anonymize.assert_not_called()
             finalize.assert_not_called()
+            extract.assert_not_called()
             if existing:
-                acquire.assert_not_called()
+                if with_lifecycle:
+                    acquire.assert_called_once()
+                    require_completed.assert_called_once_with(
+                        report,
+                        source_sha256=CONTENT_HASH,
+                        require_artifact=False,
+                    )
+                else:
+                    acquire.assert_not_called()
+                runtime_validation.assert_not_called()
             else:
-                release.assert_called_once_with(fence)
+                release.assert_not_called()
         else:
-            assert calls.mock_calls == [call.anonymize(context), call.finalize(context)]
+            assert calls.mock_calls == [
+                call.anonymize(context),
+                call.extract_findings(report),
+                call.finalize(context),
+            ]
             if processed or retry:
                 assert context.retry is True
-                assert create.call_count == 2
-                retry_cleanup.assert_called_once_with(
-                    context, preserve_sensitive_staging=True
-                )
+                create.assert_called_once_with(context)
+            retry_cleanup.assert_not_called()
+    if with_lifecycle and failure is None:
+        if existing or (not needs_processing and not retry):
+            lifecycle.succeeded.assert_called_once_with(report, reused=True)
+        else:
+            lifecycle.succeeded.assert_called_once_with(report)
+    if with_lifecycle and (existing or (not needs_processing and not retry)):
+        lifecycle.started.assert_not_called()
     assert context.file_hash == CONTENT_HASH
     assert context.file_path == snapshot_path
     assert context.execution_guard is None
     assert context.mutation_guard is None
     assert pdf_path.read_bytes() == original_bytes
+
+
+@pytest.mark.parametrize("rejected_mutation", [0, 1, 2])
+def test_invalid_runtime_or_superseded_import_cannot_create_or_reset_report(
+    service: ReportImportService,
+    monkeypatch: pytest.MonkeyPatch,
+    pdf_path: Path,
+    rejected_mutation: int,
+) -> None:
+    from endoreg_db.schemas.import_file import SourceSnapshot
+
+    context = _context(pdf_path)
+    report = Mock(spec=RawPdfFile)
+    snapshot = SourceSnapshot(
+        path=pdf_path,
+        sha256=CONTENT_HASH,
+        size_bytes=pdf_path.stat().st_size,
+        modified_time_ns=pdf_path.stat().st_mtime_ns,
+    )
+    for name in ("file_lock", "content_hash_lock", "ReportImportFenceHeartbeat"):
+        monkeypatch.setattr(
+            report_import_module,
+            name,
+            Mock(return_value=nullcontext(Mock())),
+        )
+    monkeypatch.setattr(
+        report_import_module, "create_snapshot", Mock(return_value=snapshot)
+    )
+    monkeypatch.setattr(
+        report_import_module, "acquire_report_import_fence", Mock(return_value=_fence())
+    )
+    if rejected_mutation == 0:
+        monkeypatch.setattr(
+            service,
+            "_validate_ocr_runtime",
+            Mock(side_effect=RuntimeError("Report OCR runtime is not configured")),
+        )
+    monkeypatch.setattr(
+        service, "_get_existing_completed_report", Mock(return_value=None)
+    )
+    create = Mock(return_value=(report, True, True))
+    reset = Mock()
+    anonymize = Mock()
+    service.anonymizer.anonymize_report = anonymize
+    monkeypatch.setattr(report_import_module, "create_or_retrieve_report_file", create)
+    monkeypatch.setattr(report_import_module, "get_or_create_raw_pdf_state", Mock())
+    monkeypatch.setattr(report_import_module, "renew_report_import_fence", Mock())
+    monkeypatch.setattr(report_import_module, "finalize_failure", reset)
+    monkeypatch.setattr(report_import_module, "cleanup_staging_files", Mock())
+    guards: list[object] = [nullcontext()] * (rejected_mutation - 1)
+    guards.append(StaleReportImportAttemptError("replaced owner"))
+    monkeypatch.setattr(
+        report_import_module, "report_import_mutation_guard", Mock(side_effect=guards)
+    )
+
+    expected_error = (
+        RuntimeError if rejected_mutation == 0 else StaleReportImportAttemptError
+    )
+    with pytest.raises(expected_error):
+        service._process_import_pipeline(context, retry=True)
+
+    # Source binding is now fenced before any report-row creation.
+    assert create.call_count == 0
+    reset.assert_not_called()
+    anonymize.assert_not_called()
+    assert context.execution_guard is None
+    assert context.mutation_guard is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "\n".join(f"Befund {index}: Grüße € α 中文" for index in range(180)),
+        "Vollständiger Befund " * 400,
+        "<script>kein HTML</script> & Sonderzeichen",
+    ],
+)
+def test_txt_conversion_preserves_complete_text_and_source(
+    service: ReportImportService, tmp_path: Path, text: str
+) -> None:
+    source = tmp_path / "full-report.txt"
+    source.write_text(text, encoding="utf-8")
+    first = service._create_temp_pdf_from_txt(source)
+    second = service._create_temp_pdf_from_txt(source)
+    assert source.read_text(encoding="utf-8") == text
+    assert first.read_bytes() == second.read_bytes()
+    document = cast(PdfDocument, pymupdf.open(filename=str(first)))
+    try:
+        extracted = "".join(
+            document[index].get_text() for index in range(document.page_count)
+        )
+        assert " ".join(text.split()) in " ".join(extracted.split())
+        if len(text) > 4000:
+            assert document.page_count > 1
+    finally:
+        document.close()
+
+
+def test_txt_source_survives_failure_after_real_conversion(
+    service: ReportImportService, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    source = tmp_path / "preserve.txt"
+    payload = "Befund vollständig erhalten".encode()
+    source.write_bytes(payload)
+    monkeypatch.setattr(
+        service,
+        "_process_import_pipeline",
+        Mock(side_effect=RuntimeError("OCR unavailable")),
+    )
+    with pytest.raises(RuntimeError, match="OCR unavailable"):
+        service.import_and_anonymize(source, CENTER_NAME)
+    assert source.read_bytes() == payload
+
+
+def test_txt_conversion_rejects_unrenderable_content_without_deleting_source(
+    service: ReportImportService, tmp_path: Path
+) -> None:
+    source = tmp_path / "unsupported.txt"
+    payload = b"Befund vor\x00Befund nach"
+    source.write_bytes(payload)
+    with pytest.raises(InvalidReportDocumentError, match="complete report text"):
+        service._create_temp_pdf_from_txt(source)
+    assert source.read_bytes() == payload
+
+
+def test_txt_conversion_rejects_empty_text_and_omits_source_digest(
+    service: ReportImportService, tmp_path: Path
+) -> None:
+    empty = tmp_path / "empty.txt"
+    empty.write_text(" \n\t", encoding="utf-8")
+    with pytest.raises(InvalidReportDocumentError, match="empty"):
+        service._create_temp_pdf_from_txt(empty)
+
+    source = tmp_path / "report.txt"
+    source.write_text("Befund ohne Prüfsumme", encoding="utf-8")
+    converted = service._create_temp_pdf_from_txt(source)
+    try:
+        document = cast(PdfDocument, pymupdf.open(filename=str(converted)))
+        try:
+            extracted = "".join(
+                document[index].get_text() for index in range(document.page_count)
+            )
+        finally:
+            document.close()
+        assert "txt_sha256" not in extracted
+        assert " ".join(extracted.split()) == "Befund ohne Prüfsumme"
+    finally:
+        converted.unlink(missing_ok=True)

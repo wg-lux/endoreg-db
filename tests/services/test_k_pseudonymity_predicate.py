@@ -6,9 +6,9 @@ import pytest
 from lx_dtypes.models.contracts.json_types import JsonScalar
 
 from endoreg_db.schemas.k_pseudonymity import KPseudonymityReleaseConfig
-from endoreg_db.services import k_pseudonymity as facade
-from endoreg_db.services import k_pseudonymity_predicate as predicate
-from endoreg_db.services.k_pseudonymity import (
+from endoreg_db.services.privacy import k_pseudonymity as facade
+from endoreg_db.services.privacy import k_pseudonymity_predicate as predicate
+from endoreg_db.services.privacy.k_pseudonymity import (
     KPseudonymityInputError,
     ReleaseRow,
     evaluate_release_predicate,

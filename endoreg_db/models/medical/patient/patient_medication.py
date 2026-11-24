@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING, ClassVar, Any, Unpack
 
 from django.db import models
 from django.core.exceptions import ValidationError
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_patient_medication_dosage
+from lx_dtypes.models.ledger.medical.Write import PatientMedicationCreate
+from pydantic import ValidationError as PydanticValidationError
 
 # Added imports for type hints
 if TYPE_CHECKING:
@@ -42,6 +45,7 @@ class PatientMedication(models.Model):
     medication: models.ForeignKey[Any] = models.ForeignKey(
         "Medication",
         on_delete=models.CASCADE,
+        null=True,
         blank=True,
         related_name="medication_patient_medications",
     )
@@ -59,7 +63,37 @@ class PatientMedication(models.Model):
         "Unit", on_delete=models.CASCADE, null=True, blank=True
     )
     dosage: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
+    substances: models.JSONField[
+        list[dict[str, str | None]], list[dict[str, str | None]]
+    ] = models.JSONField(default=list, blank=True)
+    dosing: models.JSONField[
+        dict[str, str | int | None], dict[str, str | int | None]
+    ] = models.JSONField(default=dict, blank=True)
+    pzn: models.CharField[str | None, str | None] = models.CharField(
+        max_length=8, null=True, blank=True
+    )
+    dosage_form: models.TextField[str | None, str | None] = models.TextField(
+        null=True, blank=True
+    )
+    dosage_form_code: models.CharField[str | None, str | None] = models.CharField(
+        max_length=10, null=True, blank=True
+    )
+    unit_code: models.CharField[str | None, str | None] = models.CharField(
+        max_length=1, null=True, blank=True
+    )
+    notes: models.CharField[str | None, str | None] = models.CharField(
+        max_length=80, null=True, blank=True
+    )
+    bound_note: models.CharField[str | None, str | None] = models.CharField(
+        max_length=200, null=True, blank=True
+    )
     active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
+    start_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(null=True, blank=True)
+    )
+    end_at: models.DateTimeField[datetime | None, datetime | None] = (
+        models.DateTimeField(null=True, blank=True)
+    )
 
     objects: ClassVar[models.Manager["PatientMedication"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
         models.Manager()
@@ -71,6 +105,34 @@ class PatientMedication(models.Model):
             self.dosage = validate_patient_medication_dosage(self.dosage)
         except ValueError as exc:
             raise ValidationError({"dosage": str(exc)}) from exc
+        try:
+            PatientMedicationCreate.model_validate(
+                {
+                    "medication": self.medication.name
+                    if self.medication is not None
+                    else None,
+                    "medication_indication": self.medication_indication.name
+                    if self.medication_indication is not None
+                    else None,
+                    "unit": self.unit.name if self.unit is not None else None,
+                    "start_at": self.start_at,
+                    "end_at": self.end_at,
+                    "dosage": self.dosage,
+                    "pzn": self.pzn,
+                    "substances": self.substances,
+                    "dosing": self.dosing,
+                    "dosage_form": self.dosage_form,
+                    "dosage_form_code": self.dosage_form_code,
+                    "unit_code": self.unit_code,
+                    "notes": self.notes,
+                    "bound_note": self.bound_note,
+                },
+                strict=True,
+            )
+        except PydanticValidationError as exc:
+            raise ValidationError(
+                {"medication": "Invalid medication fields or period."}
+            ) from exc
 
     def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
         self.clean()
@@ -109,6 +171,16 @@ class PatientMedication(models.Model):
     class Meta:
         verbose_name = "Patient Medication"
         verbose_name_plural = "Patient Medications"
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(end_at__isnull=True)
+                | (
+                    models.Q(start_at__isnull=False)
+                    & models.Q(end_at__gte=models.F("start_at"))
+                ),
+                name="patient_medication_valid_period",
+            )
+        ]
 
     @classmethod
     def create_by_patient_and_indication(

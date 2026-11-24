@@ -14,7 +14,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.utils import timezone
 
 from endoreg_db import tasks
-from endoreg_db.import_files.video_import_service import VideoImportExecutionFence
+from endoreg_db.services.imports.execution import ImportExecutionFence
 from endoreg_db.models import Center, UploadJob
 from endoreg_db.schemas.report_llm import ReportLlmDispatchResult
 from endoreg_db.services.hub.ingest import (
@@ -62,6 +62,40 @@ def _create_upload_job(
     )
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("identity", ["matching", "missing", "changed"])
+def test_upload_source_checks_plaintext_identity_before_processing(
+    ingest_center: Center, identity: str
+) -> None:
+    from endoreg_db.services.hub.ingest import _ensure_upload_job_local_file
+    from endoreg_db.utils.hashs import get_file_hash
+    from endoreg_db.utils.storage import ensure_local_file
+
+    job = _create_upload_job(
+        center=ingest_center, content_type="video/mp4", filename="source.mp4"
+    )
+    with ensure_local_file(job.file) as path:
+        expected = get_file_hash(path)
+    job.content_hash = (
+        "0" * 64 if identity == "changed" else "" if identity == "missing" else expected
+    )
+    job.save(update_fields=["content_hash"])
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="source-verifier"
+    )
+    if identity == "changed":
+        with pytest.raises(OSError, match="content-hash verification"):
+            with _ensure_upload_job_local_file(job, lease=lease):
+                pytest.fail("changed source reached processing")
+    else:
+        with _ensure_upload_job_local_file(job, lease=lease) as verified:
+            assert get_file_hash(verified) == expected
+        job.refresh_from_db()
+        assert job.content_hash == expected
+    with job.file.open("rb") as source:
+        assert source.read() == b"contract-source"
+
+
 def _report_dispatch_result(
     status: str,
     *,
@@ -82,15 +116,21 @@ def _report_dispatch_result(
 
 class TestReportImportJobHandoff:
     @pytest.mark.django_db
+    @pytest.mark.parametrize(
+        ("content_type", "filename"),
+        [("application/pdf", "report.pdf"), ("text/plain", "report.txt")],
+    )
     def test_dispatches_report_upload_with_the_import_job_contract(
         self,
         ingest_center: Center,
+        content_type: str,
+        filename: str,
     ) -> None:
         # Arrange
         upload_job = _create_upload_job(
             center=ingest_center,
-            content_type="application/pdf",
-            filename="report.pdf",
+            content_type=content_type,
+            filename=filename,
         )
         dispatch_result = _report_dispatch_result("queued")
 
@@ -106,6 +146,7 @@ class TestReportImportJobHandoff:
         dispatch.assert_called_once_with(
             upload_job_id=str(upload_job.pk),
             payload={"source": "upload_job"},
+            resume_existing=True,
         )
 
     @pytest.mark.django_db
@@ -192,7 +233,7 @@ class TestVideoImportJobHandoff:
         ingest_center: Center,
     ) -> None:
         from django.db import OperationalError
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center,
@@ -208,7 +249,7 @@ class TestVideoImportJobHandoff:
             ),
             pytest.raises(OperationalError),
         ):
-            _run_video_upload_import_job(
+            run_video_upload_import_job(
                 str(job.pk), lease_owner="delivery", retry_on_busy=True
             )
         job.refresh_from_db()
@@ -223,7 +264,7 @@ class TestVideoImportJobHandoff:
         self,
         ingest_center: Center,
     ) -> None:
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center,
@@ -234,10 +275,10 @@ class TestVideoImportJobHandoff:
             upload_job_id=str(job.pk), owner="active-worker"
         )
         with pytest.raises(UploadJobImportLeaseBusy):
-            _run_video_upload_import_job(
+            run_video_upload_import_job(
                 str(job.pk), lease_owner="task", retry_on_busy=True
             )
-        assert _run_video_upload_import_job(str(job.pk), lease_owner="task") is False
+        assert run_video_upload_import_job(str(job.pk), lease_owner="task") is False
         job.refresh_from_db()
         assert job.retry_count == 0
         assert job.processing_lease_owner == "active-worker"
@@ -247,7 +288,7 @@ class TestVideoImportJobHandoff:
         self,
         ingest_center: Center,
     ) -> None:
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center,
@@ -275,7 +316,7 @@ class TestVideoImportJobHandoff:
             ) as execute,
         ):
             assert (
-                _run_video_upload_import_job(str(job.pk), lease_owner="redelivery")
+                run_video_upload_import_job(str(job.pk), lease_owner="redelivery")
                 is True
             )
         acquire.assert_not_called()
@@ -285,7 +326,7 @@ class TestVideoImportJobHandoff:
     def test_completed_redelivery_without_media_is_lost_and_preserves_source(
         self, ingest_center: Center
     ) -> None:
-        from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+        from endoreg_db.services.hub.ingest import run_video_upload_import_job
 
         job = _create_upload_job(
             center=ingest_center, content_type="video/mp4", filename="missing-media.mp4"
@@ -298,7 +339,7 @@ class TestVideoImportJobHandoff:
         with patch(
             "endoreg_db.services.hub.ingest._execute_video_upload_import_attempt"
         ) as execute:
-            assert _run_video_upload_import_job(str(job.pk)) is False
+            assert run_video_upload_import_job(str(job.pk)) is False
         job.refresh_from_db()
         assert job.status == UploadJob.Status.LOST
         assert job.error_code == UploadJob.ErrorCode.MEDIA_INTEGRITY_FAILED
@@ -387,7 +428,7 @@ class TestVideoImportJobHandoff:
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService"
+                "endoreg_db.services.video_files.direct_import.VideoImportService"
             ) as service_class,
         ):
             result = _import_fenced_video_upload(
@@ -412,9 +453,10 @@ class TestVideoImportJobHandoff:
         assert call_kwargs["processor_name"] == "processor"
         assert call_kwargs["retry"] is False
         execution_fence = call_kwargs["execution_fence"]
-        assert isinstance(execution_fence, VideoImportExecutionFence)
+        assert isinstance(execution_fence, ImportExecutionFence)
         assert execution_fence.attempt_id == expected_attempt_id
         assert execution_fence.guard == heartbeat.guard
+        assert execution_fence.mutation_guard == heartbeat.mutation_guard
 
     @pytest.mark.django_db
     def test_rechecks_video_lease_after_import_service_error(
@@ -451,7 +493,7 @@ class TestVideoImportJobHandoff:
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+                "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=RuntimeError("import failed"),
             ),
             pytest.raises(RuntimeError, match="import failed"),
@@ -607,7 +649,7 @@ class TestCeleryImportTaskAdapters:
         try:
             # Act
             with patch(
-                "endoreg_db.services.hub.ingest._run_video_upload_import_job",
+                "endoreg_db.services.hub.ingest.run_video_upload_import_job",
                 return_value=True,
             ) as run_import:
                 result = task.run(123)
@@ -631,7 +673,7 @@ class TestCeleryImportTaskAdapters:
         assert cast(Any, tasks.video_hls_materialization).max_retries is None
         with (
             patch(
-                "endoreg_db.services.hub.ingest._run_video_upload_import_job",
+                "endoreg_db.services.hub.ingest.run_video_upload_import_job",
                 side_effect=error,
             ),
             patch.object(task, "retry", side_effect=Retry()) as retry,

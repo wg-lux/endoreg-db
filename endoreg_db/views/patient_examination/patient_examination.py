@@ -68,7 +68,7 @@ def _report_draft_revision(draft: object) -> int:
     return revision
 
 
-class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
     """
     ViewSet für PatientExamination mit vollständiger CRUD-Unterstützung
     """

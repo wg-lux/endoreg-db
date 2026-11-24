@@ -12,7 +12,10 @@ from django.utils import timezone
 from rest_framework.test import APIClient
 
 from endoreg_db.models import Patient, PatientExamination, PatientExaminationReport
-from endoreg_db.services.report_persistence import save_report_submission
+from endoreg_db.services.reports.persistence import save_report_submission
+from tests.helpers.report_validation import (
+    successful_runtime_validation as _successful_final_runtime_validation,
+)
 
 
 def _response_body(response: Any) -> dict[str, object]:
@@ -21,15 +24,6 @@ def _response_body(response: Any) -> dict[str, object]:
 
 def _pk(instance: object) -> int:
     return int(cast(Any, instance).pk)
-
-
-def _successful_final_runtime_validation(
-    patient_examination: PatientExamination,
-    *,
-    template_name: str,
-) -> dict[str, object]:
-    del patient_examination, template_name
-    return {"ok": True, "issues": []}
 
 
 def _successful_final_artifact_persistence(
@@ -429,11 +423,11 @@ def test_patient_examination_draft_is_empty_after_final_report_save(
     patient_examination.save(update_fields=["report_draft", "draft_updated_at"])
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_final_runtime_validation,
     )
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.persist_report_pdf_artifact",
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
         _successful_final_artifact_persistence,
     )
 

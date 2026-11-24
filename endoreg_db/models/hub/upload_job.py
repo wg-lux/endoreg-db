@@ -8,11 +8,12 @@ from typing import Any, TYPE_CHECKING, Protocol, TypeAlias, Unpack, cast
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas import validate_upload_provenance_payload
+from endoreg_db.schemas.import_processing import ImportProcessingStack
 from endoreg_db.utils.paths import (
     get_runtime_paths,
     build_upload_job_relative_path,
@@ -90,6 +91,7 @@ class UploadJob(models.Model):
         INVALID_INPUT = "invalid_input", "Invalid Input"
         MEDIA_INTEGRITY_FAILED = "media_integrity_failed", "Media Integrity Failed"
         PROCESSING_FAILED = "processing_failed", "Processing Failed"
+        IMPORT_INTERRUPTED = "import_interrupted", "Import Interrupted"
         SOURCE_MISSING = "source_missing", "Source Missing"
 
     class IngestMode(models.TextChoices):
@@ -221,6 +223,14 @@ class UploadJob(models.Model):
         blank=True,
         default=dict,
         help_text="Additional ingest metadata recorded for audit and processing",
+    )
+    processing_stack: models.JSONField[
+        dict[str, object] | None, dict[str, object] | None
+    ] = models.JSONField(
+        null=True,
+        blank=True,
+        default=None,
+        help_text="Rust-owned remaining import stages and stable checkpoint reference.",
     )
 
     storage_class: models.CharField[str, Any] = models.CharField(
@@ -430,7 +440,7 @@ class UploadJob(models.Model):
     )
 
     if TYPE_CHECKING:
-        pass
+        sensitive_meta_id: int | None
 
     class Meta:
         ordering = ["-created_at"]
@@ -499,6 +509,21 @@ class UploadJob(models.Model):
             ),
             models.CheckConstraint(
                 condition=(
+                    models.Q(
+                        status__in=[
+                            "retrying",
+                            "error",
+                            "lost",
+                            "cancel_requested",
+                            "cancelled",
+                        ]
+                    )
+                    | models.Q(error_code="", error_detail="")
+                ),
+                name="upload_job_current_error_state",
+            ),
+            models.CheckConstraint(
+                condition=(
                     ~models.Q(status__in=["error", "lost"]) | ~models.Q(error_code="")
                 ),
                 name="upload_job_terminal_error_coded",
@@ -542,6 +567,16 @@ class UploadJob(models.Model):
 
     def clean(self) -> None:
         super().clean()
+        if self.processing_stack is not None:
+            try:
+                stack = ImportProcessingStack.model_validate(self.processing_stack)
+                if stack.reference != self.pk:
+                    raise ValueError(
+                        "Processing stack reference must match its upload job"
+                    )
+                self.processing_stack = stack.model_dump(mode="json")
+            except ValueError as exc:
+                raise ValidationError({"processing_stack": str(exc)}) from exc
         try:
             self.processing_provenance = validate_upload_provenance_payload(
                 self.processing_provenance
@@ -634,8 +669,15 @@ class UploadJob(models.Model):
             target_cleanup_status = self.CleanupStatus.SKIPPED.value
 
         if self.cleanup_status != target_cleanup_status:
-            self.cleanup_status = target_cleanup_status
-            update_fields.append("cleanup_status")
+            from endoreg_db.services.runtime.status_writers import (
+                set_upload_job_cleanup_status,
+            )
+
+            with transaction.atomic():
+                if set_upload_job_cleanup_status(self, target_cleanup_status):
+                    update_fields.append("cleanup_status")
+                self.save(update_fields=update_fields)
+            return
         self.save(update_fields=update_fields)
 
     def mark_error(

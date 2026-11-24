@@ -12,15 +12,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import (
     Any,
-    Callable,
     Final,
-    Iterable,
     Literal,
     Protocol,
     TypedDict,
     Unpack,
     cast,
 )
+from collections.abc import Callable, Iterable
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from django.core.exceptions import SuspiciousFileOperation
@@ -40,8 +39,10 @@ from endoreg_db.import_files.file_storage.cleanup import (
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.audit_ledger import AuditLedger
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
+from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import (
     get_runtime_paths,
@@ -187,8 +188,7 @@ def _is_sha256_hex(value: str | None) -> bool:
 
 
 def _path_starts_with_magic(path: Path) -> bool:
-    with path.open("rb") as handle:
-        return handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
+    return is_lx_encrypted_file(path)
 
 
 def _inspect_candidate_file(path: Path) -> CandidateFileStatus:
@@ -1213,7 +1213,7 @@ class Command(BaseCommand):
         with ExitStack() as stack:
             if apply:
                 if record_plan.object_kind == "video":
-                    from endoreg_db.services.media_operation_gate import (
+                    from endoreg_db.services.media.operation_gate import (
                         video_artifact_mutation,
                     )
 

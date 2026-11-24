@@ -13,6 +13,46 @@ source_documents:
   disposition: migrated
   note: Phasen, Backlog und Done Criteria wurden in die verbindliche DoD übernommen.
 definition_of_done:
+- id: human_validation_identity_failure
+  category: functionality
+  title: Fehlgeschlagene Metadatenkorrektur verhindert die Videofreigabe
+  acceptance:
+  - Fehler bei der Metadatenkorrektur werden weitergegeben; es gibt keinen zweiten Schreibpfad als Fallback.
+  - Ein fehlendes Metadaten-Ergebnis wird nicht als erfolgreiche Validierung behandelt.
+  - Bei fehlgeschlagener Korrektur erfolgen weder Anonymisierungsfreigabe noch Rohdatenbereinigung.
+  - Erfolgreiche Validierung über VideoFile erhält den typisierten Metadatenvertrag; ein fehlendes Center
+    wird aus dem Video ergänzt, ohne die Eingabedaten zu verändern.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_video_metadata_validation.py
+    - tests/services/test_sensitive_meta_external_id_validation.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/video_files/validation.py
+    - kind: test
+      reference: tests/services/test_video_metadata_validation.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 Fehler, 10 Warnungen; pytest tests/services/test_video_metadata_validation.py
+        tests/services/test_sensitive_meta_external_id_validation.py tests/models/video/test_validation_deletion.py
+        -q: 14 bestanden, 2 Warnungen (126.51s)'
+    - kind: command
+      reference: '2026-10-09: Vollständiger Pyright: 0 Fehler, 10 bestehende Warnungen. Fokussierter paralleler
+        Regressionslauf: 237 bestanden, 3 Subtests bestanden, 1 anschließend behobener Route-Vertragsfehler
+        (462.23s). Abschließender Lauf: tests/utils/test_media_urlpatterns_contract.py tests/services/test_video_metadata_validation.py
+        tests/models/video/test_create_video_without_outside_frames_output_path.py tests/docs/test_show_urls_contract.py
+        -q --tb=short: 16 bestanden, 2 Warnungen (155.81s).'
+    note: 'Typisierter Erfolgspfad und unveränderte Fehlerweitergabe geprüft: VideoFile reicht VideoTextMetaPayload
+      direkt weiter; fehlendes Center wird validiert im Root-Payload ergänzt, ohne die Eingabe zu verändern.
+      Keine Änderung der Freigabe- oder Löschgates.'
+    assessed_by: codex-sidecar-20261008-a
+    assessed_at: '2026-10-09T08:10:04.531240Z'
 - id: workflow_invariants
   category: requirements
   title: Kritische Workflowinvarianten sind explizit und zentral definiert
@@ -22,6 +62,16 @@ definition_of_done:
   - Anonymisierungsvalidierung und Segmentannotationsvalidierung sind getrennte Gates mit getrennten Zuständen
     und Freigabewirkungen.
   - Produktionspfade besitzen keine stillen Validator- oder Statusfallbacks.
+  - Der Übergangsvertrag und die Fehlermatrix in docs/human_validation_workflow.md unterscheiden Identitätsprüfung,
+    Bildanonymisierung, fachliche Annotation und Exportfreigabe.
+  - Exportierte Datenpunkte tragen die geprüfte Patientenidentität und den unveränderten Inhalts-Hash
+    der importierten Quelle; der Hash des verarbeiteten Artefakts ist davon getrennt.
+  - Korrekturen an Identität, Artefakt oder Segmenten entwerten die davon abhängigen Freigaben; konkurrierende
+    und verspätete Bestätigungen können keine neuere Revision freigeben.
+  - Löschung entfernt niemals die einzige geprüfte Arbeitskopie; die genaue Löschrolle für Bericht und
+    Video muss vor einer Änderung des bestehenden Vertrags geklärt sein.
+  - Beim Video bleibt der geprüfte geschwärzte Master für Streaming und Export erhalten; nur die supersedierte
+    Generation darf nach erfolgreicher Veröffentlichung und bestehenden Bereinigungsgates gelöscht werden.
   required: true
   verification:
     kind: manual
@@ -46,8 +96,41 @@ definition_of_done:
     instructions: Zustandsdiagramme gegen Services, Jobs, Modelle und Endpunkte abgleichen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/clinical_lifecycle/state_machine.py; endoreg_db/services/clinical_lifecycle/facts.py;
+        endoreg_db/services/clinical_lifecycle/audit.py; endoreg_db/management/commands/audit_clinical_lifecycle.py;
+        endoreg_db/services/media/export_ready.py
+    - kind: test
+      reference: tests/services/test_clinical_lifecycle_state_machine.py; tests/services/test_clinical_lifecycle_facts.py;
+        tests/views/media/test_video_ready_export.py::VideoReadyExportEndpointTests::test_rejects_when_patient_identity_is_not_verified
+    - kind: document
+      reference: docs/human_validation_workflow.md#end-to-end-lifecycle-state-machine
+    - kind: command
+      reference: '2026-10-22: pytest center_access_matrix, media_urlpatterns_contract, video_metadata_validation,
+        video_state_transitions, video_segment_validation, lifecycle_state_machine, clinical_lifecycle_state_machine,
+        clinical_lifecycle_facts, video_ready_export: 319 passed. Gesamt-Pyright: 1 fremder Fehler in
+        tests/views/test_central_hub_training_access.py, 24 Warnungen; fokussierter Pyright 0 Fehler.
+        lint_structure: 67 Manifeste gueltig.'
+    - kind: code
+      reference: endoreg_db/services/clinical_lifecycle/legacy_exemption.py; endoreg_db/management/commands/exempt_legacy_identity_verification.py;
+        endoreg_db/services/clinical_lifecycle/state_machine.py::evidence_rejection
+    - kind: test
+      reference: tests/services/test_clinical_lifecycle_legacy_exemption.py; tests/services/test_clinical_lifecycle_state_machine.py
+    - kind: command
+      reference: '2026-10-22: fokussierter Pyright 0 Fehler; pytest clinical_lifecycle (state_machine,
+        facts, legacy_exemption), clinical_workflow_persistence, clinical_workflow_endpoint, video_ready_export,
+        center_access_matrix, video_metadata_validation, video_state_transitions, lifecycle_state_machine:
+        343 passed; lint_structure 67 Manifeste gueltig.'
+    note: 'Benannte Altbestands-Ausnahme (Maintainer-Freigabe 2026-10-22): validierte Videos ohne Identitaetspruefung
+      vor einem Stichtag erhalten je einen unveraenderlichen Audit-Ledger-Eintrag ohne Patientendaten;
+      keine Rueckfuellung der Pruefflags. Die Ausnahme erlaubt keine neue Validierung und ersetzt nicht
+      die Loeschung von Rohmedien und direkten Identifikatoren vor dem Export. evidence_rejection ist
+      als reine Funktion fuer persistence.py veroeffentlicht. Weiterhin nur Exportfreigabe erzwungen;
+      keine Produktionsfreigabe.'
+    assessed_by: claude-clinical-lifecycle-20261022
+    assessed_at: '2026-10-22T15:42:07.483419Z'
 - id: hls_worker_deduplication
   category: data_integrity
   title: HLS-Worker besitzen einen eindeutigen, atomar geschützten Materialisierungsversuch

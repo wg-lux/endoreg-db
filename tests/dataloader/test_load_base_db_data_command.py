@@ -1,54 +1,43 @@
-from __future__ import annotations
+from io import StringIO
+from unittest.mock import patch
 
-from unittest.mock import MagicMock, patch
-
-from django.test import TestCase
-
-from endoreg_db.management.commands.load_base_db_data import Command
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
+from django.core.management import call_command
 
 
-def _warning_style(message: str) -> str:
-    return message
+def test_bootstrap_delegates_to_one_pinned_catalogue_import() -> None:
+    with (
+        patch(
+            "endoreg_db.management.reference_catalog_command.hydrate_shipped_terminology"
+        ) as hydrate,
+        patch(
+            "endoreg_db.management.reference_catalog_command.call_command"
+        ) as importer,
+    ):
+        call_command("load_base_db_data", stdout=StringIO())
+    hydrate.assert_called_once_with()
+    assert importer.call_args.args == ("import_reference_catalog",)
+    assert importer.call_args.kwargs["module"] == "endoreg_reference"
+    assert importer.call_args.kwargs["module_version"] == "1.0.0"
+    assert importer.call_args.kwargs["record_types"] == []
 
 
-class LoadBaseDbDataCommandTests(TestCase):
-    @patch.object(Command, "_endoreg_db_schema_is_ready", return_value=False)
-    @patch("endoreg_db.management.commands.load_base_db_data.call_command")
-    def test_skips_all_subcommands_when_schema_is_not_ready(
-        self,
-        mocked_call_command: MagicMock,
-        mocked_schema_ready: MagicMock,
-    ) -> None:
-        command = Command()
-
-        with (
-            patch.object(command.stdout, "write") as mocked_write,
-            patch.object(command.style, "WARNING", side_effect=_warning_style),
-        ):
-            options = VerboseManagementCommandOptionsPayload(verbose=False)
-            command.handle(**options.model_dump(mode="python"))
-
-        mocked_schema_ready.assert_called_once_with()
-        mocked_call_command.assert_not_called()
-        mocked_write.assert_any_call(
-            "Skipping base data load because endoreg_db migrations have not been applied yet."
+def test_bootstrap_dry_run_does_not_hydrate_or_select_studies() -> None:
+    with (
+        patch(
+            "endoreg_db.management.reference_catalog_command.hydrate_shipped_terminology"
+        ) as hydrate,
+        patch(
+            "endoreg_db.management.reference_catalog_command.call_command"
+        ) as importer,
+    ):
+        call_command(
+            "load_base_db_data",
+            module="selected",
+            module_version="2.0.0",
+            dry_run=True,
+            stdout=StringIO(),
         )
-
-    @patch("endoreg_db.management.commands.load_base_db_data.call_command")
-    def test_never_invokes_legacy_requirement_loader(
-        self,
-        mocked_call_command: MagicMock,
-    ) -> None:
-        command = Command()
-
-        with patch.object(Command, "_endoreg_db_schema_is_ready", return_value=True):
-            options = VerboseManagementCommandOptionsPayload(verbose=False)
-            command.handle(**options.model_dump(mode="python"))
-
-        invoked_commands = [
-            str(args[0]) for args, _kwargs in mocked_call_command.call_args_list if args
-        ]
-        assert "load_requirement_data" not in invoked_commands
+    hydrate.assert_not_called()
+    assert importer.call_args.kwargs["module"] == "selected"
+    assert importer.call_args.kwargs["module_version"] == "2.0.0"
+    assert importer.call_args.kwargs["dry_run"] is True

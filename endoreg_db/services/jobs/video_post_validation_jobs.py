@@ -7,7 +7,6 @@ from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
 from datetime import timedelta
-from pathlib import Path
 from typing import cast
 
 from django.db import transaction
@@ -24,34 +23,37 @@ from endoreg_db.config.env import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.jobs.processing_history import (
+    set_history_task_id as _set_history_task_id,
+)
+from endoreg_db.services.annotations.segment_validation_workflow import (
     blackening_history_config,
     is_outside_frame_blackening_history,
     mark_post_validation_complete,
     mark_post_validation_incomplete,
     resolve_blackening_run_config,
 )
-from endoreg_db.services.frame_retention import (
+from endoreg_db.services.frames.frame_retention import (
     prune_unused_validated_outside_frames,
 )
-from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_artifacts
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
 from endoreg_db.services.video_files import (
     ensure_local_processed_video_file,
 )
-from endoreg_db.services.video_post_validation_blackening import (
+from endoreg_db.services.video_files.post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
 )
-from endoreg_db.services.video_post_validation_blackening import (
+from endoreg_db.services.video_files.post_validation_blackening import (
     rebuild_processed_video_without_outside_frames,
 )
-from endoreg_db.services.video_temporal_inference import (
+from endoreg_db.services.video_files.temporal_inference import (
     dispatch_deferred_temporal_inference_after_rebuild,
     fail_deferred_temporal_inference_for_rebuild,
 )
+from endoreg_db.utils.frame_stream import FrameSample, read_video_file_frame_sample
 
 logger = logging.getLogger(__name__)
 
@@ -68,27 +70,10 @@ RESERVATION_ALREADY_QUEUED = "already_queued"
 RESERVATION_BUSY = "busy"
 
 
-def _capture_frame(video_path: Path, frame_number: int):
-    import cv2
-
-    capture = cv2.VideoCapture(video_path.as_posix())
-    try:
-        if not capture.isOpened():
-            raise RuntimeError(
-                f"Could not open rebuilt video for sampling: {video_path}"
-            )
-        if not capture.set(cv2.CAP_PROP_POS_FRAMES, float(frame_number)):
-            raise RuntimeError(
-                f"Could not seek rebuilt video to frame {frame_number}: {video_path}"
-            )
-        ok, frame = capture.read()
-        if not ok:
-            raise RuntimeError(
-                f"Could not decode rebuilt video frame {frame_number}: {video_path}"
-            )
-        return frame
-    finally:
-        capture.release()
+def _capture_frame(video: VideoFile, frame_number: int) -> FrameSample:
+    return read_video_file_frame_sample(
+        video, frame_number=frame_number, file_type="processed"
+    )
 
 
 def _verify_processed_video_contract(
@@ -153,8 +138,8 @@ def _verify_processed_video_contract(
                 break
 
         for frame_number in inside_sample_frames[:3]:
-            frame = _capture_frame(processed_path, frame_number)
-            maximum_channel_value = int(frame.max())
+            sample = _capture_frame(video, frame_number)
+            maximum_channel_value = int(sample.rgb_frame.max())
             if maximum_channel_value > tolerance:
                 logger.warning(
                     "Post-validation processed-video outside-frame sample exceeds "
@@ -167,8 +152,8 @@ def _verify_processed_video_contract(
                 )
 
         for frame_number in outside_sample_frames[:3]:
-            frame = _capture_frame(processed_path, frame_number)
-            if int(frame.max()) <= tolerance:
+            sample = _capture_frame(video, frame_number)
+            if int(sample.rgb_frame.max()) <= tolerance:
                 raise RuntimeError(
                     "Post-validation rebuild unexpectedly blackened non-outside frames for "
                     f"video {video.pk}: frame_number={frame_number}"
@@ -272,9 +257,8 @@ def _expire_stale_blackening_histories(video: VideoFile) -> None:
             continue
         reason = (
             "Outside-frame blackening job was still running after "
-            f"{STALE_REBUILD_RUNNING_TIMEOUT}; rolling back extracted frames."
+            f"{STALE_REBUILD_RUNNING_TIMEOUT}."
         )
-        rollback_video_frame_artifacts(video, reason=reason)
         history.mark_failure(reason)
         fail_deferred_temporal_inference_for_rebuild(
             video_id=video.pk,
@@ -327,13 +311,6 @@ def _reserve_blackening_history(
         return history, RESERVATION_CREATED
 
 
-def _set_history_task_id(history: VideoProcessingHistory, task_id: str) -> None:
-    if history.task_id == task_id:
-        return
-    history.task_id = task_id
-    history.save(update_fields=["task_id"])
-
-
 def _get_processing_history(
     history_id: int | None,
 ) -> VideoProcessingHistory | None:
@@ -357,15 +334,6 @@ def _run_video_post_validation_rebuild(
         if history.status == VideoProcessingHistory.STATUS_SUCCESS:
             return True
         defer_if_video_media_busy(video_id=video_id, history=history)
-        if history.status == VideoProcessingHistory.STATUS_RUNNING:
-            history_video = VideoFile.objects.get(pk=video_id)
-            rollback_video_frame_artifacts(
-                history_video,
-                reason=(
-                    "Restarting post-validation rebuild for a previously running "
-                    f"history {history.pk}."
-                ),
-            )
         history.mark_running()
 
     video: VideoFile | None = None
@@ -389,14 +357,11 @@ def _run_video_post_validation_rebuild(
                 video,
                 only_validated=run_config.only_validated,
                 outside_intervals=rebuild_outside_intervals,
+                raise_on_error=True,
             )
         )
         if not rebuilt:
             mark_post_validation_incomplete(video)
-            rollback_video_frame_artifacts(
-                video,
-                reason="Post-validation rebuild returned false.",
-            )
             if history is not None:
                 reason = "Outside-frame blackening rebuild returned false."
                 history.mark_failure(reason)
@@ -445,17 +410,9 @@ def _run_video_post_validation_rebuild(
     except Exception as exc:
         if video is not None:
             mark_post_validation_incomplete(video)
-            try:
-                rollback_video_frame_artifacts(
-                    video,
-                    reason=f"Post-validation rebuild failed: {exc}",
-                )
-            except Exception:
-                logger.exception(
-                    "Failed to rollback frame artifacts after post-validation "
-                    "rebuild failure for video %s.",
-                    video.pk,
-                )
+            # The rebuild service owns its staged video candidates, not frame
+            # caches. Failure (including a preflight refusal) grants no authority
+            # to delete existing frame files, annotations or extraction state.
         if history is not None:
             history.mark_failure(str(exc))
             fail_deferred_temporal_inference_for_rebuild(

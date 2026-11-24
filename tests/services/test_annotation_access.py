@@ -5,7 +5,7 @@ from typing import Any, cast
 import pytest
 from rest_framework.exceptions import PermissionDenied
 
-from endoreg_db.services.annotation_access import (
+from endoreg_db.services.annotations.annotation_access import (
     resolve_trusted_annotation_principal,
     validate_interactive_annotation_source,
 )

@@ -4,7 +4,11 @@ import math
 from datetime import UTC, datetime
 from fractions import Fraction
 from pathlib import Path
-from typing import TYPE_CHECKING, Callable, Literal
+from typing import TYPE_CHECKING, Literal
+from collections.abc import Callable
+
+from django.db import transaction
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonObject
 
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
@@ -17,7 +21,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     evidence_as_json,
 )
-from endoreg_db.services.video_timeline import (
+from endoreg_db.services.video_files.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,
@@ -71,7 +75,7 @@ def segment_timeline_references(
         persisted = {
             int(frame_number): float(timestamp)
             for frame_number, timestamp in frames.filter(
-                frame_number__in=frame_numbers,
+                frame_number__in=frame_numbers | {0},
                 timestamp__isnull=False,
             ).values_list("frame_number", "timestamp")
         }
@@ -83,6 +87,11 @@ def segment_timeline_references(
             f"every boundary; missing frames: {missing}"
         )
     mapping = _mapping_from_contract(timeline)
+    first_timestamp = persisted.get(0)
+    if first_timestamp is not None:
+        from dataclasses import replace
+
+        mapping = replace(mapping, first_timestamp_seconds=float(first_timestamp))
     references: list[SegmentTimelineReference] = []
     for segment_id, start_frame, end_frame in segment_rows:
         start_number = int(start_frame)
@@ -91,6 +100,7 @@ def segment_timeline_references(
             references.append(
                 SegmentTimelineReference(
                     segment_id=int(segment_id),
+                    origin_timestamp_seconds=mapping.first_timestamp_seconds,
                     start_frame=start_number,
                     end_frame=end_number,
                     start_timestamp_seconds=frame_number_to_seconds(
@@ -120,40 +130,91 @@ def persist_video_source_timeline(
     | None = None,
 ) -> None:
     """Persist a versioned source timeline and per-frame presentation times."""
+    from endoreg_db.models.label.annotation.video_segmentation_annotation import (
+        VideoSegmentationAnnotation,
+    )
     from endoreg_db.models.media.frame.frame import Frame
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.video_files.frames import initialize_video_frames
 
     source = probe_artifact(path)
-    rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
-    if not rows:
-        raise VideoStorageNormalizationError("Source timeline has no persisted frames")
     exact_timestamps = (
         probe_frame_timestamps(path) if probe_frame_timestamps is not None else None
     )
-    source, timestamps, mapping = _resolve_source_timestamps(
-        video=video,
-        path=path,
-        source=source,
-        rows=rows,
-        exact_timestamps=exact_timestamps,
-        probe_frame_pts=probe_frame_pts,
-    )
-    _validate_timestamp_counts(
-        rows=rows,
-        timestamps=timestamps,
-        exact_timestamps=exact_timestamps,
-    )
-    source = _source_with_probed_frame_count(source, len(timestamps))
-    update_fields = _apply_frame_timestamps(rows, timestamps, exact_timestamps)
-    Frame.objects.bulk_update(rows, update_fields, batch_size=2000)
-    evidence = VideoSourceTimelineEvidence(
-        persisted_at=datetime.now(UTC),
-        source=source,
-        timestamp_mapping=mapping,
-    )
-    meta = dict(video.meta or {})
-    meta["source_timeline"] = evidence_as_json(evidence)
-    video.meta = meta
-    video.save(update_fields=["meta", "date_modified"])
+    with transaction.atomic():
+        current = VideoFile.objects.select_for_update().get(pk=video.pk)
+        video.meta = current.meta
+        video.frame_count = current.frame_count
+        rows = list(
+            Frame.objects.select_for_update()
+            .filter(video=video)
+            .order_by("frame_number")
+        )
+        if not rows and not exact_timestamps:
+            raise VideoStorageNormalizationError(
+                "Source timeline initialization requires decoded presentation timestamps"
+            )
+        source, timestamps, mapping = _resolve_source_timestamps(
+            video=video,
+            path=path,
+            source=source,
+            rows=rows,
+            exact_timestamps=exact_timestamps,
+            probe_frame_pts=probe_frame_pts,
+        )
+        # Older imports created estimated placeholders before decoding. Only
+        # extend a pristine prefix; never delete or renumber persisted frames.
+        extend_placeholders = (
+            bool(rows)
+            and exact_timestamps is not None
+            and len(rows) < len(timestamps)
+            and not current.processed_file
+            and not (current.meta or {}).get("source_timeline")
+            and all(
+                row.frame_number == index
+                and not row.is_extracted
+                and row.timestamp is None
+                and row.presentation_timestamp is None
+                for index, row in enumerate(rows)
+            )
+            and not Frame.objects.filter(
+                video=video, box_annotations__isnull=False
+            ).exists()
+            and not Frame.objects.filter(
+                video=video, image_classification_annotations__isnull=False
+            ).exists()
+            and not VideoSegmentationAnnotation.objects.filter(
+                video_file=video
+            ).exists()
+        )
+        if not rows or extend_placeholders:
+            if video.label_video_segments.exists():
+                raise VideoStorageNormalizationError(
+                    "Cannot initialize a source timeline after segments were persisted"
+                )
+            video.frame_count = len(timestamps)
+            initialize_video_frames(video)
+            rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
+        _validate_timestamp_counts(
+            rows=rows,
+            timestamps=timestamps,
+            exact_timestamps=exact_timestamps,
+        )
+        video.frame_count = len(timestamps)
+        source = _source_with_probed_frame_count(source, len(timestamps))
+        update_fields = _apply_frame_timestamps(rows, timestamps, exact_timestamps)
+        Frame.objects.bulk_update(rows, update_fields, batch_size=2000)
+        evidence = VideoSourceTimelineEvidence(
+            persisted_at=datetime.now(UTC),
+            source=source,
+            timestamp_mapping=mapping,
+            first_timestamp_seconds=timestamps[0],
+            end_timestamp_seconds=timestamps[0] + source.timeline.duration_seconds,
+        )
+        meta: VideoFileMetaJsonObject = dict(video.meta or {})
+        meta["source_timeline"] = evidence_as_json(evidence)
+        video.meta = meta
+        video.save(update_fields=["meta", "frame_count", "date_modified"])
 
 
 def _resolve_source_timestamps(
@@ -249,8 +310,6 @@ def _source_with_probed_frame_count(
     source: VideoArtifactProbe,
     frame_count: int,
 ) -> VideoArtifactProbe:
-    if not source.timeline.variable_frame_rate:
-        return source
     timeline = source.timeline.model_copy(update={"frame_count": frame_count})
     return source.model_copy(update={"timeline": timeline})
 

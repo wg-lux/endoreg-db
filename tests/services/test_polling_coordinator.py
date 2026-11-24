@@ -14,7 +14,7 @@ import time
 import threading
 from typing import Any, cast
 from django.core.cache import cache
-from endoreg_db.services.polling_coordinator import (
+from endoreg_db.services.runtime.polling_coordinator import (
     PollingCoordinator,
     ProcessingLockContext,
 )

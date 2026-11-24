@@ -16,16 +16,20 @@ def report_staging_path() -> Generator[Path]:
     """Keep report working files within the protected runtime storage boundary."""
     from uuid import uuid4
 
-    from endoreg_db.utils.file_operations import ensure_directory, secure_unlink_file
-    from endoreg_db.utils.paths import get_runtime_paths
+    from endoreg_db.utils.file_operations import (
+        ensure_directory,
+        safe_unlink_file,
+    )
+    from endoreg_db.utils.paths import ensure_within_storage_root, get_runtime_paths
 
     path = (
-        ensure_directory(get_runtime_paths().transcoding) / f"report-{uuid4().hex}.pdf"
+        ensure_directory(ensure_within_storage_root(get_runtime_paths().transcoding))
+        / f"report-{uuid4().hex}.pdf"
     )
     try:
         yield path
     finally:
-        secure_unlink_file(path, missing_ok=True)
+        safe_unlink_file(path, missing_ok=True)
 
 
 class ReportArtifactFieldFile(FieldFile):
@@ -58,7 +62,10 @@ class ReportArtifactFieldFile(FieldFile):
 
     @staticmethod
     def hash_content(content: DjangoFile) -> str:
-        from endoreg_db.utils.file_operations import atomic_create_file, get_file_hash
+        from endoreg_db.utils.file_operations import (
+            atomic_create_file,
+            get_file_hash,
+        )
 
         position = content.tell()
         try:

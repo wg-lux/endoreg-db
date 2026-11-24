@@ -39,13 +39,17 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 )
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.model_meta import ModelMeta
-from endoreg_db.services.video_temporal_inference import (
+from endoreg_db.services.video_files.temporal_inference import (
     TEMPORAL_INFERENCE_STATUS_PENDING_AFTER_REBUILD,
     TemporalInferenceConfigError,
     dispatch_video_temporal_inference,
     extract_temporal_options,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
+from endoreg_db.services.annotations.label_presentation import (
+    build_label_catalog,
+    parse_study_cohort_id,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -239,9 +243,20 @@ def _resolve_prediction_model_meta(
 
 @api_view(["GET"])
 @permission_classes([EnvironmentAwarePermission])
+def label_catalog(request: Request) -> Response:
+    """Reload current label presentation for an optional owned study cohort."""
+    cohort_id = parse_study_cohort_id(request.query_params.get("study_cohort_id"))
+    return Response(
+        build_label_catalog(request, cohort_id).model_dump(mode="json"),
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@api_view(["GET"])
+@permission_classes([EnvironmentAwarePermission])
 def label_list(request: Request) -> Response:
     """
-    List all annotation labels used for video segments.
+    list all annotation labels used for video segments.
     """
     try:
         labels = cast(_LabelManagerSource, Label.objects).all().order_by("name")
@@ -250,7 +265,7 @@ def label_list(request: Request) -> Response:
         ]
         return Response(payload, status=status.HTTP_200_OK)
     except Exception as exc:
-        logger.error("Error fetching labels: %s", exc)
+        logger.exception("Error fetching labels: %s", exc)
         return _error_response(
             "Failed to fetch labels",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -261,7 +276,7 @@ def label_list(request: Request) -> Response:
 @permission_classes([EnvironmentAwarePermission])
 def prediction_model_list(request: Request) -> Response:
     """
-    List locally registered video prediction ModelMeta records and known
+    list locally registered video prediction ModelMeta records and known
     Hugging Face defaults that can be materialized on demand.
     """
     try:
@@ -413,7 +428,7 @@ def rerun_prediction_segments(
 @permission_classes([EnvironmentAwarePermission])
 def label_set_list(request: Request) -> Response:
     """
-    List annotation label groups as LabelSet records.
+    list annotation label groups as LabelSet records.
     """
     try:
         label_sets = cast(
@@ -457,7 +472,7 @@ def add_label(request: Request) -> Response:
             status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
         )
     except Exception as exc:
-        logger.error("Error creating label: %s", exc)
+        logger.exception("Error creating label: %s", exc)
         return _error_response(
             "Failed to create label",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -484,7 +499,7 @@ def delete_label(request: Request) -> Response:
         )
         return Response(response_payload.to_response_dict(), status=status.HTTP_200_OK)
     except Exception as exc:
-        logger.error("Error deleting label: %s", exc)
+        logger.exception("Error deleting label: %s", exc)
         return _error_response(
             "Failed to delete label",
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -541,7 +556,7 @@ def update_label(request: Request) -> Response:
         )
         return Response(response_payload.to_response_dict(), status=status.HTTP_200_OK)
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Error updating label '%s' -> '%s': %s",
             payload.name_old,
             payload.name,

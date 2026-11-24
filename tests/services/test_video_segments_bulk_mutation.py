@@ -11,11 +11,12 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services.video_segments_bulk_mutation import (
+from endoreg_db.services.annotations.segments_bulk_mutation import (
     BulkSegmentMutationServiceError,
     bulk_mutate_video_segments,
 )
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 class VideoSegmentsBulkMutationServiceTest(TestCase):
@@ -27,6 +28,7 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
             original_file_name="bulk_segments_service.mp4",
             fps=25.0,
             frame_count=200,
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
         )
         self.label_a = Label.objects.create(name="bulk-service-outside")
         self.label_b = Label.objects.create(name="bulk-service-polyp")
@@ -48,6 +50,32 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
                 "segment_annotations_validated",
             ]
         )
+
+    def test_export_flag_preserves_review_and_frame_annotations(self):
+        for defer in (True, False):
+            with self.subTest(defer_annotation_sync=defer):
+                sync = MagicMock()
+                delete = MagicMock()
+                bulk_mutate_video_segments(
+                    video=self.video,
+                    payload={
+                        "defer_annotation_sync": defer,
+                        "updates": [
+                            {"id": self.update_segment.pk, "export_segment": defer}
+                        ],
+                    },
+                    sync_frame_annotations=sync,
+                    delete_frame_annotations_for_segment=delete,
+                )
+                sync.assert_not_called()
+                delete.assert_not_called()
+                self.update_segment.refresh_from_db()
+                self.assertEqual(self.update_segment.export_segment, defer)
+                self.assertEqual(self.update_segment.start_frame_number, 10)
+                self.assertEqual(self.update_segment.end_frame_number, 20)
+                state = self.video.get_or_create_state()
+                self.assertTrue(state.segment_annotations_created)
+                self.assertTrue(state.segment_annotations_validated)
 
     def test_service_shapes_dataset_attachment_response(self):
         dataset = AIDataSet.objects.create(

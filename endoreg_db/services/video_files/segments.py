@@ -16,10 +16,7 @@ def get_video_outside_segments(
     *,
     only_validated: bool = False,
 ) -> models.QuerySet["LabelVideoSegment"]:
-    try:
-        segments = video.label_video_segments.filter(label__name__iexact="outside")
-        if only_validated:
-            segments = segments.filter(state__is_validated=True)
-        return segments
-    except Exception:
-        return video.label_video_segments.none()
+    segments = video.label_video_segments.filter(label__name__iexact="outside")
+    if only_validated:
+        segments = segments.filter(state__is_validated=True)
+    return segments

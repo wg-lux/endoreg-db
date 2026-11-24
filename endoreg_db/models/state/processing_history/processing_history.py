@@ -1,9 +1,7 @@
 from __future__ import annotations
 from typing import Optional, cast, Any
 from logging import getLogger
-from pathlib import Path
 from django.db import models
-from endoreg_db.utils.file_operations import get_content_hash_filename
 
 logger = getLogger(__name__)
 
@@ -41,10 +39,6 @@ class ProcessingHistory(models.Model):
     # ------------------------------------------------------------------
     # Core helpers
     # ------------------------------------------------------------------
-    @staticmethod
-    def get_content_hash(path: Path):
-        return get_content_hash_filename(path)
-
     @classmethod
     def get_or_create_for_hash(
         cls,

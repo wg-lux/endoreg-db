@@ -1,9 +1,23 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
-from celery import shared_task
+from celery import shared_task, current_app
+from celery.signals import worker_ready
+
+
+@worker_ready.connect
+def resume_import_stacks_on_worker_restart(**_kwargs: object) -> None:
+    """Existing maintenance routing rediscoveries also run after a worker restart."""
+    from endoreg_db.services.jobs.heavy_jobs import WorkloadQueue, queue_name
+
+    queue = queue_name(WorkloadQueue.MAINTENANCE)
+    current_app.send_task(
+        "endoreg_db.retry_due_upload_jobs", queue=queue, routing_key=queue
+    )
+
 
 if TYPE_CHECKING:
     from celery import Task
@@ -22,11 +36,11 @@ if TYPE_CHECKING:
 def run_video_upload_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from django.db import DatabaseError
     from endoreg_db.services.jobs.error_handling import retry_database_operation
-    from endoreg_db.services.hub.ingest import _run_video_upload_import_job
+    from endoreg_db.services.hub.ingest import run_video_upload_import_job
     from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLeaseBusy
 
     try:
-        return _run_video_upload_import_job(
+        return run_video_upload_import_job(
             str(job_id),
             lease_owner=str(_task.request.id),
             retry_on_busy=True,
@@ -64,7 +78,7 @@ def run_video_reimport_task(
     video_id: int,
     history_id: int | None = None,
 ) -> bool:
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import MediaOperationDeferred
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_reimport_jobs import _run_video_reimport_job
 
@@ -80,6 +94,21 @@ def run_video_reimport_task(
             job_name="video_reimport",
             video_id=video_id,
         )
+
+
+@shared_task(
+    name="endoreg_db.frame_annotation_export",
+    bind=True,
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def run_frame_annotation_export_task(_task: Task[[str], str], job_id: str) -> str:
+    from endoreg_db.services.media.frame_annotation_export_jobs import (
+        run_frame_annotation_export_job,
+    )
+
+    return str(run_frame_annotation_export_job(job_id).status)
 
 
 @shared_task(
@@ -121,7 +150,7 @@ def run_video_anonymization_correction_task(
     from endoreg_db.services.jobs.video_correction_jobs import (
         run_video_anonymization_correction,
     )
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import MediaOperationDeferred
 
     try:
         return run_video_anonymization_correction(int(video_id), int(history_id))
@@ -132,30 +161,6 @@ def run_video_anonymization_correction_task(
             job_name="video_anonymization_correction",
             video_id=video_id,
         )
-
-
-@shared_task(
-    name="endoreg_db.frame_extraction_request",
-    bind=True,
-    acks_late=True,
-    reject_on_worker_lost=True,
-    track_started=True,
-)
-def run_frame_extraction_request_task(
-    _task: Task[[int, int, int], bool],
-    request_id: int,
-    video_id: int,
-    frame_number: int,
-) -> bool:
-    from endoreg_db.services.jobs.frame_extraction_jobs import (
-        run_frame_extraction_request,
-    )
-
-    return run_frame_extraction_request(
-        request_id=int(request_id),
-        video_id=int(video_id),
-        frame_number=int(frame_number),
-    )
 
 
 @shared_task(
@@ -171,7 +176,7 @@ def run_video_post_validation_rebuild_task(
     only_validated: bool = False,
     history_id: int | None = None,
 ) -> bool:
-    from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import MediaOperationDeferred
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
     from endoreg_db.services.jobs.video_post_validation_jobs import (
         _run_video_post_validation_rebuild,
@@ -216,12 +221,12 @@ def video_hls_materialization(
     from endoreg_db.services.jobs.error_handling import retry_database_operation
 
     from endoreg_db.exceptions import MediaOperationDeferred
-    from endoreg_db.services.hls_media import (
+    from endoreg_db.services.streaming.hls_media import (
         hls_result_is_ready,
         materialize_video_hls,
     )
     from endoreg_db.services.jobs.error_handling import retry_deferred_media_operation
-    from endoreg_db.services.video_storage_normalization import (
+    from endoreg_db.services.video_storage.workflow import (
         VideoStorageNormalizationError,
     )
     from endoreg_db.utils.structured_logging import (
@@ -303,9 +308,11 @@ def run_segment_annotation_expansion_task(
     dispatch_post_validation_rebuild: bool = False,
     mark_complete_without_rebuild: bool = False,
 ) -> dict[str, int]:
-    from endoreg_db.services.segment_annotations import ensure_segment_annotations
+    from endoreg_db.services.annotations.segment_annotations import (
+        ensure_segment_annotations,
+    )
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.video_segment_validation_workflow import (
+    from endoreg_db.services.annotations.segment_validation_workflow import (
         mark_segment_annotations_complete_without_cleanup,
     )
     from endoreg_db.services.jobs.video_post_validation_jobs import (
@@ -366,8 +373,8 @@ def run_video_temporal_inference_task(
     n_test_frames: int = 10,
     frame_source_mode: str | None = None,
 ) -> bool:
-    from endoreg_db.services.video_temporal_inference import (
-        _run_video_temporal_inference,
+    from endoreg_db.services.video_files.temporal_inference import (
+        run_video_temporal_inference,
     )
 
     kwargs: dict[str, Any] = {
@@ -384,7 +391,7 @@ def run_video_temporal_inference_task(
     if frame_source_mode is not None:
         kwargs["frame_source_mode"] = frame_source_mode
 
-    return _run_video_temporal_inference(int(video_id), **kwargs)
+    return run_video_temporal_inference(int(video_id), **kwargs)
 
 
 @shared_task(
@@ -411,9 +418,33 @@ def run_model_training_task(
     return True
 
 
+def _run_report_task(
+    task: Task[[str], bool],
+    job_id: str,
+    run: Callable[[str], bool],
+) -> bool:
+    from django.db import DatabaseError
+    from endoreg_db.services.jobs.error_handling import retry_database_operation
+    from endoreg_db.services.reports.import_fencing import ReportImportBusyError
+
+    try:
+        return run(str(job_id))
+    except ReportImportBusyError as exc:
+        raise task.retry(exc=exc, countdown=60, max_retries=None) from exc
+    except DatabaseError as exc:
+        retry_database_operation(
+            retry=task.retry,
+            error=exc,
+            retries=task.request.retries,
+            job_name="report_import",
+            subject_id=job_id,
+        )
+
+
 @shared_task(
     name="endoreg_db.report_llm_reimport",
     bind=True,
+    max_retries=None,
     acks_late=True,
     reject_on_worker_lost=True,
     track_started=True,
@@ -423,12 +454,13 @@ def run_model_training_task(
 def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_reimport_job
 
-    return _run_report_llm_reimport_job(str(job_id))
+    return _run_report_task(_task, job_id, _run_report_llm_reimport_job)
 
 
 @shared_task(
     name="endoreg_db.report_llm_import",
     bind=True,
+    max_retries=None,
     acks_late=True,
     reject_on_worker_lost=True,
     track_started=True,
@@ -438,7 +470,7 @@ def run_report_llm_reimport_task(_task: Task[[str], bool], job_id: str) -> bool:
 def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     from endoreg_db.services.jobs.report_llm_jobs import _run_report_llm_import_job
 
-    return _run_report_llm_import_job(str(job_id))
+    return _run_report_task(_task, job_id, _run_report_llm_import_job)
 
 
 @shared_task(
@@ -480,6 +512,165 @@ def retry_due_upload_jobs_task(_task: Task[[], dict[str, int]]) -> dict[str, int
 
 
 @shared_task(
+    name="endoreg_db.cleanup_media_sources",
+    acks_late=True,
+    reject_on_worker_lost=True,
+    track_started=True,
+)
+def cleanup_media_sources_task() -> dict[str, int]:
+    """Serialize recurring cleanup and preserve scan progress across workers."""
+    from endoreg_db.utils.file_operations import advisory_file_lock
+    from endoreg_db.utils.paths import get_runtime_paths
+
+    with advisory_file_lock(
+        lock_path=get_runtime_paths().manifest_dir / ".periodic_media_cleanup.lock",
+        timeout_seconds=0,
+    ):
+        return _cleanup_media_sources()
+
+
+def _cleanup_media_sources() -> dict[str, int]:
+    """Revisit recorded cleanup work under the existing operator apply gate."""
+    import logging
+    from django.db.models import Q
+    from endoreg_db.config.env import (
+        staging_cleanup_grace_seconds,
+        upload_job_source_reaper_apply_enabled,
+    )
+    from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.schemas.processed_video_cleanup import PeriodicMediaCleanupCursor
+    from endoreg_db.services.hub.cleanup import run_upload_job_source_reaper
+    from endoreg_db.services.hub.upload_staging_orphans import (
+        run_upload_staging_orphan_cleanup,
+    )
+    from endoreg_db.services.runtime.transient_artifact_cleanup import (
+        run_transient_artifact_cleanup,
+    )
+    from endoreg_db.services.video_storage.generation_cleanup import (
+        cleanup_processed_video_generations,
+        cleanup_superseded_hls,
+    )
+    from endoreg_db.utils.structured_logging import emit_structured_event
+    from endoreg_db.utils.file_operations import atomic_write_file
+    from endoreg_db.utils.paths import get_runtime_paths
+
+    cursor_path = get_runtime_paths().manifest_dir / "periodic_media_cleanup.json"
+    cursor = (
+        PeriodicMediaCleanupCursor.model_validate_json(cursor_path.read_bytes())
+        if cursor_path.exists()
+        else PeriodicMediaCleanupCursor()
+    )
+    apply = upload_job_source_reaper_apply_enabled()
+    sources = run_upload_job_source_reaper(apply=apply, limit=25)
+    grace_seconds = staging_cleanup_grace_seconds()
+    counts = {
+        "sources_cleaned": sources.cleaned,
+        "source_bytes_freed": sources.freed_bytes,
+        "orphaned_upload_dirs_cleaned": 0,
+        "orphaned_upload_bytes_freed": 0,
+        "orphaned_upload_bytes_reclaimable": 0,
+        "transient_artifacts_cleaned": 0,
+        "transient_bytes_freed": 0,
+        "transient_bytes_reclaimable": 0,
+        "staging_cleanup_failures": 0,
+        "generations_cleaned": 0,
+        "generations_pending": 0,
+        "generation_failures": 0,
+        "hls_artifacts_cleaned": 0,
+        "hls_artifacts_pending": 0,
+    }
+    # A failing staging scan must not stop generation cleanup below.
+    try:
+        orphans = run_upload_staging_orphan_cleanup(
+            apply=apply, grace_seconds=grace_seconds, limit=25
+        )
+        counts["orphaned_upload_dirs_cleaned"] = orphans.deleted_count
+        counts["orphaned_upload_bytes_freed"] = orphans.freed_bytes
+        counts["orphaned_upload_bytes_reclaimable"] = orphans.reclaimable_bytes
+    except OSError as exc:
+        counts["staging_cleanup_failures"] += 1
+        emit_structured_event(
+            logging.getLogger(__name__),
+            "upload_staging_orphan_cleanup_failed",
+            level=logging.ERROR,
+            error_type=type(exc).__name__,
+        )
+    try:
+        transients = run_transient_artifact_cleanup(
+            apply=apply, grace_seconds=grace_seconds, limit=25
+        )
+        counts["transient_artifacts_cleaned"] = transients.deleted_count
+        counts["transient_bytes_freed"] = transients.freed_bytes
+        counts["transient_bytes_reclaimable"] = transients.reclaimable_bytes
+    except OSError as exc:
+        counts["staging_cleanup_failures"] += 1
+        emit_structured_event(
+            logging.getLogger(__name__),
+            "transient_artifact_cleanup_failed",
+            level=logging.ERROR,
+            error_type=type(exc).__name__,
+        )
+    candidates = (
+        VideoFile.objects.filter(
+            (
+                Q(meta__processed_generation_cleanup__isnull=False)
+                & ~Q(meta__processed_generation_cleanup=[])
+            )
+            | Q(
+                pk__in=VideoHlsArtifact.objects.filter(
+                    status__in=["superseded", "failed"]
+                ).values("video_id")
+            )
+        )
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    # Progress survives process recycling; deletion revalidates every candidate.
+    video_ids = list(candidates.filter(pk__gt=cursor.video_id)[:25])
+    video_ids = video_ids or list(candidates[:25])
+    for video_id in video_ids:
+        try:
+            derivatives = cleanup_superseded_hls(video_id, apply=apply)
+            counts["hls_artifacts_cleaned"] += derivatives.cleaned
+            counts["hls_artifacts_pending"] += derivatives.pending
+            emit_structured_event(
+                logging.getLogger(__name__),
+                "periodic_hls_cleanup",
+                apply=apply,
+                **derivatives.model_dump(),
+            )
+            result = cleanup_processed_video_generations(video_id, apply=apply)
+        except (OSError, ValueError, RuntimeError) as exc:
+            counts["generation_failures"] += 1
+            emit_structured_event(
+                logging.getLogger(__name__),
+                "periodic_generation_cleanup_failed",
+                video_id=video_id,
+                error_type=type(exc).__name__,
+            )
+        else:
+            counts["generations_cleaned"] += result.cleaned
+            counts["generations_pending"] += result.pending
+            emit_structured_event(
+                logging.getLogger(__name__),
+                "periodic_generation_cleanup",
+                apply=apply,
+                **result.model_dump(),
+            )
+    atomic_write_file(
+        destination=cursor_path,
+        content=[
+            PeriodicMediaCleanupCursor(video_id=video_ids[-1] if video_ids else 0)
+            .model_dump_json()
+            .encode("utf-8")
+        ],
+        file_mode=0o600,
+    )
+    return counts
+
+
+@shared_task(
     name="endoreg_db.retry_due_model_training_runs",
     bind=True,
     acks_late=True,
@@ -508,7 +699,7 @@ def retry_due_model_training_runs_task(_task: Task[[], int]) -> int:
 def refresh_audit_ledger_integrity_status_task(
     _task: Task[[], dict[str, Any]],
 ) -> dict[str, Any]:
-    from endoreg_db.services.audit_integrity import (
+    from endoreg_db.services.audit.integrity import (
         refresh_audit_ledger_integrity_status_once,
     )
 

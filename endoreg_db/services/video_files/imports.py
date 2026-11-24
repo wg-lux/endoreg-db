@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, TypedDict, Union, Unpack
+from typing import TYPE_CHECKING, Optional, TypedDict, Unpack
 
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 
 from .frames import initialize_video_frames
 from .io import set_video_frame_dir
@@ -19,7 +20,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class _CreateVideoFileFromPathKwargs(TypedDict, total=False):
+class CreateVideoFileFromPathKwargs(TypedDict, total=False):
     processor_name: str | None
     raw_video_hash: str | None
     save: bool
@@ -32,11 +33,12 @@ def _video_file_model():
 
 
 def create_video_file_from_path(
-    file_path: Union[str, Path],
-    center_name: str,
+    file_path: str | Path,
+    center_name: str = "",
     *,
     model_cls: type["VideoFile"] | None = None,
-    **kwargs: Unpack[_CreateVideoFileFromPathKwargs],
+    center_key: str | None = None,
+    **kwargs: Unpack[CreateVideoFileFromPathKwargs],
 ) -> Optional["VideoFile"]:
     from endoreg_db.utils.file_operations import get_file_hash
 
@@ -44,15 +46,6 @@ def create_video_file_from_path(
 
     if isinstance(file_path, str):
         file_path = Path(file_path)
-    if not center_name:
-        try:
-            center_name = os.environ["CENTER_NAME"]
-        except KeyError:
-            logger.error(
-                "Center name must be provided to create VideoFile from file. "
-                "You can set CENTER_NAME in environment variables."
-            )
-            return None
 
     processor_name = kwargs.pop("processor_name", None)
     raw_video_hash = kwargs.pop("raw_video_hash", None)
@@ -64,6 +57,7 @@ def create_video_file_from_path(
         model_cls or _video_file_model(),
         file_path,
         center_name=center_name,
+        center_key=center_key,
         processor_name=processor_name,
         raw_video_hash=raw_video_hash,
         save=save,
@@ -71,7 +65,7 @@ def create_video_file_from_path(
 
 
 def create_initialized_video_file_from_path(
-    file_path: Union[str, Path],
+    file_path: str | Path,
     center_name: str,
     processor_name: Optional[str],
     raw_video_hash: str,
@@ -79,6 +73,7 @@ def create_initialized_video_file_from_path(
     save_video_file: bool = True,
     initialize: bool = True,
     model_cls: type["VideoFile"] | None = None,
+    center_key: str | None = None,
 ) -> "VideoFile":
     from ._imports import _create_from_file
 
@@ -89,6 +84,7 @@ def create_initialized_video_file_from_path(
         model_cls or _video_file_model(),
         file_path,
         center_name=center_name,
+        center_key=center_key,
         processor_name=processor_name,
         raw_video_hash=raw_video_hash,
         save=save_video_file,
@@ -117,7 +113,7 @@ def initialize_video_file(
                 video.raw_video_hash,
             )
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Failed to initialize video specs for %s: %s", video.raw_video_hash, exc
         )
 
@@ -148,11 +144,17 @@ def initialize_video_file(
             exc,
         )
 
-    initialize_video_frames(video)
     if local_raw_path is not None:
-        from endoreg_db.services.video_storage_normalization import (
+        from endoreg_db.services.video_storage.recording_time import (
+            persist_video_recording_time,
+        )
+        from endoreg_db.services.video_storage.workflow import (
             persist_video_source_timeline,
         )
 
         persist_video_source_timeline(video, Path(local_raw_path))
+        # Masking strips container metadata, so capture it from the raw import.
+        persist_video_recording_time(video, Path(local_raw_path))
+    else:
+        initialize_video_frames(video)
     return video

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta
+from collections.abc import Iterable
 from typing import Protocol, cast
 
 from django.db import transaction
@@ -14,7 +15,13 @@ from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
 
-from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.state.anonymization import (
+    AnonymizationPhase,
+    AnonymizationState,
+    anonymization_phase,
+)
+from endoreg_db.schemas.case_documents import CaseDocumentMediaType
+from endoreg_db.exceptions import MediaOperationDeferred
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.raw_pdf_files import get_raw_pdf_by_pk
@@ -41,14 +48,6 @@ class _VideoRecord(Protocol):
     def delete(self) -> None: ...
 
 
-class _PdfRecord(Protocol):
-    id: int
-    file: object
-    pdf_hash: str
-
-    def delete(self) -> None: ...
-
-
 class MediaManagementView(APIView):
     permission_classes = DEBUG_PERMISSIONS
 
@@ -56,7 +55,7 @@ class MediaManagementView(APIView):
         try:
             return Response(self._get_status_overview())
         except Exception as exc:  # pragma: no cover - defensive boundary
-            logger.error("Error getting media status overview: %s", exc)
+            logger.exception("Error getting media status overview: %s", exc)
             return Response(
                 {"error": "Failed to get status overview"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -76,7 +75,7 @@ class MediaManagementView(APIView):
             result = self._perform_cleanup(query)
             return Response(result.model_dump(mode="python"))
         except Exception as exc:  # pragma: no cover - defensive boundary
-            logger.error("Error during media cleanup: %s", exc)
+            logger.exception("Error during media cleanup: %s", exc)
             return Response(
                 {"error": "Cleanup operation failed"},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -104,64 +103,45 @@ class MediaManagementView(APIView):
         }
 
     def _get_video_stats(self) -> dict[str, int]:
-        videos = VideoFile.objects.select_related("state").all()
-        stats = {
-            "total": videos.count(),
-            "not_started": 0,
-            "processing": 0,
-            "done": 0,
-            "failed": 0,
-            "validated": 0,
-            "unfinished": 0,
-        }
-        for video in videos:
-            if not video.state:
-                stats["not_started"] += 1
-                stats["unfinished"] += 1
-                continue
-            video_status = video.state.anonymization_status.value
-            if video_status == "not_started":
-                stats["not_started"] += 1
-                stats["unfinished"] += 1
-            elif video_status in {"extracting_frames", "processing_anonymization"}:
-                stats["processing"] += 1
-                stats["unfinished"] += 1
-            elif video_status == "done_processing_anonymization":
-                stats["done"] += 1
-            elif video_status == "failed":
-                stats["failed"] += 1
-                stats["unfinished"] += 1
-            elif video_status == "validated":
-                stats["validated"] += 1
-            else:
-                stats["unfinished"] += 1
-        return stats
+        return self._get_media_stats(VideoFile.objects.select_related("state").all())
 
     def _get_pdf_stats(self) -> dict[str, int]:
-        pdfs = RawPdfFile.objects.all()
-        stats = {
-            "total": pdfs.count(),
-            "not_started": 0,
-            "processing": 0,
-            "done": 0,
-            "failed": 0,
-            "validated": 0,
-            "unfinished": 0,
-        }
-        for pdf in pdfs:
-            has_anonymized = bool(pdf.anonymized_text and pdf.anonymized_text.strip())
-            is_validated = bool(
-                getattr(pdf.sensitive_meta, "is_verified", False)
-                if pdf.sensitive_meta
-                else False
+        return self._get_media_stats(RawPdfFile.objects.select_related("state").all())
+
+    @staticmethod
+    def _get_media_stats(media: Iterable[VideoFile | RawPdfFile]) -> dict[str, int]:
+        stats: dict[str, int] = dict.fromkeys(
+            (
+                "total",
+                "not_started",
+                "processing",
+                "done",
+                "failed",
+                "validated",
+                "unfinished",
+            ),
+            0,
+        )
+        for item in media:
+            stats["total"] += 1
+            state = item.state
+            resolved = (
+                state.anonymization_status if state else AnonymizationState.NOT_STARTED
             )
-            if not has_anonymized:
-                stats["not_started"] += 1
-                stats["unfinished"] += 1
-            elif is_validated:
-                stats["validated"] += 1
-            else:
-                stats["done"] += 1
+            match anonymization_phase(resolved):
+                case AnonymizationPhase.NOT_STARTED:
+                    stats["not_started"] += 1
+                    stats["unfinished"] += 1
+                case AnonymizationPhase.IN_PROGRESS:
+                    stats["processing"] += 1
+                    stats["unfinished"] += 1
+                case AnonymizationPhase.FAILED:
+                    stats["failed"] += 1
+                    stats["unfinished"] += 1
+                case AnonymizationPhase.AWAITING_VALIDATION:
+                    stats["done"] += 1
+                case AnonymizationPhase.VALIDATED:
+                    stats["validated"] += 1
         return stats
 
     def _perform_cleanup(
@@ -346,44 +326,49 @@ class MediaManagementView(APIView):
 
 @api_view(["DELETE"])
 @permission_classes(DEBUG_PERMISSIONS)
-def force_remove_media(request: Request, file_id: int) -> Response:
+def force_remove_media(
+    request: Request, file_id: int, media_type: str | None = None
+) -> Response:
     try:
-        try:
-            video = cast(_VideoRecord, VideoFile.objects.get(id=file_id))
-            filename = video.original_file_name
-            video.delete()
-            job = UploadJob.objects.get(content_hash=video.raw_video_hash)
-            job.delete()
-            payload = MediaManagementForceRemoveResponsePayload(
-                detail=f"Video file '{filename}' (ID: {file_id}) removed successfully",
-                file_type="video",
-                file_id=file_id,
-            )
-            return Response(payload.model_dump(mode="python"))
-        except VideoFile.DoesNotExist:
-            pass
+        kind = CaseDocumentMediaType(media_type)
+    except ValueError:
+        return Response(
+            {
+                "detail": "An explicit media type (video or pdf) is required in the deletion URL"
+            },
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
-        try:
-            pdf = cast(_PdfRecord, RawPdfFile.objects.get(id=file_id))
-            filename = getattr(pdf.file, "name", "Unknown")
-            pdf.delete()
-            job = UploadJob.objects.get(content_hash=pdf.pdf_hash)
-            job.delete()
-            payload = MediaManagementForceRemoveResponsePayload(
-                detail=f"report file '{filename}' (ID: {file_id}) removed successfully",
-                file_type="pdf",
-                file_id=file_id,
-            )
-            return Response(payload.model_dump(mode="python"))
-        except RawPdfFile.DoesNotExist:
-            pass
-
+    try:
+        match kind:
+            case CaseDocumentMediaType.VIDEO:
+                media = VideoFile.objects.get(pk=file_id)
+                file_type = "video"
+            case CaseDocumentMediaType.PDF:
+                media = RawPdfFile.objects.get(pk=file_id)
+                file_type = "pdf"
+        # Model deletion owns storage cleanup and signals retain upload provenance.
+        media.delete()
+        payload = MediaManagementForceRemoveResponsePayload(
+            detail=f"{file_type} file (ID: {file_id}) removed successfully",
+            file_type=file_type,
+            file_id=file_id,
+        )
+        return Response(payload.model_dump(mode="python"))
+    except (VideoFile.DoesNotExist, RawPdfFile.DoesNotExist):
         return Response(
             {"detail": "File not found"},
             status=status.HTTP_404_NOT_FOUND,
         )
+    except (ValueError, MediaOperationDeferred):
+        return Response(
+            {
+                "detail": "Media deletion is blocked by active processing or unresolved storage ownership"
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
     except Exception as exc:  # pragma: no cover - defensive boundary
-        logger.error("Error force removing media %s: %s", file_id, exc)
+        logger.exception("Error force removing media %s: %s", file_id, exc)
         return Response(
             {"error": "Force removal failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -398,31 +383,38 @@ def reset_processing_status(request: HttpRequest, file_id: int) -> Response:
             video = VideoFile.objects.get(id=file_id)
             if video.state is not None:
                 state = video.state
-                setattr(state, "processing_finished", False)
-                setattr(state, "anonymization_status_id", None)
-                state.save()
+                state.mark_processing_not_started()
+                state.refresh_from_db()
             payload = MediaManagementResetStatusResponsePayload(
                 detail="Video processing status reset",
                 file_type="video",
                 file_id=file_id,
             ).model_dump(mode="python")
-            payload["new_status"] = "not_started"
+            payload["new_status"] = (
+                video.state.anonymization_status.value
+                if video.state
+                else AnonymizationState.NOT_STARTED.value
+            )
             return Response(payload)
         except VideoFile.DoesNotExist:
             pass
 
         try:
             pdf = RawPdfFile.objects.get(id=file_id)
-            if pdf.sensitive_meta and pdf.sensitive_meta.state:
-                state = pdf.sensitive_meta.state
-                setattr(state, "processing_finished", False)
-                state.save()
-                payload = MediaManagementResetStatusResponsePayload(
-                    detail="Report processing status reset",
-                    file_type="pdf",
-                    file_id=file_id,
-                )
-                return Response(payload.model_dump(mode="python"))
+            if pdf.state is not None:
+                pdf.state.mark_processing_not_started()
+                pdf.state.refresh_from_db()
+            payload = MediaManagementResetStatusResponsePayload(
+                detail="Report processing status reset",
+                file_type="pdf",
+                file_id=file_id,
+            ).model_dump(mode="python")
+            payload["new_status"] = (
+                pdf.state.anonymization_status.value
+                if pdf.state
+                else AnonymizationState.NOT_STARTED.value
+            )
+            return Response(payload)
         except RawPdfFile.DoesNotExist:
             pass
 
@@ -431,7 +423,7 @@ def reset_processing_status(request: HttpRequest, file_id: int) -> Response:
             status=status.HTTP_404_NOT_FOUND,
         )
     except Exception as exc:  # pragma: no cover - defensive boundary
-        logger.error("Error resetting status for media %s: %s", file_id, exc)
+        logger.exception("Error resetting status for media %s: %s", file_id, exc)
         return Response(
             {"error": "Reset status failed"},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR,

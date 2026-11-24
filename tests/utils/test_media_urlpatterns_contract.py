@@ -9,6 +9,56 @@ RouteContract = tuple[str, str, str]
 
 EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
+        "media/pdfs/<int:pk>/finding-suggestions/",
+        "pdf-finding-suggestions",
+        "endoreg_db.views.media.finding_suggestions.FindingSuggestionsView",
+    ),
+    (
+        "media/videos/<int:pk>/finding-suggestions/",
+        "video-finding-suggestions",
+        "endoreg_db.views.media.finding_suggestions.FindingSuggestionsView",
+    ),
+    (
+        "media/videos/masks/",
+        "video-masks",
+        "endoreg_db.views.video.masks.VideoMasksView",
+    ),
+    (
+        "media/studies/",
+        "studies",
+        "endoreg_db.views.media.studies.StudiesView",
+    ),
+    (
+        "media/studies/<int:study_id>/",
+        "study-detail",
+        "endoreg_db.views.media.studies.StudyDetailView",
+    ),
+    (
+        "media/studies/table-mappings/",
+        "study-table-mappings",
+        "endoreg_db.views.media.table_mappings.TableMappingsView",
+    ),
+    (
+        "media/studies/table-mappings/inspect/",
+        "study-table-mapping-inspect",
+        "endoreg_db.views.media.table_mappings.TableMappingInspectionView",
+    ),
+    (
+        "media/studies/table-mappings/<uuid:mapping_id>/",
+        "study-table-mapping-detail",
+        "endoreg_db.views.media.table_mappings.TableMappingDetailView",
+    ),
+    (
+        "media/videos/<int:pk>/download/",
+        "video-download",
+        "endoreg_db.views.media.export_downloads.VideoExportDownloadView",
+    ),
+    (
+        "media/videos/<int:pk>/timestamps.csv",
+        "video-timestamps-download",
+        "endoreg_db.views.media.export_downloads.VideoExportDownloadView",
+    ),
+    (
         "media/studies/cohort-preview/",
         "study-cohort-preview",
         "endoreg_db.views.media.study_cohort.StudyCohortPreviewView",
@@ -119,6 +169,21 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.media.frame_media.DecodedFrameStreamView",
     ),
     (
+        "media/videos/<int:pk>/provenance/recover/",
+        "video-provenance-recovery",
+        "endoreg_db.views.video.provenance_recovery.VideoProvenanceRecoveryView",
+    ),
+    (
+        "media/videos/<int:pk>/electrical-measurements/",
+        "video-electrical-measurements",
+        "endoreg_db.views.video.electrical_measurements.VideoElectricalMeasurementsView",
+    ),
+    (
+        "media/videos/<int:pk>/electrical-measurements/<int:measurement_id>/frames/",
+        "video-electrical-aligned-frames",
+        "endoreg_db.views.video.electrical_measurements.VideoElectricalAlignedFramesView",
+    ),
+    (
         "media/videos/<int:pk>/reimport/",
         "video-reimport",
         "endoreg_db.views.video.reimport.VideoReimportView",
@@ -132,6 +197,41 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/videos/export-annotated/",
         "video-annotated-export",
         "endoreg_db.views.video.export_annotated.export_annotated",
+    ),
+    (
+        "media/videos/export-annotated/jobs/",
+        "video-annotated-export-job-list",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobListView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/start/",
+        "video-annotated-export-job-start",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobStartView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/validate/",
+        "video-annotated-export-job-validate",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobValidateView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/",
+        "video-annotated-export-job-detail",
+        "endoreg_db.views.media.frame_annotation_export_jobs.FrameAnnotationExportJobDetailView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/files/",
+        "video-annotated-export-job-files",
+        "endoreg_db.views.media.frame_annotation_export_downloads.FrameAnnotationExportRunFilesView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/files/<path:relative_path>",
+        "video-annotated-export-job-file",
+        "endoreg_db.views.media.frame_annotation_export_downloads.FrameAnnotationExportRunFileView",
+    ),
+    (
+        "media/videos/export-annotated/jobs/<uuid:job_id>/archive.zip",
+        "video-annotated-export-job-archive",
+        "endoreg_db.views.media.frame_annotation_export_downloads.FrameAnnotationExportRunArchiveView",
     ),
     (
         "media/videos/video-correction/<int:pk>",
@@ -157,6 +257,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/videos/<int:pk>/fps/",
         "video-fps",
         "endoreg_db.views.video.video_fps.VideoFpsView",
+    ),
+    (
+        "media/videos/<int:pk>/annotations.csv",
+        "video-annotations-download",
+        "endoreg_db.views.media.export_downloads.VideoExportDownloadView",
     ),
     (
         "media/videos/<int:pk>/apply-mask/",
@@ -349,12 +454,27 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
     (
         "media/pdfs/<int:pk>/apply-redactions/",
         "pdf-apply-redactions",
-        "endoreg_db.views.report.pdf_redaction.PdfApplyRedactionsView",
+        "endoreg_db.views.pdf.pdf_redaction.PdfApplyRedactionsView",
     ),
     (
         "media/pdfs/<int:pk>/processing-history/",
         "pdf-processing-history",
-        "endoreg_db.views.report.pdf_redaction.PdfProcessingHistoryView",
+        "endoreg_db.views.pdf.pdf_redaction.PdfProcessingHistoryView",
+    ),
+    (
+        "media/videos/<int:pk>/workflow/",
+        "video-clinical-workflow",
+        "endoreg_db.views.media.clinical_workflow.ClinicalWorkflowView",
+    ),
+    (
+        "media/pdfs/<int:pk>/workflow/",
+        "pdf-clinical-workflow",
+        "endoreg_db.views.media.clinical_workflow.ClinicalWorkflowView",
+    ),
+    (
+        "media/workflow/stages/",
+        "media-workflow-stages",
+        "endoreg_db.views.media.clinical_workflow.ClinicalWorkflowStagesView",
     ),
 ]
 
@@ -372,6 +492,7 @@ def _route_contract(pattern: URLPattern) -> RouteContract:
 
 def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
     assert media.urlpatterns == [
+        *media.STUDY_TABLE_URLPATTERNS,
         *media.HUB_TRANSFER_URLPATTERNS,
         *media.QUARANTINE_URLPATTERNS,
         *media.MEDIA_OVERVIEW_URLPATTERNS,
@@ -380,6 +501,7 @@ def test_media_urlpatterns_reexports_flattened_concern_lists() -> None:
         *media.VIDEO_SEGMENT_VALIDATION_URLPATTERNS,
         *media.SENSITIVE_METADATA_URLPATTERNS,
         *media.PDF_REPORT_MEDIA_URLPATTERNS,
+        *media.MEDIA_WORKFLOW_URLPATTERNS,
     ]
 
 

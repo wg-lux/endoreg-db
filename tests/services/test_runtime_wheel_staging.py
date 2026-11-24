@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.services.runtime_wheel_staging import reap_runtime_wheel_staging
+from endoreg_db.services.runtime.runtime_wheel_staging import reap_runtime_wheel_staging
 
 
 pytestmark = pytest.mark.no_db

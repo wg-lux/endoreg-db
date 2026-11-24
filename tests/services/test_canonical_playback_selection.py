@@ -4,7 +4,7 @@ import pytest
 from django.core.files.base import ContentFile
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.hls_media import (
+from endoreg_db.services.streaming.hls_media import (
     resolve_hls_source,
     resolve_hls_timeline_validation,
 )

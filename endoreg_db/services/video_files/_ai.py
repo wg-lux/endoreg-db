@@ -14,16 +14,12 @@ from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Dict,
-    Generator,
-    List,
     Optional,
     Protocol,
-    Tuple,
     TypeAlias,
     cast,
 )
+from collections.abc import Callable, Generator
 
 import cv2
 import numpy as np
@@ -32,13 +28,13 @@ from lx_dtypes.models.contracts.video_file import FrameSourceMode
 from numpy.typing import NDArray
 from safetensors import safe_open
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.utils import TEST_RUN as _GLOBAL_TEST_RUN
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
+from .types import VideoArtifactKind
 
 GLOBAL_TEST_RUN: bool = _GLOBAL_TEST_RUN
 
@@ -102,12 +98,13 @@ _OCR_NAME_CLEANUP_RE = re.compile(r'[0-9!"#$%&\'()*+,\-./:;<=>?@[\\\]^_`{|}~\s]+
 class VideoFrameScoreResult:
     """Frame-indexed multilabel scores produced by the existing video scorer."""
 
-    labels: List[str]
+    labels: list[str]
     frame_scores: NDArray[np.float64]
     device: str
     frame_count: int
-    frame_numbers: List[int] | None = None
-    timestamps: List[float] | None = None
+    frame_numbers: list[int] | None = None
+    timestamps: list[float] | None = None
+    terminal_boundary: tuple[int, float] | None = None
 
 
 empty_scores: NDArray[np.float64] = np.empty((0, 0), dtype=np.float64)
@@ -119,14 +116,15 @@ empty_scores: NDArray[np.float64] = np.empty((0, 0), dtype=np.float64)
 
 
 def _frame_score_result_from_merged_predictions(
-    merged_predictions: Dict[str, Any],
-    labels: List[str],
+    merged_predictions: dict[str, Any],
+    labels: list[str],
     *,
     device: str,
-    frame_numbers: List[int] | None = None,
-    timestamps: List[float] | None = None,
+    frame_numbers: list[int] | None = None,
+    timestamps: list[float] | None = None,
+    terminal_boundary: tuple[int, float] | None = None,
 ) -> VideoFrameScoreResult:
-    columns: List[np.ndarray[Any, Any]] = []
+    columns: list[np.ndarray[Any, Any]] = []
     for label in labels:
         values = merged_predictions.get(label)
         if values is None:
@@ -155,6 +153,7 @@ def _frame_score_result_from_merged_predictions(
             frame_numbers[:frame_count] if frame_numbers is not None else None
         ),
         timestamps=timestamps[:frame_count] if timestamps is not None else None,
+        terminal_boundary=terminal_boundary,
     )
 
 
@@ -197,7 +196,7 @@ def _is_stub_weights_file(weights_path: Path) -> bool:
     return False
 
 
-def _resolve_label_names(model_meta: ModelMeta) -> List[str]:
+def _resolve_label_names(model_meta: ModelMeta) -> list[str]:
     """Return deterministic label ordering for the associated label set."""
     labelset: Any = model_meta.labelset
     if not labelset:
@@ -214,7 +213,7 @@ def _resolve_label_names(model_meta: ModelMeta) -> List[str]:
 def _infer_model_type(model_meta: ModelMeta, weights_path: Path) -> str:
     """Best-effort detection of the backbone expected by the safetensors weights."""
     model_obj: Any = getattr(model_meta, "model", None)
-    candidates: List[Any] = [
+    candidates: list[Any] = [
         getattr(model_obj, "model_subtype", None) if model_obj else None,
         getattr(model_obj, "name", None) if model_obj else None,
         model_meta.name,
@@ -284,12 +283,12 @@ def _infer_output_classes(weights_path: Path) -> Optional[int]:
 
 
 def _build_label_mapping(
-    source_labels: List[str], target_labels: List[str]
-) -> Dict[str, List[str]]:
+    source_labels: list[str], target_labels: list[str]
+) -> dict[str, list[str]]:
     if source_labels == target_labels:
         return {label: [label] for label in target_labels}
 
-    mapping: Dict[str, List[str]] = {label: [] for label in target_labels}
+    mapping: dict[str, list[str]] = {label: [] for label in target_labels}
 
     for label in source_labels:
         alias = LEGACY_LABEL_ALIASES.get(label, label)
@@ -306,8 +305,8 @@ def _build_label_mapping(
 
 
 def _remap_prediction_dict(
-    predictions: Dict[str, List[float]], mapping: Dict[str, List[str]]
-) -> Dict[str, List[float]]:
+    predictions: dict[str, list[float]], mapping: dict[str, list[str]]
+) -> dict[str, list[float]]:
     if not predictions:
         raise ValueError("Cannot remap an empty prediction dictionary.")
 
@@ -315,9 +314,9 @@ def _remap_prediction_dict(
     if any(len(scores) != score_count for scores in predictions.values()):
         raise ValueError("Prediction score lists must have equal lengths.")
 
-    remapped: Dict[str, List[float]] = {}
+    remapped: dict[str, list[float]] = {}
     for target, sources in mapping.items():
-        values: List[List[float]] = []
+        values: list[list[float]] = []
         for source in sources:
             value = predictions.get(source)
             if value is not None:
@@ -402,16 +401,15 @@ def _normalize_video_metadata_ocr_value(field_name: str, value: str) -> str | No
 
 
 def _extract_video_metadata_from_frame(
-    frame_path: Path,
+    rgb_frame: NDArray[np.uint8],
     configured_rois: _VideoMetadataOcrRois,
     frame_ocr: _LxFrameOcr,
 ) -> _VideoMetadataOcrResult:
-    raw_frame = cast(object, cv2.imread(str(frame_path), cv2.IMREAD_GRAYSCALE))
-    if raw_frame is None:
-        raise ValueError(f"Video metadata OCR frame is unreadable: {frame_path}")
-    if not isinstance(raw_frame, np.ndarray):
-        raise TypeError(f"Video metadata OCR frame has an invalid type: {frame_path}")
-    frame = cast(NDArray[np.uint8], raw_frame)
+    if rgb_frame.dtype != np.uint8 or rgb_frame.ndim != 3 or rgb_frame.shape[2] != 3:
+        raise ValueError(
+            "Video metadata recognition requires an unsigned-byte RGB frame."
+        )
+    frame = np.asarray(cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2GRAY), dtype=np.uint8)
 
     result: _VideoMetadataOcrResult = {}
     for field_name, roi in configured_rois.items():
@@ -426,14 +424,17 @@ def _extract_video_metadata_from_frame(
 
 def _extract_text_from_video_frames(
     video: VideoFile, frame_fraction: float = 0.001, cap: int = 15
-) -> Optional[Dict[str, str | None]]:
-    """Extracts text from a sample of video frames using OCR based on processor ROIs."""
+) -> Optional[dict[str, str | None]]:
+    """Recognize metadata in canonical raw frames selected by ordinal stride."""
     from lx_anonymizer.ocr.ocr_frame import FrameOCR
+    from endoreg_db.services.video_files.frame_coordinates import (
+        artifact_frame_timestamps,
+    )
+    from endoreg_db.utils.frame_stream import read_video_file_frame_sample
 
-    state: Any = video.get_or_create_state()
-    if not state.frames_extracted:
+    if not np.isfinite(frame_fraction) or frame_fraction <= 0 or cap <= 0:
         raise ValueError(
-            f"Frames not extracted for video {video.raw_video_hash}. Cannot extract text."
+            "Frame fraction must be finite and positive and cap must be positive."
         )
 
     processor: Optional[EndoscopyProcessor] = video.processor
@@ -442,23 +443,11 @@ def _extract_text_from_video_frames(
             f"Processor not set for video {video.raw_video_hash}. Cannot extract text."
         )
 
-    try:
-        frame_paths = video.get_frame_paths()
-    except Exception as e:
-        logger.error(
-            "Error getting frame paths for video %s: %s",
-            video.raw_video_hash,
-            e,
-            exc_info=True,
-        )
-        raise RuntimeError(
-            f"Could not get frame paths for video {video.raw_video_hash}"
-        ) from e
-
-    n_frames = len(frame_paths)
+    timestamps = artifact_frame_timestamps(video, file_type="raw")
+    n_frames = len(timestamps)
     if n_frames == 0:
         logger.warning(
-            "No frame paths found for video %s during text extraction.",
+            "No canonical frames found for video %s during text extraction.",
             video.raw_video_hash,
         )
         return None
@@ -474,7 +463,7 @@ def _extract_text_from_video_frames(
     )
 
     step = max(1, n_frames // n_frames_to_process)
-    selected_frame_paths = frame_paths[::step][:n_frames_to_process]
+    selected_frame_numbers = range(0, n_frames, step)[:n_frames_to_process]
 
     configured_rois = _video_metadata_ocr_rois(processor)
     if not configured_rois:
@@ -487,10 +476,15 @@ def _extract_text_from_video_frames(
     ocr = cast(_LxFrameOcr, FrameOCR())
     rois_texts: dict[str, list[str]] = {roi_name: [] for roi_name in configured_rois}
     errors_encountered = False
-    for frame_path in selected_frame_paths:
+    for frame_number in selected_frame_numbers:
+        sample = read_video_file_frame_sample(video, frame_number=frame_number)
+        if sample.timestamp != timestamps[frame_number]:
+            raise ValueError(
+                "Recognition frame differs from the selected canonical timeline."
+            )
         try:
             extracted_texts = _extract_video_metadata_from_frame(
-                Path(frame_path),
+                sample.rgb_frame,
                 configured_rois,
                 ocr,
             )
@@ -498,16 +492,16 @@ def _extract_text_from_video_frames(
                 if roi in rois_texts and text:
                     rois_texts[roi].append(text)
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Error extracting text from frame %s for video %s: %s",
-                frame_path,
+                frame_number,
                 video.raw_video_hash,
                 e,
                 exc_info=True,
             )
             errors_encountered = True
 
-    most_frequent_texts: Dict[str, str | None] = {}
+    most_frequent_texts: dict[str, str | None] = {}
     for roi, texts in rois_texts.items():
         if not texts:
             most_frequent_texts[roi] = None
@@ -520,7 +514,7 @@ def _extract_text_from_video_frames(
             else:
                 most_frequent_texts[roi] = None
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Error finding most common text for ROI %s: %s", roi, e, exc_info=True
             )
             most_frequent_texts[roi] = None
@@ -536,7 +530,9 @@ def _extract_text_from_video_frames(
         return None
 
     logger.info(
-        "Extracted text for video %s: %s", video.raw_video_hash, most_frequent_texts
+        "Recognized %s metadata regions for video %s",
+        len(most_frequent_texts),
+        video.raw_video_hash,
     )
     return most_frequent_texts
 
@@ -551,7 +547,7 @@ def _stream_predictions_from_video(
     test_run: bool,
     n_test_frames: int,
     frame_source_file_type: str,
-) -> Tuple[List[List[float]], List[int], List[float]]:
+) -> tuple[list[list[float]], list[int], list[float], tuple[int, float] | None]:
     import torch
     from PIL import Image
     from torchvision import transforms
@@ -570,10 +566,11 @@ def _stream_predictions_from_video(
             ),
         ]
     )
-    predictions: List[List[float]] = []
-    frame_numbers: List[int] = []
-    timestamps: List[float] = []
-    batch_tensors: List[torch.Tensor] = []
+    predictions: list[list[float]] = []
+    frame_numbers: list[int] = []
+    timestamps: list[float] = []
+    batch_tensors: list[torch.Tensor] = []
+    terminal_boundary: tuple[int, float] | None = None
 
     def flush_batch() -> None:
         if not batch_tensors:
@@ -596,6 +593,7 @@ def _stream_predictions_from_video(
             file_type=frame_source_file_type,
         ):
             if test_run and len(frame_numbers) >= n_test_frames:
+                terminal_boundary = (sample.frame_number, sample.timestamp)
                 break
             cropped = cropper(
                 sample.rgb_frame,
@@ -614,7 +612,7 @@ def _stream_predictions_from_video(
         raise RuntimeError(
             f"Streaming inference produced no predictions for video {video.raw_video_hash}."
         )
-    return predictions, frame_numbers, timestamps
+    return predictions, frame_numbers, timestamps, terminal_boundary
 
 
 @dataclass(frozen=True)
@@ -624,7 +622,7 @@ class _AiPipelineComponents:
     model_loader: Any
     concat_prediction_dicts: Callable[[list[dict[str, list[float]]]], object]
     find_true_prediction_sequences: Callable[
-        [np.ndarray[Any, Any]], List[Tuple[int, int]]
+        [np.ndarray[Any, Any]], list[tuple[int, int]]
     ]
     smooth_predictions: Callable[..., np.ndarray[Any, Any]]
 
@@ -632,14 +630,14 @@ class _AiPipelineComponents:
 @dataclass(frozen=True)
 class _PredictionSource:
     mode: FrameSourceMode
-    file_type: str
+    file_type: VideoArtifactKind
     frame_dir: Path | None
 
 
 @dataclass(frozen=True)
 class _CacheInferenceInputs:
-    string_paths: List[str]
-    crops: List[Any]
+    string_paths: list[str]
+    crops: list[Any]
     crop_template: Any
 
 
@@ -652,11 +650,12 @@ class _LoadedInferenceModel:
 
 @dataclass(frozen=True)
 class _InferenceOutput:
-    predictions: List[Any]
-    frame_numbers: List[int] | None
-    timestamps: List[float] | None
+    predictions: list[Any]
+    frame_numbers: list[int] | None
+    timestamps: list[float] | None
     classifier: Any
     device: Any
+    terminal_boundary: tuple[int, float] | None = None
 
 
 def _load_ai_pipeline_components() -> _AiPipelineComponents:
@@ -672,7 +671,7 @@ def _load_ai_pipeline_components() -> _AiPipelineComponents:
             make_smooth_preds,
         )
     except ImportError as error:
-        logger.error(
+        logger.exception(
             "Failed to import endo_ai components: %s. Prediction unavailable.",
             error,
             exc_info=True,
@@ -701,14 +700,20 @@ def _prediction_source(
     *,
     video: VideoFile,
     frame_source_mode: FrameSourceMode,
-    frame_source_file_type: str,
+    frame_source_file_type: str | None,
 ) -> _PredictionSource:
+    from .frame_coordinates import annotation_artifact_kind
+
     state: Any = video.get_or_create_state()
     mode = _resolve_frame_source_mode(
         frame_source_mode,
         frames_extracted=bool(state.frames_extracted),
     )
-    file_type = _normalized_frame_source_file_type(frame_source_file_type)
+    file_type = (
+        annotation_artifact_kind(video)
+        if frame_source_file_type is None
+        else _normalized_frame_source_file_type(frame_source_file_type)
+    )
     if mode != "cache":
         return _PredictionSource(mode=mode, file_type=file_type, frame_dir=None)
     return _PredictionSource(
@@ -720,11 +725,10 @@ def _prediction_source(
     )
 
 
-def _normalized_frame_source_file_type(frame_source_file_type: str) -> str:
-    file_type = str(frame_source_file_type).strip().lower()
-    if file_type in {"raw", "processed"}:
-        return file_type
-    raise ValueError("frame_source_file_type must be one of: 'raw' or 'processed'.")
+def _normalized_frame_source_file_type(
+    frame_source_file_type: str,
+) -> VideoArtifactKind:
+    return VideoArtifactKind(frame_source_file_type.strip().lower())
 
 
 def _cache_frame_dir(*, video: VideoFile, frames_extracted: bool) -> Path:
@@ -773,7 +777,7 @@ def _ensure_video_prediction_meta(video: VideoFile, model_meta: ModelMeta) -> No
             model_meta=model_meta,
         )
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Failed to get or create VideoPredictionMeta for video %s, model %s: %s",
             video.raw_video_hash,
             model_meta.name,
@@ -789,7 +793,7 @@ def _ensure_video_prediction_meta(video: VideoFile, model_meta: ModelMeta) -> No
     )
 
 
-def _prediction_label_names(model_meta: ModelMeta) -> List[str]:
+def _prediction_label_names(model_meta: ModelMeta) -> list[str]:
     label_names = _resolve_label_names(model_meta)
     if label_names:
         return label_names
@@ -802,8 +806,8 @@ def _network_label_names(
     *,
     model_meta: ModelMeta,
     weights_path: Path,
-    label_names: List[str],
-) -> List[str]:
+    label_names: list[str],
+) -> list[str]:
     outputs_hint = _infer_output_classes(weights_path)
     if not outputs_hint or outputs_hint == len(label_names):
         return label_names
@@ -825,9 +829,9 @@ def _network_label_names(
 
 def _stub_prediction_result(
     *,
-    label_names: List[str],
+    label_names: list[str],
     return_frame_scores: bool,
-) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
+) -> dict[str, list[tuple[int, int]]] | VideoFrameScoreResult:
     if return_frame_scores:
         return VideoFrameScoreResult(
             labels=label_names,
@@ -838,7 +842,7 @@ def _stub_prediction_result(
     return {}
 
 
-def _cached_frame_paths(video: VideoFile, frame_dir: Path | None) -> List[Path]:
+def _cached_frame_paths(video: VideoFile, frame_dir: Path | None) -> list[Path]:
     try:
         paths = video.get_frame_paths()
         if not paths:
@@ -847,7 +851,7 @@ def _cached_frame_paths(video: VideoFile, frame_dir: Path | None) -> List[Path]:
             )
         return paths
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Error listing or getting frame files from %s for video %s: %s",
             frame_dir,
             video.raw_video_hash,
@@ -860,12 +864,12 @@ def _cached_frame_paths(video: VideoFile, frame_dir: Path | None) -> List[Path]:
 def _limit_cached_test_inputs(
     *,
     video: VideoFile,
-    paths: List[Path],
-    string_paths: List[str],
-    crops: List[Any],
+    paths: list[Path],
+    string_paths: list[str],
+    crops: list[Any],
     test_run: bool,
     n_test_frames: int,
-) -> tuple[List[str], List[Any]]:
+) -> tuple[list[str], list[Any]]:
     if not test_run:
         return string_paths, crops
     logger.info(
@@ -915,8 +919,8 @@ def _model_load_kwargs(
     *,
     model_meta: ModelMeta,
     weights_path: Path,
-    network_labels: List[str],
-) -> Dict[str, Any]:
+    network_labels: list[str],
+) -> dict[str, Any]:
     if weights_path.suffix.lower() != ".safetensors":
         return {}
     return {
@@ -954,7 +958,7 @@ def _classifier_config(
     source: _PredictionSource,
     cache_inputs: _CacheInferenceInputs,
     dataset_name: str,
-    network_labels: List[str],
+    network_labels: list[str],
 ) -> AiPredictionConfigPayload:
     if dataset_name != "inference_dataset":
         raise ValueError(
@@ -971,7 +975,7 @@ def _classifier_config(
             network_labels=network_labels,
         )
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Failed to create parsed configuration or dataset layer for video %s: %s",
             video.raw_video_hash,
             error,
@@ -990,7 +994,7 @@ def _build_classifier_config(
     source: _PredictionSource,
     cache_inputs: _CacheInferenceInputs,
     dataset_name: str,
-    network_labels: List[str],
+    network_labels: list[str],
 ) -> AiPredictionConfigPayload:
     dataset_config = model_meta.get_inference_dataset_config().model_dump(mode="python")
     if source.mode == "cache":
@@ -1022,7 +1026,7 @@ def _load_model_on_device(
     components: _AiPipelineComponents,
     weights_path: Path,
     device: Any,
-    load_kwargs: Dict[str, Any],
+    load_kwargs: dict[str, Any],
 ) -> Any:
     model_instance = components.model_loader.load_from_checkpoint(
         checkpoint_path=weights_path.as_posix(),
@@ -1038,7 +1042,7 @@ def _load_inference_model(
     weights_path: Path,
     components: _AiPipelineComponents,
     classifier_config: AiPredictionConfigPayload,
-    load_kwargs: Dict[str, Any],
+    load_kwargs: dict[str, Any],
 ) -> _LoadedInferenceModel:
     try:
         import torch
@@ -1092,7 +1096,7 @@ def _load_inference_model(
         )
         return _LoadedInferenceModel(model_instance, classifier, device)
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Failed to construct AI model for video %s: %s",
             video.raw_video_hash,
             error,
@@ -1128,7 +1132,7 @@ def _stream_inference_log(
         payload["frame_count"] = frame_count
     if error is not None:
         payload["error"] = str(error)
-    log = logger.error if error is not None else logger.info
+    log = logger.exception if error is not None else logger.info
     log(json.dumps(payload))
 
 
@@ -1153,15 +1157,17 @@ def _perform_inference(
             device=loaded_model.device,
             started_at=started_at,
         )
-        predictions, frame_numbers, timestamps = _stream_predictions_from_video(
-            video=video,
-            model=loaded_model.model,
-            classifier_config=classifier_config,
-            crop_template=cache_inputs.crop_template,
-            device=loaded_model.device,
-            test_run=test_run,
-            n_test_frames=n_test_frames,
-            frame_source_file_type=source.file_type,
+        predictions, frame_numbers, timestamps, terminal_boundary = (
+            _stream_predictions_from_video(
+                video=video,
+                model=loaded_model.model,
+                classifier_config=classifier_config,
+                crop_template=cache_inputs.crop_template,
+                device=loaded_model.device,
+                test_run=test_run,
+                n_test_frames=n_test_frames,
+                frame_source_file_type=source.file_type,
+            )
         )
         _stream_inference_log(
             event="streaming_inference_complete",
@@ -1173,11 +1179,12 @@ def _perform_inference(
             frame_count=len(predictions),
         )
         return _InferenceOutput(
-            cast(List[Any], predictions),
+            cast(list[Any], predictions),
             frame_numbers,
             timestamps,
             loaded_model.classifier,
             loaded_model.device,
+            terminal_boundary,
         )
     logger.info(
         "Starting inference on %d frames for video %s...",
@@ -1185,7 +1192,7 @@ def _perform_inference(
         video.raw_video_hash,
     )
     predictions = cast(
-        List[Any],
+        list[Any],
         loaded_model.classifier.pipe(
             cache_inputs.string_paths,
             cache_inputs.crops,
@@ -1272,7 +1279,7 @@ def _cpu_inference_fallback(
         )
         return result
     except Exception as error:
-        logger.error(
+        logger.exception(
             "CPU fallback inference failed for video %s: %s",
             video.raw_video_hash,
             error,
@@ -1318,7 +1325,7 @@ def _run_inference_with_fallback(
                 started_at=started_at,
                 error=error,
             )
-        logger.error(
+        logger.exception(
             "Inference failed for video %s: %s",
             video.raw_video_hash,
             error,
@@ -1342,9 +1349,9 @@ def _run_inference_with_fallback(
 
 def _readable_prediction_rows(
     *,
-    predictions: List[Any],
+    predictions: list[Any],
     classifier: Any,
-    label_mapping: Dict[str, List[str]],
+    label_mapping: dict[str, list[str]],
 ) -> list[dict[str, list[float]]]:
     readable_predictions = [
         {label: [float(score)] for label, score in classifier.readable(row).items()}
@@ -1358,37 +1365,37 @@ def _readable_prediction_rows(
     ]
 
 
-def _sequence_fps(video: VideoFile) -> int:
-    frames_per_second = video.get_fps()
-    if not frames_per_second:
-        logger.warning(
-            "Video FPS is unknown for %s. Smoothing/sequence calculations might be inaccurate. Using default %.1f FPS.",
-            video.raw_video_hash,
-            DEFAULT_VIDEO_FPS,
-        )
-        frames_per_second = DEFAULT_VIDEO_FPS
-    return int(frames_per_second)
-
-
 def _prediction_sequences(
     *,
     video: VideoFile,
-    merged_predictions: Dict[str, Any],
+    frame_scores: VideoFrameScoreResult,
     smooth_window_size_s: int,
     binarize_threshold: float,
     components: _AiPipelineComponents,
-) -> Dict[str, List[Tuple[int, int]]]:
-    frames_per_second = _sequence_fps(video)
-    sequences: Dict[str, List[Tuple[int, int]]] = {}
-    for label, prediction_array in merged_predictions.items():
+) -> dict[str, list[tuple[int, int]]]:
+    from endoreg_db.services.video_files.temporal_inference import (
+        _resolve_score_timeline,
+    )
+
+    timeline = _resolve_score_timeline(video, frame_scores)
+    sequences: dict[str, list[tuple[int, int]]] = {}
+    for index, label in enumerate(frame_scores.labels):
         smoothed = components.smooth_predictions(
-            prediction_array=prediction_array,
+            prediction_array=frame_scores.frame_scores[:, index],
             window_size_s=smooth_window_size_s,
-            fps=frames_per_second,
+            timestamps=timeline.timestamps,
         )
-        sequences[label] = components.find_true_prediction_sequences(
-            smoothed > binarize_threshold
-        )
+        sequences[label] = [
+            (
+                timeline.frame_numbers[start],
+                timeline.frame_numbers[end + 1]
+                if end + 1 < len(timeline.frame_numbers)
+                else timeline.terminal_frame_number,
+            )
+            for start, end in components.find_true_prediction_sequences(
+                smoothed > binarize_threshold
+            )
+        ]
     return sequences
 
 
@@ -1396,13 +1403,13 @@ def _postprocess_predictions(
     *,
     video: VideoFile,
     inference_output: _InferenceOutput,
-    label_names: List[str],
-    label_mapping: Dict[str, List[str]],
+    label_names: list[str],
+    label_mapping: dict[str, list[str]],
     return_frame_scores: bool,
     smooth_window_size_s: int,
     binarize_threshold: float,
     components: _AiPipelineComponents,
-) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
+) -> dict[str, list[tuple[int, int]]] | VideoFrameScoreResult:
     try:
         logger.info("Post-processing predictions for video %s...", video.raw_video_hash)
         readable_predictions = _readable_prediction_rows(
@@ -1411,7 +1418,7 @@ def _postprocess_predictions(
             label_mapping=label_mapping,
         )
         merged_predictions = cast(
-            Dict[str, Any],
+            dict[str, Any],
             components.concat_prediction_dicts(readable_predictions),
         )
         frame_scores = _frame_score_result_from_merged_predictions(
@@ -1420,6 +1427,7 @@ def _postprocess_predictions(
             device=str(inference_output.device),
             frame_numbers=inference_output.frame_numbers,
             timestamps=inference_output.timestamps,
+            terminal_boundary=inference_output.terminal_boundary,
         )
         if return_frame_scores:
             logger.info(
@@ -1430,7 +1438,7 @@ def _postprocess_predictions(
             return frame_scores
         sequences = _prediction_sequences(
             video=video,
-            merged_predictions=merged_predictions,
+            frame_scores=frame_scores,
             smooth_window_size_s=smooth_window_size_s,
             binarize_threshold=binarize_threshold,
             components=components,
@@ -1442,7 +1450,7 @@ def _postprocess_predictions(
         )
         return sequences
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Post-processing failed for video %s: %s",
             video.raw_video_hash,
             error,
@@ -1461,8 +1469,8 @@ def _predict_video_pipeline(
     n_test_frames: int = 10,
     return_frame_scores: bool = False,
     frame_source_mode: FrameSourceMode = "stream",
-    frame_source_file_type: str = "raw",
-) -> Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult:
+    frame_source_file_type: str | None = None,
+) -> dict[str, list[tuple[int, int]]] | VideoFrameScoreResult:
     """Execute frame-indexed video inference and optional sequence derivation."""
     components = _load_ai_pipeline_components()
     test_run, n_test_frames = _effective_test_run(test_run, n_test_frames)
@@ -1544,84 +1552,3 @@ def _predict_video_pipeline(
             binarize_threshold=binarize_threshold,
             components=components,
         )
-
-
-# ==========================================
-# PUBLIC INTERFACE / FAÇADES
-# ==========================================
-
-
-def _predict_video_entry(
-    video: VideoFile,
-    model_name: str,
-    model_meta_version: Optional[int] = None,
-    dataset_name: str = "inference_dataset",
-    smooth_window_size_s: int = 1,
-    binarize_threshold: float = 0.5,
-    test_run: bool = GLOBAL_TEST_RUN,
-    n_test_frames: int = GLOBAL_N_TEST_FRAMES,
-    save_results: bool = True,
-) -> Tuple[Dict[str, List[Tuple[int, int]]] | VideoFrameScoreResult, ModelMeta]:
-    """Entry point called from VideoFile.predict_video."""
-    from endoreg_db.models.administration.ai import AiModel
-
-    try:
-        ai_model_manager: Any = AiModel.objects
-        ai_model = cast(AiModel, ai_model_manager.get(name=model_name))
-        if not model_meta_version:
-            model_meta = ai_model.get_latest_version()
-            logger.info(
-                "Using latest ModelMeta version %s for model %s.",
-                model_meta.version,
-                model_name,
-            )
-        else:
-            model_meta = ai_model.get_version(model_meta_version)
-            logger.info(
-                "Using specified ModelMeta version %s for model %s.",
-                model_meta_version,
-                model_name,
-            )
-
-        logger.info(
-            "Using ModelMeta: %s (Version: %s)",
-            model_meta.name,
-            model_meta.version,
-        )
-    except Exception:
-        logger.error(
-            "ModelMeta '%s' (Version: %s) not found.", model_name, model_meta_version
-        )
-        raise
-
-    predicted_sequences = _predict_video_pipeline(
-        video=video,
-        model_meta=model_meta,
-        dataset_name=dataset_name,
-        smooth_window_size_s=smooth_window_size_s,
-        binarize_threshold=binarize_threshold,
-        test_run=test_run,
-        n_test_frames=n_test_frames,
-    )
-
-    return predicted_sequences, model_meta
-
-
-def _extract_text_information(
-    video: VideoFile, frame_fraction: float = 0.001, cap: int = 15
-) -> Optional[Dict[str, str | None]]:
-    """Facade function to call the text extraction logic."""
-    logger.info("Attempting text extraction for video %s.", video.raw_video_hash)
-
-    extracted_data = _extract_text_from_video_frames(
-        video=video, frame_fraction=frame_fraction, cap=cap
-    )
-
-    if extracted_data is not None:
-        logger.info("Text extraction successful for video %s.", video.raw_video_hash)
-    else:
-        logger.warning(
-            "Text extraction returned no data for video %s.", video.raw_video_hash
-        )
-
-    return extracted_data

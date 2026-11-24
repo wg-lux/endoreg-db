@@ -32,7 +32,7 @@ The relevant Endoreg boundaries are:
 
 - `endoreg_db/models/label/label_video_segment/label_video_segment.py`;
 - `endoreg_db/serializers/label_video_segment/label_video_segment.py`;
-- `endoreg_db/services/segment_sync.py`.
+- `endoreg_db/services/annotations/segment_sync.py`.
 
 The corresponding `lx-dtypes` contract requires a label and label set.
 Endoreg can contain segments without a label, and their label set may be only
@@ -49,7 +49,7 @@ is intentional.
 
 ## Implemented Canonical Boundary
 
-`endoreg_db.services.lx_video_contracts` is the canonical adapter for
+`endoreg_db.services.video_files.clinical_contracts` is the canonical adapter for
 `VideoFile`, `LabelVideoSegment`, `VideoState`, and `SensitiveMeta`. The
 artificial-intelligence dataset export uses the same adapters.
 

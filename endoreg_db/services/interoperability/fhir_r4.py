@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import logging
 import re
 from enum import StrEnum
@@ -54,7 +55,7 @@ FHIR_EXPORT_PROFILE_URL = (
     f"{FHIR_BASE_URL}/StructureDefinition/lx-pseudonymized-endoscopy-bundle"
 )
 FHIR_EXPORT_VERSION_SYSTEM = f"{FHIR_BASE_URL}/CodeSystem/lx-export-version"
-FHIR_EXPORT_VERSION = "1.0"
+FHIR_EXPORT_VERSION = "2.0"
 
 logger = logging.getLogger("endoreg_db.interoperability.fhir")
 
@@ -67,23 +68,16 @@ def _fhir_id(prefix: str, source_identity: object) -> str:
     identity = str(source_identity).strip()
     if not identity:
         raise ValueError("FHIR resource source identity must not be empty")
-    digest = hashlib.sha256(f"{prefix}:{identity}".encode()).hexdigest()
+    digest = get_bytes_hash(f"{prefix}:{identity}".encode())
     return f"{prefix}-{digest[: 63 - len(prefix)]}"
 
 
-def _patient_pseudonym(examination: PatientExamination) -> str:
-    patient_hash = (examination.patient.patient_hash or "").strip()
-    if not patient_hash:
-        raise ValueError("pseudonymized FHIR export requires patient_hash")
-    return patient_hash
-
-
 def _patient_resource_id(examination: PatientExamination) -> str:
-    return _fhir_id("patient", _patient_pseudonym(examination))
+    return _fhir_id("patient", examination.patient_id)
 
 
 def _procedure_resource_id(examination: PatientExamination) -> str:
-    return _fhir_id("procedure", examination.hash)
+    return _fhir_id("procedure", examination.pk)
 
 
 def _code(value: str) -> str:
@@ -114,13 +108,12 @@ def _patient_resource(examination: PatientExamination) -> FhirPatient:
     patient = examination.patient
     if patient.pk is None:
         raise ValueError("patient must be persisted")
-    patient_pseudonym = _patient_pseudonym(examination)
     return FhirPatient(
         id=_patient_resource_id(examination),
         identifier=[
             FhirIdentifier(
-                system=f"{ENDOREG_IDENTIFIER_SYSTEM}/patient-pseudonym-sha256",
-                value=hash_identifier(patient_pseudonym),
+                system=f"{ENDOREG_IDENTIFIER_SYSTEM}/patient-id",
+                value=str(patient.pk),
             )
         ],
     )
@@ -205,7 +198,7 @@ def _observation_resources(examination: PatientExamination) -> list[FhirObservat
         ]
         observations.append(
             FhirObservation(
-                id=_fhir_id("observation", f"{examination.hash}:{finding.pk}"),
+                id=_fhir_id("observation", f"{examination.pk}:{finding.pk}"),
                 status="preliminary",
                 code=FhirCodeableConcept(
                     coding=[
@@ -298,7 +291,7 @@ def _diagnostic_report_resources(
         FhirDiagnosticReport(
             id=_fhir_id(
                 "diagnosticreport",
-                f"{examination.hash}:{report.pk}",
+                f"{examination.pk}:{report.pk}",
             ),
             status=(
                 "final"
@@ -353,7 +346,7 @@ def build_patient_examination_fhir_bundle(
             *(_entry(item) for item in reports),
         ]
         bundle = FhirBundle(
-            id=_fhir_id("bundle", examination.hash),
+            id=_fhir_id("bundle", examination.pk),
             meta=FhirMeta(
                 profile=[FHIR_EXPORT_PROFILE_URL],
                 tag=[
@@ -364,8 +357,8 @@ def build_patient_examination_fhir_bundle(
                 ],
             ),
             identifier=FhirIdentifier(
-                system=f"{ENDOREG_IDENTIFIER_SYSTEM}/examination-pseudonym-sha256",
-                value=hash_identifier(examination.hash),
+                system=f"{ENDOREG_IDENTIFIER_SYSTEM}/examination-id",
+                value=str(examination.pk),
             ),
             entry=entries,
         )

@@ -3,18 +3,24 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Iterator, TypedDict, cast
+from typing import Any, TypedDict, cast
+from collections.abc import Iterator
+from unittest.mock import Mock
 
 import pytest
 from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client
+from django.utils import timezone
 from lx_dtypes.models.contracts.patient_examination_report import (
     ReportExportFrameDetailData,
     ReportPersistedArtifactsData,
     SegmentFrameSelectorResponseData,
+    validate_segment_selection_map,
 )
 from lx_dtypes.models.interface.KnowledgeBaseResolver import (
     clear_knowledge_base_resolver_caches,
@@ -25,12 +31,15 @@ from lx_dtypes.terminology.terminology_service import TerminologyService
 from endoreg_db.models import (
     Center,
     Examination,
+    Finding,
+    FindingIntervention,
     Frame,
     InformationSource,
     LabelVideoSegment,
     Patient,
     PatientExamination,
     PatientExaminationReport,
+    PatientFinding,
     RawPdfFile,
     SensitiveMeta,
     VideoFile,
@@ -41,17 +50,289 @@ from endoreg_db.models.administration.person.user.portal_user_information import
 )
 from endoreg_db.utils.file_operations import atomic_write_file, safe_rmtree
 from endoreg_db.utils.paths import protected_media_root
-from endoreg_db.services.report_runtime_validation import ReportRuntimeValidationError
+from endoreg_db.services.reports.runtime_validation import ReportRuntimeValidationError
+from endoreg_db.services.reports.persistence import save_report_submission
+from endoreg_db.services.studies.cohort import (
+    StudyCohortFilters,
+    build_study_cohort_payload,
+)
 
-REPORT_API_MODULE = "endoreg_db.views.report.patient_examination_report"
+REPORT_API_MODULE = "endoreg_db.views.patient_report.patient_examination_report"
 API_PREFIX = "/api/patient-examination-reports"
 
 
-def _successful_runtime_validation(
-    *_args: object,
-    **_kwargs: object,
-) -> dict[str, object]:
-    return {"ok": True, "issues": []}
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("report_status", "expected_version", "expected_status"),
+    [
+        ("draft", 1, 204),
+        ("draft", 2, 409),
+        ("final", 1, 409),
+    ],
+)
+def test_delete_report_draft_contract(
+    center_scoped_client: Client,
+    patient_examination: PatientExamination,
+    report_status: str,
+    expected_version: int,
+    expected_status: int,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination,
+        template_name="delete-contract",
+        status=report_status,
+    )
+    response = center_scoped_client.delete(
+        f"{API_PREFIX}/{report.pk}?expected_version={expected_version}"
+    )
+    assert response.status_code == expected_status, response.content
+    assert PatientExaminationReport.objects.filter(pk=report.pk).exists() == (
+        expected_status != 204
+    )
+
+
+@pytest.mark.django_db
+def test_patient_report_listing_and_deletion_obey_center_scope(
+    center_scoped_client: Client,
+    patient_examination: PatientExamination,
+) -> None:
+    first = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="first"
+    )
+    second_examination = PatientExamination.objects.create(
+        patient=patient_examination.patient
+    )
+    second = PatientExaminationReport.objects.create(
+        patient_examination=second_examination, template_name="second"
+    )
+    other_patient = Patient.objects.create(
+        patient_hash=f"other-report-{uuid.uuid4().hex}"
+    )
+    other_exam = PatientExamination.objects.create(patient=other_patient)
+    other = PatientExaminationReport.objects.create(
+        patient_examination=other_exam, template_name="other"
+    )
+    assert patient_examination.patient_id is not None
+    response = center_scoped_client.get(
+        f"{API_PREFIX}/", {"patient_id": patient_examination.patient_id}
+    )
+    assert response.status_code == 200, response.content
+    assert {item["id"] for item in response.json()} == {first.pk, second.pk}
+    assert (
+        center_scoped_client.get(
+            f"{API_PREFIX}/", {"patient_id": other_patient.pk}
+        ).json()
+        == []
+    )
+    assert (
+        center_scoped_client.delete(
+            f"{API_PREFIX}/{other.pk}?expected_version=1"
+        ).status_code
+        == 404
+    )
+    assert PatientExaminationReport.objects.filter(pk=other.pk).exists()
+
+
+@pytest.mark.django_db
+def test_report_read_uses_own_snapshot_and_legacy_null(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="legacy"
+    )
+    patient_examination.dtypes_record_updated_at = timezone.now()
+    patient_examination.save()
+    legacy = logged_in_client.get(f"{API_PREFIX}/{report.pk}").json()
+    assert legacy["dtypes_record"] is None
+    assert legacy["dtypes_record_updated_at"] is None
+    report.dtypes_record = {}
+    report.save()
+    saved = logged_in_client.get(f"{API_PREFIX}/{report.pk}").json()
+    assert saved["dtypes_record"] == {}
+    assert saved["dtypes_record_updated_at"] is None
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "query", ["", "?expected_version=0", "?expected_version=invalid"]
+)
+def test_draft_deletion_requires_valid_version(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+    query: str,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="version-required"
+    )
+    response = logged_in_client.delete(f"{API_PREFIX}/{report.pk}{query}")
+    assert response.status_code == 422, response.content
+    assert PatientExaminationReport.objects.filter(pk=report.pk).exists()
+
+
+@pytest.mark.django_db
+def test_anonymous_cannot_delete_report_draft(
+    client: Client,
+    patient_examination: PatientExamination,
+) -> None:
+    report = PatientExaminationReport.objects.create(
+        patient_examination=patient_examination, template_name="authenticated-only"
+    )
+    response = client.delete(f"{API_PREFIX}/{report.pk}?expected_version=1")
+    assert response.status_code in {401, 403, 404}
+    assert PatientExaminationReport.objects.filter(pk=report.pk).exists()
+
+
+@pytest.mark.django_db
+def test_two_polyps_keep_resection_and_segment_identity_through_report_and_cohort(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    # The pinned examination terminology resolves German finding names.
+    del packaged_registry
+    examination = cast(PatientExamination, selector_context.patient_examination)
+    finding_type = Finding.objects.create(name="study_two_polyps")
+    assert examination.examination is not None
+    examination.examination.findings.add(finding_type)
+    cold = FindingIntervention.objects.create(name="study_cold_resection")
+    hot = FindingIntervention.objects.create(name="study_hot_resection")
+    finding_type.finding_interventions.add(cold, hot)
+    first_uuid, second_uuid = uuid.uuid4(), uuid.uuid4()
+    result = save_report_submission(
+        patient_examination_id=examination.pk,
+        template_name="segment_frame_selection",
+        user=selector_context.user,
+        findings=[
+            {
+                "finding_id": finding_type.pk,
+                "instance_id": str(first_uuid),
+                "interventions": [{"intervention_id": cold.pk}],
+            },
+            {
+                "finding_id": finding_type.pk,
+                "instance_id": str(second_uuid),
+                "interventions": [{"intervention_id": hot.pk}],
+            },
+        ],
+    )
+    first = PatientFinding.objects.get(instance_id=first_uuid)
+    second = PatientFinding.objects.get(instance_id=second_uuid)
+    segment = cast(LabelVideoSegment, selector_context.segment)
+    # A segment may contain both lesions; the report selection must remain explicit.
+    segment.patient_findings.add(first, second)
+    choices_response = logged_in_client.get(
+        _selector_url(examination.pk, report_id=result.report.pk)
+    )
+    assert choices_response.status_code == 200, choices_response.content
+    choices_data = cast(SegmentFrameSelectorResponseData, choices_response.json())
+    choices_item = _get_segment_item(choices_data, segment_id=segment.pk)
+    assert choices_item["attached_finding"] is None
+    assert {
+        item["patient_finding_id"] for item in choices_item.get("attached_findings", [])
+    } == {first.pk, second.pk}
+    response = logged_in_client.patch(
+        _selector_url(examination.pk, report_id=result.report.pk),
+        data=_json_body(
+            {
+                "patient_examination_id": examination.pk,
+                "report_id": result.report.pk,
+                "segment_id": segment.pk,
+                "patient_finding_id": second.pk,
+                "frame_number": 15,
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+    data = cast(SegmentFrameSelectorResponseData, response.json())
+    attached = _get_segment_item(data, segment_id=segment.pk)["attached_finding"]
+    assert attached is not None and attached["patient_finding_id"] == second.pk
+    reloaded = logged_in_client.get(
+        _selector_url(examination.pk, report_id=result.report.pk)
+    )
+    assert reloaded.status_code == 200, reloaded.content
+    reloaded_data = cast(SegmentFrameSelectorResponseData, reloaded.json())
+    assert (
+        _get_segment_item(reloaded_data, segment_id=segment.pk)["attached_finding"]
+        == attached
+    )
+    video = cast(VideoFile, selector_context.video)
+    content = b"cohort-video-test-fixture"
+    video.processed_file.save(
+        "study.mp4", SimpleUploadedFile("study.mp4", content), save=False
+    )
+    video.state = VideoState.objects.create(
+        anonymization_validated=True,
+        processed_file_sha256=hashlib.sha256(content).hexdigest(),
+    )
+    video.save(update_fields=["processed_file", "state"])
+    # Publication invalidates readiness; review belongs after the file change.
+    video.state.anonymization_validated = True
+    video.state.processed_file_sha256 = hashlib.sha256(content).hexdigest()
+    video.state.save(update_fields=["anonymization_validated", "processed_file_sha256"])
+    cohort = build_study_cohort_payload(StudyCohortFilters())
+    findings = cohort["cases"][0]["examinations"][0]["findings"]
+    by_id = {row["patient_finding_id"]: row for row in findings}
+    assert set(by_id) == {first.pk, second.pk}
+    assert by_id[first.pk]["interventions"][0]["intervention_id"] == cold.pk
+    assert by_id[second.pk]["interventions"][0]["intervention_id"] == hot.pk
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "invalid_selection", ["ambiguous", "foreign", "inactive", "wrong_type"]
+)
+def test_selector_rejects_invalid_finding_identity_without_mutations(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    invalid_selection: str,
+) -> None:
+    examination = cast(PatientExamination, selector_context.patient_examination)
+    finding_type = Finding.objects.create(name="selector_polyp")
+    first = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding_type
+    )
+    second = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding_type
+    )
+    payload: dict[str, object] = {
+        "patient_examination_id": examination.pk,
+        "segment_id": selector_context.segment.pk,
+        "finding_id": finding_type.pk,
+        "frame_number": 15,
+    }
+    if invalid_selection != "ambiguous":
+        payload["patient_finding_id"] = second.pk
+        if invalid_selection == "foreign":
+            second.patient_examination = PatientExamination.objects.create(
+                patient=examination.patient
+            )
+            second.save(update_fields=["patient_examination"])
+        elif invalid_selection == "inactive":
+            second.is_active = False
+            second.save(update_fields=["is_active"])
+        else:
+            payload["finding_id"] = Finding.objects.create(
+                name="other_selector_type"
+            ).pk
+    before = PatientExaminationReport.objects.count()
+    response = logged_in_client.patch(
+        _selector_url(examination.pk),
+        data=_json_body(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 409, response.content
+    assert PatientExaminationReport.objects.count() == before
+    assert not LabelVideoSegment.objects.filter(
+        patient_findings__in=[first, second]
+    ).exists()
+
+
+from tests.helpers.report_validation import (
+    successful_runtime_validation as _successful_runtime_validation,
+)
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 class _ReportHeaderPayload(TypedDict):
@@ -158,6 +439,7 @@ def selector_context(
         patient=report_patient,
         fps=25.0,
         frame_count=100,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         original_file_name="selector.mp4",
     )
     segment = LabelVideoSegment.objects.create(
@@ -198,6 +480,7 @@ def export_context(
         patient=report_patient,
         fps=25.0,
         frame_count=100,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         original_file_name="export-report.mp4",
     )
 
@@ -565,8 +848,13 @@ def test_explicit_frontend_identity_migrates_examination_and_report(
         update_fields=["knowledge_base_module", "knowledge_base_version"]
     )
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         _successful_runtime_validation,
+    )
+    persist_artifacts = Mock(return_value=(None, None))
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.persist_report_pdf_artifact",
+        persist_artifacts,
     )
     resp = logged_in_client.post(
         f"{API_PREFIX}/save-submission",
@@ -605,6 +893,7 @@ def test_explicit_frontend_identity_migrates_examination_and_report(
     assert patient_examination.knowledge_base_module == "star_upper_gi"
     assert patient_examination.knowledge_base_version == "0.1.2"
     assert report.rendered_text == "Rendered report text"
+    persist_artifacts.assert_called_once()
     assert data["history_context"]["previous_examinations"] == []
 
 
@@ -628,7 +917,7 @@ def test_final_submission_returns_422_and_rolls_back_failed_template_validation(
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_persistence.validate_final_report_submission",
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
         fail_validation,
     )
 
@@ -707,6 +996,7 @@ def test_segment_frame_selector_includes_video_segments_by_shared_sensitive_meta
         sensitive_meta=sensitive_meta,
         fps=25.0,
         frame_count=100,
+        meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
         original_file_name="selector-shared-meta.mp4",
     )
 
@@ -936,7 +1226,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     monkeypatch: pytest.MonkeyPatch,
     selection_mode: str,
 ) -> None:
-    from endoreg_db.services import report_pdf_renderer as renderer_module
+    from endoreg_db.services.reports import pdf_renderer as renderer_module
     from endoreg_db.utils.frame_stream import EncodedFrameSample
 
     export_context.video.state = VideoState.objects.create(
@@ -969,23 +1259,20 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     )
     decoded: list[int] = []
 
-    def decode(
-        video: VideoFile, *, frame_number: int, file_type: str
-    ) -> EncodedFrameSample:
-        assert video.pk == export_context.video.pk
+    def decode(frame: Frame) -> EncodedFrameSample:
+        assert frame.video.pk == export_context.video.pk
         selected = selected_frames[len(decoded)]
-        assert frame_number == selected.frame_number
-        assert file_type == "processed"
-        decoded.append(frame_number)
+        assert frame.pk == selected.pk
+        decoded.append(frame.frame_number)
         return EncodedFrameSample(
-            frame_number=frame_number,
+            frame_number=frame.frame_number,
             timestamp=selected.timestamp,
             content_type="image/jpeg",
             image_bytes=b"jpeg",
         )
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg", decode
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg", decode
     )
     temporary_paths: list[Path] = []
 
@@ -1019,7 +1306,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
         fake_render_pdf,
     )
     monkeypatch.setattr(
-        "endoreg_db.views.report.patient_examination_report.validate_final_report_submission",
+        "endoreg_db.views.patient_report.patient_examination_report.validate_final_report_submission",
         _successful_runtime_validation,
     )
 
@@ -1077,7 +1364,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     assert temporary_paths and all(not path.exists() for path in temporary_paths)
     assert decoded == [frame.frame_number for frame in selected_frames]
     assert captions is not None
-    assert f"frame {selected_frames[0].frame_number}" in captions[0]
+    assert f"Bild {selected_frames[0].frame_number}" in captions[0]
     assert "AI prediction based report text." in first_block_text
 
 
@@ -1252,7 +1539,7 @@ def test_report_export_rejects_stale_or_foreign_frame(
         pytest.fail("Invalid selection must not decode media")
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg",
         unexpected_decode,
     )
     selected_video = export_context.video
@@ -1320,7 +1607,7 @@ def test_report_frame_candidates_filter_labels_and_paginate_without_extracting(
         pytest.fail("Browsing frame identities must not decode media")
 
     monkeypatch.setattr(
-        "endoreg_db.services.report_frame_export.read_video_file_frame_jpeg",
+        "endoreg_db.services.reports.frame_export.read_processed_frame_jpeg",
         unexpected_decode,
     )
     url = f"{API_PREFIX}/frame-candidates"
@@ -1365,3 +1652,333 @@ def test_export_schema_preserves_explicit_frame_selection(
         }
     )
     assert schema.to_contract_data().get("selected_frames") == frames
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("human_positive", [True, False])
+def test_auto_selection_uses_canonical_report_and_preserves_existing_choice(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    human_positive: bool,
+) -> None:
+    from endoreg_db.models import ImageClassificationAnnotation, Label
+
+    video = cast(VideoFile, selector_context.video)
+    video.state = VideoState.objects.create(
+        anonymized=True, anonymization_validated=True
+    )
+    video.save(update_fields=["state"])
+    label, _ = Label.objects.get_or_create(name="auto-report-selection")
+    human, _ = InformationSource.objects.get_or_create(name="human_annotation")
+    prediction, _ = InformationSource.objects.get_or_create(name="prediction")
+    for number, source, value in [(12, prediction, True), (17, human, human_positive)]:
+        ImageClassificationAnnotation.objects.create(
+            frame=Frame.objects.get(video=video, frame_number=number),
+            label=label,
+            value=value,
+            information_source=source,
+        )
+    payload = {"patient_examination_id": selector_context.patient_examination.pk}
+    response = logged_in_client.post(
+        f"{API_PREFIX}/segment-frame-selector",
+        data=_json_body(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+    report = PatientExaminationReport.objects.get(patient_examination=video.examination)
+    key = str(selector_context.segment.pk)
+    selections = validate_segment_selection_map(
+        report.editor_payload["report_segment_frame_selections"]
+    )
+    selection = selections[key]
+    assert selection.get("frame_number") == (17 if human_positive else 12)
+    assert selection.get("selection_source") == "auto_populate"
+
+    # A later explicit choice remains authoritative on automatic replay.
+    response = logged_in_client.patch(
+        f"{API_PREFIX}/segment-frame-selector",
+        data=_json_body(
+            {
+                **payload,
+                "segment_id": selector_context.segment.pk,
+                "action": "set",
+                "frame_number": 15,
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+    report.refresh_from_db()
+    manual_payload = report.editor_payload
+    response = logged_in_client.post(
+        f"{API_PREFIX}/segment-frame-selector",
+        data=_json_body(payload),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+    report.refresh_from_db()
+    assert report.editor_payload == manual_payload
+    assert (
+        PatientExaminationReport.objects.filter(
+            patient_examination=video.examination
+        ).count()
+        == 1
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"limit": 0},
+        {"limit": 51},
+        {"limit": True},
+        {"limit": "5"},
+        {"action": "replace"},
+        {"unknown": 1},
+    ],
+)
+def test_auto_selection_rejects_invalid_command_before_persistence(
+    logged_in_client: Client,
+    patient_examination: PatientExamination,
+    invalid: dict[str, object],
+) -> None:
+    response = logged_in_client.post(
+        f"{API_PREFIX}/segment-frame-selector",
+        data=_json_body({"patient_examination_id": patient_examination.pk, **invalid}),
+        content_type="application/json",
+    )
+    assert response.status_code == 422, response.content
+    assert not PatientExaminationReport.objects.filter(
+        patient_examination=patient_examination
+    ).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("validated", [True, False])
+def test_auto_selection_respects_media_validation_and_exclusive_segment_end(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    validated: bool,
+) -> None:
+    from endoreg_db.models import ImageClassificationAnnotation, Label
+
+    video = cast(VideoFile, selector_context.video)
+    video.state = VideoState.objects.create(
+        anonymized=True, anonymization_validated=validated
+    )
+    video.save(update_fields=["state"])
+    source, _ = InformationSource.objects.get_or_create(name="human_annotation")
+    label, _ = Label.objects.get_or_create(name="auto-report-boundary")
+    # The end frame is outside the segment; unvalidated interior frames are also excluded.
+    for number in [20] if validated else [12, 20]:
+        ImageClassificationAnnotation.objects.create(
+            frame=Frame.objects.get(video=video, frame_number=number),
+            label=label,
+            value=True,
+            information_source=source,
+        )
+    response = logged_in_client.post(
+        f"{API_PREFIX}/segment-frame-selector",
+        data=_json_body(
+            {"patient_examination_id": selector_context.patient_examination.pk}
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 200, response.content
+    report = PatientExaminationReport.objects.get(patient_examination=video.examination)
+    assert report.editor_payload["report_segment_frame_selections"] == {}
+
+
+GERMAN_NAME_FINDING = "post_resection_wound"
+
+
+def _attach_selector_finding(
+    selector_context: SimpleNamespace, finding_name: str
+) -> PatientFinding:
+    examination = cast(PatientExamination, selector_context.patient_examination)
+    finding, _ = Finding.objects.get_or_create(name=finding_name)
+    patient_finding = PatientFinding.objects.create(
+        patient_examination=examination, finding=finding
+    )
+    cast(LabelVideoSegment, selector_context.segment).patient_findings.add(
+        patient_finding
+    )
+    return patient_finding
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_exposes_german_finding_name(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    expected = (
+        terminology_loader.get_terminology_service()
+        .load("star_upper_gi", "0.1.2")
+        .finding[GERMAN_NAME_FINDING]
+        .name_de
+    )
+    assert expected and expected != GERMAN_NAME_FINDING
+    patient_finding = _attach_selector_finding(selector_context, GERMAN_NAME_FINDING)
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    item = _get_segment_item(
+        cast(SegmentFrameSelectorResponseData, response.json()),
+        segment_id=selector_context.segment.pk,
+    )
+    expected_attached = {
+        "patient_finding_id": patient_finding.pk,
+        "finding_id": patient_finding.finding_id,
+        "finding_name": GERMAN_NAME_FINDING,
+        "finding_name_de": expected,
+    }
+    assert item["attached_finding"] == expected_attached
+    assert item["attached_findings"] == [expected_attached]
+    # The selector label has no catalogue German name: null, not the identifier.
+    assert item["label_name"] is None
+    assert item["label_name_de"] is None
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_german_name_is_null_outside_pinned_terminology(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    _attach_selector_finding(selector_context, "selector_unknown_finding")
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    item = _get_segment_item(
+        cast(SegmentFrameSelectorResponseData, response.json()),
+        segment_id=selector_context.segment.pk,
+    )
+    attached = item["attached_finding"]
+    assert attached["finding_name"] == "selector_unknown_finding"
+    assert attached["finding_name_de"] is None
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_german_name_is_null_without_pinned_terminology(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+) -> None:
+    PatientExamination.objects.filter(
+        pk=selector_context.patient_examination.pk
+    ).update(knowledge_base_module="", knowledge_base_version="")
+    _attach_selector_finding(selector_context, GERMAN_NAME_FINDING)
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    attached = _get_segment_item(
+        cast(SegmentFrameSelectorResponseData, response.json()),
+        segment_id=selector_context.segment.pk,
+    )["attached_finding"]
+    assert attached["finding_name"] == GERMAN_NAME_FINDING
+    assert attached["finding_name_de"] is None
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_fails_closed_for_unloadable_pinned_terminology(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+    packaged_registry: Path,
+) -> None:
+    del packaged_registry
+    PatientExamination.objects.filter(
+        pk=selector_context.patient_examination.pk
+    ).update(knowledge_base_module="unknown_module", knowledge_base_version="9.9.9")
+    _attach_selector_finding(selector_context, GERMAN_NAME_FINDING)
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 409, response.content
+    assert "deutsche Befundnamen" in response.json()["detail"]
+
+
+def test_report_frame_caption_prefers_german_names() -> None:
+    from endoreg_db.views.patient_report.patient_examination_report import (
+        PatientExaminationReportApi,
+    )
+
+    segment = cast(
+        LabelVideoSegment,
+        SimpleNamespace(label=SimpleNamespace(name="polyp", name_de="Polyp")),
+    )
+    unnamed_segment = cast(
+        LabelVideoSegment,
+        SimpleNamespace(label=SimpleNamespace(name="polyp", name_de=None)),
+    )
+    unlabelled_segment = cast(LabelVideoSegment, SimpleNamespace(label=None))
+    frame = cast(Frame, SimpleNamespace(frame_number=12, timestamp=0.48))
+    patient_finding = cast(
+        PatientFinding, SimpleNamespace(finding=SimpleNamespace(name="polyp_finding"))
+    )
+
+    caption = PatientExaminationReportApi._frame_caption(  # pyright: ignore[reportPrivateUsage]
+        segment=segment,
+        frame=frame,
+        patient_finding=patient_finding,
+        finding_name_de="Polyp (deutsch)",
+    )
+    identifier_caption = PatientExaminationReportApi._frame_caption(  # pyright: ignore[reportPrivateUsage]
+        segment=unnamed_segment,
+        frame=frame,
+        patient_finding=patient_finding,
+    )
+    unlabelled_caption = PatientExaminationReportApi._frame_caption(  # pyright: ignore[reportPrivateUsage]
+        segment=unlabelled_segment,
+        frame=frame,
+        patient_finding=None,
+    )
+
+    assert caption == "Polyp | Bild 12 | 0.5s | Polyp (deutsch)"
+    assert identifier_caption == "polyp | Bild 12 | 0.5s | polyp_finding"
+    assert unlabelled_caption == "KI-Vorhersage | Bild 12 | 0.5s"
+
+
+@pytest.mark.django_db
+def test_segment_frame_selector_exposes_german_label_name(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+) -> None:
+    from endoreg_db.models import Label
+
+    named = Label.objects.create(name="selector_polyp_label", name_de="Polyp")
+    segment = cast(LabelVideoSegment, selector_context.segment)
+    segment.label = named
+    segment.save(update_fields=["label"])
+    unnamed_segment = LabelVideoSegment.objects.create(
+        video_file=selector_context.video,
+        label=Label.objects.create(name="selector_unnamed_label"),
+        start_frame_number=30,
+        end_frame_number=40,
+    )
+
+    response = logged_in_client.get(
+        _selector_url(selector_context.patient_examination.pk)
+    )
+
+    assert response.status_code == 200, response.content
+    data = cast(SegmentFrameSelectorResponseData, response.json())
+    item = _get_segment_item(data, segment_id=segment.pk)
+    assert item["label_name"] == "selector_polyp_label"
+    assert item["label_name_de"] == "Polyp"
+    unnamed = _get_segment_item(data, segment_id=unnamed_segment.pk)
+    assert unnamed["label_name"] == "selector_unnamed_label"
+    assert unnamed["label_name_de"] is None

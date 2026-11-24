@@ -163,7 +163,7 @@ def _payload_errors(
     return errors
 
 
-def _validate_payload(
+def validate_payload(
     model_cls: type[_NetworkNodePayloadT],
     value: object,
     *,
@@ -178,12 +178,12 @@ def _validate_payload(
 
 
 def validate_network_node_create_payload(value: object) -> NetworkNodeCreatePayload:
-    payload = _validate_payload(NetworkNodeCreatePayload, value, operation="create")
+    payload = validate_payload(NetworkNodeCreatePayload, value, operation="create")
     return payload
 
 
 def validate_network_node_update_payload(value: object) -> NetworkNodeUpdatePayload:
-    payload = _validate_payload(NetworkNodeUpdatePayload, value, operation="update")
+    payload = validate_payload(NetworkNodeUpdatePayload, value, operation="update")
     return payload
 
 

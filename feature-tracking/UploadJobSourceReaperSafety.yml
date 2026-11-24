@@ -19,6 +19,67 @@ source_documents:
   disposition: reference
   note: Definiert fail-closed Cleanup, Mediengenerationen, Integritätsprüfung und Lease-Schutz.
 definition_of_done:
+- id: additional_source_locations
+  category: functionality
+  title: Automatische Bereinigung erfasst belegte zusätzliche Quellkopien
+  acceptance:
+  - UploadJobs besitzen ein zentrales typisiertes Dateiinventar für Quellen, Sidecars, Arbeitskopien,
+    Quarantäne und beibehaltene Medienartefakte; beide Cleanup-Dienste verwenden dieselbe Zuordnung.
+  - Registrierung ergänzt vorhandene Einträge atomar und erhält Pfade früherer Versuche sowie gelöschter
+    Dateien. Registrierte Zuordnungen sind autoritativ; zusätzliche Herkunfts- und Hashnachweise gelten
+    nur für undokumentierte Legacy-Dateien. Kanonische Artefakte, fremde Eigentümer und aktive Jobs bleiben
+    geschützt.
+  - Gespeicherte Upload-, Watcher-, voranonymisierte Eingangs- und Migrations-Staging-Pfade werden nur
+    innerhalb freigegebener Laufzeitverzeichnisse bereinigt; undokumentierte Legacy-Dateien benötigen
+    zusätzlich einen passenden Inhalts-Hash.
+  - Retention, Zielintegrität, Processing-Lease, Retry und fremde Referenzen bleiben verbindlich; Quarantäne
+    und unbekannte Dateien bleiben erhalten.
+  - Dry-Run zählt zusätzliche Bytes; Apply löscht zusätzliche Kopien vor der Hauptquelle und bleibt nach
+    Teilfehlern wiederholbar.
+  - Ein begrenzter periodischer Maintenance-Task wiederholt Quellen- und Generationenbereinigung; die
+    bestehende Apply-Freigabe bleibt erforderlich.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright und Quellen-, Generationen-, Task- sowie Löschregressionen ausführen.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/cleanup.py
+    - kind: code
+      reference: endoreg_db/tasks.py
+    - kind: test
+      reference: tests/services/test_hub_cleanup.py
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_files.py
+    - kind: test
+      reference: tests/services/test_upload_job_files.py
+    - kind: test
+      reference: tests/test_app_startup.py::test_upload_job_file_import_without_django_typing_patch
+    note: 'Lokale Implementierung geprüft: Cleanup-Suite 119 passed; nach zusätzlichem Schutz für absolute/relative
+      Fremdverweise 78 passed und ein Testaufbaufehler, anschließend korrigierte Blocker-Parametrisierung
+      6 passed. Streaming-Suite 57 passed. Vollständiger Backend-Pyright 0 Fehler/10 bestehende Warnungen;
+      zuletzt betroffene Dateien 0 Fehler/0 Warnungen; Ruff und diff --check erfolgreich. Keine Bereitstellung
+      oder Aktivierung auf gc-02. Abschließende Inventarprüfung 2026-10-07: zentrales relationales UploadJobFile-Inventar
+      mit Migration 0091; registrierte Quellen ohne erneute Hash-/Legacy-Herkunftsprüfung, auch bei expliziter
+      Löschung. Keine einzelnen Existenzabfragen bei wiederholter Registrierung; nur zugehörige Arbeitsverzeichnisse
+      und einmaliges Inventarlesen pro Job. Vollständiger Pyright: 0 Fehler, 10 bestehende Warnungen;
+      letzter fokussierter Pyright: 0 Fehler/0 Warnungen. Integrationslauf vor Abschlussprüfung: 332 passed,
+      4 subtests passed, 2 warnings. Abschließender Lauf über Inventar, Hub-Cleanup, Report-Jobs, Sicherheitslebenszyklus,
+      Dateispeicherung und Medienverwaltungs-Endpunkte: 132 passed, 2 warnings in 71.62s. PostgreSQL-Parallelregistrierung
+      ausgeführt. Ruff und git diff --check erfolgreich. Migrationserkennung ohne Änderungen; keine produktive
+      Migration oder Bereitstellung. Betriebsfreigaben bleiben offen. Importkorrektur 2026-10-07: UploadJobFile
+      verwendet verzögerte Annotationen; Django-Feldtypen werden beim Import nicht subskribiert. Regression
+      ohne django_stubs_ext in separatem Python-Prozess: 1 passed, 1 warning. Vollständiger Pyright: 0
+      Fehler/10 bestehende Warnungen; fokussierter Pyright: 0 Fehler/0 Warnungen. LX-Annotate makemigrations
+      endoreg_db --check --dry-run mit Development-Settings und korrigiertem Quellpfad: Exit 0, keine
+      Schemaänderungen; Warnungen wegen Vite-Manifest und PostgreSQL-Zugang. Gesamte Startup-Testdatei
+      zuvor durch fehlende Testdatenbank lx_test blockiert (6 Setup-Fehler); neuer Test explizit datenbankfrei.
+      Installiertes LX-Annotate-Paket nicht ersetzt.'
+    assessed_by: codex-storage-20261006-a1
+    assessed_at: '2026-10-07T08:35:19.680565Z'
 - id: repeated_failed_import_sources
   category: functionality
   title: Fehlgeschlagene Quellen nach nachgewiesen erfolgreichem Wiederholungsimport bereinigen
@@ -29,9 +90,10 @@ definition_of_done:
   - Beide Jobs dürfen weder Retry noch aktive Processing-Lease besitzen. Die Fälligkeit des erfolgreichen
     Ersatzes und eine spätere explizite Fälligkeit der Fehlerquelle werden respektiert. Ersatz und Zielintegrität
     werden vor jeder Mutation erneut geprüft; Apply sperrt beide Jobs.
-  - Nur die eigene persistierte Upload-Datei wird entfernt. Gemeinsam referenzierte Quellen, kanonische
-    Medien, Quarantäne und unbekannte temporäre Dateien bleiben erhalten. Fehlerstatus, Fehlerdetails
-    und vorhandene Auditdaten bleiben unverändert.
+  - Als Hauptquelle wird nur die eigene persistierte Upload-Datei entfernt; zusätzliche Videokopien unterliegen
+    additional_source_locations. Gemeinsam referenzierte Quellen, kanonische Medien, Quarantäne und unbekannte
+    temporäre Dateien bleiben erhalten. Fehlerstatus, Fehlerdetails und vorhandene Auditdaten bleiben
+    unverändert.
   - Dry-Run, Batch-Auswahl, wiederholtes Apply, fehlender oder unvollständiger Ersatz, Scope-Abweichungen,
     Retention, aktive Leases und Änderungen zwischen Freigabe und Löschung sind regressionsgetestet. Bestehende
     Receipt- und Integritätsprüfungen bleiben verbindlich.
@@ -300,6 +362,53 @@ definition_of_done:
       exercise and operational threshold approval remain outstanding, so this criterion stays in_progress.
     assessed_by: codex-feature-advance
     assessed_at: '2026-09-02T13:51:00Z'
+- id: orphaned_upload_staging_reclamation
+  category: operations
+  title: Verwaiste UploadJob-Verzeichnisse werden periodisch und belegt bereinigt
+  acceptance:
+  - Ein periodischer Lauf prüft unter upload_jobs/api, watcher und preanonymized ausschließlich Verzeichnisse
+    im Layout <Tier>/<UUID-Präfix>/<UploadJob-UUID>/. Gelöscht wird nur, wenn zu dieser UUID kein UploadJob
+    existiert, keine Inventar-, Provenienz-, UploadJob-Datei- oder Mediendatei-Referenz in das Verzeichnis
+    zeigt, keine Übergabe- oder symbolische Link-Datei enthalten ist und die jüngste Änderung älter als
+    die konfigurierte Karenzzeit ist.
+  - Dateien außerhalb dieses Layouts und Verzeichnisse mit bestehendem UploadJob werden nur mit Bytes
+    gemeldet, nie gelöscht; Letztere bleiben dem bestehenden Ledger-Reaper vorbehalten.
+  - Die Bereinigung folgt dem einzigen Apply-Schalter des periodischen Tasks (UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED,
+    standardmäßig aktiv; false erzwingt Dry-Run). Jede Löschung prüft Referenzen und Änderungszeit unmittelbar
+    vor der Mutation erneut, verwendet die typisierten Dateisystem-Wrapper und erzeugt strukturierte JSON-Ereignisse;
+    Batches sind begrenzt.
+  - Parametrisierte Tests decken gültige Löschung, jede Referenzart, junge Dateien, Übergabedateien, symbolische
+    Links, fremde Layouts, Dry-Run und Karenzzeit-Untergrenze ab.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright und fokussierte Tests ausführen; danach Dry-Run auf dem Zielhost prüfen, bevor
+      Apply freigegeben wird.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_staging_orphans.py; endoreg_db/tasks.py::_cleanup_media_sources;
+        endoreg_db/config/env.py (staging_cleanup_apply_enabled, staging_cleanup_grace_seconds)
+    - kind: test
+      reference: tests/services/test_upload_staging_orphans.py
+    - kind: command
+      reference: 'Pyright 0 errors on changed files; test_upload_staging_orphans + test_transient_artifact_cleanup
+        + test_periodic_media_cleanup + test_upload_job_files + test_import_file_locks + test_disk_pressure_cleanup_contract:
+        75 passed; hub fast lane 14 passed; Ruff and 67 structure manifests passed.'
+    - kind: runbook
+      reference: docs/hub_ingest_operations.md#uploadjob-source-reaper
+    - kind: command
+      reference: 'endoreg-db: Pyright 0 errors; orphan, transient, periodic, reconciliation, disk-pressure,
+        reap command and upload-job-file tests 97 passed; Ruff and 67 manifests passed.'
+    - kind: command
+      reference: Orphan, transient and periodic cleanup tests 55 passed; Pyright 0 errors.
+    note: '2026-11-03: reap_upload_staging_orphan is the single verified per-unit deletion, used by the
+      periodic loop and the lx-annotate storage monitor; both share list_upload_staging_units. Not yet
+      assessed on a host.'
+    assessed_by: claude-hub-staging-cleanup
+    assessed_at: '2026-11-03T13:03:47.762100Z'
 - id: cleanup_runbook
   category: documentation
   title: Diagnose, Freigabe, Apply und Recovery sind betrieblich dokumentiert

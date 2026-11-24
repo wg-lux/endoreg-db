@@ -4,7 +4,8 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
-from endoreg_db.services.video_timeline import (
+from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
+from endoreg_db.services.video_files.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,
@@ -46,6 +47,13 @@ def _frame_number_to_s(video: "VideoFile", frame_number: int) -> float:
         .values_list("timestamp", flat=True)
         .first()
     )
+    if row is None and mapping.requires_persisted_pts:
+        mapping, _, _ = _mapping_contract_from_video(video, backfill_if_empty=True)
+        row = (
+            video.frames.filter(frame_number=frame_number)
+            .values_list("timestamp", flat=True)
+            .first()
+        )
     persisted_timestamp = float(row) if row is not None else None
     return frame_number_to_seconds(
         mapping,
@@ -78,6 +86,11 @@ def _seconds_to_frame_number_with_mapping(
         .values_list("frame_number", "timestamp")
         .first()
     )
+    if before is None and after is None and mapping.requires_persisted_pts:
+        previous_meta = video.meta
+        mapping, _, _ = _mapping_contract_from_video(video, backfill_if_empty=True)
+        if video.meta is not previous_meta:
+            return _seconds_to_frame_number_with_mapping(video, mapping, timestamp)
     neighboring_timestamps: dict[int, float] = {}
     for row in (before, after):
         if row is not None:
@@ -97,15 +110,19 @@ def _frame_neighborhood(
     if radius < 1 or radius > 50:
         raise VideoTimelineMappingError("Frame neighborhood radius must be 1 to 50.")
     mapping, timeline_version, timestamp_mapping = _mapping_contract_from_video(video)
+    requested_timestamp = validate_timestamp_seconds(timestamp_seconds)
+    previous_meta = video.meta
+    resolved_frame = _seconds_to_frame_number_with_mapping(
+        video, mapping, requested_timestamp
+    )
+    if video.meta is not previous_meta:
+        mapping, timeline_version, timestamp_mapping = _mapping_contract_from_video(
+            video
+        )
     if mapping.frame_count is None or mapping.frame_count <= 0:
         raise VideoTimelineMappingError(
             "Frame count is required for frame-by-frame navigation."
         )
-
-    requested_timestamp = validate_timestamp_seconds(timestamp_seconds)
-    resolved_frame = _seconds_to_frame_number_with_mapping(
-        video, mapping, requested_timestamp
-    )
     last_display_frame = mapping.frame_count - 1
     current_frame = min(resolved_frame, last_display_frame)
     first_frame = max(0, current_frame - radius)
@@ -160,42 +177,94 @@ def _mapping_from_video(video: "VideoFile") -> VideoTimelineMapping:
     return mapping
 
 
+def resolve_video_timeline_mapping(video: "VideoFile") -> VideoTimelineMapping:
+    """Validate ``VideoFile.meta`` once and return the active timeline mapping."""
+    return _mapping_from_video(video)
+
+
 def _mapping_contract_from_video(
     video: "VideoFile",
+    *,
+    backfill_if_empty: bool = False,
 ) -> tuple[VideoTimelineMapping, TimelineVersion, TimestampMapping]:
-    payload = VideoFileMetaPayload.model_validate(video.meta or {})
-    source_timeline = payload.source_timeline
-    requires_persisted_pts = bool(
-        source_timeline is not None
-        and source_timeline.timestamp_mapping == "ffprobe_pts"
+    source_timeline = require_video_source_timeline(
+        video, backfill_if_empty=backfill_if_empty
     )
-    if source_timeline is not None:
-        timeline = source_timeline.source.timeline
-        return (
-            VideoTimelineMapping(
-                fps=timeline.fps,
-                frame_count=timeline.frame_count,
-                duration_seconds=timeline.duration_seconds,
-                requires_persisted_pts=requires_persisted_pts,
-            ),
-            source_timeline.timeline_version,
-            source_timeline.timestamp_mapping,
-        )
-
-    fps = float(video.fps) if video.fps is not None else None
-    if not requires_persisted_pts and (fps is None or fps <= 0):
-        fps = float(video.get_fps())
     return (
-        VideoTimelineMapping(
-            fps=fps,
-            frame_count=(
-                int(video.frame_count) if video.frame_count is not None else None
-            ),
-            duration_seconds=(
-                float(video.duration) if video.duration is not None else None
-            ),
-            requires_persisted_pts=requires_persisted_pts,
-        ),
-        "legacy_cfr_v1",
-        "rational_cfr",
+        timeline_mapping_from_source(source_timeline),
+        source_timeline.timeline_version,
+        source_timeline.timestamp_mapping,
+    )
+
+
+def video_source_timeline(
+    video: "VideoFile", *, payload: VideoFileMetaPayload | None = None
+) -> VideoSourceTimelineEvidence | None:
+    """Read validated generation-bound evidence without probing or writing media."""
+    if payload is None:
+        payload = VideoFileMetaPayload.model_validate(video.meta or {})
+    source_timeline = payload.source_timeline
+    if (
+        source_timeline is not None
+        and source_timeline.artifact_kind == "processed"
+        and source_timeline.content_hash != video.processed_video_hash
+    ):
+        raise VideoTimelineMappingError(
+            "Processed annotation timeline belongs to another generation"
+        )
+    return source_timeline
+
+
+def require_video_source_timeline(
+    video: "VideoFile",
+    *,
+    payload: VideoFileMetaPayload | None = None,
+    backfill_if_empty: bool = False,
+) -> VideoSourceTimelineEvidence:
+    """Resolve clinical evidence, recovering absent coordinates only for saved media."""
+    from endoreg_db.services.video_files.timestamp_backfill import (
+        backfill_missing_video_timestamps,
+    )
+
+    if payload is None:
+        payload = VideoFileMetaPayload.model_validate(video.meta or {})
+    source_timeline = video_source_timeline(video, payload=payload)
+    if (
+        not video._state.adding
+        and (video.processed_file or video.raw_file)
+        and (
+            source_timeline is None
+            or (
+                backfill_if_empty and source_timeline.timestamp_mapping == "ffprobe_pts"
+            )
+        )
+    ):
+        previous_meta = video.meta
+        backfill_missing_video_timestamps(video, payload=payload)
+        if video.meta is not previous_meta:
+            source_timeline = video_source_timeline(video)
+    if source_timeline is None:
+        raise VideoTimelineMappingError(
+            "Clinical coordinate mapping requires a persisted source timeline; "
+            "a stored or default frame rate does not establish constant frame rate."
+        )
+    return source_timeline
+
+
+def timeline_mapping_from_source(
+    source_timeline: VideoSourceTimelineEvidence,
+) -> VideoTimelineMapping:
+    """Construct canonical boundary rules once from validated source evidence."""
+    timeline = source_timeline.source.timeline
+    duration = (
+        source_timeline.end_timestamp_seconds - source_timeline.first_timestamp_seconds
+        if source_timeline.end_timestamp_seconds is not None
+        else timeline.duration_seconds
+    )
+    return VideoTimelineMapping(
+        fps=timeline.fps,
+        frame_count=timeline.frame_count,
+        duration_seconds=duration,
+        requires_persisted_pts=source_timeline.timestamp_mapping == "ffprobe_pts",
+        first_timestamp_seconds=source_timeline.first_timestamp_seconds,
     )

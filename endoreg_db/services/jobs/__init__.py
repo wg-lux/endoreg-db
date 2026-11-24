@@ -7,7 +7,6 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 _JOB_MODULES = {
-    "frame_extraction_jobs": ".frame_extraction_jobs",
     "heavy_jobs": ".heavy_jobs",
     "model_training_jobs": ".model_training_jobs",
     "report_llm_jobs": ".report_llm_jobs",
@@ -18,7 +17,6 @@ _JOB_MODULES = {
 }
 
 __all__ = [
-    "frame_extraction_jobs",
     "heavy_jobs",
     "model_training_jobs",
     "report_llm_jobs",
@@ -29,7 +27,6 @@ __all__ = [
 ]
 
 if TYPE_CHECKING:
-    frame_extraction_jobs: ModuleType
     heavy_jobs: ModuleType
     model_training_jobs: ModuleType
     report_llm_jobs: ModuleType

@@ -1,0 +1,43 @@
+version: 1
+tier: module
+path: endoreg_db/models/media
+summary: Media records, operation leases and anonymization metrics.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+- Preserve concurrent operation ownership and canonical media generation identity; raw media export is
+  prohibited.
+files:
+- file: operation_lease.py
+  role: Concurrent media operation leases.
+- file: anonymization_metrics.py
+  role: Anonymization validation metrics.
+- file: frame/frame.py
+  role: Persisted frame identity.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/media
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/media
+parent: ../structure.yml
+submodules:
+- name: video
+  path: video
+  manifest: video/structure.yml
+  summary: Canonical video, streaming derivative and frame provenance models.
+- name: pdf
+  path: pdf
+  manifest: pdf/structure.yml
+  summary: Imported document and report processing persistence.

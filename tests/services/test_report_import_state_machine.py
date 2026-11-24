@@ -3,11 +3,13 @@ from __future__ import annotations
 import pytest
 
 from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
-from endoreg_db.services.report_import_state_machine import (
+from endoreg_db.services.reports.import_state_machine import (
     validate_report_import_claim,
     validate_report_import_failure,
     validate_report_import_success,
 )
+
+pytestmark = pytest.mark.no_db
 
 
 @pytest.mark.parametrize(
@@ -17,6 +19,7 @@ from endoreg_db.services.report_import_state_machine import (
         (ReportImportAttempt.STATUS_ACTIVE, True),
         (ReportImportAttempt.STATUS_FAILED, False),
         (ReportImportAttempt.STATUS_SUCCEEDED, False),
+        (ReportImportAttempt.STATUS_LOST, False),
     ],
 )
 def test_report_import_claim_uses_native_retry_paths(

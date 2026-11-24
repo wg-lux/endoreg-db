@@ -16,6 +16,7 @@ from endoreg_db.models import (
     SensitiveMeta,
 )
 from endoreg_db.services.hub import ingest
+from endoreg_db.utils.hashs import get_patient_uuid
 
 
 class _AttachExternalIdentity(Protocol):
@@ -69,6 +70,9 @@ def test_external_identity_is_reused_only_in_its_source_scope(
         assert not patient.is_real_person
         assert patient.center_id == center.pk
         assert meta.patient_hash == patient.patient_hash
+        assert patient.uuid == get_patient_uuid(
+            patient.patient_hash, center_key=center.center_key
+        )
         assert meta.pseudo_examination is not None
         assert meta.pseudo_examination.patient_id == patient.pk
         identity = (

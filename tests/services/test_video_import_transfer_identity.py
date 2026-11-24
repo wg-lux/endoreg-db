@@ -7,6 +7,8 @@ from pathlib import Path
 from unittest.mock import Mock
 
 import pytest
+from contextlib import nullcontext
+from endoreg_db.services.imports.execution import ImportExecutionFence
 from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeReceipt
 
 from endoreg_db.import_files.context.import_context import ImportContext
@@ -23,7 +25,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.models.state.processing_history import ProcessingHistory
-from endoreg_db.services.hls_media import HlsMaterializationResult
+from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityError,
     has_verified_processed_video_transfer,
@@ -156,8 +158,11 @@ def test_successful_hub_transfer_is_reused_without_raw_reimport(
     monkeypatch.setattr(service, "_ensure_pipeline_storage_budget", staging)
 
     for _attempt in range(2):
-        result = service.import_and_anonymize(
-            fixture.source, fixture.center_name, fixture.processor_name
+        result = service.import_and_anonymize_fenced(
+            fixture.source,
+            fixture.center_name,
+            fixture.processor_name,
+            execution_fence=ImportExecutionFence("a" * 32, lambda: None, nullcontext),
         )
         assert result is not None
         assert result.pk == fixture.video.pk
@@ -276,11 +281,12 @@ def test_received_duplicate_failure_preserves_existing_generation(
     anonymizer = Mock()
     service = VideoImportService(anonymizer=anonymizer)
     with pytest.raises(error_type, match=message):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             fixture.source,
             "other-center" if failure == "foreign_center" else fixture.center_name,
             fixture.processor_name,
             retry=failure == "forced_retry",
+            execution_fence=ImportExecutionFence("a" * 32, lambda: None, nullcontext),
         )
     assert VideoFile.objects.values().get(pk=fixture.video.pk) == before
     assert fixture.source.exists()

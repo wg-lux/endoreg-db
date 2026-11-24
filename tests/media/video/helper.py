@@ -86,7 +86,7 @@ def get_video_keys(
         # Optional: Add further filtering based on examination_alias and content
 
     if not matched_keys:
-        logger.error(
+        logger.exception(
             f"No keys found matching pattern '{pattern}' or fallback logic for keys: {keys_to_check}"
         )
 

@@ -1,0 +1,93 @@
+schema_version: '1.0'
+feature: code_quality
+criterion: release_failure_cluster_regressions
+assessor: codex-release-20261120-r1
+date: '2026-11-20'
+owner: endoreg_db maintainers
+purpose: Prepare the three working trees for a coordinated release without running tests. Feature assessments
+  remain authoritative in CodeQuality.yml.
+status: blocked
+candidates:
+  lx-dtypes: 0.7.1
+  endoreg-db: 1.8.8
+  lx-terminology-editor: 0.1.2
+changes:
+- Both consumers now require lx-dtypes>=0.7.1 for the new package-kind and deployment setup contracts.
+- 'Editor Python support matches its mandatory core dependency: >=3.12,<3.13.'
+- Editor wheel data-file mappings preserve YAML library subdirectories and relative imports.
+- Core lock identity updated from 0.6.8 to 0.7.1 without unrelated dependency changes.
+- Core and backend release notes describe deployment setup v2 migration; editor README no longer claims
+  an undeclared sibling source override.
+- 'Delegated takeover: explicitly confirmed processed-ordinal recovery now reaches strict validation when
+  segments exist without frame rows; automatic recovery remains blocked. Existing regression case extended
+  but not executed.'
+verification:
+  tests: Not run, explicitly prohibited by user. No pytest, node --test, cargo test, or test tasks invoked.
+  structure: Final core and backend standalone structure linters passed; backend validates 68 manifests
+    including release report mapping.
+  syntax: Python AST parsing passed for 34 core, 94 backend and 2 editor changed files at initial review;
+    changed editor JavaScript passed node --check.
+  core_pyright: 0 errors, 0 warnings, 0 informations.
+  backend_installed_pyright: 167 errors, 2 warnings against the existing installed dependency set; missing
+    new lx-dtypes contracts are among the diagnostics.
+  backend_candidate_pyright: 'Full strict check against extracted built lx-dtypes 0.7.1 wheel: 0 errors,
+    2 warnings (existing private settings import and missing rapidocr stubs). Temporary config extends
+    repository settings and explicitly retains repository typings. No installed environment modified.'
+  core_lock: uv lock --check --offline passed.
+  builds: Core, editor and backend sdist-to-wheel builds passed; backend wheel includes compiled CPython
+    3.12 Linux x86_64 native extension.
+  core_artifact: All 1322 tracked lx_dtypes files match wheel bytes.
+  editor_artifact: 'Final 0.1.2 wheel: all 95 static assets match source bytes; every relative JavaScript
+    import resolves within the wheel.'
+  migration_inventory: Squash-aware static local dependency inventory has single leaf 0120_reference_catalog_name_de,
+    matching max_migration.txt. Both new migrations and leaf marker are present byte-for-byte in backend
+    wheel. No database checks or migrations run.
+  tracker: 40 feature definitions valid; code_quality readiness fails at 18/25 and video_storage_normalization
+    at 2/31.
+  video_takeover: 'Scoped candidate-wheel Pyright: 0 errors, 0 warnings. Ruff check and format check passed
+    all 5 scoped source/test files; 68 structure manifests passed. Regression test updated, not run. Subagent
+    recorded in_progress evidence and released its lock; inbox empty.'
+  backend_artifact: Final rebuilt wheel matches all 1086 tracked backend/workflow Python files byte-for-byte,
+    including delegated timeline fix; no missing files.
+blockers:
+- Registry resolution only offers lx-dtypes<=0.7.0. Publish reviewed 0.7.1 core artifacts before regenerating
+  consumer uv.lock files; their existing locks remain stale and must not be used for this candidate.
+- Normal backend Pyright must be rerun after installing matching published dependencies; candidate-wheel
+  type check passes but does not update or verify the frozen consumer environments.
+- No behavioral, integration, browser, database migration, or deployment verification was performed; static
+  checks and successful builds are not production approval.
+- Working trees contain substantial pre-existing staged and unstaged changes. The video timeline scope
+  was taken over by a subagent at user request; final backend rebuild includes its code fix.
+release_order:
+- Review and commit the candidate source trees, including the delegated timeline work; retain all existing
+  user changes.
+- Rebuild artifacts from final source revisions and review artifact hashes.
+- Publish lx-dtypes 0.7.1 first.
+- Run uv lock in endoreg-db and lx-terminology-editor, then review and commit resulting locks.
+- Install matching dependencies in the release environment and rerun static checks; resolve remaining
+  feature gates before production.
+- Publish backend and editor candidates only after the remaining gates are satisfied.
+limits:
+- No commits, tags, pushes, uploads, deployments, or database writes performed.
+- Artifact checks describe local working-tree snapshots, not immutable release revisions.
+- Source review concentrated on cross-repository contracts, metadata, packaging and static diagnostics;
+  no claim of exhaustive behavioral review.
+artifacts:
+- file: /tmp/lx-release-20261120/dtypes-final/lx_dtypes-0.7.1-py3-none-any.whl
+  sha256: 097ed40171ed4fa602cf4b5695b75c34dc803df9c5681216e900eac242acd730
+  size: 1560828
+- file: /tmp/lx-release-20261120/dtypes-final/lx_dtypes-0.7.1.tar.gz
+  sha256: c78adc4325064353bc24055958ffb9d7075f271dca4f4f3b383ffbf78a2bc84b
+  size: 5105610
+- file: /tmp/lx-release-20261120/editor-final/lx_terminology_editor-0.1.2-py3-none-any.whl
+  sha256: 79cf2386b70c52697000b5e0e995935aca5e70bf1975737437ea33601072c445
+  size: 199009
+- file: /tmp/lx-release-20261120/editor-final/lx_terminology_editor-0.1.2.tar.gz
+  sha256: 1e3664c6546a46e1d5ba2b7923ca72ca0719439700745ff559684469f3b03d6b
+  size: 181120
+- file: /tmp/lx-release-20261120/endoreg-final/endoreg_db-1.8.8-cp312-cp312-linux_x86_64.whl
+  sha256: 540c514f365c714bd0495063a732e8122a9c9251cad3a3a2de57ae5beafeb07b
+  size: 2881249
+- file: /tmp/lx-release-20261120/endoreg-final/endoreg_db-1.8.8.tar.gz
+  sha256: 31677f9cdbf758243549338b746bd6ac5624742f2fb38ee6de80dfe56dc94085
+  size: 1625941

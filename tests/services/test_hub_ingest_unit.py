@@ -5,7 +5,6 @@ from unittest.mock import patch
 
 from django.contrib.auth.models import AnonymousUser
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import OperationalError
 from django.test import override_settings
 
 import pytest
@@ -68,15 +67,6 @@ def test_compute_uploaded_file_content_hash_uses_uploaded_file_chunks() -> None:
     assert (
         ingest._compute_uploaded_file_content_hash(uploaded)  # pyright: ignore[reportPrivateUsage]
         == "da65da2b47cba2b28aa8d6859c2b1dddcf1300da9b65c5ca8e1ad3191a57bf9d"
-    )
-
-
-def test_is_retryable_db_lock_error_matches_known_signatures() -> None:
-    assert ingest._is_retryable_db_lock_error(  # pyright: ignore[reportPrivateUsage]
-        OperationalError("database is locked by other process")
-    )
-    assert not ingest._is_retryable_db_lock_error(  # pyright: ignore[reportPrivateUsage]
-        OperationalError("permanent failure")
     )
 
 

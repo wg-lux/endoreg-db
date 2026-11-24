@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Protocol, cast
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.context.ensure_center import ensure_center
-from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.import_files.file_storage.storage import ensure_context_file_hash
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
@@ -18,6 +18,7 @@ from endoreg_db.services.hub.media_integrity import (
 )
 from endoreg_db.services.video_files import (
     get_video_by_content_hash,
+    get_video_import_processor,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,10 +39,15 @@ def _context_source_path(ctx: ImportContext) -> Path:
     return ctx.sensitive_path if isinstance(ctx.sensitive_path, Path) else ctx.file_path
 
 
-def _ensure_context_file_hash(ctx: ImportContext) -> str:
-    if not isinstance(ctx.file_hash, str):
-        ctx.file_hash = get_file_hash(ctx.file_path)
-    return ctx.file_hash
+def _bind_video_processor(
+    ctx: ImportContext, video: VideoFile, *, required: bool = True
+) -> None:
+    processor = get_video_import_processor(video)
+    if processor is None or not processor.name:
+        if required:
+            raise ValueError(f"Video {video.pk} has no canonical import processor")
+        return
+    ctx.processor_name = str(processor.name)
 
 
 def _load_current_video(
@@ -50,6 +56,9 @@ def _load_current_video(
     if isinstance(ctx.current_video, VideoFile):
         if require_raw_source:
             require_reusable_video_raw_source(ctx.current_video)
+        _bind_video_processor(
+            ctx, ctx.current_video, required=require_raw_source or ctx.force_reprocess
+        )
         return ctx.current_video
     try:
         ctx.current_video = get_video_by_content_hash(file_hash)
@@ -57,6 +66,10 @@ def _load_current_video(
         ctx.current_video = None
     if require_raw_source and isinstance(ctx.current_video, VideoFile):
         require_reusable_video_raw_source(ctx.current_video)
+    if isinstance(ctx.current_video, VideoFile):
+        _bind_video_processor(
+            ctx, ctx.current_video, required=require_raw_source or ctx.force_reprocess
+        )
     return ctx.current_video if isinstance(ctx.current_video, VideoFile) else None
 
 
@@ -73,7 +86,11 @@ def _handle_success_history(ctx: ImportContext, file_hash: str) -> _HistoryDecis
     )
     if integrity_result.ok:
         if existing_video is not None and not existing_video.raw_file:
-            if existing_video.center.name != ctx.center_name:
+            if (
+                existing_video.center.center_key != ctx.center_key
+                if ctx.center_key is not None
+                else existing_video.center.name != ctx.center_name
+            ):
                 raise ValueError("Transferred video belongs to a different center")
         return _HistoryDecision(
             processed=True,
@@ -108,6 +125,7 @@ def _handle_failure_history(ctx: ImportContext, file_hash: str) -> None:
             file_hash,
         )
         return
+    ctx.retry = True
     finalize_failure(ctx)
 
 
@@ -120,6 +138,7 @@ def _get_or_create_video_instance(
     if isinstance(ctx.current_video, VideoFile):
         video = ctx.current_video
         require_reusable_video_raw_source(video)
+        _bind_video_processor(ctx, video)
         logger.info("Using existing VideoFile from context: pk=%s", video.pk)
         return video
 
@@ -131,12 +150,16 @@ def _get_or_create_video_instance(
     video = VideoFile.create_from_file_initialized(
         file_path=file_path,
         center_name=ctx.center_name,
+        center_key=ctx.center_key,
         processor_name=ctx.processor_name,
         raw_video_hash=file_hash,
         initialize=not bool(getattr(ctx, "defer_video_initialization", False)),
     )
+    _bind_video_processor(ctx, video)
 
-    center = cast(_NamedCenter, ensure_center(video, ctx.center_name))
+    center = cast(
+        _NamedCenter, ensure_center(video, ctx.center_name, center_key=ctx.center_key)
+    )
     center_name = str(center.name)
     logger.info("Successfully set up video file from %s", center_name)
     return video
@@ -170,7 +193,7 @@ def create_or_retrieve_video_file(
     """
     file_path = _context_source_path(ctx)
     file_type = ctx.file_type  # logical key for history; can be None
-    file_hash = _ensure_context_file_hash(ctx)
+    file_hash = ensure_context_file_hash(ctx)
     processed = False
     needs_processing = True
 

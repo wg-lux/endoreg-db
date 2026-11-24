@@ -1,6 +1,16 @@
 from __future__ import annotations
 
+from lx_dtypes.models.contracts.video_provenance import VideoProvenanceRecovery
+from lx_dtypes.models.contracts.video_provenance import (
+    VideoProvenanceBundle,
+    RecordingSynchronization,
+)
+
 import math
+import json
+
+from lx_dtypes.models.contracts.report_anonymization import ReportExtractionReceipt
+from endoreg_db.schemas.import_file import ImportCheckpoint
 from datetime import date, datetime, time
 from pathlib import Path
 from typing import Any, Literal, cast, get_args
@@ -10,10 +20,13 @@ from lx_dtypes.models.contracts.dtypes_record_persistence import (
     parse_dtypes_record_persistence_payload,
 )
 from lx_dtypes.models.contracts.hub_transfer import (
+    HubTransferStudyResourceRowsPayload,
     HubTransferSegmentProvenancePayload,
+    HubTransferSensitiveMetaPayload,
     HubTransferVideoSegmentPayload,
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
+from lx_dtypes.models.contracts.finding_extraction import FindingExtractionEvidence
 from lx_dtypes.models.contracts.lab_value import LabValueNormalRangePayload
 from lx_dtypes.serialization import serialize_path
 from pydantic import (
@@ -28,8 +41,11 @@ from pydantic import (
 
 from .processed_video_cleanup import ProcessedGenerationCleanupReceipt
 from .video_storage import (
+    CanonicalTimelineHistoryEntry,
     ClinicalFrameQualityEvidence,
+    VideoExportFileName,
     VideoFpsResamplingEvidence,
+    VideoRecordingTimeEvidence,
     VideoSourceTimelineEvidence,
     VideoStorageNormalizationEvidence,
 )
@@ -282,6 +298,7 @@ class VideoFileMetaPayload(BaseModel):
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
 
     integrity_status: Literal["ok", "warning", "lost"] | None = None
+    import_checkpoint: ImportCheckpoint | None = None
     integrity_error: str | None = None
     integrity_checked_at: str | None = None
     origin: str | None = None
@@ -290,10 +307,16 @@ class VideoFileMetaPayload(BaseModel):
     examination_date: str | None = None
     case_resolution: CaseResolutionMetaPayload | None = None
     storage_normalization: VideoStorageNormalizationEvidence | None = None
+    canonical_timeline_history: list[CanonicalTimelineHistoryEntry] | None = None
+    video_frame_provenance: VideoProvenanceBundle | None = None
+    video_provenance_recovery: VideoProvenanceRecovery | None = None
+    recording_synchronization: RecordingSynchronization | None = None
     fps_normalization: VideoFpsResamplingEvidence | None = None
     source_timeline: VideoSourceTimelineEvidence | None = None
     clinical_frame_quality: ClinicalFrameQualityEvidence | None = None
     processed_generation_cleanup: list[ProcessedGenerationCleanupReceipt] | None = None
+    recording_time: VideoRecordingTimeEvidence | None = None
+    export_file_name: VideoExportFileName | None = None
 
     @model_validator(mode="before")
     @classmethod
@@ -320,6 +343,21 @@ class RawPdfMetaPayload(BaseModel):
     """
 
     model_config = ConfigDict(extra="allow", str_strip_whitespace=True)
+
+    finding_extraction: FindingExtractionEvidence | None = None
+    import_checkpoint: ImportCheckpoint | None = None
+    report_extraction_receipt: ReportExtractionReceipt | None = None
+
+    @field_validator("report_extraction_receipt", mode="before")
+    @classmethod
+    def _validate_extraction_receipt(
+        cls, value: object
+    ) -> ReportExtractionReceipt | None:
+        if value is None:
+            return None
+        if isinstance(value, ReportExtractionReceipt):
+            value = value.model_dump(mode="json")
+        return ReportExtractionReceipt.model_validate_json(json.dumps(value))
 
     document_type: DocumentType | str | None = None
     validation_source: str | None = None
@@ -378,21 +416,7 @@ class RawPdfMetaPayload(BaseModel):
         return _json_compatible_value(value, field_name="raw_meta")
 
 
-class TransferSensitiveMetaRow(BaseModel):
-    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-
-    patient_hash: str
-    examination_hash: str
-
-    @field_validator("patient_hash", "examination_hash", mode="before")
-    @classmethod
-    def _require_pseudonym_hash(cls, value: Any) -> str:
-        return _sha256_hex(value, field_name="pseudonym hash")
-
-    @field_validator("*", mode="before")
-    @classmethod
-    def _coerce_json_values(cls, value: Any) -> Any:
-        return _json_compatible_value(value, field_name="resource_rows.sensitive_meta")
+TransferSensitiveMetaRow = HubTransferSensitiveMetaPayload
 
 
 class TransferProcessingHistoryRow(BaseModel):
@@ -755,7 +779,7 @@ def validate_transfer_resource_rows(
     *,
     resource_kind: str | None,
 ) -> dict[str, Any]:
-    if value is None or value == {}:
+    if (value is None or value == {}) and resource_kind != "study":
         return {}
     if not isinstance(value, dict):
         raise ValueError("resource_rows must be a JSON object")
@@ -763,6 +787,8 @@ def validate_transfer_resource_rows(
         model_cls: type[BaseModel] = TransferVideoResourceRows
     elif resource_kind == "report":
         model_cls = TransferReportResourceRows
+    elif resource_kind == "study":
+        model_cls = HubTransferStudyResourceRowsPayload
     else:
         raise ValueError(
             f"Unsupported transfer resource_kind for resource_rows: {resource_kind}"

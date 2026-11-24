@@ -18,7 +18,7 @@ from endoreg_db.schemas.video_storage import (
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services.video_storage_normalization import evidence_as_json
+from endoreg_db.services.video_storage.workflow import evidence_as_json
 from endoreg_db.views.video.video_timeline import VideoFrameNeighborhoodView
 
 pytestmark = pytest.mark.django_db

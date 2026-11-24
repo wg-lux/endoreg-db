@@ -10,11 +10,11 @@ import time
 import uuid
 from pathlib import Path
 from types import TracebackType
-from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Protocol, cast
+from typing import TYPE_CHECKING, Any, Optional, Protocol, cast
+from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.conf import settings
 from django.core.files.base import ContentFile, File
 from django.db import models
 from collections.abc import Iterable
@@ -40,7 +40,7 @@ if TYPE_CHECKING:  # pragma: no cover
 
 _cache_namespace: Optional["CacheNamespace"] = None
 MAX_MOCK_VIDEO_FRAMES = 2
-_fallback_cache: Dict[str, Any] = {}
+_fallback_cache: dict[str, Any] = {}
 _CACHE_SENTINEL = object()
 
 
@@ -96,7 +96,7 @@ def _cache_pop(key: str) -> None:
         _fallback_cache.pop(key, None)
 
 
-def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
+def _segment_payload_from_video(video: VideoFile) -> dict[str, Any]:
     """Capture immutable info so stub videos can be rebuilt after DB flush."""
     raw_file_name = getattr(video.raw_file, "name", None) or ""
     video_like = cast(_SegmentVideoLike, video)
@@ -119,7 +119,7 @@ def _segment_payload_from_video(video: VideoFile) -> Dict[str, Any]:
     }
 
 
-def _hydrate_segment_video(payload: Dict[str, Any]) -> VideoFile:
+def _hydrate_segment_video(payload: dict[str, Any]) -> VideoFile:
     """Recreate a lightweight VideoFile from cached payload data."""
 
     center = Center.objects.filter(name=payload["center_name"]).first()
@@ -230,7 +230,7 @@ def get_segment_test_video(cache_key: str = "segment_api_video") -> VideoFile:
 
     payload = _cache_get(payload_key)
     if isinstance(payload, dict):
-        video = _hydrate_segment_video(cast(Dict[str, Any], payload))
+        video = _hydrate_segment_video(cast(dict[str, Any], payload))
         _cache_set(cache_key, video.pk)
         return video
 
@@ -564,7 +564,7 @@ def mock_ffmpeg():
 def mock_ai_inference():
     """Mock AI inference operations to avoid expensive model loading."""
     with patch(
-        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference"
+        "endoreg_db.services.video_files.temporal_inference.run_video_temporal_inference"
     ) as mock_temporal_inference:
         mock_temporal_inference.return_value = True
         yield mock_temporal_inference
@@ -604,28 +604,9 @@ def _create_real_video_file_for_fixture() -> VideoFile:
 # ==========================================
 
 
-def optimize_database_for_tests():
-    """
-    Apply database optimizations for test performance.
-    """
-    from django.db import connection
-
-    with connection.cursor() as cursor:
-        try:
-            # SQLite-specific optimizations
-            if "sqlite" in settings.DATABASES["default"]["ENGINE"]:
-                cursor.execute("PRAGMA journal_mode=WAL;")
-                cursor.execute("PRAGMA synchronous=NORMAL;")
-                cursor.execute("PRAGMA cache_size=10000;")
-                cursor.execute("PRAGMA temp_store=MEMORY;")
-                cursor.execute("PRAGMA mmap_size=67108864;")  # 64MB
-        except Exception as e:
-            print(f"Database optimization warning: {e}")
-
-
 def batch_create_objects(
     model_class: type[models.Model],
-    objects_data: Iterable[Dict[str, Any]],
+    objects_data: Iterable[dict[str, Any]],
     batch_size: int = 100,
 ) -> list[models.Model]:
     """

@@ -5,8 +5,8 @@ import json
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
-from endoreg_db.services.video_format_reconciliation import VIDEO_EXTENSIONS
-from endoreg_db.services.video_transcoding import transcode_video_directory
+from endoreg_db.services.video_storage.format_reconciliation import VIDEO_EXTENSIONS
+from endoreg_db.services.video_storage.transcoding import transcode_video_directory
 from lx_dtypes.models.contracts.management_command import (
     TranscodeVideoCommandOptionsPayload,
 )

@@ -24,7 +24,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.serializers import LabelVideoSegmentSerializer
 from endoreg_db.serializers.video.video_file_list import VideoFileListSerializer
-import endoreg_db.services.video_segment_blackening as blackening
+import endoreg_db.services.video_files.segment_blackening as blackening
 from endoreg_db.services.jobs import video_post_validation_jobs as post_validation_jobs
 from endoreg_db.services.jobs.video_post_validation_jobs import JobDispatchResult
 from endoreg_db.services.jobs.video_fps_normalization_jobs import (
@@ -41,6 +41,9 @@ from endoreg_db.views.video.segments_crud import (
     video_segments_by_video,
     video_segments_validate_bulk,
 )
+
+
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 class VideoSegmentFpsNormalizationViewTest(TestCase):
@@ -111,6 +114,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
             fps=30.0,
             frame_count=1000,
             duration=33.33,
+            meta=constant_rate_video_metadata(
+                fps_num=30, frame_count=1000, duration_seconds=33.33
+            ),
         )
 
         # 3. Create a Label
@@ -167,6 +173,23 @@ class LabelVideoSegmentSerializerTest(TestCase):
         # Fix: Cast errors to a dict to allow safe membership check
         self.assertIn("end_time", _serializer_errors(serializer))
 
+    def test_time_update_without_source_timeline_preserves_segment_coordinates(self):
+        self.video.meta = {}
+        self.video.save(update_fields=["meta"])
+        serializer = LabelVideoSegmentSerializer(
+            instance=self.segment,
+            data={"start_time": 0.1, "end_time": 0.5},
+            partial=True,
+        )
+
+        self.assertFalse(serializer.is_valid())
+        self.assertIn(
+            "requires a persisted source timeline", str(_serializer_errors(serializer))
+        )
+        self.segment.refresh_from_db()
+        self.assertEqual(self.segment.start_frame_number, 0)
+        self.assertEqual(self.segment.end_frame_number, 30)
+
     def test_video_store_creation_payload(self):
         """
         Scenario: videoStore.ts -> createSegment
@@ -200,8 +223,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
         Scenario: Loading the Timeline.
         The serializer method `get_time_segments` iterates over frames.
         We must ensure it doesn't fire a database query for every single frame
-        to get annotations. Two fixed queries additionally resolve the
-        authoritative start and end presentation timestamps.
+        to get annotations. One fixed query loads the generation-bound timeline
+        index that resolves the authoritative start and end presentation
+        timestamps.
         """
         frames: list[Frame] = []
         for i in range(50):
@@ -228,7 +252,7 @@ class LabelVideoSegmentSerializerTest(TestCase):
             # Fix: Avoid type checking unknown attributes on Frame
             _ = cast(Any, frames[0]).file_path
 
-        with self.assertNumQueries(4):
+        with self.assertNumQueries(3):
             serializer = LabelVideoSegmentSerializer(self.segment)
             # Fix: Cast self.segment to Any to satisfy LabelVideoSegmentLike Protocol
             # and explicitly cast the return dictionary structure
@@ -238,6 +262,61 @@ class LabelVideoSegmentSerializerTest(TestCase):
 
             self.assertEqual(len(data["frames"]), 50)
             self.assertTrue(len(data["frames"][0]["all_classifications"]) > 0)
+
+    def test_segment_list_loads_timeline_coordinates_once(self):
+        from django.db import connection
+        from django.test.utils import CaptureQueriesContext
+
+        from endoreg_db.services.video_files import video_frame_number_to_seconds
+
+        Frame.objects.bulk_create(
+            Frame(
+                video=self.video,
+                frame_number=number,
+                timestamp=0.5 + number * 0.031 + (0.007 if number % 3 else 0.0),
+            )
+            for number in range(200)
+        )
+        for start in range(30, 180, 30):
+            LabelVideoSegment.objects.create(
+                video_file=self.video,
+                label=self.label_polyp,
+                start_frame_number=start,
+                end_frame_number=start + 17,
+                source=self.source,
+            )
+        segments = list(
+            LabelVideoSegment.objects.filter(video_file=self.video)
+            .select_related("video_file", "label", "source")
+            .order_by("start_frame_number")
+        )
+
+        with CaptureQueriesContext(connection) as captured:
+            data = _serializer_data(
+                LabelVideoSegmentSerializer(
+                    segments,
+                    many=True,
+                    context={"include_annotation_payload": False},
+                )
+            )
+        frame_queries = [
+            query["sql"]
+            for query in captured.captured_queries
+            if 'FROM "endoreg_db_frame"' in query["sql"]
+        ]
+        self.assertEqual(len(frame_queries), 1, frame_queries)
+
+        rows = cast(list[Mapping[str, Any]], data)
+        self.assertEqual(len(rows), len(segments))
+        for row, segment in zip(rows, segments, strict=True):
+            self.assertEqual(
+                row["start_time"],
+                video_frame_number_to_seconds(self.video, segment.start_frame_number),
+            )
+            self.assertEqual(
+                row["end_time"],
+                video_frame_number_to_seconds(self.video, segment.end_frame_number),
+            )
 
     def test_video_list_serializer_exposes_validated_annotators_only_after_validation(
         self,
@@ -324,6 +403,7 @@ class PredictionSegmentAnnotationsRouteTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="pred-anno-route-hash",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="pred_route.mp4",
             fps=25.0,
             frame_count=100,
@@ -408,6 +488,7 @@ class VideoSegmentsByVideoPayloadModeTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="segments-payload-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
             original_file_name="segments_payload.mp4",
             fps=25.0,
             frame_count=200,
@@ -475,6 +556,7 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="validate-async-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="validate_async.mp4",
             fps=25.0,
             frame_count=100,
@@ -675,6 +757,25 @@ class VideoSegmentValidateAsyncSafetyTest(TestCase):
         )
         self.assertEqual(history.status, VideoProcessingHistory.STATUS_PENDING)
 
+    def test_bulk_validation_retains_saved_count_when_postprocessing_raises(self):
+        request = self.factory.post(
+            f"/api/media/videos/{self.video.pk}/segments/validate-bulk/",
+            {"segment_ids": [self.segment.pk], "is_validated": True},
+            format="json",
+        )
+        with patch(
+            "endoreg_db.views.video.segments_crud._postprocess_bulk_validation",
+            side_effect=RuntimeError("encoder failed"),
+        ):
+            response = video_segments_validate_bulk(request, pk=self.video.pk)
+        data = json.loads(response.content.decode())
+        self.assertEqual(response.status_code, 500)
+        self.assertEqual(data["updated_count"], 1)
+        self.assertIn("Segment review saved", data["error"])
+        self.assertEqual(data["detail"], "encoder failed")
+        self.segment.state.refresh_from_db()
+        self.assertTrue(self.segment.state.is_validated)
+
     def test_bulk_validation_dispatch_failure_stays_non_final(self):
         outside_label, _ = Label.objects.get_or_create(name="outside")
         outside_segment = LabelVideoSegment.objects.create(
@@ -800,6 +901,7 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="blacken-outside-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="blacken_outside.mp4",
             fps=25.0,
             frame_count=100,
@@ -1148,6 +1250,7 @@ class VideoSegmentsSourceKindFilterTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="segment-source-filter-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=100),
             original_file_name="segment_filter.mp4",
             fps=25.0,
             frame_count=100,
@@ -1229,6 +1332,7 @@ class VideoSegmentsBulkMutationTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="bulk-segments-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
             original_file_name="bulk_segments.mp4",
             fps=25.0,
             frame_count=200,
@@ -1457,6 +1561,7 @@ class ImportPredictionSegmentsToManualTest(TestCase):
         self.video = VideoFile.objects.create(
             center=self.center,
             raw_video_hash="prediction-import-video",
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=200),
             original_file_name="prediction_import.mp4",
             fps=25.0,
             frame_count=200,

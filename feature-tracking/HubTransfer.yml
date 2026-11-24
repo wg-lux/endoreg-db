@@ -22,6 +22,465 @@ source_documents:
   disposition: reference
   note: Provides the existing ingest operations model that outbound transfer operations must complement.
 definition_of_done:
+- id: recording_bound_export_preflight
+  category: functionality
+  title: Transfer-Vorprüfung bindet Herkunft an die Aufnahme und vermeidet erneutes Dekodieren am Sender
+  acceptance:
+  - Herkunft und elektrische Synchronisation beginnen bei raw_video_hash; eine spätere kanonische Transformation
+    ersetzt die Aufnahmeidentität nicht. Fehlende Ursprungsbelege bleiben ein Fehler.
+  - Exklusive Medienoperationen und ungültige Herkunft werden vor teurer Inhaltsprüfung erkannt. Der Sender
+    prüft weiterhin Freigabe und aktuellen Inhalts-Hash, verwendet danach die typisierten inhaltsgebundenen
+    Zeitstempelbelege; der Empfänger dekodiert und prüft die empfangene Generation weiterhin.
+  - Probe- und Lease-Fehler während der Sender-Vorbereitung werden über die bestehende Rust-Autorität
+    persistiert statt als scheinbar wartender Job zurückzubleiben; begrenzte Wiederholung bleibt sichtbar.
+  - Regressionen prüfen mehrstufige Herkunft trotz später beginnender Timeline-Historie, fehlende Ursprungsketten,
+    unveränderte Integritätsgates und Dekodierungsprüfung am Empfänger.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor Herkunfts-, Recovery-, Empfänger-, Cleanup- und Sender-Worker-Tests; veränderte
+      Dateien und bestehende Deploymentgrenzen separat prüfen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-11-17: Vollständiges Backend-Pyright: 0 Fehler, 2 bestehende Warnungen; finales
+        Herkunftstest-Pyright: 0 Fehler/0 Warnungen. Fokussierte Backend-Integration (Herkunft, Recovery,
+        Medien-Leases, Hub-Cleanup, Transfervertrag, Speichernormalisierung, kanonische Zeitstempel, Rust-Hub-Zustände,
+        Importabschluss): zunächst 267 bestanden und 6 neue Fixture-Fehler. Nach Korrektur ausschließlich
+        der Fixtures (Center und Dateiname) Herkunftssuite erneut: 27 bestanden in 53,96 s; damit alle
+        273 ausgewählten Fälle abgedeckt. Sender-Pyright fehlerfrei; sechs Sender-Suiten einschließlich
+        Thread-Rennen, Retry und Cleanup: 99 bestanden in 65,07 s. Keine Herkunftsbelege erfunden; Empfänger
+        prüft die vollständige dekodierte Zeitstempelfolge weiterhin. Ruff, Manifest- und Diff-Prüfungen
+        bestanden.'
+    - kind: test
+      reference: 'Abschluss 2026-11-17: Bestehende Download-/Integritätsregression tests/views/media/test_video_export_downloads.py:
+        23 bestanden in 41,56 s (eine bestehende Pytest-Warnung), einschließlich tatsächlicher Hash-Prüfung,
+        veralteter Freigaben, Verschlüsselung und Lease-Gates. scripts/check_report_native_runtime.sh:
+        46 Rust-Tests bestanden, generierte Typ-Stubs identisch, endoreg_db-1.8.5-cp312-cp312-linux_x86_64.whl
+        erfolgreich gebaut, isoliert installiert und native Zustands-/Hash-Verträge geprüft; temporäres
+        Prüfartefakt anschließend entfernt. Finale Manifest-, Ruff- und Diff-Prüfungen bestanden. Feature-Check
+        bleibt insgesamt NICHT PRODUKTIONSREIF (hub_transfer 6/15, Sender-Retry 6/7); lokale Regressionen
+        ersetzen keine Betriebs- und Restore-Abnahme.'
+    note: Lokal geprüfte Code- und Vertragsgrenze; keine Produktionsfreigabe. Historisch fehlende Herkunft,
+      unversöhnte Schreib-Leases sowie LuxNix-Backup und verschlüsselte Kapazität bleiben getrennte Betriebsaufgaben.
+      Senderanwendung und Python-/Rust-Pakete müssen gemeinsam bereitgestellt werden.
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T12:21:33.634230Z'
+- id: guarded_patient_matching_resolver
+  category: security
+  title: Ausführbarer Patientenresolver nach dem Lean-Annahmevertrag
+  acceptance:
+  - Lokale Eingaben stammen aus autorisierten bestehenden Datensätzen und werden vor Ergebnisannahme erneut
+    geprüft; fehlende oder gelöschte Originaldaten und unzulässige Schlüsselgenerationen werden abgewiesen.
+  - Der Resolver nutzt die bestehende Kodierung und HMAC-Funktion mit A-Schlüssel und A-Zentrum; vollständige
+    Aggregation offenbart nur dem Empfänger den Ergebnisstatus und gegebenenfalls einen einzelnen Kandidaten.
+  - Signierte Ergebnisse binden Sitzung, Teilnehmer, Zweck, Publikum, Ablauf, Schema, Generation, Circuit
+    und unveränderliche Datensatzreferenzen an einen lokal aufgezeichneten Workerabschluss.
+  - Atomare persistierte Sitzungsannahme verhindert Replay und konkurrierende Doppelannahme; begrenzte
+    kumulative Anfragen und explizite UUID-Beziehungen ersetzen automatische Zusammenführung.
+  - Negative Tests decken Substitution, Manipulation, Ablauf, unzulässige Generationen, Mehrdeutigkeit
+    und Abbruch ab; Backend- und Vertrauensannahmen bleiben explizit und die Funktion wird nicht automatisch
+    ausgerollt.
+  required: true
+  verification:
+    kind: manual
+    instructions: Typprüfung, fokussierte ORM- und Workerprüfungen sowie tatsächliche Zwei-Prozess-Circuitprüfung
+      ausführen; Bereitstellung und unabhängige Kryptografieprüfung separat bewerten.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/patient_identity/matching/matching_acceptance.py
+    - kind: code
+      reference: endoreg_db/services/patient_identity/matching/matching.py
+    - kind: code
+      reference: scripts/reidentification/patient_matching_resolver.mpc
+    - kind: code
+      reference: endoreg_db/migrations/0107_matching_worker_state.py
+    - kind: test
+      reference: tests/services/test_patient_matching_workflow.py
+    - kind: test
+      reference: tests/services/test_patient_matching_backend.py
+    - kind: document
+      reference: docs/source_patient_matching.md
+    - kind: command
+      reference: LX_MPSPDZ_ROOT=/tmp/mp-spdz-0.4.4 .devenv/state/venv/bin/pytest tests/services/test_patient_matching_inputs.py
+        tests/services/test_patient_matching_acceptance.py tests/services/test_patient_matching_backend.py
+        tests/services/test_patient_matching_workflow.py tests/services/test_source_patient_matching.py
+        tests/services/test_transfer_identity_boundary.py tests/utils/test_sensitive_meta_hash_security.py
+        -q:96 passed,0 skipped,159 warnings,128.16s; final ORM locking recheck40 passed/159 warnings/49.87s;
+        persisted-signature tests3 passed/1 warning/0.11s.
+    - kind: command
+      reference: Repository Pyright0 errors/24 warnings; final changed-file Pyright0 errors; Ruff passed;
+        git diff --check passed;65 structure manifests and37 feature definitions valid.
+    note: 'Local-role matching service and MP-SPDZ v0.4.4/MASCOT circuit implemented and synthetically
+      verified. Existing hashs.py unchanged; ORM adapter preserves clinical calendar dates after UTC persistence.
+      Full request digests are compared inside the circuit. Separate TLS input roles, enrolled artifacts
+      and OpenSSL trust anchors, runtime-directory exclusion, atomic one-use session claims, metadata
+      locks during acceptance, signed receipts and separate UUID links are exercised. Native cases: single/no/ambiguous
+      matches, wrong key epoch, crossed-session context, missing peer and invalid trust/runtime sharing.96-test
+      selected suite passed with no skips; final40 ORM and3 signature checks passed. Migration0107 adds
+      worker state. No HTTP activation or production deployment. Readiness remains in_progress: independent
+      endpoint provisioning/review, protected retained computation state and verified human identity are
+      not established. A sees public candidate references and later authenticates B assertion after local
+      participation; this is not independent verification of B privately opened output.'
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-21T06:53:46.675914Z'
+- id: existing_hmac_2pc_evaluation
+  category: security
+  title: Isolierte Bewertung privater Vergleiche bestehender Patienten-HMACs
+  acceptance:
+  - Referenztests stimmen mit produktiver JSON- und UTF-8-Kodierung sowie HMAC-SHA256 unter Quellschlüssel
+    und Quellzentrum überein; bestehende UUIDs und Hashes bleiben unverändert.
+  - Ein synthetischer Zwei-Prozess-Versuch oder ein konkreter Backend-Blocker wird dokumentiert; Referenzzeiten
+    werden niemals als 2PC-Leistung bezeichnet.
+  - Bewertung trennt Tupelgleichheit, Datensatzbindung, reale Identität, Protokollsicherheit, gemessene
+    Leistung und Betriebsbereitschaft einschließlich Administratoren, historischen Schlüsseln und wiederholten
+    Abfragen.
+  - Signaturen, Wiederholungsschutz, autorisierte Eingaben und klinische Identität werden nur bei tatsächlich
+    implementiertem Nachweis als unterstützt bezeichnet; diese Evaluation aktiviert keinen Produktionsabgleich.
+  required: false
+  verification:
+    kind: manual
+    instructions: Bericht und reproduzierbare synthetische Tests prüfen; produktive Freigabe bleibt ein
+      separates Kriterium.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/patient_matching_2pc_assessment.md
+    - kind: test
+      reference: tests/scripts/test_patient_matching_2pc_reference.py
+    - kind: code
+      reference: scripts/patient_matching_2pc.mpc
+    - kind: command
+      reference: '39 reference tests passed; focused Pyright and Ruff passed; full Pyright 20 existing
+        errors/24 warnings; real Tinier batches 1/10/100 completed, 100: 171.815s and 32482.8MB; structure65/tracker37
+        valid'
+    - kind: document
+      reference: patient_matching_lean/infrastructure_lx_annotate_linkage_research_revised.docx
+    - kind: document
+      reference: docs/patient_matching_threat_model.md
+    - kind: document
+      reference: patient_matching_lean/manuscript_revision.yml
+    - kind: code
+      reference: scripts/evaluate_patient_hmac.py
+    - kind: test
+      reference: tests/scripts/test_evaluate_patient_hmac.py
+    - kind: command
+      reference: 47 focused tests passed, 1 warning, 57.25s; 18300 direct production-helper candidate
+        evaluations; focused Pyright/Ruff passed; full Pyright 13 existing errors/24 warnings; 66 maps/37
+        feature definitions valid.
+    note: Manuscript manifest now inventories S1–S3, references R1–R7 and two figures with source/data
+      checksums. DOCX contains matching current-source references/citations. Integrity checks passed:22
+      artifact checksums, ZIP CRC,18 XML parts,17 internal relationship targets,3 supplements,7 references,2
+      embedded PNGs identical to inventoried figures; duplicate-free YAML. DOCX reopened and rendered
+      to6 pages; reference page visually reviewed.2104 words.66 structure maps/37 feature definitions
+      valid. No implementation-readiness change.
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-20T12:45:39.128995Z'
+- id: cross_site_private_patient_matching
+  category: security
+  title: Privater zentrenübergreifender Abgleich verifizierter gemeinsamer Patientenkennungen
+  acceptance:
+  - Abgleichseingaben sind verifizierte gemeinsame Patientenkennungen mit festgelegtem Aussteller-Namensraum,
+    Normalisierung und Verifikationsbeleg; Name, Geburtsdatum und unbestätigte externe IDs sind ausgeschlossen.
+  - Das Betriebsmodell benennt Hub-, Schlüssel- und Quellsystem-Vertrauensgrenzen, Administratoren, Wiederherstellungsrechte
+    und das Verhalten bei kompromittierten Quellen. Ein gemeinsamer Host oder Administrator wird nicht
+    als unabhängige Schlüsselhaltung oder Schutz vor gemeinsamer Kompromittierung dargestellt.
+  - Ein geprüftes privates Abgleichsprotokoll schützt Kennungseingaben und bindet Ergebnisse an ihren
+    Verifikationsnachweis. Kryptografische Auswertungsnachweise werden nicht mit Kennungsverifikation
+    verwechselt.
+  - Signierte Meldungen binden Quellknoten, persistierte Patienten-UUID, Empfänger, Zweck, Abgleichsraum,
+    Schlüsselgeneration, Ablaufzeit und Wiederholungsschutz. Schlüsselwiderruf und Rotation schlagen bei
+    widersprüchlichen oder unbekannten Generationen geschlossen fehl.
+  - Patienten-UUIDs bleiben unverändert; zentrenübergreifende Beziehungen werden separat und nachvollziehbar
+    verwaltet. Inhalts-Hashes identifizieren Artefakte, niemals Patienten. Widersprüche verursachen keine
+    stille Zusammenführung.
+  - Passworthashes, Django SECRET_KEY, NetworkNode.shared_secret, lokale Master-Schlüssel und Patientenmerkmale
+    werden nicht als Abgleichsschlüssel oder Saatwerte asymmetrischer Schlüssel verwendet.
+  - Wiederholungen, konkurrierende Zuordnungen, gefälschte Belege, falsche Aussteller, unzulässige Schlüssel,
+    Manipulation, Widerruf und gezielte Kennungsabfragen sind durch wiederverwendbare Tests abgedeckt;
+    Gleichheitsleckage und autorisierte Rateversuche werden ausdrücklich bewertet.
+  required: true
+  verification:
+    kind: manual
+    instructions: Prüfe den verifizierten Ausstellervertrag, unabhängige Betriebsverantwortung, Protokoll-
+      und Bibliotheksprüfung sowie adversariale Integrationstests vor Aktivierung.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/source_patient_matching.md
+    - kind: review
+      reference: /home/admin/luxnix/ansible/inventory/host_vars/gs-02.yml:84 and :146; /home/admin/luxnix/modules/nixos/luxnix/vault/default.nix:403;
+        /home/admin/luxnix/docs/vault-hub-machine-enrollment.md:47. Read-only source review; no remote
+        inspection or secret access.
+    - kind: command
+      reference: 37 feature definitions and 65 endoreg-db structure manifests validated; independent LuxNix
+        review validated 23 manifests. Documentation-only change; no code tests run.
+    - kind: document
+      reference: docs/patient_matching_2pc_assessment.md
+    note: Der Produktionsvertrag verlangt weiterhin verifizierte issuerqualifizierte Kennungen. Die separate
+      synthetische Ansatz-A-Evaluation untersucht exakte Demografie-HMAC-Gleichheit mit bestehenden A-Schlüsseln;
+      sie benötigt keinen zentralen gemeinsamen Matching-Key. Hub/Vault-Kolokation allein schließt A/B-2PC
+      nicht aus. Effektive gemeinsame Administratorrechte, Record-Bindung und Verifikationsverfahren bleiben
+      offen; keine Produktionsaktivierung.
+    assessed_by: codex-patient-uuid-20261019
+    assessed_at: '2026-10-19T15:50:07.310278Z'
+- id: local_identity_hash_boundary
+  category: security
+  title: Patientenidentität bleibt am Quellknoten
+  acceptance:
+  - Patienten- und Untersuchungshashes werden vor jeder Hub-Übertragung abgewiesen, auch in verschachtelten
+    Metadaten und Wiederholungen.
+  - Der Empfänger weist Identitätshashes vor Persistenz zurück; vorhandene lokale Identitäten und Datei-Prüfsummen
+    bleiben erhalten.
+  - Vertrag 6.0 überträgt für Patienten und Untersuchungen ausschließlich hubgebundene UUIDv8-Pseudonyme,
+    lokal per HMAC unter dem lokalen Identitätssalt aus lokaler UUID und Ziel-Hub abgeleitet. Persistierte
+    lokale UUIDs verlassen den Sender nicht. Ganzzahl-IDs und andere UUID-Versionen werden abgewiesen;
+    UUIDv8 allein beweist keine Hub-Ableitung, weshalb der Sender immer die separate Hub-Funktion verwendet.
+    Wiederholungen und Folgeuntersuchungen desselben lokalen Datensatzes behalten am selben Hub ihr Pseudonym.
+    Pseudonym-Kollisionen mit fremden Besitzern oder Patienten werden vor Verknüpfung abgewiesen.
+  - Studienbündel an den Hub verwenden dieselben Pseudonyme wie Medientransfers und enthalten keine lokalen
+    UUIDs.
+  - Sender und Empfänger verwenden den gemeinsamen lx_dtypes-Vertrag; Versionen 3.0, 4.0 und 5.0 bleiben
+    ungültig.
+  - Neue lokale Patienten aus der hashbasierten Importanlage erhalten deterministische UUIDv8 aus einem
+    zweckgetrennten HMAC über Zentrumsschlüssel und Patientenhash unter dem validierten lokalen Identitätssalt.
+    Gleiche Eingaben ergeben gleiche UUIDs; andere Zentren und Schlüssel bleiben getrennt. Bestehende
+    UUIDs und historische Aliasauflösung bleiben erhalten; konkurrierende Anlage wird pro Zentrum serialisiert.
+    Hub-Pseudonyme bleiben separat. Die Werte sind personenbezogene Pseudonyme, keine Anonymisierung;
+    notwendige und rechtmäßige Verknüpfung sowie getrennte Geheimnishaltung bleiben Betriebsanforderungen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused boundary regression tests and type checks before coordinated deployment.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: command
+      reference: 'Backend boundary/keyring suite: 99 passed; local import identity guards/resolution:
+        22 passed. Focused Pyright 0 errors; full Pyright has 17 pre-existing identity_resolve draft errors.'
+    - kind: command
+      reference: 'Final receiver privacy, historical identity preservation and real source-hash rejection
+        suite: 53 passed in 44.02s. Focused Pyright 0 errors; Ruff and 65 structure maps passed.'
+    - kind: command
+      reference: 'Contract v4: shared contract 31 passed; source-ID/no-salt receiver boundaries 16 passed;
+        receiver transfer contracts/unit decisions 76 passed plus 3 subtests; sender payload 8 passed
+        and worker 27 passed, using current shared source overlay. Focused Pyright and Ruff passed. Structure
+        maps valid in all three repos; lx-data-models HTML build passed.'
+    - kind: command
+      reference: 'Final integration Pyright: receiver, sender, shared response guard and corrected cohort
+        test 0 errors. Full lx-data-models Pyright 0 errors; HTML and linkcheck pass. Endoreg full Pyright
+        retains 17 unrelated errors in identity_resolve/generate_public_key.py; concurrently stale cohort
+        assertion was corrected and focused type check passed.'
+    - kind: command
+      reference: 'UUID contract: 41 shared tests passed; lx-annotate sender payload/worker: 36 passed;
+        receiver HTTP/identity/import checks: 43 passed and 969 subtests. Tests used sibling lx-data-models/endoreg-db
+        sources through explicit PYTHONPATH overlays.'
+    - kind: command
+      reference: Full lx-data-models Pyright passed; changed receiver and sender Pyright passed. Full
+        endoreg-db Pyright retains 17 pre-existing errors in identity_resolve/generate_public_key.py and
+        24 warnings. Ruff, whitespace checks and structure maps passed in all three repositories; shared
+        HTML and linkcheck passed.
+    - kind: test
+      reference: tests/services/test_patient_uuid_migration.py
+    - kind: test
+      reference: tests/services/test_source_patient_matching.py
+    - kind: command
+      reference: 'Final receiver and migration verification after unifying persistence identity validation:
+        97 passed, 3 subtests passed in 44.46s (test_patient_uuid_migration, test_source_patient_matching,
+        test_transfer_identity_boundary, test_transfer_job_contract, test_hub_transfer_unit_decisions).
+        Existing pytest plugin and temporary-directory cleanup warnings remain.'
+    - kind: code
+      reference: endoreg_db/services/hub/hub_pseudonyms.py
+    - kind: test
+      reference: tests/services/test_hub_pseudonyms.py
+    - kind: command
+      reference: 'Contract 6.0 hub pseudonyms (PYTHONPATH overlays of sibling lx-data-models/endoreg-db):
+        lx-data-models contract 63 passed; endoreg-db receiver/identity/study 136 passed + 3 subtests,
+        HTTP endpoints/registration 64 passed + 35 subtests; lx-annotate tests/hub 259 passed. Focused
+        Pyright 0 errors in endoreg-db and lx-data-models; Ruff clean; 66 structure maps valid.'
+    - kind: test
+      reference: tests/services/test_patient_uuid_generation.py
+    - kind: command
+      reference: 'UUIDv8: 87 selected tests initially 86 passed/1 failed (wrong expected exception); corrected
+        new test file 11 passed in 52.60s, other 76 tests passed unchanged. Selected lanes: patient_uuid_generation,
+        administration/person/test_patient, pseudonym_resolution, patient_hash_aliases, historical_identity_resolution,
+        preanonymized_external_identity, hub_pseudonyms, source_patient_matching. Focused Pyright 0 errors;
+        full run exposed 1 unrelated remaining private-import error in tests/views/test_central_hub_training_access.py:311
+        after four introduced errors were fixed and rechecked. Ruff, diff check and 67 structure maps
+        passed.'
+    note: Neue hashbasierte Importpatienten erhalten zentrumsgebundene HMAC-UUIDv8; bestehende UUIDs und
+      historische Aliase bleiben erhalten. Zentrumsweite Anlagesperre und Hub-Ableitung sind getestet.
+      Keine Bestandsmigration oder Schluesselverteilung. EDPB-Konsultationsfassung 01/2025 dokumentiert;
+      notwendige rechtmaessige Verknuepfung und getrennte Geheimnishaltung bleiben Betriebsanforderungen,
+      keine Anonymisierungs- oder Produktionsfreigabe. Legacy-Hubzeilen bleiben separat zu bereinigen.
+    assessed_by: codex-patient-uuid-20261023
+    assessed_at: '2026-10-23T09:41:48.626964Z'
+- id: hub_pseudonym_lifecycle
+  category: security
+  title: Hubgebundene Pseudonyme bleiben über Bestand, Rotation und Deployment konsistent
+  acceptance:
+  - Unter Vertrag 5.0 empfangene Hub-Zeilen mit lokalen Quell-UUIDs werden inventarisiert und über einen
+    geprüften, fail-closed Ablauf am Quellknoten auf hubgebundene UUIDv8-Pseudonyme abgebildet oder als
+    LOST/quarantäniert markiert. Keine geratenen Zuordnungen; keine Löschung vor Hash-, Besitz- und Bestandsabgleich.
+  - Eine Rotation des lokalen Identitätssalts teilt Hub-Patienten nicht still auf. Neue Transfers nach
+    Rotation werden blockiert, bis eine auditierte, nur am Quellknoten berechnete Abbildung alter auf
+    neue Pseudonyme am Hub atomar übernommen ist.
+  - lx-data-models, endoreg-db und lx-annotate werden für Vertrag 6.0 mit gepinnten Commits gemeinsam
+    ausgerollt; Tests belegen, dass gemischte Versionen in beiden Richtungen geschlossen scheitern.
+  required: true
+  verification:
+    kind: manual
+    instructions: Vor pytest Pyright ausführen; Migrations- und Rotationstests gegen PostgreSQL mit Unterbrechung,
+      Wiederholung und Konflikten; Versionsmischungstests über alle drei Repositories.
+    timeout_seconds: 1800
+  assessment:
+    status: not_assessed
+    evidence: []
+    note: Nur TODO-Erfassung am 22.10.2026; Implementierung zurückgestellt. Vertrag 6.0 selbst ist unter
+      local_identity_hash_boundary belegt.
+- id: linkage_manuscript_evidence
+  category: security
+  title: Nachweise für die Aussagen des Linkage-Manuskripts
+  acceptance:
+  - Der aktuelle Vertrag patient_matching_lean/Site_scoped_linkage_publication(2)(1).docx wird gegen zwei
+    Szenarien mit allen kompromittierten Schlüsseln geprüft (nur Registerdaten; zusätzlich alle Quelldaten).
+    Speicheralternativen, Fallverknüpfung, Inhaltsinferenz und Grenzen der Lean-Aussagen werden getrennt
+    ausgewiesen. Registerbetrieb benötigt konkrete Rechtsgrundlagen, Rollen, Datenschutz-Folgenabschätzung
+    soweit erforderlich und überprüfte Schutzmaßnahmen; Tests oder Framework-Publikation gelten nicht
+    als rechtliche oder institutionelle Freigabe.
+  - 'TODO-02: Historische Läufe (47-Test-Log, Bildbeobachtungen, HMAC-Scans, Plots, Umgebungsmanifeste)
+    sind mit Commit, Dirty-State und Prüfsummen archiviert; andernfalls bleiben sie im Manuskript als
+    historisch und nicht wiederholt gekennzeichnet.'
+  - 'TODO-03: Der Bericht feature-tracking/reports/patient_hash_input_variations.yml ist als historisch
+    markiert und seine Whitespace-Aussage mit encode_patient_identity abgeglichen.'
+  - 'TODO-04: Eine Traceability-Tabelle verbindet E, M und psi des Lean-Modells mit encode_patient_identity,
+    get_hub_record_pseudonym, HMAC-SHA-256 und dem Resolver-Circuit; differentielle Tests decken Whitespace,
+    Unicode, Datum, lange und historische Schlüssel, Zentrumskontext und fehlerhafte Eingaben ab.'
+  - 'TODO-05: Die Bindung von Ziel-Fingerprint und Schlüsselgeneration an das ursprüngliche Quelltupel
+    ist über Import, Rotation und Identifikatorlöschung belegt, einschließlich des gelöschten Quellfalls.'
+  - 'TODO-06/-07: Native Zwei-Endpunkt-Tests laufen ohne Skips gegen ein freigegebenes Artefaktmanifest
+    und belegen, dass ein angenommenes single_match genau einem tatsächlichen Kandidaten entspricht (siehe
+    guarded_patient_matching_resolver).'
+  - 'TODO-08: Konkurrierende Annahme, Rollback, Unterbrechung und Replay nach Neustart sind auf PostgreSQL
+    getestet.'
+  - 'TODO-09/-10: Prüfberechtigung der Namens-/Geburtsdatum-Flags mit Provenienz sowie Schlüsselerzeugung,
+    Enrollment und administrative Trennung der Teilnehmer sind dokumentiert (siehe cross_site_private_patient_matching).'
+  - 'TODO-11: Eine kumulative Abfragepolitik über Standorte, Zwecke und Quellidentitäten ist definiert
+    und adaptiv evaluiert.'
+  - 'TODO-12: Der auskommentierte Vorbereitungstest in tests/services/test_patient_matching_inputs.py
+    ist wieder aktiv; das Verifikationsgate ist mit Kommandos und Ergebnissen erfasst.'
+  - Das Manuskript zitiert gepinnte Commits aller drei Repositories statt eines Working Trees.
+  required: false
+  verification:
+    kind: manual
+    instructions: Je Aufzählungspunkt Nachweis prüfen und im Manuskript-Supplement S7 referenzieren; offene
+      Punkte bleiben dort als offen ausgewiesen.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: patient_matching_lean/Site_scoped_linkage_with_formal_supplement_revised 1.docx
+    - kind: command
+      reference: DOCX ZIP/XML validated; 24 non-body package parts and 224 Lean-listing paragraphs unchanged;
+        new UUID derivation, German care/research grounds, recipient-relative identifiability, references
+        and obsolete-claim checks passed; LibreOffice PDF export succeeded; 67 structure manifests valid.
+    - kind: document
+      reference: docs/patient_matching_threat_model.md
+    - kind: test
+      reference: tests/services/test_hub_pseudonyms.py
+    - kind: command
+      reference: '2026-10-26: .venv/bin/pyright --pythonpath .venv/bin/python: 0 errors, 17 missing-stub
+        warnings; prescribed .devenv/state/venv absent. PYTHONPATH=.:../lx-data-models .venv/bin/pytest
+        tests/services/test_hub_pseudonyms.py tests/services/test_patient_uuid_generation.py -q: 35 passed,
+        0 failed, 0 skipped, 1 warning, 37.79s; later temporary-directory cleanup warnings. lx-data-models
+        39f0386b2088e7be51f857b4b033e2bbbaf67993 with preexisting pyproject.toml change. PYTEST_DISABLE_PLUGIN_AUTOLOAD=1
+        .venv/bin/pytest -c scripts/reidentification/pytest.ini --confcutdir=scripts/reidentification
+        scripts/reidentification/test_harness.py -q: 18 passed, 0 failed, 0 skipped, 1.34s. Ruff passed;
+        structure lint 67 manifests; tracker validate 38 definitions.'
+    - kind: document
+      reference: patient_matching_lean/Site_scoped_linkage_publication(2)(1).docx
+    - kind: command
+      reference: '2026-10-26 DOCX validation: ZIP CRC/XML pass; all non-document package parts unchanged;
+        equations and complete formal block unchanged; historical Table S4 unchanged; exactly one numerical
+        table and duplicate numerical image removed. LibreOffice PDF export: 20 pages; storage comparison,
+        legal interpretation and complete numerical table visually reviewed. Structure lint: 67 manifests.
+        No application code changes or new test run; R13 identifies the preceding 35+18 test evidence.'
+    note: 'Manuskript am 23.10.2026 an deterministische lokale UUIDv8 angepasst. Deutsche Versorgungs-/Forschungsgrundlagen
+      und empfaengerbezogene Identifizierbarkeit nach C-413/23 P getrennt argumentiert. Betreiberangaben
+      zu Deutschland, Doppelnutzung und Verantwortlichenvereinbarung als Angaben gekennzeichnet; keine
+      Vertrags-, Deployment- oder Rechtsgrundlagenpruefung behauptet. Historische Experimente und Lean-Listing
+      erhalten; keine neue formale Verifikation oder Erledigung der weiteren Evidenzkriterien.
+
+      2026-10-26: Beide vom Auftraggeber bestätigten Komplettschlüsselverlust-Szenarien gegen den aktuellen
+      DOCX-Vertrag bewertet. Zufällige lokale Studien-/Fallzuordnung nur als Alternative getestet; keine
+      Änderung produktiver Kennungen, keine Migration, Deployment- oder Rechtsfreigabe. Vollständiger
+      Quelldatenzugriff bleibt identifizierend. Installiertes lx_dtypes blockiert Django-Start wegen fehlendem
+      ReportExtractionReceipt; kompatibler lokaler Quellcheckout separat geprüft.
+
+      2026-10-26: Aktuelles DOCX auf Wunsch direkt überarbeitet. Genehmigtes Studienprotokoll als vom
+      Studienteam gegebene institutionelle Prämisse; positive Argumentation zur rechtmäßigen Registerverarbeitung
+      mit lokaler Pseudonymisierung und empfängerbezogener Nichtidentifizierbarkeit. Tabelle 2 qualitativ,
+      Tabelle S4 einzige Messzahlentabelle; doppelte Bildtabelle entfernt. Bestehende Messwerte und formaler
+      Anhang erhalten.'
+    assessed_by: codex-endoreg-openbao-20261026
+    assessed_at: '2026-10-26T15:32:01.465893Z'
+- id: source_local_patient_matching
+  category: security
+  title: Historischen zentralen Hashabgleich sperren
+  acceptance:
+  - Patienten- und Untersuchungshashes bleiben lokal; die frühere zentrale Hashzuordnung ist durch local_identity_hash_boundary
+    außer Kraft gesetzt.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_source_patient_matching.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: document
+      reference: docs/source_patient_matching.md
+    - kind: test
+      reference: tests/services/test_source_patient_matching.py
+    - kind: command
+      reference: '2026-10-19: .devenv/state/venv/bin/pytest tests/services/test_source_patient_matching.py
+        tests/services/test_hub_transfer_unit_decisions.py -q --tb=short: 42 passed, 1 plugin warning,
+        37.41s; existing pytest temporary-directory cleanup warnings. Focused Pyright 0 errors/0 warnings;
+        Ruff passed; 65 structure maps and 37 feature definitions valid. Full Pyright: 17 unrelated errors
+        in endoreg_db/identity_resolve/generate_public_key.py, 24 warnings.'
+    - kind: test
+      reference: tests/services/test_hub_record_identity.py
+    - kind: command
+      reference: '2026-11-02: .devenv/state/venv/bin/pyright endoreg_db/services/hub/ tests/services/test_hub_record_identity.py:
+        0 errors/0 warnings; pytest tests/services/test_hub_record_identity.py tests/services/test_hub_transfer_envelope.py
+        tests/services/test_hub_transfer_unit_decisions.py tests/services/test_source_patient_matching.py
+        tests/services/test_study_hub_transfer.py tests/services/test_transfer_identity_boundary.py tests/services/test_transfer_job_contract.py
+        tests/services/test_transfer_registration_postgresql.py tests/services/test_video_import_transfer_identity.py
+        tests/views/media/test_hub_transfer_endpoints.py -q (PostgreSQL): 213 passed, 43 subtests passed.'
+    note: 'Receiver-service matching verified with DJANGO_SALT=None and forbidden salt resolution. Existing
+      production behavior reused; no deployment changes or claim that global hub startup can omit all
+      identity configuration. Authenticated center remains the trust boundary; no per-machine isolation
+      or cross-source matching introduced. 2026-11-02 audit handoff 2: hub record namespace hashes and
+      identity conflict decisions extracted unchanged (messages, order, lazy previous-patient resolution)
+      into services/hub/hub_record_identity.py; _upsert_sensitive_meta keeps transaction, center/meta
+      row locks and row creation (Radon D28 -> B7, helpers max C11). PostgreSQL race regressions fail
+      when the center lock is removed. Security review of the identity extraction still pending.'
+    assessed_by: claude-audit-followup-hub
+    assessed_at: '2026-11-02T15:08:18.331983Z'
 - id: documented_transfer_scope
   category: requirements
   title: Sender roles, transfer scope, approval semantics, and phase boundaries are explicit
@@ -55,8 +514,8 @@ definition_of_done:
     note: 'Sender and receiver contracts were jointly checked against PR #312 and the current ownership
       boundaries. Only anonymized processed video and report artifacts are permitted; marking, queueing,
       registration, upload, verified apply, and cleanup remain separate states. The current phase 1 fails
-      closed on HTTPS/mTLS and protected local storage; standalone blob transfers remain blocked until the
-      envelope-encryption phase.'
+      closed on HTTPS/mTLS and protected local storage; standalone blob transfers remain blocked until
+      the envelope-encryption phase.'
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T10:55:25.563881Z'
 - id: operator_verification_and_attribution
@@ -87,8 +546,7 @@ definition_of_done:
     - kind: code
       reference: /dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue
     - kind: command
-      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
-        13.66s, 2026-08-03)
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in 13.66s, 2026-08-03)
     - kind: command
       reference: devenv shell -- pyright lx_annotate/views/hub_export.py lx_annotate/hub/hub_export_jobs.py
         lx_annotate/hub/hub_export_contracts.py tests/hub/test_hub_export_api.py tests/hub/test_hub_export_end_to_end.py
@@ -97,9 +555,9 @@ definition_of_done:
       reference: 'frontend: npm run test:unit -- --run HubExportOverviewComponent.test.ts hubExportStore.spec.ts
         (10 passed) and npm run type-check:component-tests (passed, 2026-08-03)'
     note: All operator endpoints enforce session authentication independently of debug mode. Marking ignores
-      client-supplied actor data, persists the authenticated user and timestamp, and exposes both in the API
-      and UI. Bulk marking and unmarking are atomic; unmarking remains limited to the MARKED state. Tests
-      cover two users, anonymous access, actor spoofing, rollback, and state boundaries.
+      client-supplied actor data, persists the authenticated user and timestamp, and exposes both in the
+      API and UI. Bulk marking and unmarking are atomic; unmarking remains limited to the MARKED state.
+      Tests cover two users, anonymous access, actor spoofing, rollback, and state boundaries.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T11:08:15.424252Z'
 - id: authenticated_fail_closed_transport
@@ -129,11 +587,10 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/views/media/test_hub_transfer_endpoints.py
         tests/services/test_transfer_job_contract.py -q (51 passed)
     - kind: test
-      reference: '/dev/lx-annotate/tests/hub/test_hub_export_mtls_integration.py (real TLS
-        handshake: valid mTLS succeeds; expired client and wrong CA disclose no HTTP body)'
+      reference: '/dev/lx-annotate/tests/hub/test_hub_export_mtls_integration.py (real TLS handshake:
+        valid mTLS succeeds; expired client and wrong CA disclose no HTTP body)'
     - kind: command
-      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (75 passed in
-        8.97s, 2026-08-03)
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (75 passed in 8.97s, 2026-08-03)
     - kind: command
       reference: devenv shell -- pyright tests/hub/test_hub_export_mtls_integration.py lx_annotate/hub/hub_export_worker.py
         (0 errors, 2026-08-03)
@@ -151,24 +608,23 @@ definition_of_done:
     - kind: code
       reference: //luxnix/modules/nixos/services/lx-annotate-local/config.nix
     - kind: command
-      reference: '//luxnix: focused generated Nix config pytest passed (1 passed in 23.82s);
-        nix build .#checks.x86_64-linux.nixtests passed (2026-08-03)'
+      reference: '//luxnix: focused generated Nix config pytest passed (1 passed in 23.82s); nix build
+        .#checks.x86_64-linux.nixtests passed (2026-08-03)'
     - kind: code
       reference: //luxnix/ansible/inventory/host_vars/gc-02.yml
     - kind: code
       reference: //luxnix/ansible/inventory/host_vars/gs-02.yml
     - kind: command
-      reference: '//luxnix: inventory autoconf render for gc-02 and gs-02 plus nix-instantiate
-        --parse passed; isolated NixOS module evaluation confirmed outbound=true, AppRole/Hub-PKI, worker
-        certificate/provisioning requirements, Vault Raft 172.16.255.22:8200, CA path, backup and tun0
-        port 8200 (2026-08-03)'
+      reference: '//luxnix: inventory autoconf render for gc-02 and gs-02 plus nix-instantiate --parse
+        passed; isolated NixOS module evaluation confirmed outbound=true, AppRole/Hub-PKI, worker certificate/provisioning
+        requirements, Vault Raft 172.16.255.22:8200, CA path, backup and tun0 port 8200 (2026-08-03)'
     note: Fail-closed transport is demonstrated with real Nginx, the generated LuxNix configuration, and
-      the declarative gc-02-to-gs-02 inventory source. Requests without a valid client identity, or with an
-      incorrect or unauthorized identity, do not reach the upstream; spoofed proxy headers are overwritten.
-      Vault AppRole, short-lived client PKI, a separate node secret, hub CA publication, Raft, the VPN port,
-      and bilateral NetworkNode provisioning evaluate with complete worker dependencies. Staged CA rotation
-      validates the overlap window and bounded retirement of old workers. Neither the master key nor shared_secret
-      is used for payload encryption.
+      the declarative gc-02-to-gs-02 inventory source. Requests without a valid client identity, or with
+      an incorrect or unauthorized identity, do not reach the upstream; spoofed proxy headers are overwritten.
+      Vault AppRole, short-lived client PKI, a separate node secret, hub CA publication, Raft, the VPN
+      port, and bilateral NetworkNode provisioning evaluate with complete worker dependencies. Staged
+      CA rotation validates the overlap window and bounded retirement of old workers. Neither the master
+      key nor shared_secret is used for payload encryption.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T12:21:16.553872Z'
 - id: transfer_integrity_and_replay
@@ -187,6 +643,13 @@ definition_of_done:
     fail as INCONSISTENT rather than creating or mutating unrelated resources.
   - Completion and cleanup eligibility require a receiver acknowledgement tied to the same transfer, artifact
     hash, and verified apply outcome.
+  - Repeated operator retries reuse the queued, active or completed job without another dispatch; workers
+    and recovery serialize execution of the same transfer and retain its ciphertext across transient failures.
+  - Videoexport überträgt eine streng typisierte Frame-Herkunft mit Bindung an den anonymisierten Inhalts-Hash;
+    Hub-Import bewahrt diese Bindung und akzeptiert keine zusätzlichen Identitäts-, Pfad- oder Schlüsselfelder.
+  - Elektrische Daten unabhängiger Geräte werden nur über explizite, aufnahmesitzungsgebundene Synchronisationsanker
+    mit rationalen Zeitbasen und Fehlertoleranz zugeordnet. Fehlende Synchronisation, Extrapolation und
+    mehrdeutige Zuordnung schlagen fehl; Präsentationszeitstempel allein begründen keine gemeinsame Uhr.
   required: true
   verification:
     kind: manual
@@ -213,8 +676,33 @@ definition_of_done:
     - kind: command
       reference: 'Finale gemeinsame Transfer-/Training-Lane: 76 passed, 3 subtests passed, 2 warnings;
         fokussierter Pyright 0 Fehler'
-    assessed_by: codex-state-machine-tracker
-    assessed_at: '2026-09-02T15:15:19.669508Z'
+    - kind: command
+      reference: '2026-10-08: Endoreg-Pyright 0 Fehler/9 Warnungen; fokussierter Sender-/Shared-Contract-Pyright
+        0 Fehler. Backend-Lane 217 passed und 35 subtests passed. lx-annotate: tests/hub/test_hub_export_payloads.py,
+        test_hub_export_end_to_end.py und test_video_frame_provenance_export.py: 14 passed in 47.86s,
+        reale Videos und Encoderbelege; verschlüsselter Sender-/Empfänger-Roundtrip sowie Export-Lease
+        gegen gleichzeitigen Generationenwechsel.'
+    - kind: test
+      reference: 'tests/services/test_hub_video_provenance.py; tests/services/test_frame_provenance.py:
+        Sitzungs-/Uhr-/Einheitenbindung, Mehrstufen-Abstammung, Synchronisationspersistenz, Extrapolation,
+        Mehrdeutigkeit, Fehlertoleranz und Datenschutzfelder.'
+    - kind: code
+      reference: endoreg_db/services/hub/video_provenance.py; lx-dtypes:lx_dtypes/models/contracts/video_provenance.py;
+        lx-annotate:lx_annotate/hub/hub_export_payloads.py
+    - kind: test
+      reference: '2026-11-17: Receiver and owned-deletion suite 79 passed, 44 subtests. Sender worker/recovery
+        34 passed within an 81-pass run; final sender API/cleanup rerun 48 passed. Repeated retry requests
+        keep one job and dispatch; shared execution lock excludes duplicate delivery and reconciliation;
+        newly queued work is not stale from earlier attempts. Full endoreg Pyright 0 errors, 2 existing
+        warnings; sender integration Pyright 0 errors. No deployment or production approval.'
+    - kind: test
+      reference: '2026-11-17: Rust hub_transfer_state_v1 owns hub acknowledgement/failure decisions and
+        retry classification. Shared failure enum and local/receiver status mirrors fail closed on native
+        vocabulary drift. Native verification: 46 Rust and 80 Python parity/adapter tests; sender 98 tests
+        including two real PostgreSQL thread races. Completed receipt and status survive delayed failures.
+        Packaged native wheel and generated stubs verified; no deployment.'
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T09:33:22.491330Z'
 - id: envelope_encrypted_media_transfer
   category: security
   title: Standalone processed media uses a replay-safe recipient envelope
@@ -307,20 +795,19 @@ definition_of_done:
         tests/services/test_transfer_job_contract.py tests/views/media/test_hub_transfer_endpoints.py
         -q (87 passed in 41.16s, 2026-08-17; includes 29 granular receiver service unit tests)
     - kind: command
-      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (65 passed in
-        11.92s, 2026-08-03)
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (65 passed in 11.92s, 2026-08-03)
     - kind: command
-      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_middleware.py -q
-        (7 passed in 4.43s, 2026-08-03; uncommitted reviewed middleware change)
+      reference: /endoreg-db/.devenv/state/venv/bin/pytest tests/authz/test_middleware.py -q (7 passed
+        in 4.43s, 2026-08-03; uncommitted reviewed middleware change)
     - kind: review
       reference: 'GitHub PR #312 review thread r3703197736 and merge-tree review against prototype at
         65bb109f: direct merge rejected because the stale branch conflicts across more than 60 files;
         current contract and tests require NetworkNode.owning_center scope independent of Django session
         scope.'
     - kind: command
-      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in
-        13.66s, 2026-08-03; includes authenticated operator attribution, atomic bulk rollback, state-dependent
-        unmarking, mTLS, replay, recovery and acknowledgements)
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (72 passed in 13.66s, 2026-08-03;
+        includes authenticated operator attribution, atomic bulk rollback, state-dependent unmarking,
+        mTLS, replay, recovery and acknowledgements)
     - kind: command
       reference: 'frontend: HubExportOverviewComponent and hubExportStore focused suite (10 passed) plus
         component-test vue-tsc (passed, 2026-08-03)'
@@ -330,12 +817,19 @@ definition_of_done:
         includes unsafe raw report text and unbounded metadata. Direct merge remains rejected; current
         lx-annotate sender emits only schema-validated anonymized_text and current receiver rejects raw
         text.'
-    note: 'Receiver, sender, operator, privacy, and UI contracts pass reproducibly. PR #312 intentionally
-      remains unintegrated: it cannot be merged, violates current sender ownership, and contains an unsafe
-      raw-text path. The current lx-annotate sender transfers only strictly validated anonymized payloads;
-      the receiver binds center scope exclusively to NetworkNode.owning_center.'
-    assessed_by: codex-hub-transfer-ready
-    assessed_at: '2026-08-03T11:08:35.315157Z'
+    - kind: document
+      reference: feature-tracking/reports/postgresql_test_regressions.yml
+    - kind: command
+      reference: '2026-10-09: tests/services/test_transfer_job_contract.py im fokussierten pytest-Lauf
+        mit -n 2 --dist=loadscope: alle Transfer-Vertragstests und 3 Subtests bestanden. Gesamtlauf 237
+        passed, 1 separat behobener Routenfehler, 5 warnings in 462.23s. Vollständiger Pyright 0 errors/10
+        warnings; Ruff bestanden.'
+    note: 'Bisherige Sender-, Receiver-, Autorisierungs- und Consumer-Nachweise bleiben erhalten. Zusätzlich
+      parallele Ausführung der Transfer-Vertragstests geprüft: Subtest-Berichtsparameter nutzt den Stringwert
+      statt einer durch execnet nicht serialisierbaren Enum-Instanz; alle Zustands- und Fencing-Assertions
+      bleiben erhalten. Kein neuer Integrations- oder Deploymentnachweis für andere Repositories.'
+    assessed_by: codex-sidecar-20261008-a
+    assessed_at: '2026-10-09T08:10:08.732273Z'
 - id: recovery_cleanup_and_capacity
   category: operations
   title: Recovery, retry exhaustion, cleanup, and capacity handling are production-ready
@@ -344,6 +838,11 @@ definition_of_done:
     loudly without unsafe automatic recovery.
   - Local processed media is retained until verified hub apply; cleanup uses typed atomic filesystem wrappers
     and emits structured JSON logs.
+  - After a completed retained video transfer, an authorized center-scoped operator can explicitly remove
+    all locally owned video files, including raw, processed, playback, frames and recorded upload copies.
+    The hub must freshly verify its current received master against the original receipt before deletion.
+    Retain local transfer and annotation records; active work, shared paths, missing proof and changed
+    generations block deletion. Durable cleanup intent permits idempotent recovery after partial deletion.
   - Operators can handle storage pressure, hub outage, certificate rotation, worker restart, and database/media
     restore without losing transfer provenance.
   - With Hub transfer disabled or its Vault-backed provisioning unavailable, lx-annotate remains startable;
@@ -364,19 +863,17 @@ definition_of_done:
       reference: /dev/lx-annotate/tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_recovery_command.py;
         tests/hub/test_hub_export_cleanup_policy.py
     - kind: command
-      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (73 passed in
-        10.20s, 2026-08-03)
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (73 passed in 10.20s, 2026-08-03)
     - kind: runbook
-      reference: docs/hub_ingest_operations.md sections Cleanup and Quarantine, Monitoring/Capacity,
-        Backup/Restore, and Incident Workflow
+      reference: docs/hub_ingest_operations.md sections Cleanup and Quarantine, Monitoring/Capacity, Backup/Restore,
+        and Incident Workflow
     - kind: code
-      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (storage/preflight failures
-        become terminal before disclosure or stuck in-flight state)
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_worker.py (storage/preflight failures become
+        terminal before disclosure or stuck in-flight state)
     - kind: test
       reference: /dev/lx-annotate/tests/hub/test_hub_export_worker.py::HubExportWorkerTests::test_run_outbound_transfer_job_records_unreadable_processed_media
     - kind: command
-      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in
-        10.33s, 2026-08-03)
+      reference: /dev/lx-annotate/.devenv/state/venv/bin/pytest tests/hub -q (74 passed in 10.33s, 2026-08-03)
     - kind: command
       reference: devenv shell -- pyright lx_annotate/hub/hub_export_worker.py lx_annotate/hub/hub_export_reconciliation.py
         tests/hub/test_hub_export_worker.py (0 errors, 2026-08-03)
@@ -385,22 +882,22 @@ definition_of_done:
     - kind: test
       reference: //luxnix/tests/lx-annotate/test_lx_annotate_production_readiness_contract.py::test_hub_backup_publishes_database_and_media_as_one_restore_point
     - kind: command
-      reference: '//luxnix: focused Pyright 0 errors/0 warnings; 4 focused Hub/backup tests
-        passed in 22.22s; nix build .#checks.x86_64-linux.nixtests --no-link passed (2026-08-03)'
+      reference: '//luxnix: focused Pyright 0 errors/0 warnings; 4 focused Hub/backup tests passed in
+        22.22s; nix build .#checks.x86_64-linux.nixtests --no-link passed (2026-08-03)'
     - kind: runbook
       reference: docs/hub_ingest_operations.md section Backup and Restore (coupled LuxNix PostgreSQL/media
         restore point and operator validation)
     - kind: test
-      reference: '//luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM:
-        root-protected PostgreSQL dump via systemd LoadCredential, coupled media publication, checksum
-        validation, corrupt next dump rejected without replacing latest)'
+      reference: '//luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM: root-protected
+        PostgreSQL dump via systemd LoadCredential, coupled media publication, checksum validation, corrupt
+        next dump rejected without replacing latest)'
     - kind: command
       reference: nix build /nix/store/8fz5h24d857w3q3m2p7kyb2m9b788fv3-nixtest-vm-systemd-credential-couples-database-and-media-restore-point.drv^*
         --no-link (passed, real QEMU/NixOS systemd VM, 2026-08-03)
     - kind: code
       reference: //luxnix/modules/nixos/services/lx-annotate-local/options.nix (typed hub.backup.minimumFreeBytes);
-        //luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix (pre/post staging
-        reserve gates)
+        //luxnix/modules/nixos/services/lx-annotate-local/scripts/hub-backup.nix (pre/post staging reserve
+        gates)
     - kind: test
       reference: //luxnix/tests/nixtest/lx_annotate_hub_backup_vm_test.nix (fresh NixOS VM additionally
         rejects impossible free-space reserve before staging, preserves latest, and records classified
@@ -410,21 +907,44 @@ definition_of_done:
         --no-link (passed with systemd credential, corrupt dump, checksum and capacity-reserve scenarios,
         2026-08-03)
     - kind: command
-      reference: '//luxnix focused Pyright: 0 errors/0 warnings; focused Hub/backup pytest:
-        4 passed in 54.80s (2026-08-03)'
+      reference: '//luxnix focused Pyright: 0 errors/0 warnings; focused Hub/backup pytest: 4 passed in
+        54.80s (2026-08-03)'
     - kind: runbook
-      reference: docs/hub_ingest_operations.md sections Monitoring, Capacity and Alerting, and Backup and
-        Restore (typed LuxNix reserve and operator commands)
-    note: Automated verification confirms idempotent reconciliation, restart of lost queued and in-flight
-      jobs, visible retry exhaustion, fail-closed acknowledgement integrity, and cleanup eligibility only
-      after verified applied status. LuxNix atomically couples the PostgreSQL dump and protected media snapshot
-      through a private systemd credential. A fresh NixOS virtual machine confirms the authorization boundary,
-      joint checksums and publication, rejection of corrupted dumps, and the configurable minimum free-space
-      reserve before and after staging; every failure leaves the latest valid restore point unchanged. Production-like
-      exercises for hub outage, certificate rotation, and complete joint database/media recovery by an operator
-      remain outstanding.
-    assessed_by: codex-review-data-transfer-mtls
-    assessed_at: '2026-08-03T14:22:21.794179Z'
+      reference: docs/hub_ingest_operations.md sections Monitoring, Capacity and Alerting, and Backup
+        and Restore (typed LuxNix reserve and operator commands)
+    - kind: code
+      reference: endoreg_db/services/media/export_ready.py (video_ready_for_export_committed, sent on
+        commit)
+    - kind: code
+      reference: /dev/lx-annotate/lx_annotate/hub/hub_export_staging.py; /dev/lx-annotate/lx_annotate/hub/hub_export_cleanup.py::run_scheduled_local_processed_video_reaper;
+        /dev/lx-annotate/lx_annotate/settings/settings_base.py (policy-gated beat entry)
+    - kind: test
+      reference: tests/views/media/test_video_ready_export.py; /dev/lx-annotate/tests/hub/test_hub_export_staging.py;
+        /dev/lx-annotate/tests/hub/test_hub_export_cleanup.py
+    - kind: command
+      reference: 'endoreg-db: Pyright 0 errors on changed files; test_video_ready_export.py 17 passed.
+        lx-annotate with endoreg-db source overlay and a verification-only settings_test profile shim:
+        staging+cleanup+celery routing 44 passed; tests/hub 276 passed with 5 failures (4 pre-existing
+        clinical-lifecycle version skew raised before the new signal, 1 since-fixed fixture); cleanup
+        re-run 10 passed. Ruff and structure lint passed in both repos.'
+    - kind: command
+      reference: 'lx-annotate with endoreg-db overlay: tests/hub plus celery routing and secretspec contract
+        303 passed; 4 failures are the pre-existing validated_without_verified_identity version skew in
+        test_hub_export_video_state_path.'
+    - kind: test
+      reference: /dev/lx-annotate/tests/hub/test_hub_export_cleanup.py::HubExportCleanupTests::test_central_hub_never_reaps_its_processed_master
+    - kind: command
+      reference: 'lx-annotate cleanup, staging and celery routing: 44 passed; Pyright shows only the 5
+        pre-existing errors; Ruff passed.'
+    - kind: test
+      reference: '2026-11-17: Explicit retained-video cleanup verifies live hub bytes and the persisted
+        envelope receipt, retains clinical/transfer records and resumes partial deletion. Final import/playback/owned-cleanup
+        suite: 120 passed; sender API/cleanup: 48 passed; Hub Export component: 25 passed. Tested raw/processed
+        files, both playback trees, frame cache, upload copies, transcode staging, shared ownership, active
+        leases/work, changed generations, wrong center and missing hub proof. Migration 0118 and sender
+        migration ordering required. No production files removed.'
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T08:45:27.351990Z'
 - id: transfer_observability
   category: observability
   title: Operators can correlate user intent, sender work, receiver decisions, and cleanup
@@ -447,14 +967,13 @@ definition_of_done:
       reference: /dev/lx-annotate/lx_annotate/hub/hub_export_audit.py; /dev/lx-annotate/lx_annotate/hub/hub_export_health.py;
         /dev/lx-annotate/lx_annotate/management/commands/check_hub_export_health.py
     - kind: code
-      reference: /dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue;
-        //luxnix/modules/nixos/services/lx-annotate-local/config.nix
+      reference: /dev/lx-annotate/frontend/src/components/Export/HubExportOverviewComponent.vue; //luxnix/modules/nixos/services/lx-annotate-local/config.nix
     - kind: test
       reference: /dev/lx-annotate/tests/hub/test_hub_export_health.py; tests/hub/test_hub_export_audit.py;
         tests/hub/test_hub_export_reconciliation.py; tests/hub/test_hub_export_worker.py
     - kind: command
-      reference: /dev/lx-annotate/.venv/bin/pytest tests/hub -q (87 passed in 15.13s, 2026-08-03);
-        focused final audit/health/reconciliation verification (11 passed in 4.61s)
+      reference: /dev/lx-annotate/.venv/bin/pytest tests/hub -q (87 passed in 15.13s, 2026-08-03); focused
+        final audit/health/reconciliation verification (11 passed in 4.61s)
     - kind: command
       reference: devenv shell -- pyright (0 errors, 2026-08-03); frontend focused component/store suite
         (10 passed) and component-test type check passed
@@ -464,13 +983,13 @@ definition_of_done:
     - kind: runbook
       reference: docs/hub_ingest_operations.md section Monitoring, Capacity and Alerting
     note: Sender and receiver events correlate the operator, local job, transfer key, pseudonymous resource,
-      center, source and target nodes, remote ID, attempt, acknowledgement, and cleanup. The persisted failure
-      class distinguishes configuration_rejection, authorization_denial, integrity_inconsistency, and transient_retry;
-      HTTP 401/403 ends terminally without retry. The UI shows classes and active, completed, and attention-required
-      transfers. The compact health check distinguishes terminal classes, retry exhaustion, and unclassified
-      errors, contains no error text, secrets, raw media, or paths, and produces a local failed unit/journal
-      alarm state through the persistent LuxNix systemd timer. Successful verified apply and completion remain
-      separately visible.
+      center, source and target nodes, remote ID, attempt, acknowledgement, and cleanup. The persisted
+      failure class distinguishes configuration_rejection, authorization_denial, integrity_inconsistency,
+      and transient_retry; HTTP 401/403 ends terminally without retry. The UI shows classes and active,
+      completed, and attention-required transfers. The compact health check distinguishes terminal classes,
+      retry exhaustion, and unclassified errors, contains no error text, secrets, raw media, or paths,
+      and produces a local failed unit/journal alarm state through the persistent LuxNix systemd timer.
+      Successful verified apply and completion remain separately visible.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T12:36:05.874456Z'
 - id: operator_runbook
@@ -507,15 +1026,15 @@ definition_of_done:
         subsequently checked by codex-hub-transfer-ready against lx_dtypes, the sender payload validator,
         and the receiver serializer.
     - kind: review
-      reference: 'Independent review by codex-review-data-transfer-mtls: the real Nginx test of staged CA
-        rotation, including bounded retirement of old workers, passed again (1 passed in 1.45s, 2026-08-03);
+      reference: 'Independent review by codex-review-data-transfer-mtls: the real Nginx test of staged
+        CA rotation, including bounded retirement of old workers, passed again (1 passed in 1.45s, 2026-08-03);
         an additional 111 relevant receiver-boundary tests passed.'
     note: The German/English contract and porting guide documents wire contract 3.0; the hub operations
       runbook covers proxying, mTLS rotation, cleanup, classified monitoring and alerting, capacity, restore,
       and incidents. Real Nginx CA rotation, including bounded retirement of old workers, was independently
-      verified again; sender, receiver, UI, health, and deployment contracts pass automated checks. The complete
-      execution of the deployment, incident, and restore runbook by an operator in a fresh production-like
-      environment, as required by the criterion, remains outstanding; configuration evaluation does not replace
-      this exercise.
+      verified again; sender, receiver, UI, health, and deployment contracts pass automated checks. The
+      complete execution of the deployment, incident, and restore runbook by an operator in a fresh production-like
+      environment, as required by the criterion, remains outstanding; configuration evaluation does not
+      replace this exercise.
     assessed_by: codex-hub-transfer-ready
     assessed_at: '2026-08-03T12:37:29.998864Z'

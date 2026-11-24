@@ -13,6 +13,10 @@ class Waste(models.Model):
     objects: ClassVar[WasteManager] = WasteManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     # emission_factor = models.ForeignKey("EmissionFactor", on_delete=models.SET_NULL, null=True)
 
     def natural_key(self) -> tuple[str]:

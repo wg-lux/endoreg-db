@@ -218,7 +218,7 @@ def video_normalization_evidence(
 def raw_cleanup_blockers(video: "VideoFile") -> list[str]:
     """Return every unmet fail-closed prerequisite for destructive raw cleanup."""
     blockers: list[str] = []
-    from endoreg_db.services.media_operation_gate import (
+    from endoreg_db.services.media.operation_gate import (
         video_has_active_media_operation_leases,
     )
 
@@ -248,7 +248,7 @@ def raw_cleanup_blockers(video: "VideoFile") -> list[str]:
         blockers.append("clinical_frame_quality_profile_mismatch")
 
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-    from endoreg_db.services.hls_media import get_ready_hls_artifact
+    from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
 
     try:
         processed_hls = get_ready_hls_artifact(video=video, artifact_kind="processed")

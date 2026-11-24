@@ -4,16 +4,13 @@ from endoreg_db.utils.storage.files import canonical_media_name
 
 import json
 import logging
-import subprocess
-import tempfile
 import time
 import uuid
 from collections.abc import Mapping
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 
-import cv2
 from django.conf import settings
 from django.db import transaction
 from django.db.models.fields.files import FieldFile
@@ -23,7 +20,10 @@ from endoreg_db.schemas.video_jobs import (
     VIDEO_ANONYMIZATION_CORRECTION_JOB_KIND,
     VideoAnonymizationCorrectionJobConfig,
 )
-from endoreg_db.services.hls_media import hls_result_is_ready, materialize_video_hls
+from endoreg_db.services.streaming.hls_media import (
+    hls_result_is_ready,
+    materialize_video_hls,
+)
 from endoreg_db.services.jobs.heavy_jobs import (
     HeavyJobKind,
     ensure_secure_transport_for_job_kind,
@@ -32,8 +32,10 @@ from endoreg_db.services.jobs.heavy_jobs import (
 from endoreg_db.services.jobs.stale_recovery import (
     recover_stale_video_processing_history,
 )
-from endoreg_db.services.media_operation_gate import defer_if_video_media_busy
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
 from endoreg_db.utils.file_operations import (
     atomic_move_file,
@@ -42,14 +44,8 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.storage import ensure_local_file, save_local_file
 from endoreg_db.utils.hashs import get_file_hash
-from endoreg_db.utils import ffmpeg_wrapper
 
 logger = logging.getLogger(__name__)
-
-_video_writer_fourcc = cast(
-    Callable[[str, str, str, str], int],
-    getattr(cv2, "VideoWriter_fourcc"),
-)
 
 
 @dataclass(frozen=True)
@@ -65,7 +61,9 @@ class VideoAnonymizationCorrectionDispatchResult:
 
 
 try:
-    from lx_anonymizer import FrameCleaner as _FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
+    from endoreg_db.services.video_storage.provenance_cleaner import (
+        create_frame_cleaner as _FrameCleaner,
+    )
 
     FrameCleaner = cast(Any, _FrameCleaner)
 except ImportError as exc:  # pragma: no cover - dependency-light test environments
@@ -78,12 +76,6 @@ except ImportError as exc:  # pragma: no cover - dependency-light test environme
             ) from _FRAME_CLEANER_IMPORT_ERROR
 
     FrameCleaner = cast(Any, _UnavailableFrameCleaner)
-
-
-def _coerce_frame_number(value: object) -> int:
-    if isinstance(value, int | float | str):
-        return int(value)
-    raise ValueError(f"Invalid frame number: {value!r}")
 
 
 def _video_hash(video: VideoFile) -> str:
@@ -140,105 +132,6 @@ def update_processed_file(video: VideoFile, output_path: Path) -> str:
     return stored_name
 
 
-def mask_video_with_detector_compat(
-    frame_cleaner: Any, input_video: Path, output_video: Path
-) -> dict[str, object]:
-    capture = cv2.VideoCapture(str(input_video))
-    if not capture.isOpened():
-        raise RuntimeError("Could not decode input video for detector masking")
-    width = int(capture.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(capture.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = float(capture.get(cv2.CAP_PROP_FPS))
-    if width <= 0 or height <= 0 or fps <= 0:
-        capture.release()
-        raise RuntimeError("Input video has invalid dimensions or frame rate")
-
-    ensure_directory(output_video.parent)
-    frames_processed = 0
-    frames_with_redactions = 0
-    redactions_applied = 0
-    with tempfile.TemporaryDirectory(
-        prefix="endoreg-detector-mask-", dir=output_video.parent
-    ) as temp_dir:
-        video_only = Path(temp_dir) / "masked-video.mp4"
-        writer = cv2.VideoWriter(
-            str(video_only),
-            _video_writer_fourcc(*"mp4v"),
-            fps,
-            (width, height),
-        )
-        if not writer.isOpened():
-            capture.release()
-            raise RuntimeError("Could not initialize detector masking writer")
-        try:
-            while True:
-                ok, frame = capture.read()
-                if not ok:
-                    break
-                raw_regions = frame_cleaner._detect_phi_regions_for_frame(frame)
-                valid_regions = 0
-                for item in raw_regions:
-                    if not isinstance(item, Mapping):
-                        continue
-                    region_item = cast(Mapping[str, object], item)
-                    try:
-                        x1, y1, x2, y2 = (
-                            _coerce_frame_number(region_item[key])
-                            for key in ("x1", "y1", "x2", "y2")
-                        )
-                    except (KeyError, TypeError, ValueError):
-                        continue
-                    x1, x2 = max(0, x1), min(width, x2)
-                    y1, y2 = max(0, y1), min(height, y2)
-                    if x2 <= x1 or y2 <= y1:
-                        continue
-                    frame[y1:y2, x1:x2] = 0
-                    valid_regions += 1
-                writer.write(frame)
-                frames_processed += 1
-                if valid_regions:
-                    frames_with_redactions += 1
-                    redactions_applied += valid_regions
-        finally:
-            capture.release()
-            writer.release()
-
-        if frames_processed == 0 or not video_only.is_file():
-            raise RuntimeError("Detector masking produced no video frames")
-        ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
-        if ffmpeg_executable is None:
-            raise RuntimeError("ffmpeg executable is not available")
-        command = [
-            ffmpeg_executable,
-            "-nostdin",
-            "-y",
-            "-i",
-            str(video_only),
-            "-map",
-            "0:v:0",
-            "-c:v",
-            "copy",
-            "-an",
-            "-movflags",
-            "+faststart",
-            str(output_video),
-        ]
-        try:
-            subprocess.run(command, capture_output=True, text=True, check=True)
-        except subprocess.CalledProcessError as exc:
-            raise RuntimeError(
-                f"Could not finalize detector video: {exc.stderr}"
-            ) from exc
-
-    return {
-        "strategy": "detector_assisted",
-        "frames_processed": frames_processed,
-        "frames_with_redactions": frames_with_redactions,
-        "redactions_applied": redactions_applied,
-        "review_required": True,
-    }
-
-
 def apply_video_anonymization_strategy(
     *,
     frame_cleaner: Any,
@@ -258,9 +151,13 @@ def apply_video_anonymization_strategy(
         to_dict = getattr(summary, "to_dict", None)
         return cast(dict[str, object], to_dict() if callable(to_dict) else {})
 
-    if config.region.mode == "device":
+    if config.region.mask_profile is not None:
+        mask_config = config.region.mask_profile.mask.model_dump(mode="json")
+    elif config.region.mode == "device":
         frame_cleaner.mask_application.device_name = config.region.device_name
-        mask_config = frame_cleaner.mask_application._load_mask()
+        mask_config = frame_cleaner.mask_application._load_mask().model_dump(
+            mode="json"
+        )
     else:
         if config.region.roi is None:
             raise ValueError("region.roi is required for a custom processor region")
@@ -445,7 +342,7 @@ def run_video_anonymization_correction(
     except Exception as exc:
         safe_unlink_file(temp_output_path, missing_ok=True)
         history.mark_failure(str(exc))
-        logger.error(
+        logger.exception(
             "Anonymization correction job failed for video %s: %s",
             video_id,
             exc,

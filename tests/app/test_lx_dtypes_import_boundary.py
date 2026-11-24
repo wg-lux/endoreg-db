@@ -1,9 +1,11 @@
 import importlib
+import importlib.metadata
 import sys
 import tomllib
 from pathlib import Path
 
 import pytest
+from packaging.requirements import Requirement
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -17,6 +19,25 @@ def test_lx_dtypes_is_declared_package_dependency() -> None:
     assert any(
         dependency.lower().replace("_", "-").startswith("lx-dtypes")
         for dependency in dependencies
+    )
+
+
+def test_imported_lx_dtypes_matches_the_declared_distribution() -> None:
+    """A sibling checkout must not masquerade as the installed release."""
+    import lx_dtypes
+
+    pyproject = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+    requirement = next(
+        Requirement(dependency)
+        for dependency in pyproject["project"]["dependencies"]
+        if dependency.lower().replace("_", "-").startswith("lx-dtypes")
+    )
+    distribution = importlib.metadata.distribution("lx-dtypes")
+    assert distribution.version in requirement.specifier
+    assert lx_dtypes.__file__ is not None
+    assert (
+        Path(lx_dtypes.__file__).resolve()
+        == Path(str(distribution.locate_file("lx_dtypes/__init__.py"))).resolve()
     )
 
 

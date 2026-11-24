@@ -1,3 +1,4 @@
+from importlib import import_module
 # pyright: reportUnknownMemberType=false, reportUnknownArgumentType=false
 
 from types import SimpleNamespace
@@ -22,10 +23,11 @@ from endoreg_db.models import (
     VideoFile,
     VideoPredictionMeta,
 )
-from endoreg_db.services.segment_annotations import (
+from endoreg_db.services.annotations.segment_annotations import (
     ensure_prediction_segment_annotations,
 )
-from endoreg_db.services import video_temporal_inference as temporal_jobs
+
+temporal_jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from lx_dtypes.models.contracts.video_temporal_inference import (
     TemporalInferenceDispatchResult,
 )
@@ -44,6 +46,8 @@ class _TemporalPredictionKwargs(TypedDict):
 
 class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
     def setUp(self) -> None:
+        from tests.helpers.video_timeline import constant_rate_video_metadata
+
         self.factory = APIRequestFactory()
         self.random_task_view = FrameAnnotationRandomTaskView.as_view()
         self.bulk_upsert_view = FrameAnnotationBulkUpsertView.as_view()
@@ -56,24 +60,22 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
             processed_file="temporal_frame_video.mp4",
             fps=25.0,
             frame_count=30,
+            meta=constant_rate_video_metadata(fps_num=25, frame_count=30),
         )
-        self.frames = [
-            Frame.objects.create(
-                video=self.video,
-                frame_number=frame_number,
-                relative_path=f"frame_{frame_number:07d}.jpg",
-                timestamp=timestamp,
-                is_extracted=False,
-            )
-            for frame_number, timestamp in ((10, 0.4), (11, 0.44), (12, 0.48))
-        ]
-        Frame.objects.create(
-            video=self.video,
-            frame_number=13,
-            relative_path="frame_0000013.jpg",
-            timestamp=0.52,
-            is_extracted=False,
+        all_frames = Frame.objects.bulk_create(
+            [
+                Frame(
+                    video=self.video,
+                    frame_number=frame_number,
+                    relative_path=f"frame_{frame_number:07d}.jpg",
+                    presentation_timestamp=frame_number,
+                    timestamp=frame_number / 25,
+                    is_extracted=False,
+                )
+                for frame_number in range(30)
+            ]
         )
+        self.frames = all_frames[10:13]
         self.manual_source = InformationSource.objects.create(name="manual_annotation")
         self.predicted_label = Label.objects.create(name="temporal-polyp")
         self.other_label = Label.objects.create(name="temporal-outside")
@@ -151,7 +153,7 @@ class FrameAnnotationTemporalInferenceWorkflowIntegrationTest(TestCase):
                 ),
             ),
         ):
-            success = temporal_jobs._run_video_temporal_inference(
+            success = temporal_jobs.run_video_temporal_inference(
                 self.video.pk,
                 model_meta_id=self.model_meta.pk,
                 delete_frames_after=False,

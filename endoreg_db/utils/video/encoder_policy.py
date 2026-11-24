@@ -1,7 +1,7 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 from .executable_discovery import _resolve_ffmpeg_executable
 
@@ -68,7 +68,7 @@ def _detect_nvenc_support() -> bool:
         return False
 
 
-def _get_preferred_encoder() -> Dict[str, str]:
+def _get_preferred_encoder() -> dict[str, str]:
     """
     Get the preferred video encoder configuration based on available hardware.
 
@@ -107,7 +107,7 @@ def _get_preferred_encoder() -> Dict[str, str]:
     return _preferred_encoder
 
 
-def _get_encoder_config(encoder_type: str) -> Dict[str, str]:
+def _get_encoder_config(encoder_type: str) -> dict[str, str]:
     if encoder_type == "nvenc":
         return {
             "name": "h264_nvenc",
@@ -134,7 +134,7 @@ def _build_encoder_args(
     fallback: bool = False,
     custom_crf: Optional[int] = None,
     encoder_type_override: Optional[str] = None,
-) -> Tuple[List[str], str]:
+) -> tuple[list[str], str]:
     """
     Build encoder command arguments based on available hardware and quality requirements.
 

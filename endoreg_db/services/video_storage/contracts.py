@@ -26,6 +26,22 @@ class VideoStorageNormalizationError(RuntimeError):
     """Raised when an output cannot satisfy the storage or timeline contract."""
 
 
+class MeasuredAverageFrameRateDriftError(VideoStorageNormalizationError):
+    """Container average rates differ and require decoded timestamp proof."""
+
+
+class VideoBitrateExceeded(VideoStorageNormalizationError):
+    """A valid encode needs a tighter bitrate cap before publication."""
+
+    observed: int
+    maximum: int
+
+    def __init__(self, observed: int, maximum: int) -> None:
+        self.observed = observed
+        self.maximum = maximum
+        super().__init__(f"Output bitrate exceeds profile: {observed}>{maximum}")
+
+
 @dataclass(frozen=True, slots=True)
 class VideoStorageProfile:
     name: str
@@ -34,6 +50,7 @@ class VideoStorageProfile:
     fixed_overhead_bytes: int
     max_width: int = 4096
     max_height: int = 2160
+    # Deprecated compatibility field; native source/output FPS is never capped.
     max_source_fps: float = 120.0
     annotation_max_fps: float = 50.0
     max_duration_drift_seconds: float = 0.1
@@ -52,10 +69,6 @@ class VideoStorageProfile:
             raise ValueError("Maximum source FPS must be finite and positive")
         if not math.isfinite(self.annotation_max_fps) or self.annotation_max_fps <= 0:
             raise ValueError("Annotation maximum FPS must be finite and positive")
-        if self.annotation_max_fps > self.max_source_fps:
-            raise ValueError(
-                "Annotation maximum FPS must not exceed source maximum FPS"
-            )
         if self.max_duration_drift_seconds < 0:
             raise ValueError("Duration drift tolerance must not be negative")
         if self.fps_relative_tolerance <= 0:
@@ -64,7 +77,7 @@ class VideoStorageProfile:
     def ffmpeg_output_args(self, *, target_fps: float | None = None) -> list[str]:
         max_rate = str(self.max_bit_rate_bps)
         filter_chain = STANDARD_VIDEO_ENCODING.filter_chain()
-        fps_mode = "passthrough"
+        timing_args = STANDARD_VIDEO_ENCODING.timestamp_passthrough_args()
         if target_fps is not None:
             if not math.isfinite(target_fps) or target_fps <= 0:
                 raise ValueError("target_fps must be finite and positive")
@@ -74,7 +87,7 @@ class VideoStorageProfile:
                     f"{target_fps:g}>{self.annotation_max_fps:g}"
                 )
             filter_chain = f"{filter_chain},fps={target_fps:g}"
-            fps_mode = "cfr"
+            timing_args = ["-fps_mode", "cfr"]
         return [
             "-profile:v",
             STANDARD_VIDEO_ENCODING.profile,
@@ -84,8 +97,7 @@ class VideoStorageProfile:
             STANDARD_VIDEO_ENCODING.pixel_format,
             "-color_range",
             STANDARD_VIDEO_ENCODING.color_range,
-            "-fps_mode",
-            fps_mode,
+            *timing_args,
             "-maxrate",
             max_rate,
             "-bufsize",

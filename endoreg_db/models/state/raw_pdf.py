@@ -148,9 +148,14 @@ class RawPdfState(models.Model):
         self.processing_started = True
         # An explicit retry starts a new attempt after a previous failure.
         self.processing_error = False
-        self.save(
-            update_fields=["processing_started", "processing_error", "date_modified"]
-        )
+        if save:
+            self.save(
+                update_fields=[
+                    "processing_started",
+                    "processing_error",
+                    "date_modified",
+                ]
+            )
 
     def mark_processing_failed(self, *, save: bool = True) -> None:
         """Record failure and revoke readiness derived from the removed artifact."""
@@ -217,17 +222,6 @@ class RawPdfState(models.Model):
         self.initial_prediction_completed = True
         if save:
             self.save(update_fields=["initial_prediction_completed", "date_modified"])
-
-    def mark_pdf_meta_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the report metadata extraction step as completed for this state.
-
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.pdf_meta_extracted = True
-        if save:
-            self.save(update_fields=["pdf_meta_extracted", "date_modified"])
 
     def mark_text_meta_extracted(self, *, save: bool = True) -> None:
         """

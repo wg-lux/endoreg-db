@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 import hashlib
+import select
 import subprocess
 import sys
 from collections.abc import Generator
@@ -10,14 +13,17 @@ from pathlib import Path
 from threading import Event, Thread
 from types import SimpleNamespace
 from typing import NoReturn
+from unittest.mock import Mock
 
 import pytest
 
 from endoreg_db.import_files.report_import_service import ReportImportService
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     advisory_file_lock,
     atomic_report_source_snapshot,
 )
+
+pytestmark = pytest.mark.no_db
 
 
 @pytest.mark.unit
@@ -29,11 +35,7 @@ def test_report_import_snapshots_after_path_lock_and_before_content_lock(
 
     source = tmp_path / "source.pdf"
     snapshot_path = tmp_path / "sensitive" / "snapshot.pdf"
-    source.write_bytes(
-        ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
-            "lock ordering test"
-        )
-    )
+    source.write_bytes(render_single_page_pdf("lock ordering test"))
     events: list[str] = []
 
     @contextmanager
@@ -78,11 +80,17 @@ def test_report_import_snapshots_after_path_lock_and_before_content_lock(
         "_get_existing_completed_report",
         stop_after_lock_ordering,
     )
+    # Failure cleanup resolves upload-job ownership in the database; it is
+    # incidental to lock ordering, so only its target is asserted here.
+    cleanup = Mock()
+    monkeypatch.setattr(report_import_module, "cleanup_staging_files", cleanup)
 
     with pytest.raises(RuntimeError, match="stop after lock ordering"):
         ReportImportService().import_and_anonymize(source, "dummy-center")
 
     assert events == ["path_lock", "snapshot", "content_lock"]
+    cleanup.assert_called_once()
+    assert cleanup.call_args.args[0] == (snapshot_path,)
 
 
 @pytest.mark.unit
@@ -154,7 +162,7 @@ def test_advisory_lock_releases_after_process_exit(tmp_path: Path) -> None:
 import sys
 from pathlib import Path
 
-from endoreg_db.utils.filesystem.file_operations import advisory_file_lock
+from endoreg_db.utils.file_operations import advisory_file_lock
 
 with advisory_file_lock(lock_path=Path(sys.argv[1])):
     print("locked", flush=True)
@@ -170,6 +178,10 @@ with advisory_file_lock(lock_path=Path(sys.argv[1])):
     )
     try:
         assert child.stdout is not None
+        # Bound the readiness wait so a stalled child fails instead of hanging.
+        readable, _, _ = select.select([child.stdout], [], [], 30)
+        if not readable:
+            pytest.fail("lock child did not report readiness within 30 seconds")
         ready_line = child.stdout.readline().strip()
         if ready_line != "locked":
             assert child.stderr is not None

@@ -18,6 +18,7 @@ from lx_dtypes.models.contracts.video_frame_annotations import (
 from lx_dtypes.models.contracts.json_types import JsonObject
 from pydantic import ValidationError
 from rest_framework import status
+from rest_framework.exceptions import APIException
 from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.openapi import OpenApiAPIView as APIView
@@ -31,14 +32,15 @@ from endoreg_db.models.label.label import Label
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.frame_annotation_workflow import (
+from endoreg_db.services.annotations.workflow import (
     DEFAULT_FRAME_INFORMATION_SOURCE_NAME,
     resolve_frame_information_source_name,
 )
-from endoreg_db.services.annotation_access import (
+from endoreg_db.services.annotations.annotation_access import (
     resolve_trusted_annotation_principal,
     validate_interactive_annotation_source,
 )
+from endoreg_db.services.annotations.label_presentation import require_study_labels
 from endoreg_db.serializers.label_video_segment.frame_box_annotation import (
     FrameBoxAnnotationBulkItemSerializer,
     FrameBoxAnnotationSerializer,
@@ -347,6 +349,10 @@ class FrameBoxAnnotationView(APIView):
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
+        require_study_labels(
+            request,
+            payload.study_cohort_id,
+        )
         if payload.replace and not payload.annotations:
             return self._delete_empty_replace_scope(
                 frame_id=payload.frame_id,
@@ -355,6 +361,7 @@ class FrameBoxAnnotationView(APIView):
                 ),
                 annotator=payload.annotator,
                 request=request,
+                study_cohort_id=payload.study_cohort_id,
             )
 
         normalized_items = self._normalized_annotation_items(payload)
@@ -388,6 +395,7 @@ class FrameBoxAnnotationView(APIView):
             requested_video_id=payload.video_id,
             replace=payload.replace,
             request=request,
+            study_cohort_id=payload.study_cohort_id,
         )
 
     @staticmethod
@@ -409,6 +417,7 @@ class FrameBoxAnnotationView(APIView):
         information_source_name: str | None,
         annotator: str | None,
         request: Request,
+        study_cohort_id: int | None = None,
     ) -> Response:
         if frame_id is None:
             return Response(
@@ -440,11 +449,18 @@ class FrameBoxAnnotationView(APIView):
         source_identity = cast(_InformationSourceIdentity, source)
 
         resolved_annotator = _resolve_request_annotator(request, annotator)
-        deleted_count, _ = FrameBoxAnnotation.objects.filter(
+        existing = FrameBoxAnnotation.objects.filter(
             frame=frame,
             information_source__name=source_identity.name,
             annotator=resolved_annotator,
-        ).delete()
+        )
+        if study_cohort_id is not None:
+            require_study_labels(
+                request,
+                study_cohort_id,
+                label_ids=existing.values_list("label_id", flat=True),
+            )
+        deleted_count, _ = existing.delete()
         response_payload = VideoFrameBoxAnnotationMutationResponsePayload(
             video_id=int(frame_identity.video_id),
             upserted_count=0,
@@ -460,9 +476,11 @@ class FrameBoxAnnotationView(APIView):
         requested_video_id: int | None,
         replace: bool,
         request: Request,
+        study_cohort_id: int | None = None,
     ) -> Response:
         frame_ids = {_item_int(item, "frame_id") for item in validated_items}
         label_ids = {_item_int(item, "label_id") for item in validated_items}
+        require_study_labels(request, study_cohort_id, label_ids=label_ids)
         source_names = {
             resolve_frame_information_source_name(
                 _item_str(item, "information_source_name")
@@ -579,14 +597,18 @@ class FrameBoxAnnotationView(APIView):
                         validated_items=validated_items,
                         source_by_name=source_by_name,
                         fallback_annotator=fallback_annotator,
+                        request=request,
+                        study_cohort_id=study_cohort_id,
                     )
                 annotations = self._upsert_items(
                     validated_items=validated_items,
                     source_by_name=source_by_name,
                     fallback_annotator=fallback_annotator,
                 )
+        except APIException:
+            raise
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "Frame box annotation persistence failed: %s",
                 exc,
                 exc_info=True,
@@ -634,6 +656,8 @@ class FrameBoxAnnotationView(APIView):
         validated_items: list[VideoFrameBoxJsonObject],
         source_by_name: dict[str, InformationSource],
         fallback_annotator: str,
+        request: Request,
+        study_cohort_id: int | None,
     ) -> None:
         scope_filter = Q(pk__in=[])
         for item in validated_items:
@@ -645,7 +669,14 @@ class FrameBoxAnnotationView(APIView):
                 information_source_name=source_name,
                 annotator=self._item_annotator(item, fallback_annotator),
             )
-        FrameBoxAnnotation.objects.filter(scope_filter).delete()
+        existing = FrameBoxAnnotation.objects.filter(scope_filter)
+        if study_cohort_id is not None:
+            require_study_labels(
+                request,
+                study_cohort_id,
+                label_ids=existing.values_list("label_id", flat=True),
+            )
+        existing.delete()
 
     def _upsert_items(
         self,

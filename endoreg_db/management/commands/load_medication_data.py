@@ -1,124 +1,14 @@
-from __future__ import annotations
+"""Compatibility entry point for the versioned lx-dtypes catalogue."""
+
+from endoreg_db.management.reference_catalog_command import ReferenceCatalogCommand
+from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 
 
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from endoreg_db.models.medical.disease import (
-    Disease,
-    DiseaseClassificationChoice,
-)
-from endoreg_db.models.medical.event import Event
-from endoreg_db.models.medical.medication.medication import Medication
-from endoreg_db.models.medical.medication.medication_indication import (
-    MedicationIndication,
-)
-from endoreg_db.models.medical.medication.medication_indication_type import (
-    MedicationIndicationType,
-)
-from endoreg_db.models.medical.medication.medication_intake_time import (
-    MedicationIntakeTime,
-)
-from endoreg_db.models.medical.medication.medication_schedule import (
-    MedicationSchedule,
-)
-from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.models.other.unit import Unit
-
-from ...data import (
-    MEDICATION_DATA_DIR,
-    MEDICATION_INDICATION_DATA_DIR,
-    MEDICATION_INDICATION_TYPE_DATA_DIR,
-    MEDICATION_INTAKE_TIME_DATA_DIR,
-    MEDICATION_SCHEDULE_DATA_DIR,
-)
-from ...utils import load_model_data_from_yaml
-from endoreg_db.helpers.typing import LoadModelDataMetadata
-
-
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
-    Medication.__name__,
-    MedicationIndicationType.__name__,
-    MedicationIntakeTime.__name__,
-    MedicationSchedule.__name__,
-    MedicationIndication.__name__,
-]
-
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
-    Medication.__name__: {
-        "dir": MEDICATION_DATA_DIR,  # e.g. "interventions"
-        "model": Medication,
-        "foreign_keys": ["default_unit"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [Unit],  # e.g. [InterventionType]
-    },
-    MedicationIndicationType.__name__: {
-        "dir": MEDICATION_INDICATION_TYPE_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationIndicationType,
-        "foreign_keys": [],  # e.g. ["intervention_types"]
-        "foreign_key_models": [],  # e.g. [InterventionType]
-    },
-    MedicationIntakeTime.__name__: {
-        "dir": MEDICATION_INTAKE_TIME_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationIntakeTime,
-        "foreign_keys": [],  # e.g. ["intervention_types"]
-        "foreign_key_models": [],  # e.g. [InterventionType]
-    },
-    MedicationSchedule.__name__: {
-        "dir": MEDICATION_SCHEDULE_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationSchedule,
-        "foreign_keys": [
-            "medication",
-            "intake_times",
-            "unit",
-        ],  # e.g. ["intervention_types"]
-        "foreign_key_models": [
-            Medication,
-            MedicationIntakeTime,
-            Unit,
-        ],  # e.g. [InterventionType]
-    },
-    MedicationIndication.__name__: {
-        "dir": MEDICATION_INDICATION_DATA_DIR,  # e.g. "interventions"
-        "model": MedicationIndication,
-        "foreign_keys": [
-            "indication_type",
-            "medication_schedules",
-            "diseases",
-            "events",
-            "disease_classification_choices",
-            "sources",
-        ],  # e.g. ["intervention_types"]
-        "foreign_key_models": [
-            MedicationIndicationType,
-            MedicationSchedule,
-            Disease,
-            Event,
-            DiseaseClassificationChoice,
-            InformationSource,
-        ],  # e.g. [InterventionType]
-    },
-}
-
-
-class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
-
-    def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Display verbose output",
-        )
-
-    def handle(
-        self,
-        *args: str,
-        **options: object,
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
-        for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+class Command(ReferenceCatalogCommand):
+    record_types = (
+        ReferenceKind.MEDICATION,
+        ReferenceKind.MEDICATION_INDICATION_TYPE,
+        ReferenceKind.MEDICATION_INTAKE_TIME,
+        ReferenceKind.MEDICATION_SCHEDULE,
+        ReferenceKind.MEDICATION_INDICATION,
+    )

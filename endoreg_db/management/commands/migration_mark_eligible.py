@@ -3,9 +3,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Protocol, Sequence, TypedDict, Unpack, cast
+from typing import Protocol, TypedDict, Unpack, cast
+from collections.abc import Sequence
 
 from django.core.management.base import BaseCommand, CommandParser
+from django.db import transaction
 from django.db.models import QuerySet
 from django.utils import timezone
 from lx_dtypes.models.contracts.management_command import (
@@ -13,6 +15,10 @@ from lx_dtypes.models.contracts.management_command import (
 )
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_integrity_lost,
+)
 
 
 class MigrationMarkEligibleCommandOptions(TypedDict):
@@ -49,6 +55,7 @@ class MigrationUpdateResult:
     eligible: bool
     marked_lost: bool
     repaired_orphaned: bool
+    skipped_live_lease: bool = False
 
 
 @dataclass(frozen=True)
@@ -56,6 +63,7 @@ class MigrationUpdateCounts:
     updated_eligible: int
     marked_lost: int
     repaired_orphaned: int
+    skipped_live_lease: int
 
 
 class Command(BaseCommand):
@@ -109,12 +117,14 @@ class Command(BaseCommand):
         payload["updated_eligible"] = counts.updated_eligible
         payload["marked_lost"] = counts.marked_lost
         payload["repaired_orphaned"] = counts.repaired_orphaned
+        payload["skipped_live_lease"] = counts.skipped_live_lease
         self._write_json_payload(payload, enabled=options_payload.json_output)
         self.stdout.write(
             self.style.SUCCESS(
                 f"Updated eligible={counts.updated_eligible}; "
                 f"marked_lost={counts.marked_lost}; "
-                f"repaired_orphaned={counts.repaired_orphaned}."
+                f"repaired_orphaned={counts.repaired_orphaned}; "
+                f"skipped_live_lease={counts.skipped_live_lease}."
             )
         )
 
@@ -128,12 +138,16 @@ class Command(BaseCommand):
             self.stdout.write(json.dumps(payload, sort_keys=True))
 
 
-def _selected_migration_jobs(limit: int) -> tuple[QuerySet[UploadJob], int]:
-    jobs = UploadJob.objects.filter(
+def _pending_migration_jobs() -> QuerySet[UploadJob]:
+    return UploadJob.objects.filter(
         cleanup_status=UploadJob.CleanupStatus.PENDING,
         source_system="migration",
         source_file_persisted=True,
     ).order_by("id")
+
+
+def _selected_migration_jobs(limit: int) -> tuple[QuerySet[UploadJob], int]:
+    jobs = _pending_migration_jobs()
     total = jobs.count()
     if limit > 0:
         ids = list(jobs.values_list("id", flat=True)[:limit])
@@ -159,38 +173,55 @@ def _apply_migration_job_updates(
     now: datetime,
 ) -> MigrationUpdateCounts:
     results = [
-        _apply_migration_job_update(cast(MigrationUploadJob, upload_job), now=now)
-        for upload_job in jobs.iterator()
+        _apply_migration_job_update(str(pk), now=now)
+        for pk in jobs.values_list("pk", flat=True)
     ]
     return MigrationUpdateCounts(
         updated_eligible=sum(1 for result in results if result.eligible),
         marked_lost=sum(1 for result in results if result.marked_lost),
         repaired_orphaned=sum(1 for result in results if result.repaired_orphaned),
+        skipped_live_lease=sum(1 for result in results if result.skipped_live_lease),
     )
 
 
+@transaction.atomic
 def _apply_migration_job_update(
-    upload_job: MigrationUploadJob,
+    upload_job_id: str,
     *,
     now: datetime,
 ) -> MigrationUpdateResult:
-    source_exists = _source_file_exists(upload_job)
-    update_fields, marked_lost = _prepare_cleanup_state(
-        upload_job,
-        source_exists=source_exists,
-        now=now,
+    locked_job = (
+        _pending_migration_jobs().select_for_update().filter(pk=upload_job_id).first()
     )
+    if locked_job is None:
+        # Selection is a snapshot; cleanup may have changed or removed this row.
+        return MigrationUpdateResult(False, False, False)
+    if _has_live_processing_lease(locked_job, now=now):
+        # A running import owns this row; marking it LOST would race its owner.
+        return MigrationUpdateResult(False, False, False, skipped_live_lease=True)
+    upload_job = cast(MigrationUploadJob, locked_job)
+    source_exists = _source_file_exists(upload_job)
+    update_fields, marked_lost = _prepare_cleanup_state(upload_job, now=now)
+    if marked_lost:
+        mark_upload_job_integrity_lost(
+            locked_job,
+            locked_job.error_detail or _lost_detail(source_exists=source_exists),
+            error_code=(
+                UploadJob.ErrorCode.PROCESSING_FAILED.value
+                if source_exists
+                else UploadJob.ErrorCode.SOURCE_MISSING.value
+            ),
+        )
     if source_exists:
-        _mark_source_cleanup_eligible(upload_job, update_fields=update_fields)
+        _mark_source_cleanup_eligible(locked_job, update_fields=update_fields)
         return MigrationUpdateResult(True, marked_lost, False)
-    _repair_orphaned_source(upload_job, update_fields=update_fields)
+    _repair_orphaned_source(locked_job, update_fields=update_fields)
     return MigrationUpdateResult(False, marked_lost, True)
 
 
 def _prepare_cleanup_state(
     upload_job: MigrationUploadJob,
     *,
-    source_exists: bool,
     now: datetime,
 ) -> tuple[list[str], bool]:
     update_fields = ["cleanup_status", "updated_at"]
@@ -201,34 +232,39 @@ def _prepare_cleanup_state(
         UploadJob.Status.PENDING.value,
         UploadJob.Status.PROCESSING.value,
     }
-    if marked_lost:
-        upload_job.status = UploadJob.Status.LOST.value
-        upload_job.error_code = (
-            UploadJob.ErrorCode.PROCESSING_FAILED.value
-            if source_exists
-            else UploadJob.ErrorCode.SOURCE_MISSING.value
-        )
-        update_fields.extend(["status", "error_code"])
     return update_fields, marked_lost
 
 
-def _mark_source_cleanup_eligible(
-    upload_job: MigrationUploadJob,
-    *,
-    update_fields: list[str],
-) -> None:
-    if upload_job.status == UploadJob.Status.LOST.value and not upload_job.error_detail:
-        upload_job.error_detail = (
+def _has_live_processing_lease(upload_job: UploadJob, *, now: datetime) -> bool:
+    expires_at = upload_job.processing_lease_expires_at
+    return bool(upload_job.processing_lease_owner) and (
+        expires_at is not None and expires_at > now
+    )
+
+
+def _lost_detail(*, source_exists: bool) -> str:
+    if source_exists:
+        return (
             "Migration-created upload job abandoned during data recovery; "
             "source artifact is eligible for cleanup."
         )
-        update_fields.append("error_detail")
-    upload_job.cleanup_status = UploadJob.CleanupStatus.ELIGIBLE.value
-    upload_job.save(update_fields=update_fields)
+    return "Migration source file missing during cleanup eligibility backfill."
+
+
+def _mark_source_cleanup_eligible(
+    upload_job: UploadJob,
+    *,
+    update_fields: list[str],
+) -> None:
+    with transaction.atomic():
+        set_upload_job_cleanup_status(
+            upload_job, UploadJob.CleanupStatus.ELIGIBLE.value
+        )
+        upload_job.save(update_fields=update_fields)
 
 
 def _repair_orphaned_source(
-    upload_job: MigrationUploadJob,
+    upload_job: UploadJob,
     *,
     update_fields: list[str],
 ) -> None:
@@ -240,16 +276,13 @@ def _repair_orphaned_source(
     ]
     if "source_file_delete_eligible_at" in update_fields:
         orphan_update_fields.append("source_file_delete_eligible_at")
-    if upload_job.status == UploadJob.Status.LOST.value:
-        orphan_update_fields.extend(["status", "error_code", "error_detail"])
-        if not upload_job.error_detail:
-            upload_job.error_detail = (
-                "Migration source file missing during cleanup eligibility backfill."
-            )
-    upload_job.file.name = ""
-    upload_job.source_file_persisted = False
-    upload_job.cleanup_status = UploadJob.CleanupStatus.COMPLETED.value
-    upload_job.save(update_fields=orphan_update_fields)
+    with transaction.atomic():
+        set_upload_job_cleanup_status(
+            upload_job, UploadJob.CleanupStatus.COMPLETED.value
+        )
+        upload_job.file.name = ""
+        upload_job.source_file_persisted = False
+        upload_job.save(update_fields=orphan_update_fields)
 
 
 def _source_file_exists(upload_job: MigrationUploadJob) -> bool:

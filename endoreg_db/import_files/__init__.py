@@ -30,7 +30,7 @@ if TYPE_CHECKING:
     from endoreg_db.import_files.report_import_service import (
         ReportImportService as ReportImportService,
     )
-    from endoreg_db.import_files.video_import_service import (
+    from endoreg_db.services.video_files.direct_import import (
         VideoImportService as VideoImportService,
     )
 
@@ -109,7 +109,7 @@ _LAZY_EXPORTS: dict[ImportFilesExportName, str] = {
     "create_video_file": "endoreg_db.import_files.file_storage.create_video_file",
     "persist_sensitive_meta_candidate": "endoreg_db.import_files.file_storage.sensitive_meta_storage",
     "ReportImportService": "endoreg_db.import_files.report_import_service",
-    "VideoImportService": "endoreg_db.import_files.video_import_service",
+    "VideoImportService": "endoreg_db.services.video_files.direct_import",
 }
 
 

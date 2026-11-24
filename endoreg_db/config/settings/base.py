@@ -13,7 +13,6 @@ from endoreg_db.config.env import (
     get_celery_broker_url,
     get_celery_default_queue,
     get_celery_ffmpeg_media_queue,
-    get_celery_frame_extraction_queue,
     get_celery_inference_queue,
     get_celery_llm_inference_queue,
     get_celery_maintenance_queue,
@@ -62,6 +61,9 @@ from lx_dtypes.models.contracts.django_settings import (
 )
 
 DJANGO_SALT = load_identity_salt()
+DEFAULT_EXCEPTION_REPORTER_FILTER = (
+    "endoreg_db.config.exception_reporter.IdentitySecretExceptionReporterFilter"
+)
 
 django_stubs_ext.monkeypatch()
 
@@ -101,7 +103,6 @@ CELERY_RESULT_BACKEND = None
 CELERY_TASK_IGNORE_RESULT = True
 CELERY_TASK_DEFAULT_QUEUE = get_celery_default_queue()
 CELERY_PIPELINE_QUEUE = get_celery_pipeline_queue()
-CELERY_FRAME_EXTRACTION_QUEUE = get_celery_frame_extraction_queue()
 CELERY_FFMPEG_MEDIA_QUEUE = get_celery_ffmpeg_media_queue()
 CELERY_INFERENCE_QUEUE = get_celery_inference_queue()
 CELERY_TRAINING_QUEUE = get_celery_training_queue()
@@ -124,11 +125,6 @@ CELERY_TASK_QUEUES = (
         CELERY_PIPELINE_QUEUE,
         Exchange(CELERY_PIPELINE_QUEUE),
         routing_key=CELERY_PIPELINE_QUEUE,
-    ),
-    Queue(
-        CELERY_FRAME_EXTRACTION_QUEUE,
-        Exchange(CELERY_FRAME_EXTRACTION_QUEUE),
-        routing_key=CELERY_FRAME_EXTRACTION_QUEUE,
     ),
     Queue(
         CELERY_FFMPEG_MEDIA_QUEUE,
@@ -165,9 +161,9 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_FFMPEG_MEDIA_QUEUE,
         "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
     },
-    "endoreg_db.frame_extraction_request": {
-        "queue": CELERY_FRAME_EXTRACTION_QUEUE,
-        "routing_key": CELERY_FRAME_EXTRACTION_QUEUE,
+    "endoreg_db.frame_annotation_export": {
+        "queue": CELERY_FFMPEG_MEDIA_QUEUE,
+        "routing_key": CELERY_FFMPEG_MEDIA_QUEUE,
     },
     "endoreg_db.process_upload_job": {
         "queue": CELERY_PIPELINE_QUEUE,
@@ -205,6 +201,10 @@ CELERY_TASK_ROUTES = {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
     },
+    "endoreg_db.cleanup_media_sources": {
+        "queue": CELERY_MAINTENANCE_QUEUE,
+        "routing_key": CELERY_MAINTENANCE_QUEUE,
+    },
     "endoreg_db.retry_due_model_training_runs": {
         "queue": CELERY_MAINTENANCE_QUEUE,
         "routing_key": CELERY_MAINTENANCE_QUEUE,
@@ -217,6 +217,15 @@ CELERY_TASK_SOFT_TIME_LIMIT = 60 * 60 * 5
 CELERY_TIMEZONE = get_time_zone()
 CELERY_ENABLE_UTC = True
 CELERY_BEAT_SCHEDULE = {}
+CELERY_BEAT_SCHEDULE["cleanup-media-sources"] = DjangoBeatScheduleEntryPayload(
+    task="endoreg_db.cleanup_media_sources",
+    schedule=900,
+    options=DjangoBeatScheduleOptionsPayload(
+        queue=CELERY_MAINTENANCE_QUEUE,
+        routing_key=CELERY_MAINTENANCE_QUEUE,
+        expires=850,
+    ),
+).model_dump(by_alias=True, mode="python")
 CELERY_BEAT_SCHEDULE["retry-due-upload-jobs"] = DjangoBeatScheduleEntryPayload(
     task="endoreg_db.retry_due_upload_jobs",
     schedule=60,
@@ -283,6 +292,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "endoreg_db.services.privacy.response_boundary.IdentityHashResponseMiddleware",
 ]
 
 # Use a distinct module name to avoid ambiguity and mount API surfaces centrally.
@@ -383,7 +393,6 @@ __all__ = [
     "CELERY_TASK_IGNORE_RESULT",
     "CELERY_TASK_DEFAULT_QUEUE",
     "CELERY_PIPELINE_QUEUE",
-    "CELERY_FRAME_EXTRACTION_QUEUE",
     "CELERY_FFMPEG_MEDIA_QUEUE",
     "CELERY_INFERENCE_QUEUE",
     "CELERY_TRAINING_QUEUE",

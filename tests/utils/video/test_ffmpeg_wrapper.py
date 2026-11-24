@@ -1,3 +1,6 @@
+from collections.abc import Callable
+from endoreg_db.services.video_storage import frame_provenance
+
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import subprocess
 import signal
@@ -10,6 +13,8 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.utils import transcode_execution
 from endoreg_db.utils import ffmpeg_wrapper
+from endoreg_db.services.video_storage.probes import probe_video_frame_timestamps
+from endoreg_db.services.video_storage.contracts import configured_video_storage_profile
 from endoreg_db.utils.video.command_construction import (
     FFprobeInputPolicy,
     TimestampRepairMode,
@@ -106,6 +111,14 @@ def _yuvj420p_limited_range_stream_info(_path: Path) -> JsonObject:
 
 @pytest.fixture(autouse=True)
 def _valid_transcode_output_stream(monkeypatch: pytest.MonkeyPatch) -> None:
+    # These subprocess-policy tests use fake bytes; real provenance capture is
+    # covered by test_frame_provenance against independently decoded images.
+    def run_fake_encoder(
+        command: list[str], runner: Callable[[list[str]], tuple[int, str]]
+    ) -> tuple[int, str]:
+        return runner(command)
+
+    monkeypatch.setattr(frame_provenance, "run_with_frame_provenance", run_fake_encoder)
     monkeypatch.setattr(
         transcode_execution,
         "get_stream_info",
@@ -234,8 +247,11 @@ def test_transcode_video_force_cpu_uses_cpu_only_flags(
         "yuv420p",
         "-color_range",
         "pc",
-        "-fpsmax",
-        "50",
+        "-copyts",
+        "-fps_mode",
+        "passthrough",
+        "-enc_time_base",
+        "demux",
         "-an",
         str(output_path),
     ]
@@ -258,9 +274,11 @@ def test_transcode_output_validation_rejects_non_video_payload(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("preserve_timestamps", [False, True])
 def test_transcode_video_retries_timestamp_repair(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    preserve_timestamps: bool,
 ) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
@@ -285,7 +303,18 @@ def test_transcode_video_retries_timestamp_repair(
 
     monkeypatch.setattr(subprocess, "Popen", fake_popen)
 
-    result = transcode_video(input_path, output_path, force_cpu=True)
+    result = transcode_video(
+        input_path,
+        output_path,
+        force_cpu=True,
+        extra_args=None if preserve_timestamps else ["-fpsmax", "50"],
+    )
+
+    if preserve_timestamps:
+        assert result is None
+        assert len(commands) == 1
+        assert not output_path.exists()
+        return
 
     assert result == output_path
     assert len(commands) == 2
@@ -761,25 +790,28 @@ def test_extract_frame_range_numbers_outputs_by_requested_frame(
     assert captured_kwargs[0]["stdin"] == subprocess.DEVNULL
 
 
-@pytest.mark.unit
-def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
+def _patch_presentation_timestamp_tools(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    input_path = tmp_path / "input.mp4"
-    output_dir = tmp_path / "frames"
-    input_path.write_bytes(b"video")
+    output_dir: Path,
+    *,
+    container_start: str,
+) -> list[list[str]]:
     captured_commands: list[list[str]] = []
-
     monkeypatch.setattr(
         "endoreg_db.utils.video.frame_extraction._resolve_ffmpeg_executable",
         _smart_ffmpeg_path,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.utils.video.frame_extraction._resolve_ffprobe_executable",
+        lambda: "/usr/bin/ffprobe",
     )
 
     def fake_run(
         command: list[str],
         **_kwargs: object,
     ) -> subprocess.CompletedProcess[str]:
+        if command[0].endswith("ffprobe"):
+            return subprocess.CompletedProcess(command, 0, f"{container_start}\n", "")
         captured_commands.append(command)
         output_dir.mkdir(parents=True, exist_ok=True)
         (output_dir / "frame_0000000.jpg").write_bytes(b"first")
@@ -787,6 +819,31 @@ def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
         return subprocess.CompletedProcess(command, 0, "", "")
 
     monkeypatch.setattr(subprocess, "run", fake_run)
+    return captured_commands
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("container_start", "expected_seeks"),
+    [
+        ("0.000000", ("0.500000000", "1.602488889")),
+        ("0.250000", ("0.250000000", "1.352488889")),
+        # The seek is clamped at zero when the first frame is the container start.
+        ("0.500000", ("0.000000000", "1.102488889")),
+    ],
+)
+def test_extract_frames_by_presentation_timestamp_seeks_relative_to_container_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    container_start: str,
+    expected_seeks: tuple[str, str],
+) -> None:
+    input_path = tmp_path / "input.mp4"
+    output_dir = tmp_path / "frames"
+    input_path.write_bytes(b"video")
+    captured_commands = _patch_presentation_timestamp_tools(
+        monkeypatch, output_dir, container_start=container_start
+    )
 
     result = ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
         input_path,
@@ -801,14 +858,199 @@ def test_extract_frames_by_presentation_timestamp_builds_sparse_pts_filter(
     assert len(captured_commands) == 2
     first_command = captured_commands[0]
     second_command = captured_commands[1]
-    assert first_command[first_command.index("-ss") + 1] == "0.500000000"
+    assert first_command[first_command.index("-ss") + 1] == expected_seeks[0]
+    assert second_command[second_command.index("-ss") + 1] == expected_seeks[1]
+    assert first_command.index("-noaccurate_seek") < first_command.index("-ss")
     assert first_command[first_command.index("-map") + 1] == "0:v:0"
     assert first_command[first_command.index("-vf") + 1] == ("select='eq(pts\\,45000)'")
-    assert second_command[second_command.index("-ss") + 1] == "1.602488889"
     assert second_command[second_command.index("-vf") + 1] == (
         "select='eq(pts\\,144224)'"
     )
     assert first_command[first_command.index("-fps_mode") + 1] == "passthrough"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("container_start", ["N/A", ""])
+def test_extract_frames_by_presentation_timestamp_rejects_unknown_container_start(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    container_start: str,
+) -> None:
+    input_path = tmp_path / "input.mp4"
+    input_path.write_bytes(b"video")
+    captured_commands = _patch_presentation_timestamp_tools(
+        monkeypatch, tmp_path / "frames", container_start=container_start
+    )
+
+    with pytest.raises(RuntimeError, match="start time"):
+        ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+            input_path,
+            tmp_path / "frames",
+            [45_000],
+            time_base_num=1,
+            time_base_den=90_000,
+            quality=2,
+        )
+    assert captured_commands == []
+
+
+@pytest.mark.parametrize(
+    ("timestamps", "numerator", "denominator"),
+    [([-1], 1, 90_000), ([True, 1], 1, 90_000), ([1], True, 90_000), ([1], 1, 0)],
+)
+def test_sparse_extraction_rejects_invalid_coordinates_before_media_access(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    timestamps: list[int],
+    numerator: int,
+    denominator: int,
+) -> None:
+    commands = _patch_presentation_timestamp_tools(
+        monkeypatch, tmp_path / "frames", container_start="0"
+    )
+    with pytest.raises(ValueError):
+        ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+            tmp_path / "input.mp4",
+            tmp_path / "frames",
+            timestamps,
+            numerator,
+            denominator,
+            quality=2,
+        )
+    assert commands == []
+    assert not (tmp_path / "frames").exists()
+
+
+def _rgb_frame_digests(executable: str, source: Path) -> list[str]:
+    completed = subprocess.run(
+        [
+            executable,
+            "-v",
+            "error",
+            "-i",
+            str(source),
+            "-map",
+            "0:v:0",
+            "-fps_mode",
+            "passthrough",
+            "-pix_fmt",
+            "rgb24",
+            "-f",
+            "framemd5",
+            "-",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return [
+        line.rsplit(",", 1)[-1].strip()
+        for line in completed.stdout.splitlines()
+        if line and not line.startswith("#")
+    ]
+
+
+@pytest.mark.ffmpeg
+@pytest.mark.integration
+@pytest.mark.parametrize("container_offset_seconds", ["0", "7.3"])
+def test_real_presentation_timestamp_extraction_matches_decoded_frames(
+    tmp_path: Path,
+    container_offset_seconds: str,
+) -> None:
+    ffmpeg_executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
+    ffprobe_executable = ffmpeg_wrapper.resolve_ffprobe_executable()
+    if ffmpeg_executable is None or ffprobe_executable is None:
+        pytest.skip("ffmpeg and ffprobe are not available")
+
+    # Concatenating 30 and 24 frames-per-second parts yields variable frame
+    # spacing; the copy with a container offset reproduces nonzero origins.
+    parts: list[Path] = []
+    for rate in (30, 24):
+        part = tmp_path / f"part_{rate}.mp4"
+        subprocess.run(
+            [
+                ffmpeg_executable,
+                "-v",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                f"testsrc2=size=96x64:rate={rate}",
+                "-frames:v",
+                "12",
+                "-c:v",
+                "libx264",
+                "-g",
+                "5",
+                "-video_track_timescale",
+                "90000",
+                "-y",
+                str(part),
+            ],
+            check=True,
+            capture_output=True,
+        )
+        parts.append(part)
+    concat_list = tmp_path / "parts.txt"
+    concat_list.write_text("".join(f"file '{part}'\n" for part in parts))
+    source = tmp_path / "variable_frame_rate.mp4"
+    subprocess.run(
+        [
+            ffmpeg_executable,
+            "-v",
+            "error",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            str(concat_list),
+            "-c",
+            "copy",
+            "-output_ts_offset",
+            container_offset_seconds,
+            "-y",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    probed = subprocess.run(
+        [
+            ffprobe_executable,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-show_entries",
+            "frame=best_effort_timestamp",
+            "-of",
+            "csv=p=0",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    timestamps = [int(value.strip(",")) for value in probed.stdout.split()]
+    assert len(set(timestamps)) == 24
+    reference_digests = _rgb_frame_digests(ffmpeg_executable, source)
+
+    # Sparse selection across both frame-rate parts and both ends of the clip.
+    selected_indices = [0, 5, 11, 12, 17, 23]
+    extracted = ffmpeg_wrapper.extract_frames_by_presentation_timestamp(
+        source,
+        tmp_path / "frames",
+        [timestamps[index] for index in selected_indices],
+        time_base_num=1,
+        time_base_den=90_000,
+        quality=2,
+        ext="png",
+    )
+
+    assert [_rgb_frame_digests(ffmpeg_executable, path)[0] for path in extracted] == [
+        reference_digests[index] for index in selected_indices
+    ]
 
 
 @pytest.mark.unit
@@ -896,9 +1138,11 @@ def test_blacken_filter_args_switches_to_script_for_large_interval_sets(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("bitrate_cap", [None, 8_000_000])
 def test_blacken_video_frame_intervals_disables_audio_and_applies_filter(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    bitrate_cap: int | None,
 ) -> None:
     input_path = tmp_path / "input.mp4"
     output_path = tmp_path / "output.mp4"
@@ -922,6 +1166,7 @@ def test_blacken_video_frame_intervals_disables_audio_and_applies_filter(
         output_path,
         intervals=[(10, 20)],
         force_cpu=True,
+        max_bit_rate_bps=bitrate_cap,
     )
 
     assert result == output_path
@@ -936,8 +1181,111 @@ def test_blacken_video_frame_intervals_disables_audio_and_applies_filter(
     assert "(gte(n\\,10)*lt(n\\,20))" in command[command.index("-vf") + 1]
     assert "out_range=full" in command[command.index("-vf") + 1]
     assert command[command.index("-color_range") + 1] == "pc"
-    assert command[command.index("-fpsmax") + 1] == "50"
+    assert command[command.index("-fps_mode") + 1] == "passthrough"
+    assert "-fpsmax" not in command
     assert "-r" not in command
+    if bitrate_cap is not None:
+        assert command[command.index("-b:v") + 1] == str(bitrate_cap)
+        assert command[command.index("-maxrate") + 1] == str(bitrate_cap)
+        assert command[command.index("-bufsize") + 1] == str(bitrate_cap * 2)
+
+
+@pytest.mark.parametrize(
+    "operation,bitrate_cap",
+    [
+        ("blacken", None),
+        ("blacken", 800_000),
+        ("default", None),
+        ("storage", None),
+        ("roi", None),
+    ],
+)
+@pytest.mark.parametrize("origin", [0.0, 1.4])
+def test_real_transcoding_preserves_irregular_native_timestamps(
+    tmp_path: Path,
+    operation: str,
+    bitrate_cap: int | None,
+    origin: float,
+) -> None:
+    executable = ffmpeg_wrapper.resolve_ffmpeg_executable()
+    assert executable is not None, (
+        "FFmpeg is required for native timestamp verification"
+    )
+    source = tmp_path / "native.mp4"
+    output = tmp_path / "blackened.mp4"
+    subprocess.run(
+        [
+            executable,
+            "-nostdin",
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x64:rate=60:duration=1",
+            "-vf",
+            f"settb=1/60000,select='not(eq(mod(n,5),2))',"
+            f"setpts='PTS+if(eq(mod(N,3),1),180,0)+{origin}/TB'",
+            "-fps_mode",
+            "passthrough",
+            "-enc_time_base",
+            "filter",
+            "-c:v",
+            "libx264",
+            "-an",
+            str(source),
+        ],
+        check=True,
+        capture_output=True,
+        timeout=30,
+    )
+    before = probe_video_frame_timestamps(source)
+    assert len(before) == 48
+    if operation == "blacken":
+        result = ffmpeg_wrapper.blacken_video_frame_intervals(
+            source,
+            output,
+            intervals=[(10, 20)],
+            force_cpu=True,
+            max_bit_rate_bps=bitrate_cap,
+        )
+    elif operation == "roi":
+        result = ffmpeg_wrapper.mask_video_to_roi_and_blacken_intervals(
+            source,
+            output,
+            endo_roi={"x": 4, "y": 4, "width": 56, "height": 56},
+            intervals=[(10, 20)],
+            force_cpu=True,
+        )
+    else:
+        result = transcode_video(
+            source,
+            output,
+            force_cpu=True,
+            extra_args=configured_video_storage_profile().ffmpeg_output_args()
+            if operation == "storage"
+            else None,
+        )
+    assert result == output
+    after = probe_video_frame_timestamps(output)
+    assert len(after) == len(before)
+    assert all(
+        abs(new.presentation_time_seconds - old.presentation_time_seconds) <= 1e-6
+        for old, new in zip(before, after, strict=True)
+    )
+
+
+@pytest.mark.parametrize("bitrate_cap", [0, -1, 2**63])
+def test_blackening_rejects_invalid_bitrate_caps(
+    tmp_path: Path, bitrate_cap: int
+) -> None:
+    with pytest.raises(ValueError, match="bitrate cap"):
+        ffmpeg_wrapper.blacken_video_frame_intervals(
+            tmp_path / "input.mp4",
+            tmp_path / "output.mp4",
+            intervals=[(0, 1)],
+            max_bit_rate_bps=bitrate_cap,
+        )
 
 
 @pytest.mark.unit
@@ -1038,5 +1386,6 @@ def test_mask_video_to_roi_and_blacken_intervals_disables_audio_and_applies_filt
     assert "(gte(n\\,10)*lt(n\\,20))" in filter_expression
     assert "out_range=full" in filter_expression
     assert command[command.index("-color_range") + 1] == "pc"
-    assert command[command.index("-fpsmax") + 1] == "50"
+    assert command[command.index("-fps_mode") + 1] == "passthrough"
+    assert "-fpsmax" not in command
     assert "-r" not in command

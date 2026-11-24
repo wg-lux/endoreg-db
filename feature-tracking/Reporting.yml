@@ -12,11 +12,186 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/report_finding_extraction.md
+  disposition: reference
+  note: YAML-Regeln, Terminologieauswahl und Präsenznachweise für Bericht-, SAP- und FHIR-Import.
 - path: docs/report_import_concurrency_implementation.md
   disposition: reference
   note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den
     Vertrag mit lx-anonymizer.
 definition_of_done:
+- id: report_concept_embeddings
+  category: functionality
+  title: Persist anonymized report span embeddings with annotated concept links
+  acceptance:
+  - Only persisted anonymized report spans can reach embedding inference; raw text and non-text media
+    are never inputs.
+  - Versioned finite nonzero vectors retain source hash, offsets and foreign keys to persisted examination,
+    finding or classification annotations; retries are idempotent and stale or mismatched associations
+    fail.
+  - Center-scoped CSV export compares compatible embeddings and retains annotated concept provenance without
+    promoting candidate synonyms to clinical facts.
+  - LuxNix provisions hash-pinned de_core_news_lg 3.8.0 data outside Python distributions; inference loads
+    the explicit local path offline and fails if it is absent or incompatible.
+  - Wheel and source distribution sizes stay below the project's 200 MB upload limit.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run focused type checks, database persistence and source-isolation tests, migration
+      consistency and structure validation.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: tests/services/test_report_concept_embeddings.py
+    - kind: test
+      reference: '2026-10-28: ENDOREG_REPORT_EMBEDDING_MODEL_PATH=/nix/store/ng951s8a8ym89sx0q1vl1k47lg22fsa0-de-core-news-lg-3.8.0-data
+        pytest tests/services/test_report_concept_embeddings.py tests/utils/test_paths.py -q --tb=short:
+        72 passed, 2 warnings in 118.64s; scoped Pyright 0 errors/0 warnings; uv lock --check passed.'
+    note: 'LuxNix stellt de_core_news_lg 3.8.0 als separat SHA-256-geprüftes Nix-Store-Artefakt bereit.
+      Backend lädt ausschließlich ENDOREG_REPORT_EMBEDDING_MODEL_PATH und prüft Sprache, Modellname, Version
+      und 300 Dimensionen. Wheel 2,72 MB, Quelldistribution 1,53 MB; keine Modelldaten oder separate Modelldistribution
+      enthalten. Installierter Wheel-Prüflauf mit gebautem Nix-Modell erfolgreich. Vollständiger Pyright-Lauf:
+      0 Fehler, 2 bestehende Warnungen; abschließender fokussierter Lauf: 0 Fehler, 0 Warnungen. 73 Embedding-/Pfadtests
+      bestanden. LuxNix-Umgebungstest für Web und zwei Worker bestanden. Beide Strukturprüfungen und uv
+      lock --check erfolgreich. Keine Veröffentlichung oder Host-Aktivierung; breitere ReportReader-Produktionsreife
+      und klinische Synonymqualität bleiben offen.'
+    assessed_by: codex-focused-20261028
+    assessed_at: '2026-10-28T16:43:40.527016Z'
+- id: finding_suggestion_review
+  category: functionality
+  title: Erkannte Import- und KI-Befunde werden explizit bestätigt
+  acceptance:
+  - Die Anonymisierungsansicht zeigt Importnachweise und nur versioniert zugeordnete KI-Vorhersagelabels.
+  - Übernahmen erfordern eine verknüpfte Untersuchung, positive Evidenz und eine bewusste Aktion; Wiederholungen
+    sind idempotent.
+  - Medienwechsel verwerfen alte Vorschläge; Fehler bleiben sichtbar und Zentrenzugriff wird serverseitig
+    geprüft.
+  required: true
+  verification:
+    kind: manual
+    instructions: Komponenten-, API- und Typprüfungen für Befundvorschläge ausführen.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'Frontend: vitest run findingsApi, FindingSuggestionReview, AnonymizationValidationComponent:
+        59 passed.'
+    - kind: test
+      reference: 'Backend: tests/services/test_finding_extraction.py plus test_patient_finding_instance_create_is_repeatable_and_keeps_two_polyps:
+        16 passed; remaining API test fixture corrected and targeted rerun: 1 passed, 2 warnings. Earlier
+        failures were invalid test fixtures (missing video center and deliberately malformed persisted
+        JSON).'
+    - kind: command
+      reference: 'Full backend Pyright: 0 errors, 18 warnings. Final scoped Pyright including shared finding_review
+        contract: 0 errors, 0 warnings. vue-tsc passed; scoped ESLint, Ruff and git diff --check passed.'
+    - kind: document
+      reference: docs/report_finding_extraction.md
+    note: Implementiert und automatisiert geprüft. Keine Browser-Abnahme oder Produktionsfreigabe; Backend,
+      lx-dtypes und Frontend gemeinsam ausliefern. Video-Zuordnungen müssen zur ausgewählten Terminologieversion
+      passen. Bestehende Terminologie- und temporäre Cleanup-Warnungen im Testlauf.
+    assessed_by: codex-report-concepts-20261012
+    assessed_at: '2026-10-12T12:56:14.872760Z'
+- id: yaml_finding_extraction
+  category: functionality
+  title: YAML-gesteuerte Befundpräsenz für Bericht-, SAP- und FHIR-Import
+  acceptance:
+  - Versionierte Terminologie definiert typisierte spaCy-Regeln mit kanonischen Befundnamen; die konfigurierte
+    Registry bestimmt die Quelle.
+  - Bericht- und SAP-Import speichern validierte Präsenznachweise atomar; Wiederholungen duplizieren keine
+    Nachweise.
+  - Negierte und unsichere Erwähnungen werden nicht als positive Befunde gewertet; fehlende Erwähnungen
+    bleiben unbekannt.
+  - FHIR-Observation-Import unterstützt dieselben kanonischen Namen und einen expliziten Textextraktor
+    ohne spaCy-Abhängigkeit im Datenmodell.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_finding_extraction.py
+    - -q
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_finding_extraction.py
+        tests/services/test_report_import_service_unit.py tests/services/test_preanonymized_watcher_ingest.py
+        tests/services/test_sap_ish_import.py tests/management/commands/test_import_sap_ish_txt.py tests/management/commands/test_import_sap_ish_zip.py
+        -q --tb=short: 109 passed, 4 subtests passed, 2 warnings'
+    - kind: command
+      reference: 'Scoped endoreg-db Pyright: 0 errors, 2 missing-stub warnings; scoped lx-data-models
+        Pyright: 0 errors, 0 warnings. Scoped Ruff and git diff --check passed.'
+    - kind: test
+      reference: 'lx-data-models: .venv/bin/pytest tests/test_fhir_clinical.py tests/unit/lx_dtypes/models/knowledge_base/fhir/test_terminology.py
+        -q: 65 passed.'
+    - kind: document
+      reference: docs/report_finding_extraction.md
+    - kind: code
+      reference: endoreg_db/services/reports/finding_extraction.py
+    - kind: command
+      reference: '.devenv/state/venv/bin/pyright: 0 errors, 18 warnings (2026-10-12)'
+    note: 'Import-Regressionsnachweise bleiben gültig. Die zuvor gemeldeten fremden Typfehler sind behoben:
+      vollständiger endoreg-db Pyright-Lauf am 2026-10-12 mit 0 Fehlern und 18 Warnungen. Klinische Vollständigkeit
+      der studienspezifischen Regeln und gemeinsame Auslieferung bleiben gesondert zu prüfen.'
+    assessed_by: codex-report-concepts-20261012
+    assessed_at: '2026-10-12T12:53:41.462905Z'
+- id: independent_report_persistence
+  category: data_integrity
+  title: Mehrere Berichte pro Patient bleiben unabhängig persistiert
+  acceptance:
+  - Mehrere Berichte derselben Untersuchung werden separat gespeichert; GET /api/patient-examination-reports/?patient_id=<id>
+    listet sie untersuchungsübergreifend und zentrumsgebunden auf.
+  - Jeder neu gespeicherte Bericht besitzt einen validierten dtypes-Snapshot; spätere Terminologieänderungen
+    verändern ältere Berichte nicht. Historisch fehlende Snapshots bleiben ausdrücklich unbekannt.
+  - DELETE /api/patient-examination-reports/<id>?expected_version=<version> löscht nur Entwürfe (204);
+    finale Berichte und Versionskonflikte liefern 409, fremde Zentren 404. Klinische Untersuchungsdaten
+    und andere Berichte bleiben erhalten; die Revision eines zugeordneten Autosave-Entwurfs steigt beim
+    Leeren.
+  - Finalisierung eines Berichts löscht keinen einem anderen Bericht zugeordneten Untersuchungsentwurf.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_report_persistence_service.py
+    - tests/views/report/test_patient_examination_report_ninja_api.py
+    - tests/models/test_patient_examination_report_validation.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-09-28: .devenv/state/venv/bin/pytest tests/services/test_report_persistence_service.py
+        tests/views/report/test_patient_examination_report_ninja_api.py tests/models/test_patient_examination_report_validation.py
+        -q: 85 passed, 2 dependency/plugin warnings.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors, 6 existing warnings; subsequent focused Pyright: 0 errors, 0
+        warnings. Focused Ruff and git diff --check passed. django makemigrations endoreg_db --check --dry-run:
+        No changes detected.'
+    - kind: code
+      reference: 'endoreg_db/migrations/0087_report_dtypes_snapshot.py: nullable historical snapshots,
+        no reconstruction from mutable current examination data.'
+    - kind: test
+      reference: '2026-09-28: .devenv/state/venv/bin/pytest tests/services/test_report_import_service_unit.py
+        tests/services/test_report_materialization_contracts.py tests/views/report/test_report_stream.py
+        tests/views/patient_examination/test_patient_examination_draft_viewset.py tests/api/test_dtypes_record_persistence.py
+        tests/migrations/test_canonical_graph.py tests/app/test_clean_layer_cohorts.py -q: 116 passed,
+        2 dependency/plugin warnings.'
+    - kind: command
+      reference: '2026-09-28 Nachprüfung: scripts/check_lx_dtypes_model_inventory.py erfolgreich; 166
+        registrierte und 5 abstrakte Modelle, 54 gemeinsame lx_dtypes-Verträge, 59 lokale Boundaries,
+        58 reine Persistenzmodelle. Die fünf zuvor gemeldeten Consumer-Abweichungen sind korrigiert.'
+    note: Alle vier Akzeptanzpunkte durch 85 fokussierte und 116 Integrationstests verifiziert. Migration
+      0087 erforderlich; historische Snapshots bleiben null. Die fünf Inventarabweichungen sind im anschließenden
+      Contract-Abgleich behoben; der globale Guard besteht. PostgreSQL-Parallelitätslauf und Deployment
+      nicht ausgeführt; keine Aussage zur gesamten Produktionsreife.
+    assessed_by: codex-report-persistence-20260928
+    assessed_at: '2026-09-28T10:15:30.926359Z'
 - id: documented_scope
   category: requirements
   title: Berichtslebenszyklus und unterstützte Dokumenttypen sind definiert
@@ -35,6 +210,8 @@ definition_of_done:
   category: functionality
   title: Import bis Streaming funktioniert deterministisch und idempotent
   acceptance:
+  - PDF-Schwärzungen sperren unter PostgreSQL den Reportdatensatz gezielt, auch wenn der optionale Zustand
+    fehlt; nullable Join-Zeilen verursachen keinen FOR-UPDATE-Fehler.
   - Finalisierung verlangt Untersuchung und Dokumenttyp.
   - Materialisierung und Reimport erzeugen nachvollziehbare Versionen ohne stille Duplikate.
   required: true
@@ -105,8 +282,27 @@ definition_of_done:
       reference: '2026-09-21: vollständige tests/views/report/test_patient_examination_report_ninja_api.py
         im fokussierten 111-passed-Lauf bestanden; fehlende, unlesbare und fehlerhafte Registry liefern
         503, unbekannte Module weiterhin 422. Pyright report_persistence.py: 0 errors, 0 warnings.'
-    assessed_by: codex-frame-standardization-20260921
-    assessed_at: '2026-09-21T11:46:02.468158Z'
+    - kind: review
+      reference: '2026-09-25 gc-02, Profil site-client, Wheel-Runtime: systemctl list-units lx-annotate*
+        --all --no-pager --plain; journalctl --namespace=lx-annotate --since "2026-09-24 15:30:00 UTC"
+        --no-pager -o json. Beginn entspricht 24.09.2026 17:30 Europe/Berlin. 83477 Einträge bis 25.09.2026
+        05:52:57 UTC nach Severity und eingebetteten Exceptions gruppiert; 1786 weitere Einträge ab 05:53
+        UTC ohne zusätzliche Fehler. Eine Report-Schwärzung scheiterte um 15:31:47 UTC an PostgreSQL FOR
+        UPDATE auf nullable Outer-Join-Seite. Web- und relevante Worker-Units laufen. Keine Produktionsdaten,
+        Dienste oder Deployment geändert.'
+    - kind: command
+      reference: '2026-09-25: tests/views/report/test_pdf_redaction.py auf isoliertem PostgreSQL 16.15
+        mit privatem Unix-Socket: 6 passed, 2 dependency/plugin warnings in 164.13s. Optionale Report-State-Relation
+        sowohl vorhanden als auch fehlend abgedeckt. Temporären PostgreSQL-Server anschließend gestoppt.
+        Gesamt-Pyright 0 Fehler, 6 bestehende Warnungen; Ruff/Format bestanden.'
+    - kind: code
+      reference: 'endoreg_db/views/pdf/pdf_redaction.py::_persist_redaction: select_for_update(of=("self",))
+        sperrt ausschließlich den Reportdatensatz.'
+    note: Gezielter Fix des auf gc-02 beobachteten PostgreSQL-Lockfehlers; echte PostgreSQL-Regression
+      bestanden. Keine Produktionsmigration und kein Deployment. Weitere Abnahme des Reporting-Gesamtworkflows
+      bleibt offen.
+    assessed_by: codex-import-20260924-a
+    assessed_at: '2026-09-25T06:06:37.607588Z'
 - id: report_draft_persistence_contract
   category: data_integrity
   title: Berichtsentwürfe werden repositoryübergreifend strikt und kanonisch persistiert
@@ -270,11 +466,22 @@ definition_of_done:
     - kind: test
       reference: /endoreg-db/tests/authz/test_lx_dtypes_report_template_access.py
       note: Host-Integration prüft sechs Rollen- und Fail-Closed-Fälle.
-    note: Serverseitige Authentifizierung sowie getrennte Read-/Write-Kapazitäten und Fail-Closed-Tests
-      sind implementiert. Offen bleiben Auditierung, explizite Modul-/Center-Scopes, CSRF-/Paralleländerungstests
-      und der vollständige Produktionsnachweis.
-    assessed_by: Codex
-    assessed_at: '2026-07-30T12:43:10.986249Z'
+    - kind: test
+      reference: '2026-10-09 portable study draft export: new POST /report-templates/builder/package requires
+        report_template:write; authorized, anonymous and denied request tests pass. Shared record generator
+        emits config.yaml, report_templates.yml and validators.yml without installed-file mutations. Full
+        lx-data-models pytest 1213 passed, 1 skipped, 23 warnings; focused backend lane 23 passed. Real
+        exported package loads with ColoReg dependencies and executes conditional rules. Host mounted
+        builder integration 1 passed; frontend 44 passed plus final page ZIP-content test lane 10 passed.'
+    - kind: command
+      reference: Focused Pyright and Ruff passed. Full Pyright reports one error in untouched lx_dtypes/models/contracts/reference_catalog.py:143.
+        Vue application type checking and scoped ESLint passed. No deployment or production acceptance.
+    - kind: test
+      reference: 'Final 2026-10-09 follow-up: 25 backend tests passed after duplicate-name and empty-condition
+        guard coverage. Focused Pyright and Ruff passed. Export remains non-mutating and requires existing
+        report_template:write capability.'
+    assessed_by: codex-gc10-cleanup-review-20261007
+    assessed_at: '2026-10-09T07:58:21.141122Z'
 - id: localized_report_generation
   category: functionality
   title: Die Berichtssprache ist explizit und an die versionierte Terminologie gebunden
@@ -445,6 +652,11 @@ definition_of_done:
     evidence:
     - kind: test
       reference: tests/rust_backend/test_report_snapshot_parity.py; tests/services/test_report_import_concurrency.py
+    - kind: test
+      reference: '2026-10-14: report_import_service_unit and storage_state_management suites84 passed6
+        conditional skips. Successful explicit retry uses one admission and no terminal failure cleanup;
+        actual state reset preserves source, snapshot, candidate and successful history, rejects stale
+        ownership. Focused Pyright0 errors1 stub warning; full backend Pyright0 errors6 warnings.'
     - kind: command
       reference: devenv tasks run rust:report-runtime
     - kind: command

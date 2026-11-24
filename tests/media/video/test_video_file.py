@@ -7,6 +7,7 @@ from django.test import TestCase
 from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available
 
 from endoreg_db.models import VideoFile  # Import Frame model
+from tests.helpers.default_objects import DEFAULT_ENDOSCOPY_PROCESSOR_NAME
 
 from ._video_create_from_file import _test_video_create_from_file
 from .helper import get_random_video_path_by_examination_alias
@@ -85,6 +86,7 @@ class VideoFileModelTest(TestCase):
             video_file = VideoFile.create_from_file(
                 video_path,
                 center_name=self.center.name,  # Pass center name
+                processor_name=DEFAULT_ENDOSCOPY_PROCESSOR_NAME,
             )
             self.assertIsNotNone(video_file, "VideoFile creation failed.")
 
@@ -125,7 +127,7 @@ class VideoFileModelTest(TestCase):
                         f"VideoFile with pk {video_file.pk} not found for cleanup."
                     )
                 except Exception as e:
-                    logger.error(
+                    logger.exception(
                         f"Error during cleanup of video file (UUID: {video_file.raw_video_hash}): {e}",
                         exc_info=True,
                     )

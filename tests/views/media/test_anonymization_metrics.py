@@ -5,7 +5,8 @@ from __future__ import annotations
 import re
 from contextlib import contextmanager
 from datetime import date, timedelta
-from typing import Any, Generator
+from typing import Any
+from collections.abc import Generator
 from unittest.mock import patch
 from uuid import uuid4
 
@@ -273,8 +274,7 @@ class AnonymizationMetricsEndpointTests(TestCase):
         )
 
         with patch(
-            "endoreg_db.services.anonymization_metrics."
-            "MAX_PHI_REGION_MATCH_ANNOTATIONS",
+            "endoreg_db.services.privacy.metrics.MAX_PHI_REGION_MATCH_ANNOTATIONS",
             1,
         ):
             response = self.client.get(

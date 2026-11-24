@@ -1,4 +1,5 @@
 use pyo3::prelude::*;
+use pyo3::types::PyBytes;
 
 const MAX_LINES_PER_PAGE: usize = 65;
 
@@ -87,7 +88,8 @@ fn render_single_page_pdf_impl(text: &str) -> Vec<u8> {
 }
 
 #[pyfunction]
-pub(crate) fn render_single_page_pdf(py: Python<'_>, text: &str) -> PyResult<Vec<u8>> {
+pub(crate) fn render_single_page_pdf(py: Python<'_>, text: &str) -> Py<PyBytes> {
     let owned_text = text.to_owned();
-    Ok(py.allow_threads(move || render_single_page_pdf_impl(&owned_text)))
+    let payload = py.allow_threads(move || render_single_page_pdf_impl(&owned_text));
+    PyBytes::new_bound(py, &payload).unbind()
 }

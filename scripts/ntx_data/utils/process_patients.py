@@ -1,5 +1,3 @@
-from typing import Dict, List, Tuple
-
 from icecream import ic
 
 from .datamodels import LabData, PatientData, ReadoutData
@@ -13,10 +11,10 @@ from .utils import (
 
 
 def sync_patient_readout_data(
-    patient_data_list: List[PatientData], readout_data_list: List[ReadoutData]
-) -> Tuple[List[PatientData], List[ReadoutData], List[ReadoutData]]:
-    unmatched: List[ReadoutData] = []
-    patient_data_by_hash: Dict[str, PatientData] = {}
+    patient_data_list: list[PatientData], readout_data_list: list[ReadoutData]
+) -> tuple[list[PatientData], list[ReadoutData], list[ReadoutData]]:
+    unmatched: list[ReadoutData] = []
+    patient_data_by_hash: dict[str, PatientData] = {}
     for patient_data in patient_data_list:
         patient_data_by_hash[patient_data.patient_hash] = patient_data
 
@@ -39,11 +37,11 @@ def sync_patient_readout_data(
 
 
 def sync_patient_lab_data(
-    patient_data_list: List[PatientData], lab_data_list: List[LabData]
-) -> Tuple[List[PatientData], List[LabData], List[LabData]]:
-    unmatched: List[LabData] = []
+    patient_data_list: list[PatientData], lab_data_list: list[LabData]
+) -> tuple[list[PatientData], list[LabData], list[LabData]]:
+    unmatched: list[LabData] = []
 
-    patient_data_by_hash: Dict[str, PatientData] = {
+    patient_data_by_hash: dict[str, PatientData] = {
         patient_data.patient_hash: patient_data for patient_data in patient_data_list
     }
 
@@ -67,10 +65,10 @@ def sync_patient_lab_data(
 
 
 def patient_df_etl(
-    readout_data_list: List[ReadoutData], lab_data_list: List[LabData]
-) -> Tuple[List[PatientData], List[ReadoutData], List[LabData]]:
+    readout_data_list: list[ReadoutData], lab_data_list: list[LabData]
+) -> tuple[list[PatientData], list[ReadoutData], list[LabData]]:
     patient_df = load_dataframe(patient_df_path, rename_dict=rename_patient_df_dict)
-    patient_data_list: List[PatientData] = serialize_patient_df(patient_df)
+    patient_data_list: list[PatientData] = serialize_patient_df(patient_df)
 
     ic(f"Received {len(readout_data_list)} readout / transplant records.")
     ic(f"Received {len(lab_data_list)} lab records.")

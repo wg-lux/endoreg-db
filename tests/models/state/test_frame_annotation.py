@@ -18,7 +18,7 @@ from endoreg_db.models import (
 from endoreg_db.services.queue.frame_annotation_queue import (
     frame_annotation_queue_spec_from_payload,
 )
-from endoreg_db.services.frame_annotation_workflow import build_frame_task_queue
+from endoreg_db.services.annotations.workflow import build_frame_task_queue
 from endoreg_db.models.state.frame_annotation import (
     FrameAnnotationStatus,
     FrameSamplingStrategy,

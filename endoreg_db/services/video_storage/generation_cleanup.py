@@ -1,0 +1,653 @@
+"""Retire recorded processed generations after their replacement commits.
+
+The video row lock is shared with playback-lease acquisition and publication.
+Receipts survive failed filesystem operations so missing files are retryable.
+"""
+
+import json
+import logging
+import re
+from functools import partial
+from pathlib import Path
+from typing import Literal
+
+from django.db import transaction
+from django.db.models import Q
+from django.db.models.fields.files import FieldFile
+from pydantic import ValidationError
+
+from endoreg_db.models.hub.storage_placement import StorageArtifactPlacement
+from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.processed_video_cleanup import (
+    ProcessedGenerationCleanupReceipt,
+    ProcessedGenerationCleanupResult,
+    cleanup_receipts,
+)
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from endoreg_db.services.video_files.source_hash import verified_video_source_hash
+from endoreg_db.services.video_files.types import VideoArtifactKind
+from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.utils.file_operations import (
+    safe_delete_field_file,
+    safe_rmtree,
+    safe_unlink_file,
+)
+from endoreg_db.utils.paths import get_runtime_paths, to_protected_media_relative
+
+logger = logging.getLogger(__name__)
+
+
+def cleanup_validated_raw_video(
+    video_id: int, *, apply: bool = False
+) -> tuple[str, ...]:
+    """Reconcile raw retention from current validation state, including backfill."""
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
+    from endoreg_db.services.video_files.io import delete_raw_file_after_validation
+    from endoreg_db.services.video_storage.workflow import raw_cleanup_blockers
+
+    video = VideoFile.objects.select_related("state").get(pk=video_id)
+    if video.state is None or not video.state.anonymization_validated:
+        return ("anonymization_not_validated",)
+    if (
+        not video.raw_file.name
+        and not video.raw_streamable_relative_path
+        and not VideoHlsArtifact.objects.filter(
+            video=video, artifact_kind="raw"
+        ).exists()
+    ):
+        return ()
+    try:
+        with video_artifact_mutation(video_id=video_id), transaction.atomic():
+            video = VideoFile.objects.select_for_update().get(pk=video_id)
+            if video.state is None or not video.state.anonymization_validated:
+                return ("anonymization_not_validated",)
+            blockers = tuple(raw_cleanup_blockers(video))
+            if blockers or not apply:
+                return blockers
+            delete_raw_file_after_validation(video)
+            return ()
+    except MediaOperationDeferred:
+        return ("active_media_operation_lease",)
+
+
+def record_processed_replacement(
+    video: VideoFile,
+    *,
+    previous_name: str,
+    previous_hash: str | None,
+    source_kind: Literal["processed", "legacy_streamable"] = "processed",
+    strict: bool = False,
+) -> None:
+    """Record exact identities before HLS publication can retire the old cache."""
+    if not previous_name:
+        if strict:
+            raise ValueError("Previous artifact identity is required")
+        return
+    if not previous_hash or re.fullmatch(r"[0-9a-f]{64}", previous_hash) is None:
+        if strict:
+            raise ValueError("Previous artifact digest is required")
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "processed_cleanup_deferred",
+                    "video_id": video.pk,
+                    "reason": "previous_digest_unknown",
+                }
+            )
+        )
+        return
+    try:
+        receipt = ProcessedGenerationCleanupReceipt(
+            source_name=previous_name,
+            source_kind=source_kind,
+            source_sha256=previous_hash,
+            replacement_name=str(video.processed_file.name or ""),
+            replacement_sha256=video.processed_video_hash or "",
+        )
+    except ValidationError:
+        if strict:
+            raise
+        logger.warning(
+            json.dumps(
+                {
+                    "event": "processed_cleanup_deferred",
+                    "video_id": video.pk,
+                    "reason": "generation_identity_unknown",
+                }
+            )
+        )
+        return
+    receipts = cleanup_receipts(video.meta)
+    receipts.append(receipt)
+    video.meta = {
+        **(video.meta or {}),
+        "processed_generation_cleanup": [
+            item.model_dump(mode="json") for item in receipts
+        ],
+    }
+
+
+def commit_processed_replacements(video: VideoFile) -> bool:
+    """Call inside the transaction that records successful import publication."""
+    receipts = cleanup_receipts(video.meta)
+    if not receipts:
+        return False
+    committed = [
+        ProcessedGenerationCleanupReceipt(
+            receipt_id=item.receipt_id,
+            source_name=item.source_name,
+            source_kind=item.source_kind,
+            source_sha256=item.source_sha256,
+            replacement_name=str(video.processed_file.name or ""),
+            replacement_sha256=video.processed_video_hash or "",
+            committed=True,
+        )
+        for item in receipts
+    ]
+    video.meta = {
+        **(video.meta or {}),
+        "processed_generation_cleanup": [
+            item.model_dump(mode="json") for item in committed
+        ],
+    }
+    return True
+
+
+def schedule_processed_generation_cleanup(video_id: int) -> None:
+    transaction.on_commit(partial(_cleanup_after_commit, video_id))
+
+
+def _cleanup_after_commit(video_id: int) -> None:
+    # Publication already succeeded. Cleanup failures must not make the importer
+    # restore its previous master; the durable receipt is the retry authority.
+    try:
+        result = cleanup_processed_video_generations(video_id, apply=True)
+    except Exception as exc:
+        logger.exception(
+            json.dumps(
+                {
+                    "event": "processed_cleanup_failed",
+                    "video_id": video_id,
+                    "error_type": type(exc).__name__,
+                }
+            )
+        )
+    else:
+        logger.info(json.dumps({"event": "processed_cleanup", **result.model_dump()}))
+
+
+def _owned_path(path: Path, root: Path) -> Path:
+    """Reject aliases and symlinks, including ancestors of a missing retry target."""
+    path.relative_to(root)
+    for ancestor in (path, *path.parents):
+        if ancestor.is_symlink():
+            raise ValueError("Cleanup path has a symbolic-link alias")
+        if ancestor == root:
+            break
+    if not path.resolve().is_relative_to(root.resolve()):
+        raise ValueError("Cleanup path escapes its owner root")
+    return path
+
+
+def _old_master(
+    video: VideoFile, receipt: ProcessedGenerationCleanupReceipt
+) -> FieldFile | Path:
+    if receipt.source_kind == "legacy_streamable":
+        return _old_streamable(video, receipt)
+    field = FieldFile(video, video.processed_file.field, receipt.source_name)
+    root = get_runtime_paths().anonym_video
+
+    path = _owned_path(Path(field.path), root)
+
+    relative = path.relative_to(root).as_posix()
+    identity = re.escape(str(video.raw_video_hash))
+    pattern = (
+        rf"(?:{identity}(?:_filtered|\.attempt-[0-9a-f]{{32}}|"
+        rf"\.post_validation\.[0-9a-f]{{64}})?\.mp4|"
+        rf"\.generations/{identity}-[0-9a-f]{{32}}\.mp4|"
+        rf"(?:\.generations/)?{identity}\.(?:[0-9a-f]{{32}}|[0-9a-f]{{64}})\.mp4|"
+        rf"[0-9a-f]{{64}}\.[0-9a-f]{{32}}\.mp4)"
+    )
+    if re.fullmatch(pattern, relative) is None:
+        raise ValueError("Previous file is not an owned generated processed master")
+    if (
+        field.storage.exists(receipt.source_name)
+        and get_file_hash(field) != receipt.source_sha256
+    ):
+        raise ValueError("Previous master digest differs from the cleanup receipt")
+    return field
+
+
+def _old_streamable(
+    video: VideoFile, receipt: ProcessedGenerationCleanupReceipt
+) -> Path:
+    root = get_runtime_paths().streamable_videos_processed_media
+
+    path = _owned_path(root / Path(receipt.source_name).name, root)
+
+    if (
+        to_protected_media_relative(path) != receipt.source_name
+        or re.fullmatch(
+            rf"{re.escape(str(video.raw_video_hash))}(?:\.[a-zA-Z0-9_-]+)?\.mp4",
+            path.name,
+        )
+        is None
+    ):
+        raise ValueError("Legacy playback identity is not owned by this video")
+    if path.exists() and get_file_hash(path) != receipt.source_sha256:
+        raise ValueError("Legacy playback digest differs from its cleanup receipt")
+    return path
+
+
+def _old_hls_paths(video: VideoFile, artifacts: list[VideoHlsArtifact]) -> list[Path]:
+    paths: list[Path] = []
+    for artifact in artifacts:
+        kind = VideoArtifactKind(artifact.artifact_kind)
+        runtime_paths = get_runtime_paths()
+        match kind:
+            case VideoArtifactKind.PROCESSED:
+                root = runtime_paths.streamable_videos_processed_media / "hls"
+            case VideoArtifactKind.RAW:
+                root = runtime_paths.streamable_videos_raw_media / "hls"
+        directory = _owned_path(
+            root / str(video.uuid) / str(artifact.key_id) / "v0", root
+        )
+        unmaterialized_failure = (
+            artifact.status == "failed"
+            and not artifact.segment_directory_relative_path
+            and not artifact.playlist_relative_path
+        )
+        if not unmaterialized_failure and (
+            artifact.segment_directory_relative_path
+            != to_protected_media_relative(directory)
+            or artifact.playlist_relative_path
+            != to_protected_media_relative(directory / "playlist.m3u8")
+        ):
+            raise ValueError("Superseded HLS paths do not match their generation owner")
+        if (
+            VideoHlsArtifact.objects.exclude(pk=artifact.pk)
+            .filter(
+                Q(
+                    segment_directory_relative_path=to_protected_media_relative(
+                        directory
+                    )
+                )
+                | Q(
+                    playlist_relative_path=to_protected_media_relative(
+                        directory / "playlist.m3u8"
+                    )
+                )
+            )
+            .exists()
+        ):
+            raise ValueError("Superseded HLS paths are shared")
+        temporary_root = get_runtime_paths().transcoding
+        owned_directories = [directory] + [
+            _owned_path(
+                temporary_root / role / str(video.pk) / str(artifact.key_id),
+                temporary_root,
+            )
+            for role in ("hls_key_material", "hls_output", "hls_plaintext_source")
+        ]
+        for owned_directory in owned_directories:
+            if owned_directory.exists() and any(
+                child.is_symlink() for child in owned_directory.rglob("*")
+            ):
+                raise ValueError("Superseded HLS contains symbolic links")
+        paths.append(directory)
+    return paths
+
+
+def cleanup_superseded_hls(
+    video_id: int, *, apply: bool = False
+) -> ProcessedGenerationCleanupResult:
+    """Retire terminal HTTP Live Streaming derivatives, never canonical sources.
+
+    Legacy attempts need not have a source digest: ownership comes from their
+    exact video/key paths, while regenerability requires the verified current
+    source and its available published derivative. Master receipts stay intact.
+    """
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
+
+    pending = VideoHlsArtifact.objects.filter(
+        video_id=video_id, status__in=["superseded", "failed"]
+    ).count()
+    if not pending:
+        return ProcessedGenerationCleanupResult(
+            video_id=video_id, reason="nothing_pending"
+        )
+    admitted = False
+    try:
+        with video_artifact_mutation(video_id=video_id), transaction.atomic():
+            admitted = True
+            return _cleanup_superseded_hls_owned(video_id, apply=apply)
+    except MediaOperationDeferred:
+        if admitted:
+            raise
+        return ProcessedGenerationCleanupResult(
+            video_id=video_id, reason="active_media_lease", pending=pending
+        )
+
+
+def _cleanup_superseded_hls_owned(
+    video_id: int, *, apply: bool
+) -> ProcessedGenerationCleanupResult:
+    from endoreg_db.services.streaming.hls_media import (
+        cleanup_transient_hls_artifact,
+        get_ready_hls_artifact,
+        resolve_hls_source,
+    )
+
+    video = VideoFile.objects.select_for_update().get(pk=video_id)
+    result = ProcessedGenerationCleanupResult(
+        video_id=video_id, reason="nothing_pending"
+    )
+    for kind in VideoArtifactKind:
+        candidates = (
+            VideoHlsArtifact.objects.select_for_update()
+            .filter(
+                video=video,
+                artifact_kind=kind.value,
+                status__in=["superseded", "failed"],
+            )
+            .order_by("pk")
+        )
+        artifacts = list(candidates[:100])
+        if not artifacts:
+            continue
+        result.pending += candidates.count()
+        try:
+            ready = get_ready_hls_artifact(video=video, artifact_kind=kind)
+            source = resolve_hls_source(video, kind)
+            digest = verified_video_source_hash(source.field_file)
+        except (FileNotFoundError, VideoHlsArtifact.DoesNotExist):
+            result.reason = "replacement_not_ready"
+            continue
+        if (
+            ready.source_content_hash != digest
+            or ready.source_file_name != source.source_file_name
+        ):
+            result.reason = "replacement_not_ready"
+            continue
+        paths = _old_hls_paths(video, artifacts)
+        if not apply:
+            result.reason = "dry_run"
+            continue
+        for artifact, path in zip(artifacts, paths, strict=True):
+            cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
+            safe_rmtree(path, missing_ok=True)
+            transient_root = get_runtime_paths().transcoding
+            if path.exists() or any(
+                (transient_root / role / str(video_id) / str(artifact.key_id)).exists()
+                for role in ("hls_key_material", "hls_output", "hls_plaintext_source")
+            ):
+                raise OSError("Obsolete streaming artifact cleanup is incomplete")
+            if path.parent.exists() and not any(path.parent.iterdir()):
+                safe_rmtree(path.parent, missing_ok=True)
+            logger.info(
+                json.dumps(
+                    {
+                        "event": "obsolete_hls_files_removed",
+                        "video_id": video_id,
+                        "artifact_id": artifact.pk,
+                        "artifact_kind": kind.value,
+                        "key_id": str(artifact.key_id),
+                        "status": artifact.status,
+                    }
+                )
+            )
+            artifact.delete()
+            result.cleaned += 1
+            result.pending -= 1
+        if result.reason != "replacement_not_ready":
+            result.reason = "cleaned"
+    return result
+
+
+def _referenced(receipt: ProcessedGenerationCleanupReceipt) -> bool:
+    return (
+        VideoFile.objects.filter(
+            Q(processed_file=receipt.source_name)
+            | Q(raw_file=receipt.source_name)
+            | Q(processed_streamable_relative_path=receipt.source_name)
+            | Q(raw_streamable_relative_path=receipt.source_name)
+        ).exists()
+        or UploadJob.objects.filter(file=receipt.source_name).exists()
+        or StorageArtifactPlacement.objects.filter(
+            sha256=receipt.source_sha256
+        ).exists()
+    )
+
+
+def _abandoned_replacement(
+    video: VideoFile, receipt: ProcessedGenerationCleanupReceipt
+) -> bool:
+    """Prove rollback restored its source and left no replacement to account for."""
+    if (
+        receipt.committed
+        or receipt.source_kind != "processed"
+        or receipt.source_name != video.processed_file.name
+        or receipt.source_sha256 != video.processed_video_hash
+        or receipt.replacement_name == receipt.source_name
+    ):
+        return False
+    replacement = receipt.model_copy(
+        update={
+            "source_name": receipt.replacement_name,
+            "source_sha256": receipt.replacement_sha256,
+        }
+    )
+    if (
+        _referenced(replacement)
+        or VideoHlsArtifact.objects.filter(
+            Q(source_file_name=receipt.replacement_name)
+            | Q(source_content_hash=receipt.replacement_sha256)
+        ).exists()
+    ):
+        return False
+    field = FieldFile(video, video.processed_file.field, receipt.replacement_name)
+    replacement_path = _owned_path(Path(field.path), get_runtime_paths().anonym_video)
+    if field.storage.exists(receipt.replacement_name) or replacement_path.exists():
+        return False
+    # Authenticate the retained master through its storage adapter. A recorded
+    # digest alone cannot establish that rollback left a usable source.
+    if not video.processed_file.storage.exists(receipt.source_name):
+        return False
+    _owned_path(Path(video.processed_file.path), get_runtime_paths().anonym_video)
+    return get_file_hash(video.processed_file) == receipt.source_sha256
+
+
+def cleanup_processed_video_generations(
+    video_id: int, *, apply: bool = False
+) -> ProcessedGenerationCleanupResult:
+    """Commit writer ownership before the transaction performs slow storage IO."""
+    from endoreg_db.exceptions import MediaOperationDeferred
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
+
+    receipts = cleanup_receipts(VideoFile.objects.only("meta").get(pk=video_id).meta)
+    if not receipts:
+        return ProcessedGenerationCleanupResult(
+            video_id=video_id, reason="nothing_pending"
+        )
+    admitted = False
+    try:
+        with video_artifact_mutation(video_id=video_id):
+            admitted = True
+            return _cleanup_processed_video_generations_owned(video_id, apply=apply)
+    except MediaOperationDeferred:
+        if admitted:
+            raise
+        return ProcessedGenerationCleanupResult(
+            video_id=video_id, pending=len(receipts), reason="active_media_lease"
+        )
+
+
+@transaction.atomic
+def _cleanup_processed_video_generations_owned(
+    video_id: int, *, apply: bool
+) -> ProcessedGenerationCleanupResult:
+    """Clean only journaled generations with a verified, committed replacement."""
+    video = VideoFile.objects.select_for_update().get(pk=video_id)
+    receipts = cleanup_receipts(video.meta)
+    result = ProcessedGenerationCleanupResult(
+        video_id=video_id, pending=len(receipts), reason="nothing_pending"
+    )
+    if not receipts:
+        return result
+    result.reason = "active_media_lease"
+    from endoreg_db.services.media.operation_gate import (
+        video_has_active_media_operation_leases,
+    )
+
+    if video_has_active_media_operation_leases(video_id):
+        return result
+    abandoned = [item for item in receipts if _abandoned_replacement(video, item)]
+    if abandoned:
+        if not apply:
+            result.reason = "dry_run"
+            return result
+        receipts = [item for item in receipts if item not in abandoned]
+        video.meta = {
+            **(video.meta or {}),
+            "processed_generation_cleanup": [
+                item.model_dump(mode="json") for item in receipts
+            ],
+        }
+        video.save(update_fields=["meta", "date_modified"])
+        result.pending = len(receipts)
+        logger.info(
+            json.dumps(
+                {
+                    "event": "abandoned_processed_cleanup_receipts_reconciled",
+                    "video_id": video_id,
+                    "receipt_ids": [str(item.receipt_id) for item in abandoned],
+                }
+            )
+        )
+        if not receipts:
+            result.reason = "nothing_pending"
+            return result
+    result.reason = "replacement_not_committed"
+    if any(
+        not item.committed
+        or item.replacement_name != video.processed_file.name
+        or item.replacement_sha256 != video.processed_video_hash
+        for item in receipts
+    ):
+        return result
+    # Database blockers are cheap; do not decrypt/hash a large replacement when
+    # a referenced source already makes this cleanup attempt ineligible.
+    result.reason = "referenced"
+    if any(_referenced(receipt) for receipt in receipts):
+        return result
+    result.reason = "replacement_not_ready"
+    evidence = VideoStorageNormalizationEvidence.model_validate(
+        (video.meta or {}).get("storage_normalization")
+    )
+    if not evidence.temporal_equivalent or not evidence.storage_compliant:
+        return result
+    from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
+
+    try:
+        ready = get_ready_hls_artifact(video=video, artifact_kind="processed")
+        digest = verified_video_source_hash(video.processed_file)
+    except (FileNotFoundError, VideoHlsArtifact.DoesNotExist):
+        return result
+    if (
+        digest != video.processed_video_hash
+        or ready.source_content_hash != digest
+        or ready.source_file_name != video.processed_file.name
+    ):
+        return result
+
+    plans: list[
+        tuple[
+            ProcessedGenerationCleanupReceipt,
+            FieldFile | Path,
+            list[VideoHlsArtifact],
+            list[Path],
+        ]
+    ] = []
+    for receipt in receipts:
+        result.reason = "referenced"
+        # Recheck after validation in case another reference appeared meanwhile.
+        if _referenced(receipt):
+            return result
+        references = VideoHlsArtifact.objects.filter(
+            source_file_name=receipt.source_name
+        )
+        owned = references.filter(
+            video=video,
+            artifact_kind="processed",
+            status__in=["superseded", "failed"],
+            source_content_hash=receipt.source_sha256,
+        )
+        if references.exclude(pk__in=owned.values("pk")).exists():
+            return result
+        artifacts = list(owned.select_for_update())
+        plans.append(
+            (
+                receipt,
+                _old_master(video, receipt),
+                artifacts,
+                _old_hls_paths(video, artifacts),
+            )
+        )
+    result.reason = "dry_run"
+    if not apply:
+        return result
+    from endoreg_db.services.streaming.hls_media import cleanup_transient_hls_artifact
+
+    for receipt, field, artifacts, paths in plans:
+        for artifact in artifacts:
+            cleanup_transient_hls_artifact(video_id=video_id, key_id=artifact.key_id)
+        for path in paths:
+            safe_rmtree(path, missing_ok=True)
+            if path.exists():
+                raise OSError("Superseded HLS deletion did not remove its directory")
+        if isinstance(field, Path):
+            safe_unlink_file(field, missing_ok=True)
+            if field.exists():
+                raise OSError("Legacy playback deletion did not remove its file")
+        else:
+            safe_delete_field_file(field, missing_ok=True)
+            if field.storage.exists(receipt.source_name):
+                raise OSError(
+                    "Superseded master deletion did not remove its storage object"
+                )
+        VideoHlsArtifact.objects.filter(
+            pk__in=[artifact.pk for artifact in artifacts]
+        ).delete()
+    video.meta = {**(video.meta or {}), "processed_generation_cleanup": []}
+    video.save(update_fields=["meta", "date_modified"])
+    result.cleaned = len(plans)
+    result.pending = 0
+    result.reason = "cleaned"
+    return result
+
+
+def reconcile_previous_processed_cleanup(instance: VideoFile) -> None:
+    """Retire a previous committed replacement before allocating another master."""
+    result = cleanup_processed_video_generations(int(instance.pk), apply=True)
+    if result.pending:
+        raise RuntimeError(
+            "Video publication cannot proceed while previous processed generation "
+            f"cleanup is pending: {result.reason}."
+        )
+    persisted = VideoFile.objects.only(
+        "meta", "processed_file", "processed_video_hash"
+    ).get(pk=instance.pk)
+    # The import context can contain newly extracted clinical metadata. Refresh
+    # only publication identities and the authoritative cleanup journal.
+    instance.meta = {
+        **(instance.meta or {}),
+        "processed_generation_cleanup": (persisted.meta or {}).get(
+            "processed_generation_cleanup", []
+        ),
+    }
+    instance.processed_file.name = persisted.processed_file.name
+    instance.processed_video_hash = persisted.processed_video_hash

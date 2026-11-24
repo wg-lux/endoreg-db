@@ -12,22 +12,33 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
 from django.db import transaction
 
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+from endoreg_db.services.media.frame_intervals import (
+    merge_half_open_frame_intervals as _merge_half_open_intervals,
+)
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
 from endoreg_db.import_files.file_storage.state_management import ensure_video_hls
-from endoreg_db.services.processed_video_cleanup import (
+from endoreg_db.services.video_storage.generation_cleanup import (
     commit_processed_replacements,
     record_processed_replacement,
     reconcile_previous_processed_cleanup,
     schedule_processed_generation_cleanup,
 )
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     configured_video_storage_profile,
-    assert_temporal_equivalence,
-    timeline_from_video_metadata,
-    evidence_as_json,
     probe_video_artifact,
     segment_timeline_references,
     validate_normalized_output,
+)
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
+    capture_canonical_timeline,
+    validate_canonical_output,
+)
+from endoreg_db.services.video_files.types import VideoArtifactKind
+from endoreg_db.services.video_storage.processed_timelines import (
+    publish_processed_coordinates,
 )
 from endoreg_db.utils.file_operations import get_file_hash
 from endoreg_db.utils.paths import get_runtime_paths, to_storage_relative
@@ -72,22 +83,6 @@ def _video_has_integrity_failure(video: "VideoFile") -> bool:
     )
 
 
-def _merge_half_open_intervals(
-    intervals: list[tuple[int, int]],
-) -> list[tuple[int, int]]:
-    if not intervals:
-        return []
-    intervals.sort()
-    merged: list[tuple[int, int]] = [intervals[0]]
-    for start_frame, end_frame in intervals[1:]:
-        previous_start, previous_end = merged[-1]
-        if start_frame <= previous_end:
-            merged[-1] = (previous_start, max(previous_end, end_frame))
-        else:
-            merged.append((start_frame, end_frame))
-    return merged
-
-
 def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
     intervals: list[tuple[int, int]] = []
     for segment in _get_outside_segments(video, only_validated=False):
@@ -124,15 +119,15 @@ def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
     return _merge_half_open_intervals(intervals)
 
 
-def _anonymize(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+def _anonymize(video: "VideoFile", delete_original_raw: bool = False) -> bool:
     """Acquire storage ownership before any anonymization work or transaction."""
-    from endoreg_db.services.media_operation_gate import video_artifact_mutation
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
 
     with video_artifact_mutation(video_id=int(video.pk)):
         return _anonymize_owned(video, delete_original_raw=delete_original_raw)
 
 
-def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> bool:
     """
     Stream a raw video through FFmpeg ROI masking instead of materializing every
     frame. File-backed frames are reserved for explicit frame workflows such as
@@ -192,19 +187,7 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bo
     try:
         with cast(_LocalRawFileProvider, video).ensure_local_raw_file() as raw_path:
             source_probe = probe_video_artifact(Path(raw_path))
-            if video.fps is None or video.duration is None or video.frame_count is None:
-                raise RuntimeError(
-                    "Stored video timeline is required for reanonymization."
-                )
-            assert_temporal_equivalence(
-                timeline_from_video_metadata(
-                    fps=float(video.fps),
-                    duration_seconds=float(video.duration),
-                    frame_count=int(video.frame_count),
-                ),
-                source_probe.timeline,
-                profile=configured_video_storage_profile(),
-            )
+            source_timestamps = capture_canonical_timeline(Path(raw_path), source_probe)
             streamed_path = mask_video_to_roi_and_blacken_intervals(
                 Path(raw_path),
                 anonymized_video_path,
@@ -220,11 +203,15 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bo
                 f"Processed video file not found after streamed anonymization for {video.raw_video_hash}: {anonymized_video_path}"
             )
 
-        normalization_evidence = validate_normalized_output(
+        normalization_evidence = validate_canonical_output(
             source=source_probe,
             output=probe_video_artifact(anonymized_video_path),
             profile=configured_video_storage_profile(),
             segments=segment_timeline_references(video, timeline=source_probe.timeline),
+            before=source_timestamps,
+            output_path=anonymized_video_path,
+            validate_output=validate_normalized_output,
+            artifact_kind=VideoArtifactKind.PROCESSED,
         )
         new_processed_hash = get_file_hash(anonymized_video_path)
         if (
@@ -253,8 +240,15 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bo
         with transaction.atomic():
             video.processed_video_hash = new_processed_hash
             video.meta = {
-                **(video.meta or {}),
-                "storage_normalization": evidence_as_json(normalization_evidence),
+                **append_canonical_timeline_history(
+                    video.meta,
+                    normalization_evidence,
+                    artifact_kind="processed",
+                    output_content_hash=new_processed_hash,
+                ),
+                "storage_normalization": normalization_evidence.model_dump(
+                    mode="json", exclude={"canonical_timestamps"}
+                ),
             }
             if previous_name:
                 record_processed_replacement(
@@ -263,7 +257,17 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bo
                     previous_hash=previous_hash,
                     strict=True,
                 )
-            video.save(update_fields=["processed_video_hash", "processed_file", "meta"])
+            publish_processed_coordinates(video, normalization_evidence)
+            video.save(
+                update_fields=[
+                    "processed_video_hash",
+                    "processed_file",
+                    "meta",
+                    "fps",
+                    "duration",
+                    "frame_count",
+                ]
+            )
         published = True
 
         # The writer lease spans HLS work, without a long publication transaction.
@@ -303,7 +307,7 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = True) -> bo
             safe_delete_field_file(video.processed_file, missing_ok=True)
             video.processed_file.name = previous_name
             video.processed_video_hash = previous_hash
-        logger.error(
+        logger.exception(
             "Streamed anonymization failed for video %s: %s",
             video.raw_video_hash,
             e,
@@ -386,7 +390,7 @@ def _cleanup_raw_assets(
             )
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Error during post-commit cleanup of raw assets for video %s: %s",
             raw_video_hash,
             e,

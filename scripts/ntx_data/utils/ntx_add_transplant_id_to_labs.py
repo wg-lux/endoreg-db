@@ -1,5 +1,6 @@
 from pathlib import Path
-from typing import Callable, Dict, List, cast
+from typing import cast
+from collections.abc import Callable
 
 import pandas as pd
 
@@ -32,7 +33,7 @@ def get_lab_record_info(lab_record: LabData) -> tuple[str, str | None]:
 
 
 def get_patient_data_for_lab_record(
-    lab_record: LabData, patient_data_by_id_ntx: Dict[str, PatientData]
+    lab_record: LabData, patient_data_by_id_ntx: dict[str, PatientData]
 ) -> PatientData | None:
     _test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
     if not patient_id_ntx:
@@ -45,8 +46,8 @@ def get_patient_data_for_lab_record(
 
 def get_transplant_id_for_lab_record(
     lab_record: LabData,
-    patient_data_by_id_ntx: Dict[str, PatientData],
-    readout_data_by_transplant_id: Dict[str, ReadoutData],
+    patient_data_by_id_ntx: dict[str, PatientData],
+    readout_data_by_transplant_id: dict[str, ReadoutData],
 ) -> str | None:
     test_datetime, patient_id_ntx = get_lab_record_info(lab_record)
     _ = patient_id_ntx
@@ -103,9 +104,9 @@ if __name__ == "__main__":
     # Serialize dataframes to datamodel lists
     ic("Serializing dataframes to datamodel lists...")
 
-    lab_data_list: List[LabData] = []
-    readout_data_list: List[ReadoutData] = []
-    patient_data_list: List[PatientData] = []
+    lab_data_list: list[LabData] = []
+    readout_data_list: list[ReadoutData] = []
+    patient_data_list: list[PatientData] = []
 
     ic("Lab Data...")
     with open(lab_jsonl_data_path, "r") as f:

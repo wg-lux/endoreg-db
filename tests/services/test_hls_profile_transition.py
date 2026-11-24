@@ -7,7 +7,7 @@ import pytest
 
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services import hls_media
+from endoreg_db.services.streaming import hls_media as hls_media
 from tests.helpers.hls import FakeHlsOutputRecorder
 from tests.services.test_hls_media import _create_processed_video
 
@@ -49,7 +49,7 @@ def test_reserved_profile_survives_default_change(
     assert artifact.encoding_profile_name == original
     assert hls_media.get_ready_hls_artifact(video=video).pk == artifact.pk
     assert (
-        hls_media.get_ready_hls_artifact_by_key(video=video, key_id=artifact.key_id).pk
+        hls_media.get_ready_hls_artifact(video=video, key_id=artifact.key_id).pk
         == artifact.pk
     )
     assert hls_media.materialize_video_hls(video.pk).status == "already_ready"
@@ -120,4 +120,4 @@ def test_ready_transition_rejects_invalid_provenance(
     with pytest.raises(FileNotFoundError):
         hls_media.get_ready_hls_artifact(video=video)
     with pytest.raises(FileNotFoundError):
-        hls_media.get_ready_hls_artifact_by_key(video=video, key_id=artifact.key_id)
+        hls_media.get_ready_hls_artifact(video=video, key_id=artifact.key_id)

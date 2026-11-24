@@ -1,6 +1,6 @@
 import logging
 from pathlib import Path
-from typing import Iterable
+from collections.abc import Iterable
 from endoreg_db.utils.file_operations import ensure_directory
 from endoreg_db.utils.paths import get_runtime_paths
 
@@ -47,7 +47,7 @@ def validate_directories(dirs: Iterable[Path] | None = None) -> bool:
                 ok = False
 
         except Exception as e:
-            logger.error(f"Failed to create or validate directory '{d}': {e}")
+            logger.exception(f"Failed to create or validate directory '{d}': {e}")
             ok = False
 
     return ok

@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime
 from enum import StrEnum
-import hashlib
 import json
 from uuid import UUID
+
+from endoreg_db.utils.hashs import get_bytes_hash
 
 from django.db import IntegrityError, transaction
 from django.db.models import Q
@@ -369,7 +370,7 @@ def _work_fingerprint(
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _work_idempotency_key(fingerprint: str) -> str:
@@ -386,7 +387,7 @@ def _cancellation_fingerprint(request: StorageBalanceCancellationRequest) -> str
         sort_keys=True,
         separators=(",", ":"),
     ).encode("utf-8")
-    return hashlib.sha256(canonical).hexdigest()
+    return get_bytes_hash(canonical)
 
 
 def _cancel_storage_balance_work(

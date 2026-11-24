@@ -68,7 +68,7 @@ with stage_lifecycle(
     )
     configure_django(snakemake.params.django_settings_module)
 
-    from endoreg_db.import_files.video_import_service import VideoImportService
+    from endoreg_db.services.video_files.direct_import import VideoImportService
     from endoreg_db.utils.file_operations import get_file_hash
     from endoreg_db.utils.rust_backend import stable_file_identities
 
@@ -89,9 +89,6 @@ with stage_lifecycle(
         processor_name=job.processor_name,
         retry=job.retry,
     )
-    if video is None:
-        raise RuntimeError("Video import completed without a persisted VideoFile.")
-
     published_content_sha256 = str(video.raw_video_hash or "")
     if not published_content_sha256:
         raise RuntimeError("Video import completed without a content hash.")

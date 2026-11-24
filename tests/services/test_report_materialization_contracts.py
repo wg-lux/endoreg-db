@@ -15,7 +15,7 @@ from endoreg_db.models import (
     RawPdfFile,
     SensitiveMeta,
 )
-from endoreg_db.services.report_materialization import (
+from endoreg_db.services.reports.materialization import (
     build_report_context_from_validation,
     upsert_anonym_examination_report_from_pdf,
 )

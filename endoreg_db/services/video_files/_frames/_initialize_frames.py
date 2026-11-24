@@ -126,7 +126,7 @@ def _reset_empty_initialization_state(video: "VideoFile") -> None:
             state.frame_count = None
             state.save(update_fields=["frames_initialized", "frame_count"])
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Failed to reset state during empty initialization for video %s: %s",
             video.raw_video_hash,
             error,
@@ -167,7 +167,7 @@ def _update_initialization_state(
         state.frame_count = frame_count
         state.save(update_fields=["frames_initialized", "frame_count"])
     except Exception as error:
-        logger.error(
+        logger.exception(
             "Failed to update state after frame initialization for video %s: %s",
             video.raw_video_hash,
             error,
@@ -222,7 +222,7 @@ def _persist_initialization_with_retry(
             return
         except OperationalError as error:
             if not _database_is_locked(error):
-                logger.error(
+                logger.exception(
                     "Error initializing frames for video %s: %s",
                     video.raw_video_hash,
                     error,

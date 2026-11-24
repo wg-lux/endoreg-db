@@ -34,21 +34,21 @@ from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.views.access_control import assert_center_scope_allowed
-from endoreg_db.services.case_resolution_state import (
+from endoreg_db.services.cases.resolution_state import (
     get_case_resolution_meta,
     persist_case_resolution_state,
 )
-from endoreg_db.services.auto_case_resolution import link_media_to_patient_examination
-from endoreg_db.services.report_materialization import (
+from endoreg_db.services.cases.auto_resolution import link_media_to_patient_examination
+from endoreg_db.services.reports.materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
 from endoreg_db.schemas.sensitive_meta_verification import (
     SensitiveMetaVerificationCommand,
 )
-from endoreg_db.services.sensitive_meta_verification import (
+from endoreg_db.services.patient_identity.verification import (
     update_sensitive_meta_verification,
 )
-from endoreg_db.services.sensitive_meta_update import (
+from endoreg_db.services.patient_identity.update import (
     SensitiveMetaUpdateCenterNotFoundError,
     SensitiveMetaUpdateGenderNotFoundError,
     update_sensitive_meta,
@@ -263,7 +263,6 @@ def _serialize_patient_examination_match(
             _get_object_field(patient_examination, "date_start")
         ),
         "date_end": _as_isoformat(_get_object_field(patient_examination, "date_end")),
-        "hash": _get_str_field(patient_examination, "hash"),
     }
 
 
@@ -351,16 +350,6 @@ def _case_resolution_payload(
         "current_patient_id": current_patient_id,
         "pseudo_patient_id": pseudo_patient_id,
         "pseudo_examination_id": pseudo_examination_id,
-        "patient_hash_display": (
-            f"...{patient_hash[-8:]}"
-            if isinstance(patient_hash, str) and patient_hash
-            else None
-        ),
-        "examination_hash_display": (
-            f"...{examination_hash[-8:]}"
-            if isinstance(examination_hash, str) and examination_hash
-            else None
-        ),
         "pseudo_patient": {
             "id": pseudo_patient_id,
             "match_count": patient_matches_count,
@@ -930,7 +919,7 @@ def sensitive_metadata_list(request: Request) -> Response:
     """
     GET /api/media/sensitive-metadata/
 
-    List all sensitive metadata (combined reports and Videos).
+    list all sensitive metadata (combined reports and Videos).
     Supports filtering by content_type, status, etc.
 
     Query parameters:
@@ -993,7 +982,7 @@ def pdf_sensitive_metadata_list(request: Request) -> Response:
     """
     GET /api/media/pdfs/sensitive-metadata/
 
-    List sensitive metadata for reports only.
+    list sensitive metadata for reports only.
     Replaces legacy /api/pdf/sensitivemeta/list/
     """
     # Get all reports with sensitive metadata

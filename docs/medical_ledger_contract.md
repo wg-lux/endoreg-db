@@ -2,6 +2,26 @@
 
 ## Scope and ownership
 
+Medication and laboratory terminology use the existing canonical
+`MedicationReference` and `LabValueReference` catalog records. The standard
+dtype loader validates them, including finite, ordered normal ranges and
+non-negative precision/adjustment fields. Patient-scoped
+`GET /api/patients/{id}/medical-terminology/` returns these persisted references
+and units for case setup.
+
+Medication records and writes accept optional timezone-aware `start_at` and
+`end_at`. An end requires a start and cannot precede it; the database also
+enforces ordering. PATCH validates the merged period. The aggregate ledger
+POST may include `case_id` (the numeric case primary key), atomically linking
+only its newly created children to that patient's open, nondeleted case.
+Omitting the case preserves patient-only creation. Existing idempotency keys
+remain compatible with omitted additive period/case fields.
+
+The case setup medication page creates medication periods and timestamped
+numeric or text lab measurements using those references. Completed examination
+snapshots copy selected rows; see [case graph persistence](case_graph_persistence.md)
+for alternative drafts, selection, follow-ups and immutable research exports.
+
 The medical ledger is a patient-scoped interchange view over canonical
 `endoreg_db` tables. It never creates patient demographics. Every read or write
 starts from an already existing, center-visible `Patient`; the patient primary
@@ -11,7 +31,7 @@ key in an aggregate request must match the patient in the URL.
 snake-case JSON schemas, serialization, and deterministic ledger UUID
 derivation. `endoreg_db` owns Django models, foreign keys, deletion behavior,
 transactions, authorization, query planning, and migrations. Orchestration
-belongs in `endoreg_db.services.medical_ledger` and the patient API actions, not
+belongs in `endoreg_db.services.interoperability.medical_ledger` and the patient API actions, not
 in either repository's model classes.
 
 The patient medical ledger is not a second persistence store. Its
@@ -28,7 +48,7 @@ database source of truth.
 | `PatientEvent` | `PatientEvent`; patient 1:N events | Required: patient, event, start date. Optional: end date, description, classification choice. JSON objects: subcategories and numerical descriptors. | Patient/event and optional choice use `CASCADE`; a supplied choice must belong to the selected event. | Calendar dates; end cannot precede start. `last_update` is database-generated. | Row identity is `PatientEvent:<pk>`; clinical description is payload data and must not be logged. |
 | `PatientLabSample` | `PatientLabSample`; patient 1:N samples | Required: patient, sample type, aware sample datetime. Nested values default to an empty list. | Patient and sample type use `CASCADE`; values reference the sample through `PatientLabValue.sample`. | Timezone-aware datetime; no implicit timezone fallback. | Row identity is `PatientLabSample:<pk>`; nested values carry their own canonical identities. |
 | `PatientLabValue` | `PatientLabValue`; patient 1:N direct values and sample 1:N nested values | Required: lab terminology, aware timestamp, and exactly one numeric or text value. Optional: unit and sample. Normal range is a strict object. | Patient, lab terminology, sample, and unit use `CASCADE` where present. The service always assigns the route patient, including nested values. | Timezone-aware measurement datetime. Numeric values must be finite. | Row identity is `PatientLabValue:<pk>`; direct and nested projections reuse the same UUID instead of inventing copies. |
-| `PatientMedication` | `PatientMedication`; patient 1:N medications | Required: medication and active status. Optional: indication, unit, JSON dosage; intake times default empty. | Patient, medication, indication, and unit use `CASCADE`; intake times are M:N. References are resolved by unique terminology names. | No clinical start/end field exists in the current host schema. | Row identity is `PatientMedication:<pk>`; dosage is returned but excluded from audit/log labels. |
+| `PatientMedication` | `PatientMedication`; patient 1:N medications | Required: medication and active status. Optional: indication, unit, JSON dosage; intake times default empty. | Patient, medication, indication, and unit use `CASCADE`; intake times are M:N. References are resolved by unique terminology names. | Optional timezone-aware start_at/end_at; an end requires a start and cannot precede it. | Row identity is `PatientMedication:<pk>`; dosage is returned but excluded from audit/log labels. |
 | `PatientMedicationSchedule` | `PatientMedicationSchedule`; patient 1:N schedules | Required: patient; medication membership may be empty. | Patient uses `CASCADE`; medication membership is M:N and every member must belong to the same patient. | `created_at` and `updated_at` are timezone-aware and database-generated. | Row identity is `PatientMedicationSchedule:<pk>`; aggregate creates reference newly created medications by zero-based request index. |
 | `PatientMedicalLedger` | Computed aggregate, not a Django table | Required: patient. All six child collections default empty. | The URL patient is authoritative. A child cannot select or create another patient. | Child semantics apply; aggregate creation time is not persisted separately. | Identity is `Patient:<pk>`. GET rebuilds solely from canonical tables; POST returns the reloaded, revalidated aggregate. |
 
@@ -148,3 +168,138 @@ timezone offset. Null is accepted only for documented optional fields.
 Unknown fields are forbidden. Database-generated primary keys, timestamps,
 external IDs, and ledger UUIDs appear only in responses and are never trusted
 from create requests.
+
+
+## Reporting clinical import contract
+
+Scope and acceptance are governed by
+[MedicalLedgerIntegration.yml](../feature-tracking/MedicalLedgerIntegration.yml),
+criterion `reporting_clinical_import_adapters`, and lx-annotate's
+`reporting_clinical_export_import` criterion. This section defines the intended
+integration contract; it does not add an import endpoint or establish readiness.
+
+The destination is the reporting flow's **Medikation und Laborwerte** page.
+The frontend owns selection, preview and review. `lx_dtypes` owns shared typed
+clinical exchange contracts and terminology definitions. `endoreg_db` owns
+source adaptation, authorization, identity reconciliation, transactions and
+canonical clinical rows. Imported data must remain available to the existing
+case/examination selection and snapshot workflow.
+
+### Adapter boundary
+
+Use one pipeline: source decoding, versioned adapter validation, typed clinical
+normalization, identity and terminology resolution, read-only preview, reviewed
+atomic commit. Each adapter declares its supported input versions and clinical
+record kinds. YAML describes source columns, null markers, code dictionaries,
+timezone policy and terminology mappings; typed functions implement transforms.
+Unknown statuses or lossy mappings produce actionable issues instead of defaults.
+Adding an adapter must not introduce a separate persistence implementation.
+
+- **MEONA tabular:** reuse the existing document-template recognition and column
+  mappings only after checking their coercion and identity rules against the
+  export. Product/component identity, event identity and order identity are
+  separate concerns. Preserve original dosage and status without inventing
+  clinical interpretations.
+- **FHIR R4 JSON:** validate supported resource structures and declared profile
+  versions. Resolve bundle/fullUrl and contained references locally, rejecting
+  ambiguous or unresolved required references. Do not fetch external references.
+  Preserve original FHIR key spelling: upload the file as opaque content rather
+  than passing its resource dictionary through axios snake-case conversion.
+- **BMP XML:** select the parser and schema by the declared BMP version; use a
+  hardened XML parser and bounded input. A DataMatrix decoder, when supported,
+  feeds the same XML adapter. Retain plan identity, membership, original text and
+  structured dosage without turning planned/reported use into administration.
+
+FHIR and BMP are different wire formats. The MII medication model provides the
+semantic distinctions: `Medication`, `MedicationStatement`, `List`,
+`MedicationRequest` and `MedicationAdministration`. The current medication
+period record alone cannot represent every distinction. Extend shared contracts
+and canonical persistence before accepting content whose meaning cannot be
+represented; do not hide unvalidated source dictionaries in dosage JSON.
+
+Laboratory normalization follows the MII laboratory concepts: `ServiceRequest`,
+`Specimen`, `Observation` and `DiagnosticReport`. Preserve local code namespaces
+and explicit mappings, quantity comparators, qualitative values, absent reasons,
+reference ranges and result status. Effective and issued times are distinct.
+Never infer LOINC, UCUM or a unit conversion from a display label alone.
+
+### Review and persistence
+
+The upload may contain multiple patients. Resolve namespaced source identifiers
+within the authorized center and show only the matched patient's records in the
+case preview. Unmatched or ambiguous identities block the affected import; the
+route patient is not a substitute for matching. Do not create demographics.
+A source without a case identifier remains patient-level unless the user
+explicitly reviews a case association. Record that association's provenance.
+
+The preview returns adapter version, source digest, record kinds, mapping issues
+and counts for new, unchanged, corrected and conflicting records. Clinical
+preview details are authorized response content, never logs. Any change of
+patient, case, file or mapping invalidates the review. Commit revalidates these
+inputs and the open-case condition within the transaction. A replay creates no
+new rows; a correction requires a source identity and explicit revision policy,
+not a new random request key. Preserve superseded facts and reject conflicting
+revisions. The existing create-only ledger receipt is reusable infrastructure,
+but does not by itself implement source-record reconciliation.
+
+Protected original artifacts, if retained, use encrypted application storage;
+parsers consume scoped plaintext materialization. Apply upload, row and resource
+limits before expensive parsing. Never retain plaintext exports in repository
+fixtures, browser local storage, logs or error responses.
+
+### Observed MEONA export shape
+
+Structural inspection of the supplied March 2026 export established UTF-8
+encoding, tab-separated fields, 27,311 rows and these columns:
+
+```text
+PatientNr, id, tradename, patient_id, apply_date, prepare_date,
+creation_date, actual_dose, unit_dose_name, main_application_id,
+main_order_id, status
+```
+
+There is no case identifier. Within `(PatientNr, id)`, 10,855 repeated-identity
+groups differ in `tradename` or `unit_dose_name`. These are not exact duplicate
+rows. The file alone does not establish whether they represent components or
+extraction join multiplicity. The existing patient-plus-row-id medication
+identity therefore cannot safely distinguish all supplied rows. Do not derive
+stable component identity from mutable display names or row positions.
+
+The observed status vocabulary is `0`, `1`, `2`, `3`, `4`; its clinical meaning
+requires the source dictionary. All parsed timestamps lack offsets. Application
+time has 7,175 null-marker rows and preparation time has 5,137; creation time is
+present throughout. Preparation/creation timestamps cannot stand in for an
+actual administration time. Source timezone and daylight-saving ambiguity rules
+must be verified rather than inherited silently from server settings.
+
+No patient identifiers, medication names or source rows are reproduced here.
+Clinical acceptance requires the extraction SQL/data dictionary to establish
+identity and status semantics. Synthetic tests can then encode those verified
+rules without copying clinical source data.
+
+### Standards references
+
+- [MII Medication 2026 module](https://www.medizininformatik-initiative.de/Kerndatensatz/KDS_Medikation_2026/MIIIGModulMedikation-BeschreibungModul.html)
+- [MII Laboratory 2026 profiles](https://www.medizininformatik-initiative.de/Kerndatensatz/KDS_Laborbefund_2026/MIIIGModulLaborbefund-TechnischeImplementierung-FHIR-Profile.html)
+- [KBV BMP specification](https://update.kbv.de/ita-update/Verordnungen/Arzneimittel/BMP/BMP_2.8_Q3_2026/EXT_ITA_VGEX_BMP_Anlage3_mitAend.pdf)
+
+
+## BMP medication fields and ordered plans
+
+Migration `0109_medication_bmp` adds typed BMP fields to canonical patient
+medications and nullable JSON `blocks` to schedules. Existing dosage and intake
+relations are preserved; no automatic conversion to BMP quantities is performed.
+A null block value denotes legacy membership. A block list stores ordered
+headings and discriminated rows using the shared lx_dtypes write contracts;
+medication rows reference canonical patient-owned primary keys. Compound and
+free-text rows store their validated text inline. The service atomically updates
+block content and matching many-to-many membership, and the read adapter rejects
+missing, extra or foreign-patient references. Clearing a plan preserves medication
+records. Partial medication updates validate the complete merged entry first.
+
+Deploy this migration and service together with the PR 34 shared contracts.
+The shared API retains legacy dosage/intake and flat membership fields. New
+BMP fields are additive; old idempotency request hashes omit their empty defaults.
+The migration does not reinterpret historical dosages. Reversing it after BMP
+writes discards the new fields and cannot restore the non-null catalog constraint
+for PZN-only rows: export and reconcile those records before any rollback.

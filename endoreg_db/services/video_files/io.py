@@ -15,7 +15,6 @@ from endoreg_db.utils.paths import (
     get_runtime_paths,
     resolve_existing_protected_media_path,
 )
-from endoreg_db.utils.encryption.encrypted import MAGIC as LX_ENCRYPTED_MAGIC
 from endoreg_db.utils.file_operations import safe_unlink_file
 from endoreg_db.utils.rust_backend import is_lx_encrypted_file
 from endoreg_db.utils.storage import delete_field_file
@@ -45,15 +44,8 @@ def streamable_path_is_safe_plaintext(path: Path) -> bool:
         )
         return False
 
-    rust_result = is_lx_encrypted_file(path)
     try:
-        if rust_result is None:
-            with path.open("rb") as handle:
-                starts_with_magic = (
-                    handle.read(len(LX_ENCRYPTED_MAGIC)) == LX_ENCRYPTED_MAGIC
-                )
-        else:
-            starts_with_magic = rust_result
+        starts_with_magic = is_lx_encrypted_file(path)
     except OSError as exc:
         logger.warning(
             "Refusing unreadable streamable video artifact: path=%s error=%s",
@@ -143,7 +135,9 @@ def get_processed_video_stream_path(
         return path
 
     if materialize_if_missing:
-        from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
+        from endoreg_db.services.streaming.streamable_media import (
+            sync_video_streamable_artifacts,
+        )
 
         sync_video_streamable_artifacts(
             video,
@@ -165,14 +159,14 @@ def delete_raw_file_after_validation(video: "VideoFile") -> bool:
     Important: delete through storage, not via guessed paths.
     Streamable derived raw copy is cleaned separately.
     """
-    from endoreg_db.services.hls_media import delete_video_hls_artifacts
+    from endoreg_db.services.streaming.hls_media import delete_video_hls_artifacts
 
     deleted = delete_video_hls_artifacts(video, artifact_kind="raw")
     raw_field = getattr(video, "raw_file", None)
 
     if raw_field and raw_field.name:
         deleted = (
-            delete_field_file(video, "raw_file", missing_ok=True, save=True) or deleted
+            delete_field_file(video, "raw_file", missing_ok=False, save=True) or deleted
         )
     else:
         raw_path = get_raw_video_file_path(video)
@@ -206,29 +200,42 @@ def delete_video_with_owned_files(
     Canonical raw/processed files are deleted through Django storage.
     Streamable/frame artifacts are path-based derived files and may be unlinked.
     """
-    try:
-        frame_delete_msg = video.delete_frames()
-        logger.info(
-            "Frame deletion result for video %s: %s",
-            video.raw_video_hash,
-            frame_delete_msg,
-        )
-    except Exception as exc:
-        logger.error(
-            "Error during frame deletion for video %s: %s",
-            video.raw_video_hash,
-            exc,
-            exc_info=True,
-        )
+    type(video).objects.select_for_update().get(pk=video.pk)
+    video.refresh_from_db()
+    delete_video_owned_files(video, missing_ok=False)
+
+    deleted = super(type(video), video).delete(
+        using=using,
+        keep_parents=keep_parents,
+    )
+    logger.info(
+        "Deleted VideoFile database record PK %s UUID %s.",
+        video.pk,
+        video.raw_video_hash,
+    )
+    return deleted
+
+
+def delete_video_owned_files(video: "VideoFile", *, missing_ok: bool) -> None:
+    """Delete owned files under the caller's video row lock; retain clinical rows.
+
+    Missing canonical files are allowed only with a durable deletion intent.
+    """
+    from endoreg_db.services.streaming.hls_media import delete_video_hls_artifacts
+    from endoreg_db.services.video_files.deletion import delete_recorded_video_copies
+
+    delete_recorded_video_copies(video)
+    for artifact_kind in ("raw", "processed"):
+        delete_video_hls_artifacts(video, artifact_kind=artifact_kind)
 
     raw_field = getattr(video, "raw_file", None)
     if raw_field and raw_field.name:
-        delete_field_file(raw_field, missing_ok=True, save=False)
+        delete_field_file(raw_field, missing_ok=missing_ok, save=False)
         logger.info("Deleted raw file via storage for %s", video.raw_video_hash)
 
     processed_field = getattr(video, "processed_file", None)
     if processed_field and processed_field.name:
-        delete_field_file(processed_field, missing_ok=True, save=False)
+        delete_field_file(processed_field, missing_ok=missing_ok, save=False)
         logger.info("Deleted processed file via storage for %s", video.raw_video_hash)
 
     raw_stream_path = get_raw_video_stream_path(video)
@@ -238,18 +245,6 @@ def delete_video_with_owned_files(
     processed_stream_path = get_processed_video_stream_path(video)
     if processed_stream_path and processed_stream_path.exists():
         safe_unlink_file(processed_stream_path, missing_ok=True)
-
-    deleted = super(type(video), video).delete(
-        using=using,
-        keep_parents=keep_parents,
-    )
-
-    logger.info(
-        "Deleted VideoFile database record PK %s UUID %s.",
-        video.pk,
-        video.raw_video_hash,
-    )
-    return deleted
 
 
 def get_video_base_frame_dir(video: "VideoFile") -> Path:

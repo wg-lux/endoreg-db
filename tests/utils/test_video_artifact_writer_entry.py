@@ -12,7 +12,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.models.media.operation_lease import MediaOperationLease
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     acquire_video_transcode_lease,
     release_video_transcode_lease,

@@ -4,10 +4,11 @@ from __future__ import annotations
 import uuid
 from datetime import timedelta
 from io import BytesIO
-from pathlib import Path
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import patch
+
+import pytest
 
 from django.test import TestCase
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -22,7 +23,7 @@ from endoreg_db.serializers.hub.transfer_job import (
     TransferJobStatusSerializer,
 )
 from endoreg_db.services.hub import transfers
-from endoreg_db.services import media_integrity
+from endoreg_db.services.media import integrity as media_integrity
 from endoreg_db.services.hub.transfers import (
     attach_transfer_media,
     authenticate_network_node,
@@ -31,12 +32,16 @@ from endoreg_db.services.hub.transfers import (
 from endoreg_db.views.media.hub import transfers as transfer_views
 
 
-def _storage_exists(_name: str) -> bool:
-    return True
-
-
-def _save_transfer_job_state_side_effect(**kwargs: Any) -> TransferJob:
-    return kwargs["transfer_job"]
+def _transfer_key_violation(existing: TransferJob) -> IntegrityError:
+    """Capture the real backend diagnostic without breaking the test transaction."""
+    duplicate = TransferJob.objects.get(pk=existing.pk)
+    duplicate.pk = uuid.uuid4()
+    try:
+        with transaction.atomic():
+            duplicate.save(force_insert=True)
+    except IntegrityError as error:
+        return error
+    raise AssertionError("Duplicate transfer key was accepted")
 
 
 class TransferJobContractTests(TestCase):
@@ -75,7 +80,7 @@ class TransferJobContractTests(TestCase):
             processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
             processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
             cleanup_policy=cleanup_policy,
-            payload_schema_version="1.0",
+            payload_schema_version="7.0",
             resource_rows={},
             processing_snapshot={},
             provenance={"custom_marker": transfer_key},
@@ -102,7 +107,7 @@ class TransferJobContractTests(TestCase):
             processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
             processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
             cleanup_policy=cleanup_policy,
-            payload_schema_version="1.0",
+            payload_schema_version="7.0",
             resource_rows={"video_file": {"raw_video_hash": resource_hash}},
             processing_snapshot={},
             provenance={"custom_marker": transfer_key},
@@ -207,60 +212,6 @@ class TransferJobContractTests(TestCase):
 
         assert authenticated_node == self.source_node
 
-    def test_raw_upload_transfer_preserves_existing_processed_artifact(self) -> None:
-        transfer_job = self._create_transfer(
-            transfer_key="transfer-processed-boundary",
-            cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-        )
-        transfer_job.processing_policy = (
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE
-        )
-        transfer_job.processing_snapshot = {"sender_processing_success": True}
-
-        storage = SimpleNamespace(exists=_storage_exists)
-
-        video = VideoFile(
-            pk=99,  # type: ignore[call-arg]
-            raw_video_hash="raw-hash",
-            raw_file=SimpleNamespace(
-                name="sensitive_videos/raw.mp4",
-                storage=storage,
-            ),
-            processed_file=SimpleNamespace(
-                name="anonymized_videos/processed.mp4",
-                storage=storage,
-            ),
-        )
-        video.get_processed_file_path = lambda: Path("/tmp/processed-final.mp4")
-
-        with (
-            patch.object(
-                transfers,
-                "_mark_video_transfer_as_processed",
-            ) as mark_processed,
-            patch.object(
-                transfers,
-                "_save_transfer_job_state",
-                side_effect=_save_transfer_job_state_side_effect,
-            ) as save_state,
-        ):
-            result = transfers._handle_video_processing_after_raw_upload(
-                transfer_job=transfer_job,
-                video=video,
-                import_path=Path("/tmp/raw-upload.mp4"),
-            )
-
-        assert result is transfer_job
-        mark_processed.assert_called_once_with(video)
-        save_state.assert_called_once()
-        assert save_state.call_args.kwargs["processing_decision"] == (
-            TransferJob.ProcessingDecision.SKIP_PRESERVED_STATE
-        )
-        assert (
-            "existing processed artifact"
-            in save_state.call_args.kwargs["status_detail"]
-        )
-
     def test_apply_video_state_payload_preserves_outside_segments_removed(self) -> None:
         video = VideoFile.objects.create(
             center=self.center,
@@ -268,13 +219,14 @@ class TransferJobContractTests(TestCase):
         )
         state = video.get_or_create_state()
 
-        transfers._apply_video_state_payload(
+        transfers._save_synced_payload_fields(
             state,
             {
                 "anonymized": True,
                 "anonymization_validated": True,
                 "outside_segments_removed": True,
             },
+            transfers._VIDEO_STATE_SYNC_FIELDS,
         )
 
         state.refresh_from_db()
@@ -308,8 +260,6 @@ class TransferJobContractTests(TestCase):
         assert transfers._json_float("2.5", field_name="ratio") == 2.5
         assert transfers._json_float(None, field_name="ratio") is None
         assert transfers._json_float("", field_name="ratio") is None
-        assert transfers._json_str("  text  ", field_name="name") == "text"
-        assert transfers._json_str(None, field_name="name") is None
         assert transfers._json_bool(True, field_name="enabled") is True
 
         assert transfers._json_object({"a": 1}, field_name="payload")["a"] == 1
@@ -323,8 +273,6 @@ class TransferJobContractTests(TestCase):
             transfers._json_int(True, field_name="count")
         with self.assertRaises(ValueError):
             transfers._json_float(True, field_name="ratio")
-        with self.assertRaises(ValueError):
-            transfers._json_str(12, field_name="name")
         with self.assertRaises(ValueError):
             transfers._json_bool("yes", field_name="enabled")
 
@@ -346,7 +294,7 @@ class TransferJobContractTests(TestCase):
                 processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
                 processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
                 cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-                payload_schema_version="1.0",
+                payload_schema_version="7.0",
                 resource_rows={},
                 processing_snapshot={},
                 provenance={},
@@ -363,6 +311,7 @@ class TransferJobContractTests(TestCase):
         )
         manager = cast(Any, TransferJob.objects)
         existing_queryset = manager.filter(transfer_key=transfer_key)
+        duplicate_error = _transfer_key_violation(existing)
 
         with (
             patch.object(
@@ -373,9 +322,7 @@ class TransferJobContractTests(TestCase):
             patch.object(
                 manager,
                 "create",
-                side_effect=IntegrityError(
-                    "UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
-                ),
+                side_effect=duplicate_error,
             ),
         ):
             reused, created = create_or_reuse_transfer_job(
@@ -389,7 +336,7 @@ class TransferJobContractTests(TestCase):
                 processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
                 processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
                 cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-                payload_schema_version="1.0",
+                payload_schema_version="7.0",
                 resource_rows={},
                 processing_snapshot={},
                 provenance={"custom_marker": transfer_key},
@@ -406,6 +353,7 @@ class TransferJobContractTests(TestCase):
         )
         manager = cast(Any, TransferJob.objects)
         existing_queryset = manager.filter(transfer_key=transfer_key)
+        duplicate_error = _transfer_key_violation(existing)
 
         with (
             patch.object(
@@ -416,9 +364,7 @@ class TransferJobContractTests(TestCase):
             patch.object(
                 manager,
                 "create",
-                side_effect=IntegrityError(
-                    "UNIQUE constraint failed: endoreg_db_transferjob.transfer_key"
-                ),
+                side_effect=duplicate_error,
             ),
             self.assertRaisesMessage(
                 ValueError,
@@ -436,7 +382,7 @@ class TransferJobContractTests(TestCase):
                 processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
                 processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
                 cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-                payload_schema_version="1.0",
+                payload_schema_version="7.0",
                 resource_rows={},
                 processing_snapshot={},
                 provenance={"custom_marker": transfer_key},
@@ -479,7 +425,7 @@ class TransferJobContractTests(TestCase):
                 processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
                 processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
                 cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-                payload_schema_version="1.0",
+                payload_schema_version="7.0",
                 resource_rows={},
                 processing_snapshot={},
                 provenance={"custom_marker": transfer_key},
@@ -524,7 +470,7 @@ class TransferJobContractTests(TestCase):
                 processing_policy=TransferJob.ProcessingPolicy.REPROCESS_IF_MISSING_OUTPUTS,
                 processing_intent=TransferJob.ProcessingIntent.STATE_PRESERVATION,
                 cleanup_policy=TransferJob.CleanupPolicy.RETAIN_ALL,
-                payload_schema_version="1.0",
+                payload_schema_version="7.0",
                 resource_rows={},
                 processing_snapshot={},
                 provenance={"custom_marker": transfer_key},
@@ -575,9 +521,6 @@ class TransferJobContractTests(TestCase):
             )
             == ""
         )
-
-        assert transfers._normalized_suffix("scan.mov", default_suffix=".mp4") == ".mov"
-        assert transfers._normalized_suffix("scan", default_suffix=".mp4") == ".mp4"
 
     def test_transfer_external_ids_and_metadata_upload_tracking(self) -> None:
         with patch("endoreg_db.services.hub.audit.logger.info"):
@@ -950,7 +893,7 @@ class TransferJobContractTests(TestCase):
             TransferJob.TransferStatus.RETRY_WAIT,
             TransferJob.TransferStatus.LOST,
         ):
-            with self.subTest(status=status):
+            with self.subTest(status=status.value):
                 # Arrange
                 retryable = self._create_transfer(
                     transfer_key=f"transfer-retryable-{status}",
@@ -1236,3 +1179,82 @@ class TransferJobContractTests(TestCase):
             TransferJob.TransferStatus.PENDING,
         )
         self.assertNotIn("owner", str(payload["detail"]).lower())
+
+
+_PTS_RECORDING_HASH = "a" * 64
+_PTS_PROCESSED_HASH = "b" * 64
+
+
+def _recovery_provenance(frame_count: int) -> dict[str, object]:
+    return {
+        "video_provenance_recovery": {
+            "recording_hash": _PTS_RECORDING_HASH,
+            "processed_timeline": {
+                "content_hash": _PTS_PROCESSED_HASH,
+                "time_base_num": 1,
+                "time_base_den": 1000,
+                "presentation_timestamps": [frame * 40 for frame in range(frame_count)],
+            },
+        }
+    }
+
+
+def _unsaved_transfer_video(frame_count: int | None) -> VideoFile:
+    return VideoFile(
+        raw_video_hash=_PTS_RECORDING_HASH,
+        processed_video_hash=_PTS_PROCESSED_HASH,
+        frame_count=frame_count,
+    )
+
+
+@pytest.mark.parametrize("declared_frame_count", [None, 3])
+def test_transfer_frame_count_is_bound_to_received_presentation_timeline(
+    declared_frame_count: int | None,
+) -> None:
+    video = _unsaved_transfer_video(declared_frame_count)
+
+    provenance = transfers._accept_transfer_video_provenance(
+        video, _recovery_provenance(3)
+    )
+
+    assert provenance is not None
+    assert video.frame_count == 3
+
+
+@pytest.mark.parametrize("declared_frame_count", [2, 4])
+def test_transfer_frame_count_disagreeing_with_timeline_is_rejected(
+    declared_frame_count: int,
+) -> None:
+    video = _unsaved_transfer_video(declared_frame_count)
+
+    with pytest.raises(ValueError, match="disagrees with the received presentation"):
+        transfers._accept_transfer_video_provenance(video, _recovery_provenance(3))
+
+
+def test_transfer_with_both_provenance_kinds_is_rejected_before_acceptance() -> None:
+    video = _unsaved_transfer_video(3)
+    both: dict[str, object] = {
+        **_recovery_provenance(3),
+        "video_frame_provenance": {},
+    }
+
+    with pytest.raises(ValueError, match="verified or unresolved provenance"):
+        transfers._accept_transfer_video_provenance(video, both)
+
+    assert video.meta in (None, {})
+
+
+def test_transfer_without_provenance_leaves_declared_frame_count() -> None:
+    video = _unsaved_transfer_video(5)
+
+    assert transfers._accept_transfer_video_provenance(video, {}) is None
+    assert video.frame_count == 5
+
+
+def test_video_segments_without_provenance_are_rejected() -> None:
+    with pytest.raises(ValueError, match="require frame provenance"):
+        transfers._verified_video_segments(
+            video=_unsaved_transfer_video(3),
+            provenance=None,
+            rows=[cast(Any, {})],
+        )

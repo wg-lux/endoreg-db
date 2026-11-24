@@ -22,7 +22,7 @@ from endoreg_db.models import (
 )
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.services.hub.ingest import (
-    _run_video_upload_import_job,  # pyright: ignore[reportPrivateUsage]
+    run_video_upload_import_job,
     create_or_reuse_upload_job,
     process_preanonymized_watcher_file,
     process_watcher_file,
@@ -268,11 +268,11 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+                "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=ValueError("Test processing error"),
             ),
         ):
-            result = _run_video_upload_import_job(str(upload_job.id))
+            result = run_video_upload_import_job(str(upload_job.id))
 
         self.assertFalse(result)
 
@@ -308,7 +308,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 return_value="processor",
             ),
             patch(
-                "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+                "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
                 side_effect=InsufficientStorageError(
                     "Insufficient pipeline storage. Required: 11.1 GB, "
                     "Available: 2.8 GB",
@@ -317,7 +317,7 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 ),
             ),
         ):
-            result = _run_video_upload_import_job(str(upload_job.id))
+            result = run_video_upload_import_job(str(upload_job.id))
 
         self.assertFalse(result)
         upload_job.refresh_from_db()

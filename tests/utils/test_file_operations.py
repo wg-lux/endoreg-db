@@ -5,9 +5,12 @@ import io
 import os
 import errno
 import logging
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from collections.abc import Iterable
 from pathlib import Path
 from typing import Any, cast
+from types import SimpleNamespace
 
 import pytest
 from _pytest.logging import LogCaptureFixture
@@ -15,6 +18,9 @@ from django.db.models.fields.files import FieldFile
 from pytest import MonkeyPatch
 
 from endoreg_db.utils import file_operations
+from endoreg_db.exceptions import InsufficientStorageError
+from endoreg_db.utils.paths import get_runtime_paths
+
 from endoreg_db.utils.file_operations import (
     atomic_create_file,
     atomic_handoff_file,
@@ -32,6 +38,51 @@ from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from django.db.models import FileField
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.utils.encryption.encryption import encrypt_stream
+
+pytestmark = pytest.mark.django_db
+
+
+@pytest.mark.parametrize("free_bytes", [119, 120])
+def test_disk_capacity_uses_typed_error_and_exact_measured_budget(
+    tmp_path: Path, monkeypatch: MonkeyPatch, free_bytes: int
+) -> None:
+    def disk_usage(path: Path) -> SimpleNamespace:
+        assert path == tmp_path
+        return SimpleNamespace(total=1000, used=1000 - free_bytes, free=free_bytes)
+
+    monkeypatch.setattr(file_operations.shutil, "disk_usage", disk_usage)
+    if free_bytes < 120:
+        with pytest.raises(InsufficientStorageError) as failure:
+            file_operations.ensure_disk_capacity(
+                destination_dir=tmp_path, required_bytes=100, safety_margin=1.2
+            )
+        assert failure.value.required_space == 120
+        assert failure.value.available_space == free_bytes
+    else:
+        file_operations.ensure_disk_capacity(
+            destination_dir=tmp_path, required_bytes=100, safety_margin=1.2
+        )
+
+
+def test_atomic_copy_storage_shortage_preserves_source_and_existing_destination(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    source, destination = tmp_path / "source.bin", tmp_path / "destination.bin"
+    source.write_bytes(b"new source")
+    destination.write_bytes(b"previous destination")
+
+    def disk_usage(_path: Path) -> SimpleNamespace:
+        return SimpleNamespace(total=1000, used=1000, free=0)
+
+    monkeypatch.setattr(file_operations.shutil, "disk_usage", disk_usage)
+    with pytest.raises(InsufficientStorageError):
+        file_operations.atomic_copy_file(source=source, destination=destination)
+    assert source.read_bytes() == b"new source"
+    assert destination.read_bytes() == b"previous destination"
+    assert sorted(path.name for path in tmp_path.iterdir()) == [
+        "destination.bin",
+        "source.bin",
+    ]
 
 
 class _StreamingStorage:
@@ -193,7 +244,7 @@ def test_get_file_hash_raises_on_none_or_missing() -> None:
 def test_atomic_write_file_replaces_destination_and_emits_json_log(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "nested" / "payload.bin"
 
     result = atomic_write_file(
@@ -221,7 +272,7 @@ def test_atomic_write_file_replaces_destination_and_emits_json_log(
 def test_atomic_write_file_removes_partial_temp_file_on_generator_failure(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "payload.bin"
 
     def failing_content() -> Iterable[bytes]:
@@ -253,13 +304,116 @@ def test_atomic_create_file_never_replaces_existing_content(tmp_path: Path) -> N
     assert not tuple(tmp_path.glob("lock.json.tmp.*"))
 
 
+@pytest.mark.parametrize("operation", ["write", "create", "handoff"])
+def test_private_temporary_permissions_exist_before_first_write(
+    tmp_path: Path, monkeypatch: MonkeyPatch, operation: str
+) -> None:
+    writer = {
+        "write": atomic_write_file,
+        "create": atomic_create_file,
+        "handoff": atomic_handoff_file,
+    }[operation]
+    original_open = os.open
+
+    def check_open(path: str, flags: int, mode: int = 0o777) -> int:
+        descriptor = original_open(path, flags, mode)
+        if flags & os.O_CREAT:
+            assert flags & os.O_EXCL
+            assert os.fstat(descriptor).st_mode & 0o777 == 0o600
+        return descriptor
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(file_operations.os, "open", check_open)
+        writer(
+            destination=tmp_path / "private.bin", content=[b"private"], file_mode=0o600
+        )
+
+
+@pytest.mark.parametrize("operation", ["write", "create", "handoff"])
+def test_temporary_collision_preserves_link_and_target(
+    tmp_path: Path, monkeypatch: MonkeyPatch, operation: str
+) -> None:
+    writer = {
+        "write": atomic_write_file,
+        "create": atomic_create_file,
+        "handoff": atomic_handoff_file,
+    }[operation]
+    target = tmp_path / "other-owner.bin"
+    target.write_bytes(b"do not change")
+    occupied = tmp_path / "occupied"
+    occupied.symlink_to(target)
+    helper = (
+        "_temporary_handoff_destination"
+        if operation == "handoff"
+        else "_temporary_destination"
+    )
+
+    def occupied_path(_destination: Path) -> Path:
+        return occupied
+
+    monkeypatch.setattr(file_operations, helper, occupied_path)
+    destination = tmp_path / "candidate.bin"
+    with pytest.raises(FileExistsError):
+        writer(destination=destination, content=[b"private"], file_mode=0o600)
+    assert target.read_bytes() == b"do not change"
+    assert occupied.is_symlink()
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize("operation", ["write", "create", "handoff"])
+def test_concurrent_writers_use_independent_temporary_files(
+    tmp_path: Path, operation: str
+) -> None:
+    writer = {
+        "write": atomic_write_file,
+        "create": atomic_create_file,
+        "handoff": atomic_handoff_file,
+    }[operation]
+    barrier = Barrier(2, timeout=10)
+    destination = tmp_path / "shared.bin"
+
+    def write(payload: bytes) -> bool:
+        def content() -> Iterable[bytes]:
+            yield payload
+            barrier.wait()
+            yield payload
+
+        try:
+            writer(destination=destination, content=content(), file_mode=0o600)
+            return True
+        except FileExistsError:
+            return False
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(write, [b"first", b"second"]))
+    assert sum(results) == (1 if operation == "create" else 2)
+    assert destination.read_bytes() in {b"firstfirst", b"secondsecond"}
+    assert list(tmp_path.iterdir()) == [destination]
+
+
+@pytest.mark.parametrize("link_kind", ["symbolic", "hard"])
+def test_safe_unlink_never_overwrites_linked_content(
+    tmp_path: Path, link_kind: str
+) -> None:
+    target = tmp_path / "retained.bin"
+    target.write_bytes(b"retained clinical media")
+    staged = tmp_path / "staging.bin"
+    if link_kind == "symbolic":
+        staged.symlink_to(target)
+    else:
+        staged.hardlink_to(target)
+    safe_unlink_file(staged)
+    assert not staged.exists()
+    assert target.read_bytes() == b"retained clinical media"
+
+
 @pytest.mark.unit
 def test_atomic_handoff_file_fsyncs_and_promotes_final_name(
     caplog: LogCaptureFixture,
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "incoming.mp4"
     fsync_calls: list[int] = []
     original_fsync = file_operations.os.fsync
@@ -296,7 +450,7 @@ def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
     caplog: LogCaptureFixture,
     tmp_path: Path,
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     destination = tmp_path / "incoming.mp4"
 
     with pytest.raises(ValueError, match="byte count mismatch"):
@@ -319,7 +473,7 @@ def test_atomic_handoff_file_removes_temp_file_on_byte_count_mismatch(
 def test_atomic_move_file_falls_back_to_copy_then_unlink_on_cross_device_error(
     caplog: LogCaptureFixture, monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     source = tmp_path / "source.bin"
     destination = tmp_path / "other" / "destination.bin"
     source.write_bytes(b"move-me")
@@ -393,7 +547,7 @@ def test_atomic_move_file_copy_failure_keeps_source_and_removes_partial_destinat
 def test_safe_unlink_file_missing_required_path_logs_and_raises(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     missing = tmp_path / "missing.bin"
 
     with pytest.raises(FileNotFoundError):
@@ -412,7 +566,7 @@ def test_safe_unlink_file_missing_required_path_logs_and_raises(
 def test_ensure_directory_and_safe_rmtree_emit_structured_events(
     caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     target = tmp_path / "created" / "nested"
 
     ensure_directory(target, dir_mode=0o700)
@@ -439,7 +593,7 @@ def test_ensure_directory_and_safe_rmtree_emit_structured_events(
 def test_safe_rmtree_retries_directory_not_empty_race(
     monkeypatch: MonkeyPatch, caplog: LogCaptureFixture, tmp_path: Path
 ) -> None:
-    caplog.set_level(logging.INFO, logger="endoreg_db.utils.file_operations")
+    caplog.set_level(logging.INFO, logger=file_operations.logger.name)
     target = tmp_path / "racy"
     ensure_directory(target)
     atomic_write_file(destination=target / "child.txt", content=(b"payload",))
@@ -467,3 +621,36 @@ def test_safe_rmtree_retries_directory_not_empty_race(
     assert any(
         event["operation"] == "rmtree" and event["status"] == "ok" for event in events
     )
+
+
+@pytest.mark.parametrize("consumer_fails", [False, True])
+def test_protected_temporary_directory_owns_private_workspace(
+    consumer_fails: bool,
+) -> None:
+    workspace: Path | None = None
+    try:
+        with file_operations.protected_temporary_directory(
+            prefix="private-test-"
+        ) as directory:
+            workspace = directory
+            assert directory.parent == get_runtime_paths().transcoding.resolve()
+            assert directory.stat().st_mode & 0o777 == 0o700
+            atomic_create_file(
+                destination=directory / "input.txt",
+                content=[b"private"],
+                file_mode=0o600,
+            )
+            if consumer_fails:
+                raise ValueError("consumer failed")
+    except ValueError as exc:
+        assert consumer_fails
+        assert str(exc) == "consumer failed"
+    assert workspace is not None
+    assert not workspace.exists()
+
+
+@pytest.mark.parametrize("prefix", ["", "../outside", "/absolute", "..\\outside"])
+def test_protected_temporary_directory_rejects_unsafe_prefix(prefix: str) -> None:
+    with pytest.raises(ValueError, match="single path component"):
+        with file_operations.protected_temporary_directory(prefix=prefix):
+            pytest.fail("unsafe workspace was created")

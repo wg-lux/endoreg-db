@@ -13,7 +13,7 @@ POST /endoreg-api/media/videos/<video_id>/segments/rerun-predictions/
 ```
 
 Relevant request fields are collected as `temporal_options` by
-`endoreg_db.services.video_temporal_inference.extract_temporal_options`.
+`endoreg_db.services.video_files.temporal_inference.extract_temporal_options`.
 Only snake_case option names listed in `TEMPORAL_OPTION_KEYS` are forwarded.
 
 ## Smoothing Options

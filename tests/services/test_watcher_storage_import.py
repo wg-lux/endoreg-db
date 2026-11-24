@@ -5,7 +5,8 @@ import os
 import threading
 import time
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
@@ -17,10 +18,13 @@ from lx_dtypes.models.contracts.hub_ingest import (
 from endoreg_db.models import Center, EndoscopyProcessor, UploadJob, VideoFile
 from endoreg_db.services.hub import ingest
 from endoreg_db.services.hub import watcher_handoff
+from endoreg_db.services.hub.upload_job_cancellation import UploadJobImportCancelled
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
 from endoreg_db.services.hub.watcher_handoff import (
     WatcherFileNotReadyError,
     is_in_progress_handoff_path,
 )
+from endoreg_db.services.imports.processing import record_published_import
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     safe_unlink_file,
@@ -59,6 +63,162 @@ def _write_test_file(path: Path, content: bytes) -> Path:
 
 def _validated_upload_provenance(upload_job: UploadJob) -> UploadProvenancePayload:
     return parse_upload_provenance_payload(upload_job.processing_provenance)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["cancel_requested", "cancelled"])
+@pytest.mark.parametrize("with_sidecar", [False, True])
+def test_watcher_reuse_preserves_cancelled_drop(
+    tmp_path: Path,
+    status: str,
+    with_sidecar: bool,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    sidecar = _write_test_file(tmp_path / "report.yaml", b"metadata")
+    job = UploadJob.objects.create(content_type="text/plain")
+    UploadJob.objects.filter(pk=job.pk).update(status=status)
+
+    result = ingest._reuse_watcher_upload_job(
+        upload_job=job,
+        created=False,
+        watched_path=source,
+        sidecar_path=sidecar if with_sidecar else None,
+    )
+
+    assert result is job
+    assert job.status == status
+    assert source.read_bytes() == b"report"
+    assert sidecar.read_bytes() == b"metadata"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["cancel_requested", "cancelled"])
+def test_watcher_processing_rechecks_cancellation_after_lookup(
+    tmp_path: Path,
+    status: str,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    job = UploadJob.objects.create(content_type="text/plain")
+    UploadJob.objects.filter(pk=job.pk).update(status=status)
+
+    with pytest.raises(UploadJobImportCancelled):
+        ingest._mark_watcher_upload_job_processing(upload_job=job, watched_path=source)
+
+    job.refresh_from_db()
+    assert job.status == status
+    assert "watcher_processing_path" not in job.processing_provenance
+    assert source.exists()
+
+
+@pytest.mark.django_db
+def test_settled_watcher_source_does_not_wait_again(
+    tmp_path: Path,
+    watcher_center: Center,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    settled = watcher_handoff.wait_for_watcher_file_ready(
+        source, stable_after_seconds=0
+    )
+    with patch.object(ingest, "_wait_for_watcher_file_ready") as wait:
+        job, created = ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            content_type="text/plain",
+            source_center=watcher_center,
+            settled_stat=settled,
+        )
+    wait.assert_not_called()
+    assert created
+    assert job.content_hash == get_file_hash(source)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("change", ["append", "replace", "symlink"])
+def test_settled_watcher_source_is_revalidated_before_hashing(
+    tmp_path: Path,
+    watcher_center: Center,
+    change: str,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    settled = source.stat()
+    if change == "append":
+        source.write_bytes(b"changed report")
+    else:
+        replacement = _write_test_file(tmp_path / "replacement.txt", b"report")
+        if change == "replace":
+            replacement.replace(source)
+        else:
+            source.unlink()
+            source.symlink_to(replacement)
+
+    with (
+        patch.object(ingest, "get_file_hash") as hash_file,
+        pytest.raises((WatcherFileNotReadyError, ValueError)),
+    ):
+        ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            content_type="text/plain",
+            source_center=watcher_center,
+            settled_stat=settled,
+        )
+    hash_file.assert_not_called()
+    assert UploadJob.objects.count() == 0
+    assert source.exists()
+
+
+def test_supplied_snapshot_does_not_allow_temporary_handoff_name(
+    tmp_path: Path,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt.part", b"report")
+    with pytest.raises(WatcherFileNotReadyError, match="in-progress"):
+        ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            content_type="text/plain",
+            settled_stat=source.stat(),
+        )
+
+
+@pytest.mark.django_db
+def test_preanonymized_import_observes_cancellation_before_processing(
+    tmp_path: Path,
+    watcher_center: Center,
+) -> None:
+    source = _write_test_file(tmp_path / "report.txt", b"report")
+    sidecar = _write_test_file(tmp_path / "report.yaml", b"metadata")
+    job = UploadJob.objects.create(content_type="text/plain")
+    context = ingest._PreanonymizedWatcherContext(
+        normalized_type="report",
+        content_type="text/plain",
+        source_center=watcher_center,
+        metadata_payload=None,
+        sidecar_path=sidecar,
+    )
+
+    def cancel_after_reuse_check(**_kwargs: object) -> None:
+        UploadJob.objects.filter(pk=job.pk).update(
+            status=UploadJob.Status.CANCEL_REQUESTED
+        )
+
+    with (
+        patch.object(
+            ingest, "_prepare_preanonymized_watcher_context", return_value=context
+        ),
+        patch.object(
+            ingest, "_create_preanonymized_upload_job", return_value=(job, True)
+        ),
+        patch.object(
+            ingest, "_reuse_watcher_upload_job", side_effect=cancel_after_reuse_check
+        ),
+        patch.object(ingest, "_finalize_preanonymized_watcher_media") as finalize,
+        pytest.raises(UploadJobImportCancelled),
+    ):
+        ingest.process_preanonymized_watcher_file(
+            file_path=source, center=watcher_center
+        )
+
+    finalize.assert_not_called()
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.CANCEL_REQUESTED
+    assert source.exists() and sidecar.exists()
 
 
 def _create_completed_video_upload(
@@ -141,6 +301,13 @@ def _fake_video_import(video: VideoFile) -> _VideoImportCallable:
         assert callable(execution_guard)
         execution_guard()
         assert Path(file_path).exists()
+        upload_job_id = current_upload_job_id()
+        assert upload_job_id is not None
+        record_published_import(
+            upload_job_id,
+            media_id=int(video.pk),
+            source_sha256=get_file_hash(file_path),
+        )
         safe_unlink_file(Path(file_path), missing_ok=False)
         return video
 
@@ -395,17 +562,40 @@ def test_process_watcher_file_waits_for_direct_slow_writer(
     assert watched_file.name not in caplog.text
 
 
+@pytest.mark.parametrize(
+    ("suffix", "content_type"),
+    [(".pdf", "application/pdf"), (".txt", "text/plain"), (".TXT", "text/plain")],
+)
+def test_watcher_report_format_contract(suffix: str, content_type: str) -> None:
+    assert ingest._watcher_file_contract("report", Path(f"report{suffix}")) == (
+        "report",
+        content_type,
+    )
+
+
+@pytest.mark.parametrize("suffix", [".csv", ".json", ".jpg", ".zip"])
+def test_watcher_rejects_unsupported_report_formats(suffix: str) -> None:
+    with pytest.raises(ValueError, match="Unsupported watcher report suffix"):
+        ingest._watcher_file_contract("report", Path(f"report{suffix}"))
+
+
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("filename", "content_type"),
+    [("incoming-report.pdf", "application/pdf"), ("incoming-report.txt", "text/plain")],
+)
 def test_create_or_reuse_watcher_upload_job_records_storage_contract(
     tmp_path: Path,
     watcher_center: Center,
+    filename: str,
+    content_type: str,
 ) -> None:
-    watched_file = tmp_path / "incoming-report.pdf"
+    watched_file = tmp_path / filename
     watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
 
     upload_job, created = ingest.create_or_reuse_watcher_upload_job(
         file_path=watched_file,
-        content_type="application/pdf",
+        content_type=content_type,
         source_center=watcher_center,
         processing_provenance={"file_type": "report"},
     )
@@ -418,6 +608,9 @@ def test_create_or_reuse_watcher_upload_job_records_storage_contract(
     assert upload_job.cleanup_status == UploadJob.CleanupStatus.PENDING
     assert upload_job.source_file_persisted is True
     assert upload_job.original_filename == watched_file.name
+    assert upload_job.content_type == content_type
+    assert upload_job.file.name is not None
+    assert Path(upload_job.file.name).suffix == watched_file.suffix
     provenance = _validated_upload_provenance(upload_job)
     assert provenance.entrypoint == "watcher"
     assert provenance.watched_path == str(watched_file)
@@ -446,7 +639,7 @@ def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
     original_id = upload_job.id
 
     with patch(
-        "endoreg_db.services.report_import.ReportImportService.import_and_anonymize",
+        "endoreg_db.services.reports.import_service.ReportImportService.import_and_anonymize",
         side_effect=AssertionError("duplicate watcher file must not be reprocessed"),
     ):
         reused_job = ingest.process_watcher_file(
@@ -476,7 +669,7 @@ def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
     )
 
     with patch(
-        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+        "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
         side_effect=AssertionError("complete media must be reused"),
     ):
         reused_job = ingest.process_watcher_file(
@@ -491,7 +684,7 @@ def test_completed_watcher_video_with_intact_media_reuses_duplicate_drop(
     assert not watched_file.exists()
 
 
-@pytest.mark.django_db
+@pytest.mark.django_db(transaction=True)
 def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
     tmp_path: Path,
     watcher_center: Center,
@@ -506,7 +699,7 @@ def test_completed_watcher_video_missing_raw_marks_old_job_lost_and_reingests(
     )
 
     with patch(
-        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+        "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
         side_effect=_fake_video_import(video),
     ):
         new_job = ingest.process_watcher_file(
@@ -541,7 +734,7 @@ def test_completed_watcher_video_missing_processed_marks_old_job_lost_and_reinge
     )
 
     with patch(
-        "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+        "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
         side_effect=_fake_video_import(video),
     ):
         new_job = ingest.process_watcher_file(
@@ -579,7 +772,7 @@ def test_completed_watcher_video_unreadable_artifact_marks_old_job_lost(
             return_value=False,
         ),
         patch(
-            "endoreg_db.services.video_import.VideoImportService.import_and_anonymize_fenced",
+            "endoreg_db.services.video_files.direct_import.VideoImportService.import_and_anonymize_fenced",
             side_effect=_fake_video_import(video),
         ),
     ):
@@ -762,6 +955,85 @@ def test_load_preanonymized_sidecar_errors_redact_missing_and_invalid_paths(
         assert str(tmp_path) not in message
         assert watched_file.stem not in message
         assert "path_sha256=" in message
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("suffix", "content", "reason"),
+    [
+        (".yaml", "a: &x ext-42\nexternal_id: *x\n", "aliases are not supported"),
+        (".yml", "external_id: a\nexternal_id: b\n", "must not repeat keys"),
+        (".json", '{"external_id": "a", "external_id": "b"}', "must not repeat keys"),
+        (".json", "{", "Cannot import json content"),
+    ],
+)
+def test_load_preanonymized_sidecar_rejects_ambiguous_or_expanding_content(
+    tmp_path: Path, suffix: str, content: str, reason: str
+) -> None:
+    watched_file = tmp_path / "patient-max-mustermann.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(suffix).write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a mapping") as error:
+        ingest._load_preanonymized_sidecar(watched_file)
+
+    assert reason in str(error.value)
+    assert watched_file.stem not in str(error.value)
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_errors_omit_sidecar_content(tmp_path: Path) -> None:
+    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    sidecar = watched_file.with_suffix(".yaml")
+    sidecar.write_text("patient_last_name: Mustermann\n  broken: [\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="must contain a mapping") as malformed:
+        ingest._load_preanonymized_sidecar(watched_file)
+
+    sidecar.write_text(
+        "patient_last_name: Mustermann\npatient_dob: not-a-date\n", encoding="utf-8"
+    )
+    with pytest.raises(ValueError, match="Invalid preanonymized sidecar") as invalid:
+        ingest._load_preanonymized_sidecar(watched_file)
+
+    assert "patient_dob" in str(invalid.value)
+    for error in (malformed.value, invalid.value):
+        assert "Mustermann" not in str(error)
+        assert "not-a-date" not in str(error)
+        assert error.__cause__ is None and error.__suppress_context__
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_rejects_oversized_sidecar(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(ingest, "_PREANONYMIZED_SIDECAR_MAX_BYTES", 16)
+    watched_file = tmp_path / "preanonymized.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(".json").write_text(
+        '{"external_id": "ext-42", "external_id_origin": "hospital"}', encoding="utf-8"
+    )
+
+    with pytest.raises(ValueError, match="16 byte import limit"):
+        ingest._load_preanonymized_sidecar(watched_file)
+
+
+@pytest.mark.unit
+def test_load_preanonymized_sidecar_format_follows_sidecar_suffix(
+    tmp_path: Path,
+) -> None:
+    # "report.fhir.json" would otherwise be detected as FHIR JSON.
+    watched_file = tmp_path / "report.fhir.pdf"
+    watched_file.write_bytes(b"%PDF-1.4\n%%EOF\n")
+    watched_file.with_suffix(".json").write_text(
+        '{"external_id": "ext-42", "external_id_origin": "hospital"}', encoding="utf-8"
+    )
+
+    payload, _ = ingest._load_preanonymized_sidecar(watched_file)
+
+    assert payload is not None
+    assert payload.external_id == "ext-42"
 
 
 @pytest.mark.django_db

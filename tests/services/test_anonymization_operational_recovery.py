@@ -23,7 +23,10 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state.audit_ledger import AuditLedger
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.services.jobs.stale_recovery import VIDEO_PROCESSING_STALE_TIMEOUT
+from endoreg_db.services.jobs.video_reimport_budget import (
+    MAX_REIMPORT_SOFT_SECONDS,
+    REIMPORT_CLEANUP_SECONDS,
+)
 from endoreg_db.services.jobs.video_reimport_jobs import (
     RESERVATION_CREATED,
     _reserve_reimport_history,
@@ -89,13 +92,17 @@ def test_recoverable_video_failure_can_be_retried_without_erasing_evidence(
     stale_history = VideoProcessingHistory.objects.create(
         video=video,
         operation=VideoProcessingHistory.OPERATION_REPROCESSING,
-        status=VideoProcessingHistory.STATUS_RUNNING,
+        status=VideoProcessingHistory.STATUS_PENDING,
         task_id="stale-anonymization-retry",
         config=VideoReimportHistoryConfig(queue="ffmpeg_media").model_dump(mode="json"),
     )
+    # Only abandoned queued work can be reclaimed by creation age. A running
+    # worker remains protected even after this admission window expires.
     VideoProcessingHistory.objects.filter(pk=stale_history.pk).update(
         created_at=(
-            timezone.now() - VIDEO_PROCESSING_STALE_TIMEOUT - timedelta(minutes=1)
+            timezone.now()
+            - timedelta(seconds=MAX_REIMPORT_SOFT_SECONDS + REIMPORT_CLEANUP_SECONDS)
+            - timedelta(hours=1, minutes=1)
         )
     )
     state.mark_processing_failed()

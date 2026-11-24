@@ -10,6 +10,12 @@ let
   # Pin to specific Python 3.12 version to match pyproject.toml
   python = pkgs.python312; #known devenv issue with python3Packages since python3Full was deprecated
   uvPackage = pkgs.uv;
+  reportEmbeddingModel = pkgs.python312Packages.spacy-models.de_core_news_lg;
+  reportEmbeddingModelDirectory = "${reportEmbeddingModel.pname}-${reportEmbeddingModel.version}/${reportEmbeddingModel.pname}/${reportEmbeddingModel.pname}-${reportEmbeddingModel.version}";
+  reportEmbeddingModelData = pkgs.runCommand "${reportEmbeddingModel.pname}-${reportEmbeddingModel.version}-data" { } ''
+    tar -xzf ${reportEmbeddingModel.src} ${reportEmbeddingModelDirectory}
+    mv ${reportEmbeddingModelDirectory} "$out"
+  '';
   
   numbaSupport = pkgs.callPackage ./nix/numba-support.nix { };
 
@@ -43,9 +49,9 @@ let
     libxext     # Common dependency for OpenCV
     libxrender  # Common dependency for OpenCV
     libxkbcommon     # Often required by newer Qt/OpenCV builds    
-
   ];
   runtimePackages = with pkgs; [
+    file # libmagic for content-based upload validation
     ffmpeg-headless.bin
     zlib
     jq
@@ -64,11 +70,11 @@ let
     graphviz        # Enables the call-graph visualization tab inside Cachegrind
     python312
     python312Packages.pyprof2calltree
-
+    postgresql
   ];
 
   
-  SYNC_CMD = "uv sync --extra dev --extra docs";
+  SYNC_CMD = "uv sync --python ${python}/bin/python --extra dev";
   FAST_TEST_MARKER = "not (expensive or video or pipeline or ai or slow or ffmpeg)";
   FAST_TEST_ENV = ''
     export SKIP_EXPENSIVE_TESTS=true
@@ -76,7 +82,10 @@ let
     export USE_STUB_MODEL_META=true
     export TEST_DB_REUSE=true
   '';
-  FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' -n auto --dist=loadscope";
+  # pytest-xdist accepts PYTEST_XDIST_AUTO_NUM_WORKERS=2 (or 4) to bound
+  # worker-local PostgreSQL startup and memory costs without changing isolation.
+  TEST_PYTEST_ARGS = "-n auto --dist=loadscope --durations=30";
+  FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' ${TEST_PYTEST_ARGS}";
   HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";
   COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit_integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
 
@@ -118,18 +127,25 @@ in
 
     # Critical: uv and devenv use the same environment.
     UV_PROJECT_ENVIRONMENT = "${config.devenv.state}/venv";
+
+    # prek rejects an empty inherited cache path, including during hook installation.
+    PREK_HOME = "${config.devenv.state}/prek";
+
+    # Only model data: the venv supplies spaCy; integration checks manifest.yml hashes.
+    ENDOREG_REPORT_EMBEDDING_MODEL_PATH = "${reportEmbeddingModelData}";
   };
 
   languages.python = {
     enable = true;
     version = "3.12";
 
-    venv.enable = true;
+    # Shell reloads must never replace packages used by running tests or workers.
+    venv.enable = false;
 
     uv = {
       enable = true;
       package = uvPackage;
-      sync.enable = true;
+      sync.enable = false;
     };
   };
 
@@ -227,7 +243,7 @@ in
     '';
 
     hello.package = pkgs.zsh;
-    hello.exec = "uv run python hello.py";
+    hello.exec = "uv run python scripts/diagnostics/hello.py";
     runtests.package = pkgs.zsh;
     runtests.exec = "uv run python runtests.py";
     runtests-media.exec = "uv run python runtests.py 'media'";
@@ -271,11 +287,8 @@ in
       '';
     };
     "agent:format" = {
-      description = "Run the mutating format/lint hooks used after agent edits";
-      exec = ''
-        .devenv/state/venv/bin/pre-commit run ruff --all-files
-        .devenv/state/venv/bin/pre-commit run ruff-format --all-files
-      '';
+      description = "Run the configured formatter after agent edits";
+      exec = ".devenv/state/venv/bin/prek run ruff-format --all-files";
     };
     "agent:smoke" = {
       description = "Run quick import and deployment-contract checks after scoped edits";
@@ -298,8 +311,39 @@ in
       exec = "scripts/check_report_native_runtime.sh";
     };
     "agent:pre-commit" = {
-      description = "Run the full default pre-commit suite for agent preflight";
-      exec = ".devenv/state/venv/bin/pre-commit run --all-files";
+      description = "Run the fast commit checks across tracked files; use ci:checks for full preflight";
+      exec = ".devenv/state/venv/bin/prek run --all-files";
+    };
+    "ci:sync" = {
+      description = "Install exactly the committed Python dependencies without changing the lock";
+      exec = "${SYNC_CMD} --locked";
+    };
+    "ci:checks" = {
+      description = "Shared local and remote read-only quality preflight (no dependency sync)";
+      exec = ''
+        set -euo pipefail
+        uv lock --check --offline
+        .devenv/state/venv/bin/pyright
+        .devenv/state/venv/bin/ruff check endoreg_db tests
+        .devenv/state/venv/bin/ruff format --check endoreg_db tests
+        .devenv/state/venv/bin/python scripts/lint_structure.py
+        .devenv/state/venv/bin/python feature-tracking/tracker.py validate
+        .devenv/state/venv/bin/python scripts/check_dead_code.py
+        .devenv/state/venv/bin/python scripts/check_quality_boundaries.py
+        .devenv/state/venv/bin/python scripts/check_lx_dtypes_contract_boundaries.py
+        .devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+        .devenv/state/venv/bin/python scripts/check_state_mutation_owners.py
+        .devenv/state/venv/bin/python scripts/check_documentation_governance.py --repository endoreg-db
+        .devenv/state/venv/bin/python scripts/check_route_matrix.py
+        .devenv/state/venv/bin/python scripts/check_django_startup_imports.py
+        export DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test
+        .devenv/state/venv/bin/python manage.py check --deploy
+        .devenv/state/venv/bin/python manage.py makemigrations --check --dry-run
+      '';
+    };
+    "ci:tests" = {
+      description = "Run the CI Python suite in the prepared environment with bounded workers and JUnit results";
+      exec = ".devenv/state/venv/bin/pytest -q -n 2 --dist=loadscope --durations=30 --junitxml=test-results/pytest.xml";
     };
     "quality:dead-code" = {
       description = "Reject new, stale, or expired reviewed dead-code findings";
@@ -335,7 +379,7 @@ in
         devenv tasks run celery:check
         queue=''${CELERY_PIPELINE_QUEUE:-pipeline}
         concurrency=''${CELERY_PIPELINE_CONCURRENCY:-2}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-pipeline@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-pipeline@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
     "celery:worker:ffmpeg" = {
@@ -344,16 +388,7 @@ in
         devenv tasks run celery:check
         queue=''${CELERY_FFMPEG_MEDIA_QUEUE:-ffmpeg_media}
         concurrency=''${CELERY_FFMPEG_MEDIA_CONCURRENCY:-1}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-ffmpeg@%h" --concurrency="$concurrency" --prefetch-multiplier=1
-      '';
-    };
-    "celery:worker:frames" = {
-      description = "Run a Celery worker for frame extraction jobs";
-      exec = ''
-        devenv tasks run celery:check
-        queue=''${CELERY_FRAME_EXTRACTION_QUEUE:-frame_extraction}
-        concurrency=''${CELERY_FRAME_EXTRACTION_CONCURRENCY:-2}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-frames@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queue" -n "endoreg-ffmpeg@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
     "celery:worker:inference" = {
@@ -362,7 +397,7 @@ in
         devenv tasks run celery:check
         queues=''${CELERY_INFERENCE_QUEUE:-inference},''${CELERY_LLM_INFERENCE_QUEUE:-llm_inference}
         concurrency=''${CELERY_INFERENCE_CONCURRENCY:-1}
-        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queues" -n "endoreg-inference@%h" --concurrency="$concurrency" --prefetch-multiplier=1
+        .devenv/state/venv/bin/celery -A endoreg_db worker --loglevel=''${CELERY_LOGLEVEL:-INFO} -Q "$queues" -n "endoreg-inference@%h" --pool=prefork --concurrency="$concurrency" --max-tasks-per-child=1 --prefetch-multiplier=1
       '';
     };
     "celery:worker:training" = {
@@ -392,55 +427,51 @@ in
     };
     "test:sync" = {
       description = "Ensure pytest";
-      exec = "uv sync --extra dev";
+      exec = SYNC_CMD;
     };
     "test:fast" = {
-      description = "Run the fast PR pytest lane with live logging";
+      description = "Run the fast PR pytest lane with slow-test timings";
       exec = ''
         devenv tasks run test:sync
         ${FAST_TEST_ENV}
-        pytest -s -o log_cli=true --log-level=INFO ${FAST_TEST_PYTEST_ARGS}
+        .devenv/state/venv/bin/pytest -q ${FAST_TEST_PYTEST_ARGS}
       '';
     };
     "test:heavy" = {
-      description = "Run heavy tests with live logging";
+      description = "Run heavy tests with slow-test timings";
       exec = ''
         devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -s -o log_cli=true --log-level=INFO -m '${HEAVY_TEST_MARKER}' -n auto --dist=loadscope
+        .devenv/state/venv/bin/pytest -q -m '${HEAVY_TEST_MARKER}' ${TEST_PYTEST_ARGS}
       '';
     };
     "test:full" = {
-      description = "Run the full pytest suite with live logging";
+      description = "Run the full pytest suite with coverage and slow-test timings";
       exec = ''
         devenv tasks run test:sync
         export SKIP_EXPENSIVE_TESTS=false
         export RUN_VIDEO_TESTS=true
         export USE_STUB_MODEL_META=true
         export TEST_DB_REUSE=true
-        pytest -s -o log_cli=true --log-level=INFO -n auto --dist=loadscope ${COVERAGE_ARGS}
+        .devenv/state/venv/bin/pytest -q ${TEST_PYTEST_ARGS} ${COVERAGE_ARGS}
       '';
     };
     "test:clean" = {
-      description = "Remove pytest worker runtimes, temp directories, and test SQLite files";
+      description = "Remove pytest worker runtimes, temp directories, and test postgresql files";
       exec = ''
         devenv tasks run test:sync
-        python - <<'PY'
+        .devenv/state/venv/bin/python - <<'PY'
         from pathlib import Path
 
-        from endoreg_db.utils.filesystem.file_operations import safe_rmtree, safe_unlink_file
+        from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
 
         root = Path("data/tests")
         for path in (root / "workers", root / "tmp"):
             safe_rmtree(path, missing_ok=True)
 
-        db_root = root / "db"
-        for pattern in ("test_db*.sqlite3", "test_db*.sqlite3-wal", "test_db*.sqlite3-shm"):
-            for path in db_root.glob(pattern):
-                safe_unlink_file(path, missing_ok=True)
         PY
       '';
     };
@@ -452,7 +483,8 @@ in
   };
 
   enterShell = ''
-    
+    export VIRTUAL_ENV="$UV_PROJECT_ENVIRONMENT"
+    export PATH="$VIRTUAL_ENV/bin:$PATH"
   '';
 
   enterTest = ''

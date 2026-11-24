@@ -7,20 +7,31 @@ from pathlib import Path
 import pytest
 
 from endoreg_db.schemas.video_storage import (
+    CanonicalTimestampTransformation,
     VideoArtifactProbe,
     VideoStorageNormalizationEvidence,
     VideoTimelineContract,
 )
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.video_storage import normalization
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     VideoStorageProfile,
 )
 from endoreg_db.services.video_storage.validation import validate_normalized_output
 from endoreg_db.utils import file_operations as legacy_file_operations
-from endoreg_db.utils.filesystem import file_operations as canonical_file_operations
+from endoreg_db.utils import file_operations as canonical_file_operations
 
 pytestmark = pytest.mark.unit
+
+
+@pytest.fixture(autouse=True)
+def decoded_timestamps(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
 
 
 def test_canonical_filesystem_facade_reuses_audited_implementation() -> None:
@@ -57,6 +68,8 @@ def _probe(*, compliant: bool) -> VideoArtifactProbe:
             duration_seconds=10.0,
             frame_count=250,
             variable_frame_rate=False,
+            time_base_num=1,
+            time_base_den=1000,
         ),
     )
 
@@ -194,8 +207,10 @@ def test_integrity_gate_failure_never_calls_atomic_publication(
         output: VideoArtifactProbe,
         profile: VideoStorageProfile,
         segments: object,
+        canonical_timestamps: CanonicalTimestampTransformation | None = None,
+        artifact_kind: VideoArtifactKind = VideoArtifactKind.RAW,
     ) -> VideoStorageNormalizationEvidence:
-        del source, output, profile, segments
+        del source, output, profile, segments, canonical_timestamps, artifact_kind
         raise VideoStorageNormalizationError(
             "controlled timeline and integrity mismatch"
         )

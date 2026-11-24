@@ -7,16 +7,20 @@ from pathlib import Path
 from typing import NoReturn, Protocol, cast
 
 import pytest
+from django.db import IntegrityError, OperationalError, connection
+from django.test.utils import CaptureQueriesContext
 from lx_dtypes.models import SensitiveMeta
-from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.video_processing import video_anonymization
+from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.models import (
     Center,
     EndoscopyProcessor,
     Frame,
     FrameBoxAnnotation,
+    Label,
     VideoFile,
 )
 
@@ -106,6 +110,7 @@ def _create_import_context(
     processor_name: str,
 ) -> ImportContext:
     return ImportContext(
+        mutation_guard=nullcontext,
         file_path=file_path,
         center_name=center.name,
         current_video=video,
@@ -463,6 +468,10 @@ def test_persist_phi_region_proposals_skips_when_frame_row_is_missing() -> None:
         display_name="PHI Proposal Missing Frame Center",
     )
     video = VideoFile.objects.create(center=center, raw_video_hash="phi-video-no-frame")
+    other_video = VideoFile.objects.create(
+        center=center, raw_video_hash="phi-other-video"
+    )
+    Frame.objects.create(video=other_video, frame_number=5, relative_path="other.jpg")
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
 
     count = anonymizer._persist_phi_region_proposals(
@@ -498,6 +507,102 @@ def test_persist_phi_region_proposals_is_idempotent_by_external_annotation_id() 
     assert first_count == 1
     assert second_count == 1
     assert FrameBoxAnnotation.objects.count() == 1
+
+
+@pytest.mark.django_db
+def test_phi_proposal_retry_updates_changed_values() -> None:
+    center = Center.objects.create(name="phi-update-center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-update-video")
+    Frame.objects.create(video=video, frame_number=5, relative_path="frame_5.jpg")
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    metadata: JsonObject = {"frame_observations": [_phi_observation()]}
+    assert anonymizer._persist_phi_region_proposals(video, metadata) == 1
+    original_pk = FrameBoxAnnotation.objects.get().pk
+    other_label = Label.objects.create(name="other-proposal-label")
+    FrameBoxAnnotation.objects.update(label=other_label, float_value=0.1, value=False)
+
+    assert anonymizer._persist_phi_region_proposals(video, metadata) == 1
+
+    annotation = cast(
+        _FrameBoxAnnotationLike, FrameBoxAnnotation.objects.get(pk=original_pk)
+    )
+    assert annotation.label.name == "phi_region"
+    assert annotation.float_value == 0.71
+    assert annotation.value is True
+    assert FrameBoxAnnotation.objects.count() == 1
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("frame_number", [None, 5])
+def test_phi_proposals_skip_unresolved_frames_and_outside_boxes(
+    frame_number: int | None,
+) -> None:
+    center = Center.objects.create(name="phi-skipped-center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-skipped-video")
+    Frame.objects.create(video=video, frame_number=5, relative_path="frame_5.jpg")
+    observation = _phi_observation()
+    observation["frame_number"] = frame_number
+    observation["image_width"] = 50  # Region starts outside the image.
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    assert (
+        anonymizer._persist_phi_region_proposals(
+            video, {"frame_observations": [observation]}
+        )
+        == 0
+    )
+    assert not FrameBoxAnnotation.objects.exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("frame_count", [1, 20, 501])
+def test_phi_proposal_retry_query_budget(frame_count: int) -> None:
+    center = Center.objects.create(name="phi-budget-center")
+    video = VideoFile.objects.create(center=center, raw_video_hash="phi-budget-video")
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video,
+                frame_number=number,
+                relative_path=f"frame_{number}.jpg",
+                presentation_timestamp=1000 + number * 37,
+                timestamp=1 + number * 0.037,
+            )
+            for number in range(frame_count)
+        ]
+    )
+    coordinates = list(
+        video.frames.values_list("pk", "presentation_timestamp", "timestamp")
+    )
+    observations: list[JsonValue] = [
+        _phi_observation(number) for number in range(frame_count)
+    ]
+    # Repeated detector observations must reuse the same frame and annotation.
+    observations.append(_phi_observation(0))
+    metadata: JsonObject = {"frame_observations": observations}
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    assert anonymizer._persist_phi_region_proposals(video, metadata) == frame_count + 1
+
+    with CaptureQueriesContext(connection) as queries:
+        assert (
+            anonymizer._persist_phi_region_proposals(video, metadata) == frame_count + 1
+        )
+
+    sql = [query["sql"] for query in queries.captured_queries]
+    frame_reads = sum('FROM "endoreg_db_frame"' in query for query in sql)
+    label_reads = sum('FROM "endoreg_db_label"' in query for query in sql)
+    print(
+        f"proposal retry: frames={frame_count}, queries={len(sql)}, "
+        f"frame_reads={frame_reads}, label_reads={label_reads}"
+    )
+    assert frame_reads == (frame_count + 499) // 500
+    assert label_reads == 1
+    assert not any(query.startswith(("INSERT", "UPDATE", "DELETE")) for query in sql)
+    assert FrameBoxAnnotation.objects.count() == frame_count
+    assert (
+        list(video.frames.values_list("pk", "presentation_timestamp", "timestamp"))
+        == coordinates
+    )
 
 
 @pytest.mark.django_db
@@ -537,6 +642,7 @@ def test_verify_anonymizer_source_aborts_on_validated_hash_mismatch(
     source_video.write_bytes(b"changed-source")
     stat_result = source_video.stat()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=source_video,
         center_name="hash-mismatch-center",
         validated_raw_source_path=source_video,
@@ -655,12 +761,12 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
     assert result_ctx.anonymized_path == (
-        output_dir / f"phi-video-anonymize.attempt-{ctx.attempt_id}.mp4"
+        get_runtime_paths().transcoding
+        / f"phi-video-anonymize.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
@@ -743,14 +849,14 @@ def test_reanonymize_video_keeps_new_output_staged_until_finalization(
     )
     ctx.retry = True
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
     assert canonical_output.read_bytes() == b"previous-processed-video"
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path == (
-        output_dir / f"staged-reanonymize-video.attempt-{ctx.attempt_id}.mp4"
+        get_runtime_paths().transcoding
+        / f"staged-reanonymize-video.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path.read_bytes() == b"fresh-anonymized-video"
 
@@ -839,6 +945,7 @@ def test_anonymize_video_uses_local_source_path_override(
 
     local_source_stat = local_source.stat()
     ctx = ImportContext(
+        mutation_guard=nullcontext,
         file_path=fallback_source,
         center_name=center.name,
         current_video=video,
@@ -851,7 +958,6 @@ def test_anonymize_video_uses_local_source_path_override(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     result_ctx = anonymizer.anonymize_video(ctx)
 
@@ -864,14 +970,15 @@ def test_anonymize_video_uses_local_source_path_override(
         == ctx.validated_raw_source_sha256
     )
     assert result_ctx.anonymized_path == (
-        output_dir / f"local-source-video.attempt-{ctx.attempt_id}.mp4"
+        get_runtime_paths().transcoding
+        / f"local-source-video.attempt-{ctx.attempt_id}.mp4"
     )
     assert result_ctx.anonymized_path is not None
     assert result_ctx.anonymized_path.read_bytes() == b"anonymized-video"
 
 
 @pytest.mark.django_db
-def test_anonymizer_reuses_initialized_frame_cleaner(
+def test_anonymizer_creates_fresh_frame_cleaner_per_attempt(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -937,6 +1044,36 @@ def test_anonymizer_reuses_initialized_frame_cleaner(
     anonymizer.anonymize_video(ctx)
 
     assert len(frame_cleaner_instances) == 1
+    next_ctx = _create_import_context(
+        file_path=source_video,
+        center=center,
+        video=video,
+        processor_name=processor.name,
+    )
+    anonymizer.anonymize_video(next_ctx)
+
+    assert len(frame_cleaner_instances) == 2
+    assert frame_cleaner_instances[0] is not frame_cleaner_instances[1]
+    assert ctx.anonymized_path != next_ctx.anonymized_path
+
+    # A failed publication must clean only this attempt, using the real staging
+    # admission policy; the canonical directory and concurrent attempt survive.
+    from endoreg_db.import_files.file_storage.state_management import (
+        delete_associated_files,
+    )
+
+    assert ctx.anonymized_path is not None
+    failed_candidate = ctx.anonymized_path
+    assert failed_candidate.is_relative_to(get_runtime_paths().transcoding)
+    canonical = output_dir / "retained.mp4"
+    canonical.write_bytes(b"previous-generation")
+    delete_associated_files(ctx, preserve_existing_video_artifacts=True)
+    assert ctx.anonymized_path is None
+    assert not failed_candidate.exists()
+    assert next_ctx.anonymized_path is not None
+    assert next_ctx.anonymized_path.read_bytes() == b"anonymized-video"
+    assert canonical.read_bytes() == b"previous-generation"
+    assert source_video.read_bytes() == b"source-video"
 
 
 @pytest.mark.django_db
@@ -1002,7 +1139,6 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
-    anonymizer._frame_cleaning_available = True
 
     anonymizer.anonymize_video(ctx)
 
@@ -1022,3 +1158,24 @@ def test_anonymize_video_scales_processor_roi_to_source_dimensions(
         "width": 67,
         "height": 18,
     }
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("error_type", [OperationalError, IntegrityError])
+def test_phi_proposal_database_failure_aborts_owned_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+    error_type: type[OperationalError] | type[IntegrityError],
+) -> None:
+    anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+    error = error_type("database write failed")
+
+    def fail(video: VideoFile, observations: list[JsonObject]) -> NoReturn:
+        raise error
+
+    monkeypatch.setattr(anonymizer, "_persist_phi_region_proposals_unchecked", fail)
+    with pytest.raises(error_type) as caught:
+        anonymizer._persist_phi_region_proposals(
+            VideoFile(),
+            {"frame_observations": [_phi_observation()]},
+        )
+    assert caught.value is error

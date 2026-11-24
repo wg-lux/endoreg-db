@@ -6,7 +6,7 @@ from collections.abc import Generator
 import pytest
 
 from endoreg_db.config import env as env_module
-from endoreg_db.services import environment_readiness as readiness
+from endoreg_db.services.runtime import environment_readiness as readiness
 from endoreg_db.utils import paths as paths_module
 
 

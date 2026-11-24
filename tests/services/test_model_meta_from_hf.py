@@ -9,7 +9,7 @@ from django.conf import LazySettings
 from django.db import IntegrityError
 
 from endoreg_db.models import AiModel, LabelSet, ModelMeta
-from endoreg_db.services import model_meta_from_hf
+from endoreg_db.services.ai import model_meta_from_hf as model_meta_from_hf
 from endoreg_db.utils.encryption.encrypted import LazyEncryptedStorage
 
 

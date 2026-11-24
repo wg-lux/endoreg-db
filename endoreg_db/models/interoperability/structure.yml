@@ -1,0 +1,25 @@
+version: 1
+tier: module
+path: endoreg_db/models/interoperability
+summary: Digital Imaging and Communications in Medicine (DICOM) export persistence.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+files:
+- file: dicom.py
+  role: Export jobs and study, series and instance identities.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/models
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/models
+parent: ../structure.yml
+submodules: []

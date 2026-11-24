@@ -90,6 +90,11 @@ url_patterns = [
         name="media_management_cleanup",
     ),
     path(
+        "media-management/force-remove/<str:media_type>/<int:file_id>/",
+        media_management.force_remove_media,
+        name="force_remove_typed_media",
+    ),
+    path(
         "media-management/force-remove/<int:file_id>/",
         media_management.force_remove_media,
         name="force_remove_media",

@@ -4,7 +4,7 @@ import uuid as uuid_lib
 from typing import TYPE_CHECKING, Any, ClassVar, Literal, Unpack
 
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -140,32 +140,54 @@ class ReportLlmInferenceJob(models.Model):
         self.clean()
         super().save(*args, **kwargs)
 
-    def mark_running(self) -> None:
-        self.status = self.STATUS_RUNNING
-        self.started_at = self.started_at or timezone.now()
-        self.save(update_fields=["status", "started_at", "updated_at"])
-
-    def mark_success(self, *, result: JsonObject | None = None) -> None:
-        self.status = self.STATUS_SUCCESS
-        self.completed_at = timezone.now()
-        self.error = ""
-        if result is not None:
-            self.result = result
-        self.save(
-            update_fields=["status", "completed_at", "error", "result", "updated_at"]
+    def _transition(self, target: ReportLlmJobStatus) -> bool:
+        """Lock and apply ``target`` through the native status table."""
+        from endoreg_db.services.runtime.status_writers import (
+            set_report_llm_job_status,
         )
 
+        return set_report_llm_job_status(self, target)
+
+    def mark_running(self) -> None:
+        with transaction.atomic():
+            if not self._transition(self.STATUS_RUNNING):
+                return
+            self.started_at = self.started_at or timezone.now()
+            self.save(update_fields=["status", "started_at", "updated_at"])
+
+    def mark_success(self, *, result: JsonObject | None = None) -> None:
+        with transaction.atomic():
+            if not self._transition(self.STATUS_SUCCESS):
+                return
+            self.completed_at = timezone.now()
+            self.error = ""
+            if result is not None:
+                self.result = result
+            self.save(
+                update_fields=[
+                    "status",
+                    "completed_at",
+                    "error",
+                    "result",
+                    "updated_at",
+                ]
+            )
+
     def mark_failure(self, error: str) -> None:
-        self.status = self.STATUS_FAILURE
-        self.completed_at = timezone.now()
-        self.error = error
-        self.save(update_fields=["status", "completed_at", "error", "updated_at"])
+        with transaction.atomic():
+            if not self._transition(self.STATUS_FAILURE):
+                return
+            self.completed_at = timezone.now()
+            self.error = error
+            self.save(update_fields=["status", "completed_at", "error", "updated_at"])
 
     def mark_lost(self, error: str) -> None:
-        self.status = self.STATUS_LOST
-        self.completed_at = timezone.now()
-        self.error = error
-        self.save(update_fields=["status", "completed_at", "error", "updated_at"])
+        with transaction.atomic():
+            if not self._transition(self.STATUS_LOST):
+                return
+            self.completed_at = timezone.now()
+            self.error = error
+            self.save(update_fields=["status", "completed_at", "error", "updated_at"])
 
     def __str__(self) -> str:
         return f"{self.operation} job={self.job_key} status={self.status}"

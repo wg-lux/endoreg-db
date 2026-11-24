@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Optional, Sequence, Tuple, List
+from typing import Optional
+from collections.abc import Sequence
 
 import numpy as np
 import torch
@@ -12,7 +13,7 @@ from torch.utils.data import Dataset
 
 # Dataset ist eine generische Klasse. Wir müssen Pyright mitteilen,
 # welchen Typ ein einzelnes Element (__getitem__) zurückgibt.
-class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
+class EndoMultiLabelDataset(Dataset[tuple[torch.Tensor, torch.Tensor, torch.Tensor]]):
     """
     PyTorch dataset wrapping the output of build_dataset_for_training.
 
@@ -39,7 +40,7 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         if type(image_size) is not int or image_size <= 0:
             raise ValueError("image_size must be a positive integer")
 
-        self.image_paths: List[str] = list(image_paths)
+        self.image_paths: list[str] = list(image_paths)
         if frame_ids is None or len(frame_ids) != len(image_paths):
             raise ValueError(
                 "Validated frame_ids are required for every training image"
@@ -50,8 +51,8 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
 
         # Explizite Typisierung der leeren Listen, um "Unknown Member Type"
         # beim anschließenden .append() zu verhindern.
-        label_vec_list: List[List[int]] = []
-        mask_list: List[List[int]] = []
+        label_vec_list: list[list[int]] = []
+        mask_list: list[list[int]] = []
 
         label_count = len(label_vectors[0])
         if label_count == 0:
@@ -106,7 +107,7 @@ class EndoMultiLabelDataset(Dataset[Tuple[torch.Tensor, torch.Tensor, torch.Tens
         tensor = (tensor - self.mean) / self.std
         return tensor
 
-    def __getitem__(self, idx: int) -> Tuple[Tensor, Tensor, Tensor]:
+    def __getitem__(self, idx: int) -> tuple[Tensor, Tensor, Tensor]:
         x = self._load_image(self.frame_ids[idx])
         y = self.labels[idx]
         m = self.masks[idx]

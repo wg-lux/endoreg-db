@@ -11,8 +11,8 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state import SegmentAnnotationStatus
 from endoreg_db.models.state import video_segment_validation as segment_state
-import endoreg_db.services.video_segment_blackening as blackening
-import endoreg_db.services.video_segment_validation_workflow as validation_workflow
+import endoreg_db.services.video_files.segment_blackening as blackening
+import endoreg_db.services.annotations.segment_validation_workflow as validation_workflow
 
 
 SegmentStateValues = dict[str, bool]

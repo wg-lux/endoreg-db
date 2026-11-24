@@ -248,7 +248,7 @@ class LabelVideoSegment(models.Model):
             return False
         except AttributeError:
             # Should not happen if self.state exists and has the is_validated attribute.
-            logger.error(
+            logger.exception(
                 "AttributeError accessing 'state.is_validated' for LabelVideoSegment %s.",
                 self.pk,
             )
@@ -411,7 +411,7 @@ class LabelVideoSegment(models.Model):
             return self.video_file
         except ObjectDoesNotExist:
             # This might occur if the related VideoFile was deleted unexpectedly.
-            logger.error(
+            logger.exception(
                 "Associated VideoFile not found for LabelVideoSegment %s.", self.pk
             )
             raise ValueError(
@@ -485,12 +485,12 @@ class LabelVideoSegment(models.Model):
                 frame_number__lt=self.end_frame_number,
             ).order_by("frame_number")
         except ValueError:
-            logger.error(
+            logger.exception(
                 "Cannot get frames for segment %s: No associated VideoFile.", self.pk
             )
             return Frame.objects.none()
         except AttributeError:
-            logger.error(
+            logger.exception(
                 "Cannot get frames for segment %s: 'frames' related manager not found on VideoFile.",
                 self.pk,
             )
@@ -517,7 +517,7 @@ class LabelVideoSegment(models.Model):
                 label=self.label,
             )
         except ValueError:
-            logger.error(
+            logger.exception(
                 "Cannot get annotations for segment %s: No associated VideoFile.",
                 self.pk,
             )
@@ -547,7 +547,7 @@ class LabelVideoSegment(models.Model):
                 label=self.label,
             ).filter(prediction_annotation_filter())
         except ValueError:
-            logger.error(
+            logger.exception(
                 "Cannot get predictions for segment %s: No associated VideoFile.",
                 self.pk,
             )
@@ -579,7 +579,7 @@ class LabelVideoSegment(models.Model):
                 label=self.label,
             ).filter(manual_annotation_filter())
         except ValueError:
-            logger.error(
+            logger.exception(
                 "Cannot get manual annotations for segment %s: No associated VideoFile.",
                 self.pk,
             )
@@ -595,7 +595,7 @@ class LabelVideoSegment(models.Model):
         try:
             return self.end_time - self.start_time
         except ValueError as e:  # Catch error from get_video
-            logger.error(
+            logger.exception(
                 "Cannot calculate segment length for segment %s: %s", self.pk, e
             )
             return 0.0

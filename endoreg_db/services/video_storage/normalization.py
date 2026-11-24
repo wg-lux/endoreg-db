@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Callable, Protocol
+from collections.abc import Callable
 from uuid import uuid4
 
 from endoreg_db.schemas.video_storage import (
@@ -14,8 +14,13 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     VideoStorageProfile,
 )
+from endoreg_db.services.video_storage.canonical_timelines import (
+    capture_canonical_timeline,
+    validate_canonical_output,
+    ValidateOutput,
+)
 from endoreg_db.utils import ffmpeg_wrapper
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     atomic_move_file,
     safe_unlink_file,
@@ -23,17 +28,6 @@ from endoreg_db.utils.filesystem.file_operations import (
 from endoreg_db.utils.structured_logging import emit_structured_event, path_reference
 
 logger = logging.getLogger(__name__)
-
-
-class _ValidateOutput(Protocol):
-    def __call__(
-        self,
-        *,
-        source: VideoArtifactProbe,
-        output: VideoArtifactProbe,
-        profile: VideoStorageProfile,
-        segments: list[SegmentTimelineReference] | None,
-    ) -> VideoStorageNormalizationEvidence: ...
 
 
 def ensure_video_file_profile(
@@ -46,18 +40,22 @@ def ensure_video_file_profile(
     segments: list[SegmentTimelineReference] | None,
     force_cpu: bool,
     probe_artifact: Callable[[Path], VideoArtifactProbe],
-    validate_output: _ValidateOutput,
+    validate_output: ValidateOutput,
 ) -> VideoStorageNormalizationEvidence:
     """Publish a profile-compliant copy, transcoding only when required."""
     source_probe = probe_artifact(reference_path)
+    source_timestamps = capture_canonical_timeline(reference_path, source_probe)
     current_probe = probe_artifact(input_path)
     current_evidence: VideoStorageNormalizationEvidence | None = None
     try:
-        current_evidence = validate_output(
+        current_evidence = validate_canonical_output(
             source=source_probe,
             output=current_probe,
             profile=profile,
             segments=segments,
+            before=source_timestamps,
+            output_path=input_path,
+            validate_output=validate_output,
         )
     except VideoStorageNormalizationError:
         pass
@@ -101,11 +99,14 @@ def ensure_video_file_profile(
                     "FFmpeg did not produce the expected storage-normalized output"
                 )
         output_probe = probe_artifact(staging_path)
-        evidence = validate_output(
+        evidence = validate_canonical_output(
             source=source_probe,
             output=output_probe,
             profile=profile,
             segments=segments,
+            before=source_timestamps,
+            output_path=staging_path,
+            validate_output=validate_output,
         )
         emit_structured_event(
             logger,
@@ -149,7 +150,7 @@ def normalize_video_file(
     segments: list[SegmentTimelineReference] | None,
     force_cpu: bool,
     probe_artifact: Callable[[Path], VideoArtifactProbe],
-    validate_output: _ValidateOutput,
+    validate_output: ValidateOutput,
 ) -> VideoStorageNormalizationEvidence:
     """Normalize one file in place and leave it untouched on failure."""
     return ensure_video_file_profile(

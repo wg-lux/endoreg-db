@@ -1,17 +1,25 @@
 mod capabilities;
+mod encrypted_format;
 mod encrypted_range;
 mod encryption_state;
 mod errors;
 mod file_copy;
 mod file_identity;
+mod frame_ancestry;
 mod frames;
 mod hls_state;
+mod status_transition;
+mod hub_transfer_state;
+mod import_processing;
 mod import_state;
 mod lifecycle_state;
 mod pdf;
 mod state_enums;
+mod state_token;
+mod state_vocabulary;
 mod storage_profile;
 mod stubs;
+mod timeline_index;
 
 use pyo3::prelude::*;
 
@@ -19,8 +27,41 @@ pub use stubs::stub_info;
 
 #[pymodule]
 fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
+    module.add_function(wrap_pyfunction!(
+        import_processing::new_import_processing_stack,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        import_processing::transition_import_processing_stack,
+        module
+    )?)?;
     module.add_class::<file_identity::BatchProcessor>()?;
+    module.add_class::<timeline_index::TimelineIndex>()?;
+    module.add_function(wrap_pyfunction!(
+        frame_ancestry::compose_frame_ancestry,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        encrypted_format::parse_encrypted_header,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        encrypted_format::parse_encrypted_header_metadata,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        encrypted_format::encrypted_chunk_context,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(capabilities::native_capabilities, module)?)?;
+    module.add_function(wrap_pyfunction!(
+        hub_transfer_state::reduce_hub_transfer_event,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        hub_transfer_state::hub_failure_is_retryable,
+        module
+    )?)?;
     module.add_function(wrap_pyfunction!(
         encryption_state::encryption_status,
         module
@@ -39,6 +80,14 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         file_identity::stable_file_identity,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        hls_state::decide_hls_artifact_transition,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        status_transition::decide_status_transition,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
@@ -64,11 +113,19 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
+        import_state::anonymization_status_rules,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
         import_state::derive_anonymization_status,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
         import_state::derive_report_anonymization_status,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        import_state::anonymization_status_phase,
         module
     )?)?;
     module.add_function(wrap_pyfunction!(
@@ -97,6 +154,10 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
     )?)?;
     module.add_function(wrap_pyfunction!(
         storage_profile::storage_profile_policy_rows,
+        module
+    )?)?;
+    module.add_function(wrap_pyfunction!(
+        state_vocabulary::native_state_vocabularies,
         module
     )?)?;
     Ok(())

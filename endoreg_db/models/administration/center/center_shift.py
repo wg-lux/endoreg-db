@@ -3,6 +3,7 @@ from __future__ import annotations
 from decimal import Decimal
 from typing import TYPE_CHECKING, Any
 
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 
 if TYPE_CHECKING:
@@ -52,15 +53,23 @@ class CenterShift(models.Model):
         related_name="center_shifts",
     )
 
-    # TODO add validator; the value should be between 0 and 1
     estimated_presence_fraction: models.DecimalField[Any, Any] = models.DecimalField(
         max_digits=5,
         decimal_places=4,
         default=Decimal("0"),
+        validators=[MinValueValidator(Decimal("0")), MaxValueValidator(Decimal("1"))],
     )
 
-    if TYPE_CHECKING:
-        pass
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=models.Q(
+                    estimated_presence_fraction__gte=Decimal("0"),
+                    estimated_presence_fraction__lte=Decimal("1"),
+                ),
+                name="center_shift_presence_fraction_range",
+            ),
+        ]
 
     def __str__(self) -> str:
         """
@@ -69,13 +78,8 @@ class CenterShift(models.Model):
         return f"{self.center} - {self.shift}"
 
     def initialize_scheduled_days(self) -> None:
-        # shift_types
-        """
-        Initializes scheduled days for the center shift.
-
-        This method is a placeholder and does not perform any actions.
-        """
-        pass
+        """Reject scheduling until an explicit initialization workflow exists."""
+        raise NotImplementedError("Scheduled-day initialization is not implemented.")
 
     def get_scheduled_days(self, infer: bool = True) -> models.QuerySet[ScheduledDays]:
         """

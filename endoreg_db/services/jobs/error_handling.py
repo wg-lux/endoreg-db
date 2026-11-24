@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+import errno
 import logging
 from typing import NoReturn, Protocol, cast
 
@@ -8,7 +9,11 @@ from django.apps import apps
 from django.db import DatabaseError, InterfaceError, OperationalError
 
 from endoreg_db.config.env import get_video_post_validation_dispatch_delay_seconds
-from endoreg_db.exceptions import MediaOperationDeferred, describe_job_error
+from endoreg_db.exceptions import (
+    InsufficientStorageError,
+    MediaOperationDeferred,
+    describe_job_error,
+)
 from endoreg_db.utils.structured_logging import emit_structured_event, hash_identifier
 
 
@@ -23,6 +28,22 @@ class _Column(Protocol):
 
 class _ModelColumns(Protocol):
     local_fields: Sequence[_Column]
+
+
+def is_insufficient_storage(error: BaseException) -> bool:
+    """Recognize disk exhaustion through visible causes without parsing paths."""
+    seen: set[int] = set()
+    current: BaseException | None = error
+    while current is not None and id(current) not in seen:
+        seen.add(id(current))
+        if isinstance(current, InsufficientStorageError) or (
+            isinstance(current, OSError) and current.errno == errno.ENOSPC
+        ):
+            return True
+        current = current.__cause__ or (
+            None if current.__suppress_context__ else current.__context__
+        )
+    return False
 
 
 def database_recovery_reason(error: BaseException) -> str | None:
@@ -117,6 +138,7 @@ def retry_deferred_media_operation(
 
 __all__ = [
     "database_recovery_reason",
+    "is_insufficient_storage",
     "retry_database_operation",
     "retry_deferred_media_operation",
 ]

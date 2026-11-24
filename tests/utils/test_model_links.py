@@ -1,51 +1,98 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import cast
 
+import pytest
+from django.db import models
+
+from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.models.medical.patient.patient_disease import PatientDisease
+from endoreg_db.models.medical.patient.patient_event import PatientEvent
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.medical.patient.patient_lab_sample import PatientLabSample
 from endoreg_db.models.medical.patient.patient_lab_value import PatientLabValue
+from endoreg_db.models.medical.patient.patient_medication import PatientMedication
+from endoreg_db.models.medical.patient.patient_medication_schedule import (
+    PatientMedicationSchedule,
+)
 from endoreg_db.utils.links import ModelLinks
 from types import SimpleNamespace
 
-
-def _patient(value: str) -> SimpleNamespace:
-    return SimpleNamespace(value=value)
+pytestmark = pytest.mark.no_db
 
 
-def _lab_value(patient: SimpleNamespace | None = None) -> SimpleNamespace:
-    sample = SimpleNamespace(sample=SimpleNamespace(patient=patient))
-    return SimpleNamespace(patient=patient, sample=sample)
-
-
-def _patient_examination(patient: SimpleNamespace | None = None) -> SimpleNamespace:
-    return SimpleNamespace(patient=patient)
-
-
-def test_get_first_patient_prefers_lab_values_before_examinations() -> None:
-    direct_patient = _patient("direct")
-    fallback_patient = _patient("fallback")
+@pytest.mark.parametrize("has_sample_patient", [False, True])
+def test_get_first_patient_prefers_lab_values_before_examinations(
+    has_sample_patient: bool,
+) -> None:
+    direct_patient, sample_patient, fallback_patient = Patient(), Patient(), Patient()
     links = ModelLinks(
-        patient_lab_values=cast(list[PatientLabValue], [_lab_value(direct_patient)]),
-        patient_examinations=cast(
-            list[PatientExamination], [_patient_examination(fallback_patient)]
-        ),
+        patient_lab_values=[
+            PatientLabValue(
+                patient=direct_patient,
+                sample=PatientLabSample(patient=sample_patient)
+                if has_sample_patient
+                else None,
+            )
+        ],
+        patient_examinations=[PatientExamination(patient=fallback_patient)],
     )
 
-    assert links.get_first_patient() == direct_patient
+    result = links.get_first_patient()
+
+    assert result is (sample_patient if has_sample_patient else direct_patient)
 
 
-def test_get_first_patient_checks_all_patient_sections_in_order() -> None:
-    fallback = _patient("exam")
-    links = ModelLinks(
-        patient_lab_values=[],
-        patient_examinations=cast(
-            list[PatientExamination], [_patient_examination(fallback)]
+@pytest.mark.parametrize("first_section", range(7))
+def test_get_first_patient_checks_all_patient_sections_in_order(
+    first_section: int,
+) -> None:
+    sections: tuple[tuple[str, Callable[[Patient | None], models.Model]], ...] = (
+        ("patient_lab_samples", lambda patient: PatientLabSample(patient=patient)),
+        ("patient_examinations", lambda patient: PatientExamination(patient=patient)),
+        ("patient_diseases", lambda patient: PatientDisease(patient=patient)),
+        ("patient_events", lambda patient: PatientEvent(patient=patient)),
+        (
+            "patient_findings",
+            lambda patient: (
+                PatientFinding(patient_examination=PatientExamination(patient=patient))
+                if patient is not None
+                else PatientFinding()
+            ),
+        ),
+        ("patient_medications", lambda patient: PatientMedication(patient=patient)),
+        (
+            "patient_medication_schedules",
+            lambda patient: PatientMedicationSchedule(patient=patient),
         ),
     )
+    expected, later = Patient(), Patient()
+    records = {
+        name: [
+            make_record(None),
+            make_record(expected if offset == 0 else later),
+            make_record(later),
+        ]
+        for offset, (name, make_record) in enumerate(sections[first_section:])
+    }
+    links = ModelLinks.model_validate(records)
+    before = {name: tuple(values) for name, values in links.active().items()}
 
-    assert links.get_first_patient() == fallback
+    result = links.get_first_patient()
+
+    assert result is expected
+    assert {name: tuple(values) for name, values in links.active().items()} == before
+
+
+def test_get_first_patient_without_patient_returns_none() -> None:
+    links = ModelLinks(patient_lab_values=[PatientLabValue()])
+
+    assert links.get_first_patient() is None
+    assert ModelLinks().get_first_patient() is None
 
 
 def test_match_any_detects_overlap_and_no_overlap() -> None:

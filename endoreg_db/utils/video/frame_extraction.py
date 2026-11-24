@@ -1,9 +1,12 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false
 import logging
 import subprocess
+from fractions import Fraction
 from pathlib import Path
-from typing import List
+import numpy as np
+from PIL import Image
 
+from ..transcode_execution import get_stream_info
 import cv2
 from tqdm import tqdm
 
@@ -17,7 +20,10 @@ from .command_construction import (
     _build_extract_frames_command,
     _frame_image_encoder_args,
 )
-from .executable_discovery import _resolve_ffmpeg_executable
+from .executable_discovery import (
+    _resolve_ffmpeg_executable,
+    _resolve_ffprobe_executable,
+)
 
 logger = logging.getLogger("ffmpeg_wrapper")
 
@@ -29,7 +35,7 @@ def _resolve_frame_dimensions(
         return width, height
     first_frame = cv2.imread(str(frame_path))
     if first_frame is None:
-        raise IOError(f"Could not read first frame: {frame_path}")
+        raise OSError(f"Could not read first frame: {frame_path}")
     resolved_width = int(first_frame.shape[1])
     resolved_height = int(first_frame.shape[0])
     if resolved_width <= 0 or resolved_height <= 0:
@@ -38,7 +44,7 @@ def _resolve_frame_dimensions(
 
 
 def assemble_video_from_frames(
-    frame_paths: List[Path],
+    frame_paths: list[Path],
     output_path: Path,
     fps: float,
     width: int | None = None,
@@ -59,7 +65,7 @@ def assemble_video_from_frames(
                 "Determined video dimensions from first frame: %dx%d", width, height
             )
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Error reading first frame to determine dimensions: %s",
                 e,
                 exc_info=True,
@@ -105,7 +111,7 @@ def extract_frames(
     quality: int,
     ext: str = "jpg",
     fps: float | None = None,
-) -> List[Path]:
+) -> list[Path]:
     """
     Extracts frames from a video file using FFmpeg.
 
@@ -154,22 +160,20 @@ def extract_frames(
     except FileNotFoundError as exc:
         # This might be redundant now but kept for safety
         error_msg = f"ffmpeg command not found at '{ffmpeg_executable}'. Ensure FFmpeg is installed and in the system's PATH."
-        logger.error(error_msg)
+        logger.exception(error_msg)
         raise FileNotFoundError(error_msg) from exc
     except subprocess.CalledProcessError as e:
-        logger.error("FFmpeg command failed with exit code %d.", e.returncode)
-        logger.error("FFmpeg stderr:\n%s", e.stderr)
-        logger.error("FFmpeg stdout:\n%s", e.stdout)
+        logger.exception("FFmpeg command failed with exit code %d.", e.returncode)
+        logger.exception("FFmpeg stderr:\n%s", e.stderr)
+        logger.exception("FFmpeg stdout:\n%s", e.stdout)
         # Return empty list on error as frames were likely not created correctly
         return []
-    except Exception as e:
-        logger.error(
-            "An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True
-        )
+    except Exception:
+        logger.exception("An unexpected error occurred during FFmpeg execution")
         return []
 
     # Collect paths of extracted frames
-    extracted_files: List[Path] = sorted(output_dir.glob(f"frame_*.{ext}"))
+    extracted_files: list[Path] = sorted(output_dir.glob(f"frame_*.{ext}"))
     return extracted_files
 
 
@@ -180,7 +184,7 @@ def extract_frame_range(
     end_frame: int,  # Exclusive end frame number
     quality: int,
     ext: str = "jpg",
-) -> List[Path]:
+) -> list[Path]:
     """
     Extracts a specific range of frames from a video using FFmpeg.
 
@@ -198,7 +202,7 @@ def extract_frame_range(
         ext: File extension for output images (e.g., 'jpg', 'png').
 
     Returns:
-        List of Paths to the extracted frame image files within the specified range.
+        list of Paths to the extracted frame image files within the specified range.
 
     Raises:
         FileNotFoundError: If the FFmpeg executable is not found.
@@ -247,12 +251,12 @@ def extract_frame_range(
         logger.info("FFmpeg frame range extraction completed successfully.")
     except FileNotFoundError as exc:
         error_msg = f"ffmpeg command not found at '{ffmpeg_executable}'. Ensure FFmpeg is installed and in the system's PATH."
-        logger.error(error_msg)
+        logger.exception(error_msg)
         raise FileNotFoundError(error_msg) from exc
     except subprocess.CalledProcessError as e:
-        logger.error("FFmpeg command failed with exit code %d.", e.returncode)
-        logger.error("FFmpeg stderr:\n%s", e.stderr)
-        logger.error("FFmpeg stdout:\n%s", e.stdout)
+        logger.exception("FFmpeg command failed with exit code %d.", e.returncode)
+        logger.exception("FFmpeg stderr:\n%s", e.stderr)
+        logger.exception("FFmpeg stdout:\n%s", e.stdout)
         # Clean up potentially partially created files in the target directory within the expected range
         logger.warning(
             "Attempting cleanup of potentially incomplete frames in %s", output_dir
@@ -263,7 +267,7 @@ def extract_frame_range(
                 try:
                     safe_unlink_file(potential_file, missing_ok=True)
                 except OSError as unlink_err:
-                    logger.error(
+                    logger.exception(
                         "Failed to delete potential frame %s during cleanup: %s",
                         potential_file,
                         unlink_err,
@@ -279,7 +283,7 @@ def extract_frame_range(
             f"FFmpeg stderr:\n{stderr.strip()[-8000:] or '<empty>'}"
         ) from e
     except Exception as e:
-        logger.error(
+        logger.exception(
             "An unexpected error occurred during FFmpeg execution: %s", e, exc_info=True
         )
         raise RuntimeError(
@@ -289,7 +293,7 @@ def extract_frame_range(
     # Collect paths of extracted frames matching the pattern and expected range
     # FFmpeg might create files outside the exact range depending on version/flags,
     # so filter explicitly.
-    extracted_files: List[Path] = []
+    extracted_files: list[Path] = []
     for i in range(start_frame, end_frame):
         frame_file = output_dir / f"frame_{i:07d}.{ext}"
         if frame_file.exists():
@@ -310,6 +314,43 @@ def extract_frame_range(
     return extracted_files
 
 
+def _probe_container_start_seconds(video_path: Path | str) -> Fraction:
+    """Return the container start time FFmpeg adds to every input ``-ss`` value."""
+    ffprobe_executable = _resolve_ffprobe_executable()
+    if not ffprobe_executable:
+        raise FileNotFoundError(
+            "ffprobe command not found. Ensure FFmpeg is installed and in PATH."
+        )
+    try:
+        completed = subprocess.run(
+            [
+                ffprobe_executable,
+                "-v",
+                "error",
+                "-show_entries",
+                "format=start_time",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(video_path),
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            f"FFprobe could not read the container start time of {video_path}"
+        ) from exc
+    raw_start = completed.stdout.strip()
+    try:
+        return Fraction(raw_start)
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Container start time of {video_path} is unavailable: {raw_start!r}"
+        ) from exc
+
+
 def extract_frames_by_presentation_timestamp(
     video_path: Path | str,
     output_dir: Path,
@@ -318,31 +359,48 @@ def extract_frames_by_presentation_timestamp(
     time_base_den: int,
     quality: int,
     ext: str = "jpg",
-) -> List[Path]:
+) -> list[Path]:
     """Extract sparse frames by exact video-stream presentation timestamp."""
-    timestamps = sorted(set(presentation_timestamps))
-    if not timestamps:
+    from endoreg_db.utils.video.timeline import (
+        presentation_timestamp_fraction,
+        validate_stream_time_base,
+    )
+
+    if not presentation_timestamps:
         return []
-    if timestamps[0] < 0:
-        raise ValueError("presentation timestamps must be non-negative")
-    if time_base_num <= 0 or time_base_den <= 0:
-        raise ValueError("stream time base must be positive")
+    validate_stream_time_base(time_base_num, time_base_den)
+    instants = {
+        timestamp: presentation_timestamp_fraction(
+            timestamp, time_base_num, time_base_den
+        )
+        for timestamp in presentation_timestamps
+    }
+    timestamps = sorted(instants)
 
     ffmpeg_executable = _resolve_ffmpeg_executable()
     if not ffmpeg_executable:
         raise FileNotFoundError(
             "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
         )
+    # Persisted timestamps are absolute stream ticks, while FFmpeg interprets
+    # input ``-ss`` relative to the container start time.
+    container_start_seconds = _probe_container_start_seconds(video_path)
     ensure_directory(output_dir)
     for index, presentation_timestamp in enumerate(timestamps):
-        seek_seconds = presentation_timestamp * time_base_num / time_base_den
+        seek_seconds = max(
+            Fraction(0),
+            instants[presentation_timestamp] - container_start_seconds,
+        )
         output_path = output_dir / f"frame_{index:07d}.{ext}"
         command = [
             ffmpeg_executable,
             "-nostdin",
             "-hide_banner",
+            # Keyframe seeking without a rounding-sensitive trim; the exact
+            # ``select`` filter below alone decides which frame is written.
+            "-noaccurate_seek",
             "-ss",
-            f"{seek_seconds:.9f}",
+            f"{float(seek_seconds):.9f}",
             "-copyts",
             "-i",
             str(video_path),
@@ -382,3 +440,171 @@ def extract_frames_by_presentation_timestamp(
             f"frame: expected={len(timestamps)} actual={len(extracted_files)}"
         )
     return extracted_files
+
+
+def extract_selected_frames_streamed(
+    video_path: Path,
+    output_dir: Path,
+    *,
+    frame_numbers: list[int],
+    quality: int,
+    ext: str = "jpg",
+    fps: float | None = None,
+) -> dict[int, Path]:
+    """
+    Extract selected sampled frame numbers in one FFmpeg pass.
+
+    Frame indices correspond to the output of the fps filter,
+    preserving the previous frame-number mapping.
+    """
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+
+    requested_numbers = sorted({int(n) for n in frame_numbers if int(n) >= 0})
+    if not requested_numbers:
+        return {}
+
+    ensure_directory(output_dir)
+
+    requested_set = set(requested_numbers)
+    max_requested = requested_numbers[-1]
+
+    stream_info = get_stream_info(video_path)
+    if not stream_info or "streams" not in stream_info:
+        raise RuntimeError(f"Could not read video stream info for {video_path}")
+
+    video_stream = next(
+        (
+            stream
+            for stream in stream_info["streams"]
+            if stream.get("codec_type") == "video"
+        ),
+        None,
+    )
+    if not video_stream:
+        raise RuntimeError(f"No video stream found in {video_path}")
+
+    width = int(video_stream["width"])
+    height = int(video_stream["height"])
+    frame_size = width * height * 3
+
+    filters = []
+    if fps is not None:
+        filters.append(f"fps={fps}")
+    filters.append("format=rgb24")
+
+    command = [
+        ffmpeg_executable,
+        "-hide_banner",
+        "-loglevel",
+        "error",
+        "-i",
+        str(video_path),
+        "-vf",
+        ",".join(filters),
+        "-an",
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        "pipe:1",
+    ]
+
+    logger.info(
+        "Running streamed extraction: video=%s requested=%d fps=%s",
+        video_path,
+        len(requested_numbers),
+        fps,
+    )
+
+    process = subprocess.Popen(
+        command,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        bufsize=10**8,
+    )
+
+    if process.stdout is None:
+        process.kill()
+        process.wait()
+        raise RuntimeError("FFmpeg stdout pipe was not created")
+
+    extracted: dict[int, Path] = {}
+    sampled_index = 0
+
+    try:
+        while True:
+            raw = process.stdout.read(frame_size)
+
+            if not raw:
+                break
+
+            if len(raw) != frame_size:
+                raise RuntimeError(
+                    f"Incomplete raw frame: expected={frame_size}, got={len(raw)}"
+                )
+
+            if sampled_index in requested_set:
+                array = np.frombuffer(raw, dtype=np.uint8).reshape((height, width, 3))
+
+                image = Image.fromarray(array, mode="RGB")
+
+                output_path = output_dir / f"selected_{sampled_index:07d}.{ext}"
+
+                save_kwargs = {}
+
+                if ext.lower() in {"jpg", "jpeg"}:
+                    save_kwargs["quality"] = max(
+                        1, min(95, int((32 - quality) / 31 * 95))
+                    )
+                    save_kwargs["subsampling"] = 0
+
+                image.save(output_path, **save_kwargs)
+                extracted[sampled_index] = output_path
+
+                if len(extracted) == len(requested_set):
+                    break
+
+            sampled_index += 1
+
+            if sampled_index > max_requested:
+                break
+
+        if process.poll() is None:
+            process.terminate()
+
+        try:
+            _, stderr_bytes = process.communicate(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            _, stderr_bytes = process.communicate()
+
+        stderr = (stderr_bytes or b"").decode("utf-8", errors="replace")
+
+        if process.returncode not in (0, -15, -9):
+            raise RuntimeError(f"FFmpeg streamed extraction failed: {stderr}")
+
+    finally:
+        if process.poll() is None:
+            process.kill()
+            process.wait()
+
+    missing = sorted(requested_set - set(extracted))
+
+    if missing:
+        raise RuntimeError(
+            f"Streamed extraction missing {len(missing)} frames. "
+            f"First missing: {missing[:20]}"
+        )
+
+    logger.info(
+        "Streamed extraction completed: %d/%d frames",
+        len(extracted),
+        len(requested_set),
+    )
+
+    return extracted

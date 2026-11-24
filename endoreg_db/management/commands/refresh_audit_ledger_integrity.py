@@ -9,7 +9,7 @@ from lx_dtypes.models.contracts.management_command import (
     RefreshAuditLedgerIntegrityCommandOptionsPayload,
 )
 
-from endoreg_db.services.audit_integrity import (
+from endoreg_db.services.audit.integrity import (
     refresh_audit_ledger_integrity_status,
     refresh_audit_ledger_integrity_status_once,
 )

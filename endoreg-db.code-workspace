@@ -6,9 +6,8 @@
 	],
 	"settings": {
 		"python.defaultInterpreterPath": ".devenv/state/venv/bin/python",
-		"python.analysis.extraPaths": [ "./endoreg_db/tests/" ],
+		"python.analysis.diagnosticMode": "workspace",
 		"python.testing.unittestEnabled": false,
-		"python.analysis.typeCheckingMode": "basic",
 		"python.testing.pytestEnabled": true,
 		"python.testing.pytestArgs": [
 		"tests"

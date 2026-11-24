@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from collections import Counter
 from dataclasses import dataclass
-from typing import Any, Callable, Literal, Protocol, TypeVar, cast
+from typing import Any, Literal, Protocol, TypeVar, cast
+from collections.abc import Callable
 
 from django.db import models, transaction
 from django.db.models import QuerySet
@@ -39,12 +40,15 @@ from endoreg_db.services.application_settings.ai_dataset_export import (
     create_ai_dataset_export,
     prepare_ai_dataset_export_download,
 )
-from endoreg_db.services.aidataset_training_selection import AnnotationSourceScope
-from endoreg_db.services.aidataset_frame_buckets import (
+from endoreg_db.services.datasets.training_selection import AnnotationSourceScope
+from endoreg_db.services.datasets.frame_buckets import (
     build_frame_bucket_distribution,
 )
-from endoreg_db.services.aidataset_training_manifests import (
+from endoreg_db.services.datasets.training_manifests import (
     build_frame_multilabel_training_manifest,
+)
+from endoreg_db.services.privacy.response_boundary import (
+    IdentityValidatedJsonFileResponse,
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
@@ -107,13 +111,15 @@ def _ai_dataset_name(dataset: AIDataSet) -> str:
 
 def _ai_dataset_type(dataset: AIDataSet) -> DatasetType:
     value = dataset.dataset_type
-    if value not in ("image", "video"):
+    if value not in ("image", "video", "clinical"):
         raise ValueError(f"Unsupported AI dataset type: {value!r}.")
     return value
 
 
-def _ai_dataset_model_type(dataset: AIDataSet) -> AIModelType:
+def _ai_dataset_model_type(dataset: AIDataSet) -> AIModelType | None:
     value = dataset.ai_model_type
+    if value is None and dataset.dataset_type == "clinical":
+        return None
     if value not in (
         "image_multilabel_classification",
         "phi_region_detector",
@@ -225,10 +231,13 @@ def _parse_ai_dataset_create_options(
         return None, errors
 
 
-def _create_ai_dataset(options: AIDataSetCreateContract) -> AIDataSet:
+def _create_ai_dataset(
+    options: AIDataSetCreateContract, *, owner_id: int | None = None
+) -> AIDataSet:
     with transaction.atomic():
         return AIDataSet.objects.create(
             name=options.name,
+            owner_id=owner_id,
             description=options.description,
             dataset_type=options.dataset_type,
             ai_model_type=options.ai_model_type,
@@ -236,12 +245,14 @@ def _create_ai_dataset(options: AIDataSetCreateContract) -> AIDataSet:
         )
 
 
-def _create_ai_dataset_response(data: object) -> Response:
+def _create_ai_dataset_response(
+    data: object, *, owner_id: int | None = None
+) -> Response:
     options, errors = _parse_ai_dataset_create_options(data)
     if errors:
         return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
     assert options is not None
-    dataset = _create_ai_dataset(options)
+    dataset = _create_ai_dataset(options, owner_id=owner_id)
     return Response(
         _application_settings_dataset_entry_data(
             _application_settings_ai_dataset_entry(
@@ -783,7 +794,7 @@ def _parse_manifest_strategies(
 def _parse_training_manifest_options(
     payload: dict[str, Any],
 ) -> tuple[_TrainingManifestOptions | None, Response | None]:
-    from endoreg_db.services.aidataset_training_selection import (
+    from endoreg_db.services.datasets.training_selection import (
         normalize_annotation_source_scope,
     )
 
@@ -889,7 +900,10 @@ def _training_manifest_response(
 @permission_classes([EnvironmentAwarePermission])
 def application_settings_ai_datasets_dropdown(request: Request) -> Response:
     if request.method == "POST":
-        return _create_ai_dataset_response(request.data)
+        return _create_ai_dataset_response(
+            request.data,
+            owner_id=request.user.pk if request.user.is_authenticated else None,
+        )
     return Response(
         _application_settings_dataset_entries_data(),
         status=status.HTTP_200_OK,
@@ -1016,11 +1030,9 @@ def application_settings_ai_dataset_export_download(
     if file_path is None:
         return Response(result.payload, status=result.status_code)
 
-    response = FileResponse(
+    response = IdentityValidatedJsonFileResponse(
         file_path.open("rb"),
-        as_attachment=True,
         filename=result.filename,
-        content_type=result.content_type,
     )
     response["X-Content-SHA256"] = result.sha256
     response["X-Content-Length"] = str(result.byte_size)

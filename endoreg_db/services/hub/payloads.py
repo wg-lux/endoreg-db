@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from endoreg_db.services.privacy.response_boundary import (
+    reject_transferred_identity_hashes,
+)
+
 from endoreg_db.schemas.hub_payloads import (
     LocalStudyServerPreanonymizedIngestPayload,
     PreanonymizedIngestPayload,
@@ -12,6 +16,7 @@ from endoreg_db.schemas.hub_payloads import (
 )
 
 __all__ = [
+    "reject_transferred_identity_hashes",
     "LocalStudyServerPreanonymizedIngestPayload",
     "PreanonymizedIngestPayload",
     "TransferCaseResolutionPayload",

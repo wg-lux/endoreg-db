@@ -1,41 +1,16 @@
-use aes::{Aes128, Aes192, Aes256};
-use aes_gcm::aead::consts::U12;
-use aes_gcm::aead::{Aead, KeyInit, Payload};
-use aes_gcm::{AesGcm, Nonce};
-use base64::engine::general_purpose::URL_SAFE;
-use base64::Engine;
+use crate::encrypted_format::{
+    chunk_aad, chunk_nonce, decrypt_aes_gcm, invalid_data, read_header, unwrap_data_key_with,
+    validate_chunk_length, EncryptedHeader, AUTHENTICATION_TAG_BYTES,
+};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 use pyo3::types::PyBytes;
-use serde::Deserialize;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::PathBuf;
 
-const MAGIC: &[u8; 8] = b"LXENC01\n";
-const WRAP_AAD: &[u8] = b"lx-annotate:dek-wrap:v1";
-const HEADER_LENGTH_BYTES: usize = 4;
 const CHUNK_LENGTH_BYTES: usize = 4;
-const AUTHENTICATION_TAG_BYTES: u64 = 16;
-const NONCE_PREFIX_BYTES: usize = 8;
-const CHUNK_COUNTER_BYTES: usize = 4;
-const MAX_HEADER_BYTES: usize = 1024 * 1024;
 const MAX_RANGE_BYTES: u64 = 8 * 1024 * 1024;
-const MAX_ENCRYPTED_CHUNK_BYTES: u64 = 64 * 1024 * 1024;
-
-type Aes128Gcm = AesGcm<Aes128, U12>;
-type Aes192Gcm = AesGcm<Aes192, U12>;
-type Aes256Gcm = AesGcm<Aes256, U12>;
-
-#[derive(Debug, Deserialize)]
-struct EncryptedHeader {
-    version: u64,
-    algorithm: String,
-    chunk_size: u64,
-    wrapped_dek: String,
-    wrap_nonce: String,
-    nonce_prefix: String,
-}
 
 #[derive(Debug)]
 struct EncryptedLayout {
@@ -43,91 +18,28 @@ struct EncryptedLayout {
     header_bytes: Vec<u8>,
     data_offset: u64,
     plaintext_size: u64,
-}
-
-fn invalid_data(message: impl Into<String>) -> std::io::Error {
-    std::io::Error::new(std::io::ErrorKind::InvalidData, message.into())
-}
-
-fn decode_urlsafe(value: &str, field_name: &str) -> Result<Vec<u8>, std::io::Error> {
-    URL_SAFE
-        .decode(value)
-        .map_err(|_| invalid_data(format!("encrypted header {field_name} is invalid")))
-}
-
-fn decrypt_aes_gcm(
-    key: &[u8],
-    nonce: &[u8],
-    ciphertext: &[u8],
-    aad: &[u8],
-) -> Result<Vec<u8>, std::io::Error> {
-    if nonce.len() != 12 {
-        return Err(invalid_data("AES-GCM nonce must contain 12 bytes"));
-    }
-    let nonce = Nonce::from_slice(nonce);
-    let payload = Payload {
-        msg: ciphertext,
-        aad,
-    };
-    let plaintext = match key.len() {
-        16 => Aes128Gcm::new_from_slice(key)
-            .map_err(|_| invalid_data("invalid 128-bit AES-GCM key"))?
-            .decrypt(nonce, payload),
-        24 => Aes192Gcm::new_from_slice(key)
-            .map_err(|_| invalid_data("invalid 192-bit AES-GCM key"))?
-            .decrypt(nonce, payload),
-        32 => Aes256Gcm::new_from_slice(key)
-            .map_err(|_| invalid_data("invalid 256-bit AES-GCM key"))?
-            .decrypt(nonce, payload),
-        _ => return Err(invalid_data("AES-GCM key must contain 16, 24, or 32 bytes")),
-    };
-    plaintext.map_err(|_| invalid_data("AES-GCM authentication failed"))
+    chunk_count: u64,
 }
 
 fn read_layout(file: &mut File) -> Result<EncryptedLayout, std::io::Error> {
-    let mut magic = [0_u8; MAGIC.len()];
-    file.read_exact(&mut magic)?;
-    if &magic != MAGIC {
-        return Err(invalid_data("unsupported encrypted file format"));
-    }
-
-    let mut header_length_bytes = [0_u8; HEADER_LENGTH_BYTES];
-    file.read_exact(&mut header_length_bytes)?;
-    let header_length = u32::from_be_bytes(header_length_bytes) as usize;
-    if header_length == 0 || header_length > MAX_HEADER_BYTES {
-        return Err(invalid_data("encrypted header length is invalid"));
-    }
-    let mut header_bytes = vec![0_u8; header_length];
-    file.read_exact(&mut header_bytes)?;
-    let header: EncryptedHeader = serde_json::from_slice(&header_bytes)
-        .map_err(|_| invalid_data("encrypted header JSON is invalid"))?;
-    if header.version != 1 || header.algorithm != "AESGCM-chunked-v1" {
-        return Err(invalid_data("unsupported encrypted header contract"));
-    }
-    if header.chunk_size == 0 {
-        return Err(invalid_data("encrypted chunk size must be positive"));
-    }
-    if header.chunk_size > MAX_ENCRYPTED_CHUNK_BYTES {
-        return Err(invalid_data(format!(
-            "encrypted chunk size exceeds {MAX_ENCRYPTED_CHUNK_BYTES} bytes"
-        )));
-    }
-    let nonce_prefix = decode_urlsafe(&header.nonce_prefix, "nonce_prefix")?;
-    if nonce_prefix.len() != NONCE_PREFIX_BYTES {
-        return Err(invalid_data("encrypted nonce prefix has invalid length"));
-    }
-
+    let (header, header_bytes) = read_header(file)?;
     let data_offset = file.stream_position()?;
     let encrypted_size = file.metadata()?.len();
     let payload_size = encrypted_size
         .checked_sub(data_offset)
         .ok_or_else(|| invalid_data("encrypted payload size is invalid"))?;
     if payload_size == 0 {
+        if header.authenticates_end() {
+            return Err(invalid_data(
+                "encrypted file lacks its authenticated terminal chunk",
+            ));
+        }
         return Ok(EncryptedLayout {
             header,
             header_bytes,
             data_offset,
             plaintext_size: 0,
+            chunk_count: 0,
         });
     }
 
@@ -143,6 +55,7 @@ fn read_layout(file: &mut File) -> Result<EncryptedLayout, std::io::Error> {
     let mut plaintext_size = full_chunk_count
         .checked_mul(header.chunk_size)
         .ok_or_else(|| invalid_data("plaintext size overflowed"))?;
+    let mut chunk_count = full_chunk_count;
 
     if final_record_size != 0 {
         if final_record_size < CHUNK_LENGTH_BYTES as u64 + AUTHENTICATION_TAG_BYTES {
@@ -164,15 +77,11 @@ fn read_layout(file: &mut File) -> Result<EncryptedLayout, std::io::Error> {
                 "encrypted final chunk length does not match file size",
             ));
         }
-        let final_plaintext_size = ciphertext_length
-            .checked_sub(AUTHENTICATION_TAG_BYTES)
-            .ok_or_else(|| invalid_data("encrypted final chunk payload is invalid"))?;
-        if final_plaintext_size > header.chunk_size {
-            return Err(invalid_data("encrypted final chunk payload is invalid"));
-        }
+        validate_chunk_length(&header, full_chunk_count, ciphertext_length, true)?;
         plaintext_size = plaintext_size
-            .checked_add(final_plaintext_size)
+            .checked_add(ciphertext_length - AUTHENTICATION_TAG_BYTES)
             .ok_or_else(|| invalid_data("plaintext size overflowed"))?;
+        chunk_count += 1;
     }
 
     Ok(EncryptedLayout {
@@ -180,7 +89,50 @@ fn read_layout(file: &mut File) -> Result<EncryptedLayout, std::io::Error> {
         header_bytes,
         data_offset,
         plaintext_size,
+        chunk_count,
     })
+}
+
+fn decrypt_record(
+    file: &mut File,
+    layout: &EncryptedLayout,
+    dek: &[u8],
+    counter: u64,
+) -> Result<Vec<u8>, std::io::Error> {
+    let full_record_size =
+        CHUNK_LENGTH_BYTES as u64 + layout.header.chunk_size + AUTHENTICATION_TAG_BYTES;
+    let plaintext_offset = counter
+        .checked_mul(layout.header.chunk_size)
+        .ok_or_else(|| invalid_data("plaintext offset overflowed"))?;
+    let plaintext_length = layout
+        .header
+        .chunk_size
+        .min(layout.plaintext_size - plaintext_offset);
+    let is_final = counter + 1 == layout.chunk_count;
+    let record_offset = layout
+        .data_offset
+        .checked_add(
+            counter
+                .checked_mul(full_record_size)
+                .ok_or_else(|| invalid_data("encrypted record offset overflowed"))?,
+        )
+        .ok_or_else(|| invalid_data("encrypted record offset overflowed"))?;
+    file.seek(SeekFrom::Start(record_offset))?;
+    let mut length_bytes = [0_u8; CHUNK_LENGTH_BYTES];
+    file.read_exact(&mut length_bytes)?;
+    let ciphertext_length = u32::from_be_bytes(length_bytes) as u64;
+    validate_chunk_length(&layout.header, counter, ciphertext_length, is_final)?;
+    if ciphertext_length != plaintext_length + AUTHENTICATION_TAG_BYTES {
+        return Err(invalid_data(
+            "encrypted chunk length does not match chunk geometry",
+        ));
+    }
+    let mut ciphertext = vec![0_u8; ciphertext_length as usize];
+    file.read_exact(&mut ciphertext)?;
+
+    let nonce = chunk_nonce(&layout.header, counter)?;
+    let aad = chunk_aad(&layout.header, &layout.header_bytes, is_final);
+    decrypt_aes_gcm(dek, &nonce, &ciphertext, &aad)
 }
 
 fn decrypt_encrypted_file_range_impl(
@@ -211,20 +163,14 @@ fn decrypt_encrypted_file_range_impl(
         )));
     }
 
-    let wrapped_dek = decode_urlsafe(&layout.header.wrapped_dek, "wrapped_dek")?;
-    let wrap_nonce = decode_urlsafe(&layout.header.wrap_nonce, "wrap_nonce")?;
-    let dek = decrypt_aes_gcm(&master_key, &wrap_nonce, &wrapped_dek, WRAP_AAD)?;
-    if dek.len() != 32 {
-        return Err(invalid_data(
-            "unwrapped data encryption key has invalid length",
-        ));
-    }
-
-    let nonce_prefix = decode_urlsafe(&layout.header.nonce_prefix, "nonce_prefix")?;
-    let full_ciphertext_size = layout.header.chunk_size + AUTHENTICATION_TAG_BYTES;
-    let full_record_size = CHUNK_LENGTH_BYTES as u64 + full_ciphertext_size;
+    let dek = unwrap_data_key_with(&layout.header, &master_key)?;
     let first_counter = start / layout.header.chunk_size;
     let last_counter = end / layout.header.chunk_size;
+    // A range that excludes the end must still authenticate the file's end.
+    // Keep this read on the same descriptor as the selected records.
+    if layout.header.authenticates_end() && last_counter + 1 < layout.chunk_count {
+        decrypt_record(&mut file, &layout, &dek, layout.chunk_count - 1)?;
+    }
     let mut selected = Vec::with_capacity(requested_length as usize);
 
     for counter in first_counter..=last_counter {
@@ -235,33 +181,7 @@ fn decrypt_encrypted_file_range_impl(
             .header
             .chunk_size
             .min(layout.plaintext_size - plaintext_offset);
-        let expected_ciphertext_length = plaintext_length + AUTHENTICATION_TAG_BYTES;
-        let record_offset = layout
-            .data_offset
-            .checked_add(
-                counter
-                    .checked_mul(full_record_size)
-                    .ok_or_else(|| invalid_data("encrypted record offset overflowed"))?,
-            )
-            .ok_or_else(|| invalid_data("encrypted record offset overflowed"))?;
-        file.seek(SeekFrom::Start(record_offset))?;
-        let mut length_bytes = [0_u8; CHUNK_LENGTH_BYTES];
-        file.read_exact(&mut length_bytes)?;
-        let ciphertext_length = u32::from_be_bytes(length_bytes) as u64;
-        if ciphertext_length != expected_ciphertext_length {
-            return Err(invalid_data(
-                "encrypted chunk length does not match chunk geometry",
-            ));
-        }
-        let mut ciphertext = vec![0_u8; ciphertext_length as usize];
-        file.read_exact(&mut ciphertext)?;
-
-        let counter_u32 = u32::try_from(counter)
-            .map_err(|_| invalid_data("encrypted chunk counter overflowed"))?;
-        let mut nonce = Vec::with_capacity(NONCE_PREFIX_BYTES + CHUNK_COUNTER_BYTES);
-        nonce.extend_from_slice(&nonce_prefix);
-        nonce.extend_from_slice(&counter_u32.to_be_bytes());
-        let plaintext = decrypt_aes_gcm(&dek, &nonce, &ciphertext, &layout.header_bytes)?;
+        let plaintext = decrypt_record(&mut file, &layout, &dek, counter)?;
 
         let slice_start = start.saturating_sub(plaintext_offset) as usize;
         let slice_end = (end - plaintext_offset + 1).min(plaintext_length) as usize;
@@ -292,9 +212,13 @@ pub(crate) fn decrypt_encrypted_file_range(
 
 #[cfg(test)]
 mod tests {
-    use super::{decrypt_aes_gcm, decrypt_encrypted_file_range_impl, WRAP_AAD};
+    use super::decrypt_encrypted_file_range_impl;
+    use crate::encrypted_format::{
+        decrypt_aes_gcm, master_key_id, CHUNK_AAD_V2_PREFIX, WRAP_AAD, WRAP_AAD_V2_PREFIX,
+    };
     use aes_gcm::aead::{Aead, KeyInit, Payload};
-    use aes_gcm::{Aes256Gcm, Nonce};
+    use aes_gcm::{Aes128Gcm, Aes256Gcm, Nonce};
+    type Aes192Gcm = aes_gcm::AesGcm<aes::Aes192, aes_gcm::aead::consts::U12>;
     use base64::engine::general_purpose::URL_SAFE;
     use base64::Engine;
     use serde_json::json;
@@ -362,6 +286,151 @@ mod tests {
         }
     }
 
+    fn write_v2_fixture(
+        path: &PathBuf,
+        plaintext: &[u8],
+        master_key: &[u8],
+        chunk_size: usize,
+    ) -> Vec<Vec<u8>> {
+        let dek = [8_u8; 32];
+        let wrap_nonce = [4_u8; 12];
+        let nonce_prefix = [2_u8; 8];
+        let key_id = master_key_id(master_key);
+        let file_id = [6_u8; 16];
+        let mut wrap_aad = WRAP_AAD_V2_PREFIX.to_vec();
+        wrap_aad.extend_from_slice(&key_id);
+        wrap_aad.extend_from_slice(&file_id);
+        let wrapped_dek = Aes256Gcm::new_from_slice(master_key)
+            .expect("master key must be valid")
+            .encrypt(
+                Nonce::from_slice(&wrap_nonce),
+                Payload {
+                    msg: &dek,
+                    aad: &wrap_aad,
+                },
+            )
+            .expect("data encryption key wrapping must succeed");
+        let header_bytes = serde_json::to_vec(&json!({
+            "algorithm": "AESGCM-chunked-v2",
+            "chunk_size": chunk_size,
+            "file_id": URL_SAFE.encode(file_id),
+            "key_id": URL_SAFE.encode(key_id),
+            "nonce_prefix": URL_SAFE.encode(nonce_prefix),
+            "version": 2,
+            "wrap_nonce": URL_SAFE.encode(wrap_nonce),
+            "wrapped_dek": URL_SAFE.encode(wrapped_dek),
+        }))
+        .expect("header must serialize");
+        let cipher = Aes256Gcm::new_from_slice(&dek).expect("data key must be valid");
+        let chunks: Vec<&[u8]> = if plaintext.is_empty() {
+            vec![&[]]
+        } else {
+            plaintext.chunks(chunk_size).collect()
+        };
+        let mut records = Vec::new();
+        let mut file = File::create(path).expect("fixture file must be created");
+        file.write_all(b"LXENC01\n").expect("magic must write");
+        file.write_all(&(header_bytes.len() as u32).to_be_bytes())
+            .expect("header length must write");
+        file.write_all(&header_bytes).expect("header must write");
+        for (counter, chunk) in chunks.iter().enumerate() {
+            let mut nonce = nonce_prefix.to_vec();
+            nonce.extend_from_slice(&(counter as u32).to_be_bytes());
+            let mut aad = CHUNK_AAD_V2_PREFIX.to_vec();
+            aad.push(u8::from(counter + 1 == chunks.len()));
+            aad.extend_from_slice(&header_bytes);
+            let ciphertext = cipher
+                .encrypt(
+                    Nonce::from_slice(&nonce),
+                    Payload {
+                        msg: chunk,
+                        aad: &aad,
+                    },
+                )
+                .expect("chunk encryption must succeed");
+            let mut record = (ciphertext.len() as u32).to_be_bytes().to_vec();
+            record.extend_from_slice(&ciphertext);
+            file.write_all(&record).expect("chunk must write");
+            records.push(record);
+        }
+        records
+    }
+
+    #[test]
+    fn version_two_decrypts_ranges_including_the_final_chunk() {
+        let path = fixture_path("v2-range");
+        let master_key = [5_u8; 32];
+        let plaintext: Vec<u8> = (0..96).map(|value| (value * 3 % 251) as u8).collect();
+        write_v2_fixture(&path, &plaintext, &master_key, 32);
+
+        let selected = decrypt_encrypted_file_range_impl(path.clone(), master_key.to_vec(), 20, 95)
+            .expect("version two range decryption must succeed");
+
+        assert_eq!(selected, plaintext[20..=95]);
+        fs::remove_file(path).expect("fixture must be removable");
+    }
+
+    #[test]
+    fn version_two_detects_whole_chunk_truncation_and_extension() {
+        let master_key = [5_u8; 32];
+        let plaintext: Vec<u8> = (0..96).map(|value| value as u8).collect();
+        let source = fixture_path("v2-source");
+        let records = write_v2_fixture(&source, &plaintext, &master_key, 32);
+        let complete = fs::read(&source).expect("fixture must be readable");
+        let record_bytes: usize = records.iter().map(Vec::len).sum();
+
+        let truncated = fixture_path("v2-truncated");
+        fs::write(&truncated, &complete[..complete.len() - records[2].len()])
+            .expect("truncated fixture must write");
+        let error =
+            decrypt_encrypted_file_range_impl(truncated.clone(), master_key.to_vec(), 32, 63)
+                .expect_err("a non-final chunk presented as final must fail");
+        assert!(error.to_string().contains("authentication failed"));
+
+        let extended = fixture_path("v2-extended");
+        let mut appended = complete.clone();
+        appended.extend_from_slice(&records[0]);
+        fs::write(&extended, &appended).expect("extended fixture must write");
+        let error =
+            decrypt_encrypted_file_range_impl(extended.clone(), master_key.to_vec(), 64, 95)
+                .expect_err("a final chunk followed by another chunk must fail");
+        assert!(error.to_string().contains("authentication failed"));
+
+        let corrupted = fixture_path("v2-corrupted-terminal");
+        let mut damaged = complete.clone();
+        *damaged.last_mut().expect("fixture has a final tag") ^= 1;
+        fs::write(&corrupted, &damaged).expect("corrupted fixture must write");
+        for path in [&truncated, &extended, &corrupted] {
+            let error = decrypt_encrypted_file_range_impl(path.clone(), master_key.to_vec(), 0, 31)
+                .expect_err("an early range must authenticate the terminal record");
+            assert!(error.to_string().contains("authentication failed"));
+        }
+
+        let header_only = fixture_path("v2-header-only");
+        fs::write(&header_only, &complete[..complete.len() - record_bytes])
+            .expect("header-only fixture must write");
+        let error =
+            decrypt_encrypted_file_range_impl(header_only.clone(), master_key.to_vec(), 0, 0)
+                .expect_err("a missing terminal chunk must fail");
+        assert!(error.to_string().contains("terminal chunk"));
+
+        for path in [source, truncated, extended, corrupted, header_only] {
+            fs::remove_file(path).expect("fixture must be removable");
+        }
+    }
+
+    #[test]
+    fn version_two_selects_the_key_by_identifier() {
+        let path = fixture_path("v2-key-id");
+        write_v2_fixture(&path, b"clinical bytes", &[5_u8; 32], 32);
+
+        let error = decrypt_encrypted_file_range_impl(path.clone(), vec![6_u8; 32], 0, 3)
+            .expect_err("a key with another identifier must not be tried");
+
+        assert!(error.to_string().contains("No configured generation"));
+        fs::remove_file(path).expect("fixture must be removable");
+    }
+
     #[test]
     fn decrypts_cross_chunk_range_byte_exactly() {
         let path = fixture_path("range");
@@ -394,15 +463,15 @@ mod tests {
         let nonce = [4_u8; 12];
         for key in [vec![1_u8; 16], vec![2_u8; 24], vec![3_u8; 32]] {
             let ciphertext = match key.len() {
-                16 => super::Aes128Gcm::new_from_slice(&key)
+                16 => Aes128Gcm::new_from_slice(&key)
                     .expect("key must be valid")
                     .encrypt(Nonce::from_slice(&nonce), b"dek".as_slice())
                     .expect("encryption must succeed"),
-                24 => super::Aes192Gcm::new_from_slice(&key)
+                24 => Aes192Gcm::new_from_slice(&key)
                     .expect("key must be valid")
                     .encrypt(Nonce::from_slice(&nonce), b"dek".as_slice())
                     .expect("encryption must succeed"),
-                32 => super::Aes256Gcm::new_from_slice(&key)
+                32 => Aes256Gcm::new_from_slice(&key)
                     .expect("key must be valid")
                     .encrypt(Nonce::from_slice(&nonce), b"dek".as_slice())
                     .expect("encryption must succeed"),

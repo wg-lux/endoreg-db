@@ -23,6 +23,10 @@ class ReferenceProductManager(models.Manager["ReferenceProduct"]):
 
 class ReferenceProduct(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     product: models.ForeignKey["Product"] = models.ForeignKey(
         "Product",
         on_delete=models.CASCADE,

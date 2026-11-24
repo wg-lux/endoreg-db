@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from endoreg_db.models.state.anonymization import (
     AnonymizationState,
+    anonymization_status_case,
     derive_video_anonymization_state,
 )
 
@@ -166,78 +167,9 @@ class VideoState(models.Model):
         relation_prefix: str = "",
         include_missing_relation: bool = False,
     ) -> models.Case:
-        """
-        SQL equivalent of ``anonymization_status`` for aggregate queries.
-        """
-        prefix = f"{relation_prefix}__" if relation_prefix else ""
-        whens: list[models.When] = []
-        if include_missing_relation:
-            whens.append(
-                models.When(
-                    **{
-                        f"{prefix}isnull": True,
-                        "then": models.Value(AnonymizationState.NOT_STARTED.value),
-                    }
-                )
-            )
-        whens.extend(
-            [
-                models.When(
-                    **{
-                        f"{prefix}processing_error": True,
-                        "then": models.Value(AnonymizationState.FAILED.value),
-                    }
-                ),
-                models.When(
-                    **{
-                        f"{prefix}anonymization_validated": True,
-                        "then": models.Value(AnonymizationState.VALIDATED.value),
-                    }
-                ),
-                models.When(
-                    **{
-                        f"{prefix}sensitive_meta_processed": True,
-                        "then": models.Value(
-                            AnonymizationState.DONE_PROCESSING_ANONYMIZATION.value
-                        ),
-                    }
-                ),
-                models.When(
-                    **{
-                        f"{prefix}frames_extracted": True,
-                        f"{prefix}anonymized": False,
-                        "then": models.Value(
-                            AnonymizationState.PROCESSING_ANONYMIZING.value
-                        ),
-                    }
-                ),
-                models.When(
-                    **{
-                        f"{prefix}was_created": True,
-                        f"{prefix}frames_extracted": False,
-                        "then": models.Value(
-                            AnonymizationState.EXTRACTING_FRAMES.value
-                        ),
-                    }
-                ),
-                models.When(
-                    **{
-                        f"{prefix}processing_started": True,
-                        "then": models.Value(AnonymizationState.STARTED.value),
-                    }
-                ),
-                models.When(
-                    **{
-                        f"{prefix}anonymized": True,
-                        "then": models.Value(AnonymizationState.ANONYMIZED.value),
-                    }
-                ),
-            ]
-        )
-        return models.Case(
-            *whens,
-            default=models.Value(AnonymizationState.NOT_STARTED.value),
-            output_field=models.CharField(),
+        return anonymization_status_case(
+            relation_prefix=relation_prefix,
+            include_missing_relation=include_missing_relation,
         )
 
     def mark_processing_not_started(self) -> None:

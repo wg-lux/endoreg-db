@@ -6,7 +6,44 @@ The goal of this repository is to provide consistent, anonymous data and to keep
 2. Ensure Data Is Streamable
 3. Ensure Concurrent Behaviour Is Given
 
+Paths are exclusively accessed through endoreg_db.utils.paths and the get_runtime_paths() function.
+Hashes are exclusively assigned through endoreg_db.utils.hashs and the get_file_hash() function.
+New typing helpers are only allowed if they unify typing usage across various files. Get to the type root.
+
 You are working in an existing codebase. Do not guess architecture from filenames alone.
+
+## Source of Truth Hierarchy & Agent Context Protocol
+
+`structure.yml` is the authoritative directory navigation and ownership map.
+Feature YAML remains authoritative for scope and readiness; code and tests establish
+actual behavior. See [docs/agent_context.md](docs/agent_context.md) for the schema.
+
+- Before searching or editing, read root `structure.yml`, then follow `submodules`
+  to the nearest manifest. Read relevant entrypoints, contracts, and applicable
+  ancestor or nested `AGENTS.md` instructions. Explicitly read YAML maps; do not
+  assume automatic loading.
+- Start searches within that scope using `rg`. Follow internal dependencies and
+  inspect relevant callers, tests, or registrations when correctness requires
+  crossing boundaries. Explain undeclared dependencies and repair the map rather
+  than assuming the map proves that no dependency exists.
+- Delegate with the nearest manifest, explicit editable paths, required contracts,
+  acceptance criteria, and verification commands. Subagents keep edits within their
+  assigned scope and return changed paths, manifest diffs, results, and blockers.
+  Parent agents review integration and applicable feature locks.
+- Every modifying agent must update the nearest `structure.yml` in the same change
+  when adding, moving, deleting, or changing file ownership, entrypoints, contracts,
+  responsibilities, dependencies, or verification commands. List new files under
+  `files` or `entrypoints`, or route new domains through `submodules` and child
+  manifests. Retarget moves and remove stale references. Behavior-only edits require
+  checking map accuracy, without meaningless manifest churn.
+- Keep maps concise: roles and key entrypoints first, detailed contracts by link.
+  Add child manifests at meaningful ownership boundaries. Do not duplicate source,
+  global instructions, or feature readiness evidence. Never include secrets,
+  patient information, or machine-specific runtime state.
+- Before completion, run `.devenv/state/venv/bin/python scripts/lint_structure.py`
+  from the repository root. Review semantic accuracy too; valid links cannot prove
+  behavior or test-command relevance. For code changes, run Pyright before relevant
+  pytest checks as required in the Tests section.
 
 Before editing:
 1. Inspect the relevant files and call sites.
@@ -170,6 +207,15 @@ You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 architectural invariants and roadmap for all code generation, refactoring, and
 system design. Use lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
 
+States of all Import stages are only owned by the Rust State Machine for memory safety. Dont duplicate that.
+
+If an agent doesnt answer to a request for five minutes its lock can be overwritten. This is not meant to harm your workflow but to encourage message reading.
+## Mandatory Report Rules For All Agents
+
+Reports are used to describe imported report Texts that can come from PDF, TXT or CSV and FHIR exports from Databases like SAP or Meona. They can also describe LXDM structured reports built through a report template using lx_dtypes reporting.
+
+We need to recognize, if a patient already has a report in the system. We do this by checking the content hash of the document first and later Sensitive Meta Hash, a anonymous Identifier derived from First Name, Last Name and Date Of Birth.
+
 ## Mandatory Video Rules For All Agents
 
 These rules apply to every change involving video import, reimport,
@@ -190,6 +236,12 @@ user-facing text, or feature-tracker evidence. Spell out a term at its first
 use and add durable video terminology to the runbook glossary.
 
 All agents must preserve these video invariants:
+
+- Only canonical raw and canonical processed videos are generations. HTTP Live
+  Streaming (HLS) is exclusively an optimized streaming derivative bound to its
+  canonical source generation; its build/attempt identifiers are not independent
+  video generations. Preserve complete before/after presentation timestamp
+  sequences, rational time bases, and content identities for canonical transforms.
 
 - Exactly one canonical anonymized master generation is published. Raw media,
   streamable MPEG-4 Part 14 (MP4), HLS, extracted frames, and transcode staging
@@ -323,6 +375,14 @@ Before outputting code, verify:
 If yes, reject the approach and rewrite it to comply with these invariants.
 
 Case Generator and Requirements Module:
+
+For lx-dtypes package YAML, follow the canonical
+[package structure guide](https://github.com/wg-lux/lx-data-models/blob/main/docs/guides/dtypes-package-structure.md)
+and its agent checklist (local sibling checkout:
+`../lx-data-models/docs/guides/dtypes-package-structure.md`).
+Use the existing module/version registry and shared
+terminology storage; employee records are optional. See
+[host import instructions](docs/wiki/dataloader_yaml_authoring.md#versioned-presets-from-shared-terminology-storage).
 
 - Prefer yaml config
 - Reference load_base_db_data

@@ -4,10 +4,9 @@ from __future__ import annotations
 from endoreg_db.utils.storage.files import canonical_media_name
 
 import logging
-import shutil
 import uuid
 from pathlib import Path
-from typing import TYPE_CHECKING, Optional, Protocol, Type, TypedDict, cast
+from typing import TYPE_CHECKING, Optional, Protocol, TypedDict, cast
 
 from endoreg_db.config.env import get_ffmpeg_transcode_quality_mode
 from endoreg_db.exceptions import InsufficientStorageError
@@ -19,16 +18,20 @@ from endoreg_db.services.hub.media_integrity import (
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     ensure_video_file_profile,
+)
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from endoreg_db.services.video_storage.canonical_timelines import (
+    append_canonical_timeline_history,
 )
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
-    atomic_move_file,
     ensure_directory,
     ensure_disk_capacity,
 )
 from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.storage import field_file_is_readable, save_local_file
 
 if TYPE_CHECKING:
@@ -68,16 +71,6 @@ def _verify_completed_file(path: Path) -> None:
         raise RuntimeError(f"Expected output file has no readable video stream: {path}")
 
 
-def _temp_media_path(base_path: Path, marker: str) -> Path:
-    """
-    Keep the media suffix last so FFmpeg can infer the container.
-
-    Example:
-        abc.mp4 -> abc.part.mp4
-    """
-    return base_path.with_name(f"{base_path.stem}.{marker}{base_path.suffix}")
-
-
 def _attempt_temp_media_path(base_path: Path, marker: str) -> Path:
     """
     Return a unique attempt-scoped staging path while preserving the media suffix.
@@ -95,40 +88,18 @@ def check_storage_capacity(
 ) -> None:
     src_path = Path(src_path)
     dst_root = Path(dst_root)
-    src_size = 0
-
-    try:
-        src_size = src_path.stat().st_size
-        ensure_disk_capacity(
-            destination_dir=dst_root,
-            required_bytes=src_size,
-            safety_margin=safety_margin,
-        )
-        logger.info(
-            "Storage check passed for %s into %s with %.2fx safety margin",
-            src_path,
-            dst_root,
-            safety_margin,
-        )
-    except OSError as exc:
-        if "Insufficient disk space" in str(exc):
-            free_space = 0
-            try:
-                free_space = shutil.disk_usage(dst_root).free
-            except OSError:
-                pass
-
-            raise InsufficientStorageError(
-                (
-                    "Insufficient storage space. "
-                    f"Required: {int(src_size * safety_margin) / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB on {dst_root}"
-                ),
-                required_space=int(src_size * safety_margin),
-                available_space=free_space,
-            ) from exc
-
-        logger.warning("Could not check storage capacity: %s", exc)
+    src_size = src_path.stat().st_size
+    ensure_disk_capacity(
+        destination_dir=dst_root,
+        required_bytes=src_size,
+        safety_margin=safety_margin,
+    )
+    logger.info(
+        "Storage check passed for %s into %s with %.2fx safety margin",
+        src_path,
+        dst_root,
+        safety_margin,
+    )
 
 
 def atomic_copy_with_fallback(
@@ -147,56 +118,7 @@ def atomic_copy_with_fallback(
         logger.debug("Copy successful: %s -> %s", src_path, dst_path)
         return True
     except OSError as exc:
-        if "Insufficient disk space" in str(exc):
-            free_space = 0
-            try:
-                free_space = shutil.disk_usage(dst_path.parent).free
-            except OSError:
-                pass
-
-            required_space = src_path.stat().st_size
-            raise InsufficientStorageError(
-                (
-                    "Insufficient space for copy operation. "
-                    f"Required: {required_space / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB"
-                ),
-                required_space=required_space,
-                available_space=free_space,
-            ) from exc
-
-        logger.error("Copy operation failed: %s -> %s: %s", src_path, dst_path, exc)
-        raise
-
-
-def atomic_move_with_fallback(src_path: Path, dst_path: Path) -> bool:
-    src_path = Path(src_path)
-    dst_path = Path(dst_path)
-
-    try:
-        atomic_move_file(source=src_path, destination=dst_path)
-        logger.debug("Atomic move successful: %s -> %s", src_path, dst_path)
-        return True
-    except OSError as exc:
-        if "Insufficient disk space" in str(exc):
-            free_space = 0
-            try:
-                free_space = shutil.disk_usage(dst_path.parent).free
-            except OSError:
-                pass
-
-            required_space = src_path.stat().st_size
-            raise InsufficientStorageError(
-                (
-                    "Insufficient space for move operation. "
-                    f"Required: {required_space / 1e9:.1f} GB, "
-                    f"Available: {free_space / 1e9:.1f} GB"
-                ),
-                required_space=required_space,
-                available_space=free_space,
-            ) from exc
-
-        logger.error("Failed to move %s -> %s: %s", src_path, dst_path, exc)
+        logger.exception("Copy operation failed: %s -> %s: %s", src_path, dst_path, exc)
         raise
 
 
@@ -229,7 +151,7 @@ def _prepare_import_staging(
     file_path: Path,
     raw_video_hash: str,
     original_suffix: str,
-) -> tuple[Path, Path, str]:
+) -> tuple[Path, Path, str, VideoStorageNormalizationEvidence]:
     staging_video_dir = get_runtime_paths().import_video
     ensure_directory(staging_video_dir)
     _cleanup_legacy_sensitive_part_artifacts(staging_video_dir)
@@ -250,7 +172,7 @@ def _prepare_import_staging(
 
     logger.debug("Checking transcoding requirement for %s", file_path)
     try:
-        ensure_video_file_profile(
+        normalization_evidence = ensure_video_file_profile(
             input_path=file_path,
             output_path=temp_output_path,
             reference_path=file_path,
@@ -264,12 +186,12 @@ def _prepare_import_staging(
         ) from exc
 
     logger.debug("Standardized video candidate: %s", temp_output_path)
-    return temp_output_path, temp_output_path, storage_name
+    return temp_output_path, temp_output_path, storage_name, normalization_evidence
 
 
 def _existing_readable_video(
     *,
-    cls_model: Type["VideoFile"],
+    cls_model: type["VideoFile"],
     raw_video_hash: str,
 ) -> "VideoFile | None":
     existing_video = cls_model.objects.filter(raw_video_hash=raw_video_hash).first()
@@ -321,12 +243,14 @@ def _cleanup_failed_import(
 
 
 def _create_from_file(
-    cls_model: Type["VideoFile"],
+    cls_model: type["VideoFile"],
     file_path: Path,
     center_name: str,
     processor_name: Optional[str],
     raw_video_hash: str,
     save: bool = True,
+    *,
+    center_key: str | None = None,
 ) -> "VideoFile":
     """
     Create a VideoFile from a local source path.
@@ -360,10 +284,12 @@ def _create_from_file(
         if existing_video is not None:
             return existing_video
 
-        temp_output_path, transcoded_file_path, storage_name = _prepare_import_staging(
-            file_path=file_path,
-            raw_video_hash=raw_video_hash,
-            original_suffix=original_suffix,
+        temp_output_path, transcoded_file_path, storage_name, normalization_evidence = (
+            _prepare_import_staging(
+                file_path=file_path,
+                raw_video_hash=raw_video_hash,
+                original_suffix=original_suffix,
+            )
         )
         canonical_source_path = _prepare_canonical_source(
             transcoded_file_path=transcoded_file_path,
@@ -371,7 +297,9 @@ def _create_from_file(
         )
 
         try:
-            center = Center.objects.get(name=center_name)
+            from endoreg_db.services.centers.defaults import resolve_import_center
+
+            center = resolve_import_center(center_name, center_key=center_key)
             effective_processor_name = resolve_processor_name_for_import(processor_name)
             processor = (
                 EndoscopyProcessor.objects.get(name=effective_processor_name)
@@ -402,6 +330,12 @@ def _create_from_file(
             processed_video_hash=None,
             suffix=original_suffix,
             fps=None,
+            meta=append_canonical_timeline_history(
+                None,
+                normalization_evidence,
+                artifact_kind="raw",
+                output_content_hash=get_file_hash(canonical_source_path),
+            ),
         )
 
         _verify_completed_file(canonical_source_path)
@@ -443,7 +377,7 @@ def _create_from_file(
         raise
 
     except Exception as exc:
-        logger.error(
+        logger.exception(
             "Failed to create VideoFile from %s: (%s) %s",
             file_path,
             type(exc).__name__,

@@ -34,8 +34,7 @@
     "endoreg_db/**/migrations"
   ],
   "extraPaths": [
-    ".",
-    "../lx-data-models"
+    "."
   ],
   "venvPath": ".devenv/state",
   "venv": "venv",

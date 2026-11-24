@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-import hashlib
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import json
 import os
 import shutil
@@ -25,8 +26,8 @@ from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state.raw_pdf import RawPdfState
 from endoreg_db.models.state.video import VideoState
-from endoreg_db.services.audit_integrity import get_audit_ledger_integrity_status
-from endoreg_db.services.environment_readiness import (
+from endoreg_db.services.audit.integrity import get_audit_ledger_integrity_status
+from endoreg_db.services.runtime.environment_readiness import (
     ReadinessIssue,
     check_environment_readiness,
 )
@@ -73,12 +74,7 @@ class _UploadSourceCleanupStats(TypedDict):
 
 
 def _secret_key_fingerprint() -> str:
-    secret_key_file = os.environ.get("DJANGO_SECRET_KEY_FILE", "").strip()
-    if secret_key_file:
-        content = Path(secret_key_file).read_text(encoding="utf-8").strip()
-    else:
-        content = str(settings.SECRET_KEY)
-    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+    return get_bytes_hash(settings.SECRET_KEY.encode("utf-8"))
 
 
 def _path_within(root: Path, candidate: Path) -> bool:

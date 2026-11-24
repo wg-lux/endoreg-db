@@ -3,6 +3,7 @@ from endoreg_db.utils.paths import get_runtime_paths
 # pyright: reportPrivateUsage=false
 from dataclasses import dataclass
 from collections.abc import Callable
+from contextlib import nullcontext
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
@@ -22,13 +23,15 @@ from endoreg_db.schemas.processed_video_cleanup import (
     ProcessedGenerationCleanupReceipt,
     cleanup_receipts,
 )
-from endoreg_db.services import hls_media, processed_video_cleanup as cleanup
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
 from endoreg_db.utils.paths import (
     EndoregPathsModel,
     to_protected_media_relative,
     to_storage_relative,
 )
-from tests.import_files.test_video_finalize_success import _normalization_evidence
+from tests.import_files.test_video_finalize_success import build_normalization_evidence
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 pytestmark = pytest.mark.django_db
 
@@ -60,7 +63,7 @@ def replacement(monkeypatch: pytest.MonkeyPatch) -> Replacement:
     video.processed_file.name = new_name
     video.processed_video_hash = sha256(b"new processed").hexdigest()
     video.meta = {
-        "storage_normalization": _normalization_evidence().model_dump(mode="json")
+        "storage_normalization": build_normalization_evidence().model_dump(mode="json")
     }
     cleanup.record_processed_replacement(
         video,
@@ -126,6 +129,302 @@ def test_dry_run_then_apply_is_idempotent(replacement: Replacement) -> None:
     )
 
 
+def _restore_previous_master(
+    replacement: Replacement,
+) -> ProcessedGenerationCleanupReceipt:
+    video = replacement.video
+    receipt = cleanup_receipts(video.meta)[0].model_copy(update={"committed": False})
+    video.processed_file.storage.delete(receipt.replacement_name)
+    replacement.ready.delete()
+    video.processed_file.name = receipt.source_name
+    video.processed_video_hash = receipt.source_sha256
+    video.meta = {
+        **(video.meta or {}),
+        "processed_generation_cleanup": [receipt.model_dump(mode="json")],
+    }
+    video.save()
+    return receipt
+
+
+def test_abandoned_receipt_reconciliation_preserves_restored_master_and_hls(
+    replacement: Replacement,
+) -> None:
+    video = replacement.video
+    receipt = _restore_previous_master(replacement)
+    dry = cleanup.cleanup_processed_video_generations(video.pk)
+    assert dry.reason == "dry_run" and dry.pending == 1 and dry.cleaned == 0
+    video.refresh_from_db()
+    assert cleanup_receipts(video.meta) == [receipt]
+    with (
+        patch.object(cleanup, "safe_delete_field_file") as delete,
+        patch.object(cleanup, "safe_rmtree") as rmtree,
+        patch.object(cleanup, "safe_unlink_file") as unlink,
+    ):
+        cleanup.reconcile_previous_processed_cleanup(video)
+        delete.assert_not_called()
+        rmtree.assert_not_called()
+        unlink.assert_not_called()
+    assert cleanup_receipts(video.meta) == []
+    assert video.processed_file.name == receipt.source_name
+    assert cleanup.get_file_hash(video.processed_file) == receipt.source_sha256
+    assert replacement.old_hls.exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+    assert (
+        cleanup.cleanup_processed_video_generations(video.pk, apply=True).reason
+        == "nothing_pending"
+    )
+
+
+@pytest.mark.parametrize(
+    "blocker",
+    [
+        "replacement_exists",
+        "source_missing",
+        "source_hash",
+        "current_hash",
+        "hls",
+        "hls_hash",
+        "reference",
+        "lease",
+        "committed",
+    ],
+)
+def test_ambiguous_uncommitted_receipt_remains_blocked(
+    replacement: Replacement, blocker: str
+) -> None:
+    video = replacement.video
+    receipt = _restore_previous_master(replacement)
+    if blocker == "replacement_exists":
+        video.processed_file.storage.save(
+            receipt.replacement_name, ContentFile(b"new processed")
+        )
+    elif blocker == "source_missing":
+        video.processed_file.storage.delete(receipt.source_name)
+    elif blocker == "source_hash":
+        video.processed_file.storage.delete(receipt.source_name)
+        video.processed_file.storage.save(
+            receipt.source_name, ContentFile(b"changed source")
+        )
+    elif blocker == "current_hash":
+        video.processed_video_hash = "0" * 64
+        video.save()
+    elif blocker in {"hls", "hls_hash"}:
+        VideoHlsArtifact.objects.create(
+            video=video,
+            artifact_kind="processed",
+            status="queued",
+            source_file_name=(
+                receipt.replacement_name if blocker == "hls" else "alias.mp4"
+            ),
+            source_content_hash=receipt.replacement_sha256,
+        )
+    elif blocker == "reference":
+        VideoFile.objects.create(
+            center=video.center,
+            raw_video_hash=uuid4().hex,
+            processed_file=receipt.replacement_name,
+        )
+    elif blocker == "lease":
+        MediaOperationLease.objects.create(
+            video=video,
+            lease_type="stream",
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+    else:
+        receipt = receipt.model_copy(update={"committed": True})
+        video.meta = {
+            **(video.meta or {}),
+            "processed_generation_cleanup": [receipt.model_dump(mode="json")],
+        }
+        video.save()
+    with pytest.raises(RuntimeError, match="cleanup is pending"):
+        cleanup.reconcile_previous_processed_cleanup(video)
+    video.refresh_from_db()
+    assert cleanup_receipts(video.meta) == [receipt]
+    assert replacement.old_hls.exists()
+
+
+@pytest.mark.parametrize("kind", ["raw", "processed"])
+@pytest.mark.parametrize("status", ["superseded", "failed"])
+def test_periodic_derivatives_retire_legacy_records_without_deleting_masters(
+    replacement: Replacement, kind: str, status: str
+) -> None:
+    video = replacement.video
+    artifact = replacement.old_artifact
+    artifact.status = status
+    if status == "failed":
+        artifact.error_code = VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED
+    artifact.source_content_hash = ""
+    artifact.artifact_kind = kind
+    directory = replacement.old_hls
+    if kind == "raw":
+        video.raw_file.name = video.raw_file.storage.save(
+            to_storage_relative(
+                get_runtime_paths().sensitive_video / f"{uuid4().hex}.mp4"
+            ),
+            ContentFile(b"new processed"),
+        )
+        video.save(update_fields=["raw_file"])
+        directory = (
+            get_runtime_paths().streamable_videos_raw_media
+            / "hls"
+            / str(video.uuid)
+            / str(artifact.key_id)
+            / "v0"
+        )
+        directory.mkdir(parents=True)
+        (directory / "playlist.m3u8").write_text("#EXTM3U\nseg_00000.ts\n")
+        (directory / "seg_00000.ts").write_bytes(b"encrypted derivative")
+        artifact.segment_directory_relative_path = to_protected_media_relative(
+            directory
+        )
+        artifact.playlist_relative_path = to_protected_media_relative(
+            directory / "playlist.m3u8"
+        )
+        replacement.ready.artifact_kind = kind
+        replacement.ready.source_file_name = str(video.raw_file.name)
+        replacement.ready.save()
+    artifact.save()
+    roots = [
+        get_runtime_paths().transcoding / role / str(video.pk) / str(artifact.key_id)
+        for role in ("hls_key_material", "hls_plaintext_source", "hls_output")
+    ]
+    for root in roots:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "temporary").write_bytes(b"regenerable")
+    assert cleanup.cleanup_superseded_hls(video.pk).reason == "dry_run"
+    assert directory.exists()
+    result = cleanup.cleanup_superseded_hls(video.pk, apply=True)
+    assert result.cleaned == 1 and result.pending == 0
+    assert not directory.exists()
+    assert all(not root.exists() for root in roots)
+    assert not VideoHlsArtifact.objects.filter(pk=artifact.pk).exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.ready.pk).exists()
+    assert video.processed_file.storage.exists(replacement.old_name)
+    assert video.processed_file.storage.exists(str(video.processed_file.name))
+    video.refresh_from_db()
+    assert len(cleanup_receipts(video.meta)) == 1
+    assert (
+        cleanup.cleanup_superseded_hls(video.pk, apply=True).reason == "nothing_pending"
+    )
+
+
+@pytest.mark.parametrize(
+    "blocker", ["active_lease", "missing_source", "wrong_hash", "missing_ready"]
+)
+def test_periodic_derivatives_require_available_current_source(
+    replacement: Replacement, blocker: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = replacement.video
+    if blocker == "active_lease":
+        MediaOperationLease.objects.create(
+            video=video,
+            lease_type=MediaOperationLease.LEASE_STREAM,
+            expires_at=timezone.now() + timedelta(minutes=5),
+        )
+    elif blocker == "missing_source":
+        video.processed_file.storage.delete(str(video.processed_file.name))
+    elif blocker == "wrong_hash":
+        replacement.ready.source_content_hash = "0" * 64
+    else:
+
+        def unavailable(**kwargs: object) -> VideoHlsArtifact:
+            raise VideoHlsArtifact.DoesNotExist
+
+        monkeypatch.setattr(hls_media, "get_ready_hls_artifact", unavailable)
+    result = cleanup.cleanup_superseded_hls(video.pk, apply=True)
+    assert result.cleaned == 0 and result.pending == 1
+    assert replacement.old_hls.exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+
+
+def test_periodic_derivatives_keep_records_after_partial_cleanup_failure(
+    replacement: Replacement, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def fail(path: Path, *, missing_ok: bool) -> None:
+        raise OSError("unavailable storage")
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(cleanup, "safe_rmtree", fail)
+        with pytest.raises(OSError):
+            cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+    assert cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True).cleaned == 1
+
+
+def test_periodic_derivative_batch_reports_and_retries_remaining_records(
+    replacement: Replacement,
+) -> None:
+    VideoHlsArtifact.objects.bulk_create(
+        [
+            VideoHlsArtifact(
+                video=replacement.video,
+                artifact_kind="processed",
+                status="failed",
+                error_code=VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED,
+            )
+            for _ in range(100)
+        ]
+    )
+    first = cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert first.cleaned == 100 and first.pending == 1
+    second = cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert second.cleaned == 1 and second.pending == 0
+    assert VideoHlsArtifact.objects.filter(pk=replacement.ready.pk).exists()
+
+
+@pytest.mark.parametrize("alias", [False, True])
+def test_periodic_derivatives_reject_shared_or_aliased_paths(
+    replacement: Replacement, alias: bool, tmp_path: Path
+) -> None:
+    if alias:
+        outside = tmp_path / "retained"
+        outside.write_bytes(b"unrelated")
+        (replacement.old_hls / "alias").symlink_to(outside)
+    else:
+        VideoHlsArtifact.objects.create(
+            video=replacement.video,
+            artifact_kind="processed",
+            status="failed",
+            error_code=VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED,
+            segment_directory_relative_path=to_protected_media_relative(
+                replacement.old_hls
+            ),
+        )
+    with pytest.raises(ValueError):
+        cleanup.cleanup_superseded_hls(replacement.video.pk, apply=True)
+    assert replacement.old_hls.exists()
+    assert VideoHlsArtifact.objects.filter(pk=replacement.old_artifact.pk).exists()
+
+
+@pytest.mark.parametrize(
+    "suffix", ["_filtered", ".attempt-" + "a" * 32, ".post_validation." + "b" * 64]
+)
+def test_retirement_accepts_only_owned_historical_generation_names(
+    replacement: Replacement,
+    suffix: str,
+) -> None:
+    video = replacement.video
+    old_name = video.processed_file.storage.save(
+        to_storage_relative(
+            get_runtime_paths().anonym_video / f"{video.raw_video_hash}{suffix}.mp4"
+        ),
+        ContentFile(b"historical processed"),
+    )
+    cleanup.record_processed_replacement(
+        video,
+        previous_name=old_name,
+        previous_hash=sha256(b"historical processed").hexdigest(),
+        strict=True,
+    )
+    cleanup.commit_processed_replacements(video)
+    video.save(update_fields=["meta"])
+    result = cleanup.cleanup_processed_video_generations(video.pk, apply=True)
+    assert result.cleaned == 2
+    assert not video.processed_file.storage.exists(old_name)
+    assert video.processed_file.exists()
+
+
 @pytest.mark.parametrize(
     "blocker",
     [
@@ -164,10 +463,7 @@ def test_blockers_preserve_previous_generation(
             processed_file=replacement.old_name,
         )
     elif blocker == "hls_reference":
-        replacement.old_artifact.status = "failed"
-        replacement.old_artifact.error_code = (
-            VideoHlsArtifact.ErrorCode.MATERIALIZATION_FAILED
-        )
+        replacement.old_artifact.status = "materializing"
         replacement.old_artifact.save()
     else:
         video.processed_video_hash = "0" * 64
@@ -227,7 +523,7 @@ def test_digest_mismatch_deletes_nothing(replacement: Replacement) -> None:
     with patch.object(
         cleanup,
         "get_file_hash",
-        side_effect=[replacement.video.processed_video_hash, "0" * 64],
+        return_value="0" * 64,
     ):
         with pytest.raises(ValueError, match="digest differs"):
             cleanup.cleanup_processed_video_generations(
@@ -351,10 +647,11 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
         center_name=str(replacement.video.center.name),
         processor_name="olympus_cv_1500",
     )
+    ctx.mutation_guard = nullcontext
     ctx.current_video = replacement.video
     ctx.file_hash = str(replacement.video.raw_video_hash)
     ctx.anonymized_path = source
-    ctx.storage_normalization_evidence = _normalization_evidence()
+    ctx.storage_normalization_evidence = normalization_evidence_fixture(source, source)
     scheduled: list[int] = []
     previous_master = str(replacement.video.processed_file.name)
 
@@ -377,7 +674,7 @@ def test_finalization_records_cleanup_before_hls_and_schedules_after_success(
         patch.object(state_management, "_store_existing_final_file", side_effect=store),
         patch.object(state_management, "ensure_video_hls", side_effect=ensure_hls),
         patch.object(state_management, "_record_successful_video_processing_history"),
-        patch.object(state_management, "safe_cleanup_staging_file"),
+        patch.object(state_management, "cleanup_staging_after_commit"),
         patch.object(
             state_management,
             "schedule_processed_generation_cleanup",
@@ -398,7 +695,7 @@ def test_cleanup_writer_is_visible_before_storage_transaction(
 ) -> None:
     from concurrent.futures import ThreadPoolExecutor
     from django.db import close_old_connections, connection
-    from endoreg_db.services.media_operation_gate import video_transcode_lease
+    from endoreg_db.services.media.operation_gate import video_transcode_lease
 
     real_cleanup = cleanup._cleanup_processed_video_generations_owned
     visible: list[bool] = []
@@ -433,3 +730,51 @@ def test_cleanup_writer_is_visible_before_storage_transaction(
     assert visible == [True]
     assert result.cleaned == 1
     assert not replacement.video.processed_file.storage.exists(replacement.old_name)
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_retirement_removes_owned_temporary_hls_locations(
+    replacement: Replacement, failed: bool
+) -> None:
+    artifact = replacement.old_artifact
+    if failed:
+        artifact.status = "failed"
+        artifact.error_code = "materialization_failed"
+        artifact.playlist_relative_path = ""
+        artifact.segment_directory_relative_path = ""
+        artifact.save()
+    roots = [
+        get_runtime_paths().transcoding
+        / role
+        / str(replacement.video.pk)
+        / str(artifact.key_id)
+        for role in ("hls_key_material", "hls_plaintext_source", "hls_output")
+    ]
+    for root in roots:
+        root.mkdir(parents=True, exist_ok=True)
+        (root / "test.tmp").write_bytes(b"temporary data")
+    assert (
+        cleanup.cleanup_processed_video_generations(replacement.video.pk).reason
+        == "dry_run"
+    )
+    assert all(root.exists() for root in roots)
+    assert (
+        cleanup.cleanup_processed_video_generations(
+            replacement.video.pk, apply=True
+        ).cleaned
+        == 1
+    )
+    assert all(not root.exists() for root in roots)
+
+
+def test_temporary_hls_symlink_blocks_before_master_deletion(
+    replacement: Replacement, tmp_path: Path
+) -> None:
+    root = get_runtime_paths().transcoding / "hls_output" / str(replacement.video.pk)
+    root.mkdir(parents=True, exist_ok=True)
+    (root / str(replacement.old_artifact.key_id)).symlink_to(
+        tmp_path, target_is_directory=True
+    )
+    with pytest.raises(ValueError, match="symbolic"):
+        cleanup.cleanup_processed_video_generations(replacement.video.pk, apply=True)
+    assert replacement.video.processed_file.storage.exists(replacement.old_name)

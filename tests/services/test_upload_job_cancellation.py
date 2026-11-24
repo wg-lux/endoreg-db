@@ -64,6 +64,8 @@ def test_queued_cancellation_is_idempotent_and_redelivery_preserves_ciphertext(
         )
     initial_retry_count = job.retry_count
     if reserved:
+        if status == "retrying":
+            UploadJob.objects.filter(pk=job.pk).update(next_retry_at=timezone.now())
         acquire_upload_job_import_lease(
             upload_job_id=str(job.pk), owner="queued-task:delivery"
         )
@@ -135,7 +137,13 @@ def test_terminal_jobs_cannot_be_cancelled(
     job, user = source_job
     UploadJob.objects.filter(pk=job.pk).update(
         status=status,
-        error_code="source_missing" if status == "lost" else "processing_failed",
+        error_code=(
+            "source_missing"
+            if status == "lost"
+            else "processing_failed"
+            if status == "error"
+            else ""
+        ),
     )
     with pytest.raises(ValueError):
         request_upload_job_cancellation(job_id=str(job.pk), actor_id=user.pk)

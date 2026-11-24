@@ -53,18 +53,24 @@ from endoreg_db.models.media.video.video_processing import VideoProcessingHistor
 from endoreg_db.openapi import OpenApiAPIView as APIView
 from endoreg_db.serializers import VideoProcessingHistorySerializer
 from endoreg_db.serializers.video.video_file_detail import VideoDetailSerializer
-from endoreg_db.services.hls_media import get_ready_hls_artifact, hls_playlist_path
+from endoreg_db.services.streaming.hls_media import (
+    get_ready_hls_artifact,
+    hls_playlist_path,
+)
+from endoreg_db.services.video_files.video_masks import get_video_mask
 from endoreg_db.services.jobs.heavy_jobs import HeavyJobKind, queue_for_job_kind
 from endoreg_db.services.jobs.video_correction_jobs import (
     VideoAnonymizationCorrectionJobConfig,
     apply_video_anonymization_strategy,
     dispatch_video_anonymization_correction,
 )
-from endoreg_db.services.label_video_segment_states import (
+from endoreg_db.services.annotations.label_video_segment_states import (
     ensure_label_video_segment_states,
 )
-from endoreg_db.services.streamable_media import sync_video_streamable_artifacts
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.streaming.streamable_media import (
+    sync_video_streamable_artifacts,
+)
+from endoreg_db.services.annotations.segment_validation_workflow import (
     mark_segment_annotations_stale,
 )
 from endoreg_db.utils.file_operations import (
@@ -99,8 +105,8 @@ class ProcessingHistoryRecord(Protocol):
 
 
 try:
-    from lx_anonymizer import (
-        FrameCleaner as _FrameCleaner,  # pyright: ignore[reportMissingTypeStubs]
+    from endoreg_db.services.video_storage.provenance_cleaner import (
+        create_frame_cleaner as _FrameCleaner,
     )
 
     FrameCleaner = cast(Any, _FrameCleaner)
@@ -254,7 +260,7 @@ class VideoAnonymizationCorrectionView(APIView):
     def post(self, request: Request, pk: int) -> Response:
         video = get_object_or_404(VideoFile, pk=pk)
         try:
-            payload = self._validate_payload(_request_payload_data(request))
+            payload = self.validate_payload(_request_payload_data(request))
         except ValueError as exc:
             return _error_response(str(exc), status.HTTP_400_BAD_REQUEST)
         try:
@@ -264,7 +270,7 @@ class VideoAnonymizationCorrectionView(APIView):
                 _validation_error_message(exc), status.HTTP_400_BAD_REQUEST
             )
         except Exception as exc:
-            logger.error(
+            logger.exception(
                 "Anonymization correction dispatch failed for video %s: %s",
                 pk,
                 exc,
@@ -289,7 +295,7 @@ class VideoAnonymizationCorrectionView(APIView):
         )
 
     @classmethod
-    def _validate_payload(cls, data: Mapping[str, Any]) -> dict[str, object]:
+    def validate_payload(cls, data: Mapping[str, Any]) -> dict[str, object]:
         strategy = str(data.get("strategy") or "").strip()
         if strategy not in cls._STRATEGIES:
             raise ValueError("strategy must be detector_assisted or processor_region")
@@ -305,6 +311,22 @@ class VideoAnonymizationCorrectionView(APIView):
             if isinstance(region_value, Mapping)
             else cast(Mapping[str, object], {})
         )
+        profile_name = region.get("mask_name")
+        if profile_name is not None:
+            if not isinstance(profile_name, str) or region.get("mode") != "profile":
+                raise ValueError("mask_name requires region.mode=profile")
+            profile = get_video_mask(profile_name)
+            return {
+                "strategy": strategy,
+                "processing_method": processing_method,
+                "region": {
+                    "mode": "custom",
+                    "device_name": profile.device_name,
+                    "mask_profile": profile.model_dump(mode="json"),
+                },
+                "human_review_required": True,
+                "apply_all_frames": True,
+            }
         normalized_region: dict[str, object] = {
             "mode": str(region.get("mode") or "device"),
             "device_name": str(region.get("device_name") or "olympus_cv_1500"),
@@ -410,7 +432,7 @@ class VideoAnonymizationCorrectionView(APIView):
         )
         try:
             from lx_anonymizer.config import (
-                settings as anonymizer_settings,  # pyright: ignore[reportMissingTypeStubs]
+                settings as anonymizer_settings,
             )
 
             model = {
@@ -470,7 +492,7 @@ def update_segments_after_frame_removal(
 
     Args:
         video: VideoFile instance whose segments should be updated
-        removed_frames: List of frame numbers that were removed (sorted)
+        removed_frames: list of frame numbers that were removed (sorted)
 
     Returns:
         dict: {
@@ -772,7 +794,7 @@ class VideoApplyMaskView(APIView):
                 raise Exception("Masking failed - check FFmpeg logs")
 
         except Exception as e:
-            logger.error(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
+            logger.exception(f"Video masking failed for {pk}: {str(e)}", exc_info=True)
             temp_output_path = _part_output_path(_masked_output_path(video))
             safe_unlink_file(temp_output_path, missing_ok=True)
 
@@ -979,7 +1001,7 @@ class VideoRemoveFramesView(APIView):
                 raise Exception("Frame removal failed - check FFmpeg logs")
 
         except Exception as e:
-            logger.error(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
+            logger.exception(f"Frame removal failed for {pk}: {str(e)}", exc_info=True)
             temp_output_path = _part_output_path(_cleaned_output_path(video))
             safe_unlink_file(temp_output_path, missing_ok=True)
 

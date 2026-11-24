@@ -4,7 +4,7 @@ from typing import ClassVar, Any
 from django.db import models
 
 
-class ResourceManager(models.Manager["Resource"]):  # pyright: ignore[reportMissingTypeArgument]
+class ResourceManager(models.Manager["Resource"]):
     def get_by_natural_key(self, name: str) -> "Resource":
         return self.get(name=name)
 
@@ -13,6 +13,10 @@ class Resource(models.Model):
     objects: ClassVar[ResourceManager] = ResourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     def natural_key(self) -> tuple[str]:
         """

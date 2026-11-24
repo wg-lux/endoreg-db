@@ -17,6 +17,7 @@ class PatientFindingSerializer(serializers.ModelSerializer[PatientFinding]):
         # fields = '__all__'
         fields = [
             "id",
+            "instance_id",
             "patient_examination",
             "finding",
             # relationships (kept for backward compatibility)
@@ -31,6 +32,7 @@ class PatientFindingSerializer(serializers.ModelSerializer[PatientFinding]):
         ]
         read_only_fields = [
             "id",
+            "instance_id",
             "created_at",
             "updated_at",
             "is_active",

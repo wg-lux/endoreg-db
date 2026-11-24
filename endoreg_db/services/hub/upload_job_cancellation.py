@@ -10,7 +10,11 @@ from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.upload_job_import_lease import UploadJobImportLease
+from endoreg_db.services.hub.upload_job_state_machine import (
+    validate_upload_job_status_transition,
+)
 from endoreg_db.utils.structured_logging import emit_structured_event
 
 logger = logging.getLogger(__name__)
@@ -84,16 +88,20 @@ def request_upload_job_cancellation(*, job_id: str, actor_id: int) -> UploadJob:
         active_execution = bool(
             job.processing_lease_owner
         ) and not job.processing_lease_owner.startswith("queued-task:")
-        job.status = (
+        target_status = (
             UploadJob.Status.CANCEL_REQUESTED
             if active_execution
             else UploadJob.Status.CANCELLED
         )
+        validate_upload_job_status_transition(
+            current_status=job.status, target_status=target_status.value
+        )
+        job.status = target_status
         job.cancellation_requested_at = timezone.now()
         job.cancellation_requested_by = User.objects.get(pk=actor_id)
         job.retryable = False
         job.next_retry_at = None
-        job.cleanup_status = UploadJob.CleanupStatus.SKIPPED
+        set_upload_job_cleanup_status(job, UploadJob.CleanupStatus.SKIPPED.value)
         fields = [
             "status",
             "cancellation_requested_at",
@@ -135,6 +143,10 @@ def finalize_upload_job_cancellation(lease: UploadJobImportLease) -> bool:
             or job.processing_fencing_token != lease.fencing_epoch
         ):
             return False
+        validate_upload_job_status_transition(
+            current_status=job.status,
+            target_status=UploadJob.Status.CANCELLED.value,
+        )
         job.status = UploadJob.Status.CANCELLED
         job.processing_lease_owner = ""
         job.processing_lease_expires_at = None

@@ -1,0 +1,312 @@
+schema_version: '1.0'
+id: state_machine_conformance
+name: Upload-job and anonymization state machine conformance
+description: Every UploadJob status mutation reduces through the native Rust operation lifecycle, and
+  every consumer of anonymization status branches on the Rust-derived phase instead of hand-maintained
+  status sets. Findings come from the 2026-10-28 get-dead-code review of state-machine diversions.
+owners:
+- endoreg_db maintainers
+production_critical: true
+tracking:
+  state: active
+  history: []
+source_documents:
+- path: .agents/skills/get-dead-code/SKILL.md
+  disposition: reference
+  note: Review method; static findings are candidates, not deletion authority.
+- path: docs/hub_ingest_operations.md
+  disposition: reference
+  note: UploadJob lifecycle operations; the authoritative reducers are rust/endoreg_rust_backend/src/lifecycle_state.rs
+    (lifecycle_state_v3) and import_state.rs.
+definition_of_done:
+- id: upload_job_cancellation_lifecycle
+  category: functionality
+  title: Cancellation statuses reduce through the native lifecycle
+  acceptance:
+  - CANCEL_REQUESTED and CANCELLED are mapped in the UploadJob lifecycle table. CANCEL_REQUESTED is a
+    running operation with recorded cancellation intent; CANCELLED reduces through the native cancel event.
+  - request_upload_job_cancellation and finalize_upload_job_cancellation validate every status write through
+    validate_upload_job_status_transition before saving.
+  - A cancellation request cannot be reverted to PROCESSING, RETRYING or PENDING; it can only end as CANCELLED,
+    an interruption ERROR, or LOST.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_upload_job_cancellation.py
+    - tests/services/test_upload_job_state_machine.py
+    - -q
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_state_machine.py
+    - kind: code
+      reference: endoreg_db/services/hub/upload_job_cancellation.py
+    - kind: test
+      reference: '2026-10-28 HEAD d85d1650 + working tree: pyright on changed files 0 errors; pytest tests/services/test_upload_job_state_machine.py
+        tests/services/test_upload_job_cancellation.py tests/views/anonymization/test_upload_job_cancellation.py
+        => 84 passed.'
+    note: Implemented in working tree; awaiting independent review and commit.
+    assessed_by: claude-lx-annotate-09
+    assessed_at: '2026-10-28T16:26:52.550349Z'
+- id: upload_job_recovery_admission
+  category: operations
+  title: Retry and recovery admission share one state-machine entry point
+  acceptance:
+  - Automatic persisted-stack recovery and user priority requests use the same admission function; Rust
+    owns the remaining stage stack and fixed checkpoint reference persisted on UploadJob.
+  - The checkpoint resume in UploadJobRetryView and recover_interrupted_upload_jobs use one typed admission
+    function in upload_job_state_machine instead of calling UploadJob.schedule_retry with inline validation.
+  - The admission keeps the row-lock and fencing-token snapshot check, and accepts an IMPORT_INTERRUPTED
+    job only through this explicit recovery path.
+  - Redundant retry-budget arithmetic is removed; the retry budget is never raised by an operator resume.
+  - validate_upload_job_interruption derives its decision from the native reducer for the actual current
+    status instead of reducing a constant path behind a Python status set.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_upload_job_import_lease.py
+    - tests/import_files/test_import_checkpoints.py
+    - tests/import_files/test_import_checkpoint_duplicate_execution.py
+    - -q
+    timeout_seconds: 1200
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: migration_lost_marking
+  category: operations
+  title: Migration cleanup marks LOST only through the fenced state machine
+  acceptance:
+  - migration_mark_eligible marks a job LOST through mark_upload_job_integrity_lost, which validates the
+    native transition and emits the structured lifecycle log.
+  - A job with a live processing lease is not marked LOST; the command reports it and leaves it unchanged.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the migration_mark_eligible command tests for pending, processing with an expired
+      lease, and processing with a live lease.
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: anonymization_phase_consumers
+  category: requirements
+  title: Status consumers branch on the Rust-derived phase
+  acceptance:
+  - Runtime reconciliation selects in-progress media by the native phase, including the anonymized status.
+  - Media-management statistics count every in-progress status, including started and anonymized, as processing.
+  - The video media status filter uses the native SQL status annotation instead of re-deriving statuses
+    from raw state flags.
+  - The PDF redaction response reports the status derived from the persisted state, not a constant.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the focused reconciliation, media-management, video-media filter and PDF redaction
+      tests.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: endoreg_db/models/state/anonymization.py
+    - kind: code
+      reference: endoreg_db/services/runtime/reconciliation.py
+    - kind: code
+      reference: endoreg_db/views/anonymization/media_management.py
+    - kind: code
+      reference: endoreg_db/views/media/video_media.py
+    - kind: code
+      reference: endoreg_db/views/pdf/pdf_redaction.py
+    - kind: test
+      reference: '2026-10-28 HEAD 30430d54 + working tree: pyright on changed files 0 errors; URLconf
+        import ok; pytest test_anonymization_phase, test_video_media_view, test_media_management_endpoints,
+        test_pdf_redaction, test_reconciliation_service, test_upload_job_state_machine, test_upload_job_cancellation
+        => 127 passed (default skips); video/media/reconciliation with RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        => 52 passed.'
+    note: Implemented in working tree; awaiting independent review and commit. The video status filter
+      value validated now follows anonymization_validated (native rule) instead of sensitive_meta.is_verified;
+      no frontend consumer sends status.
+    assessed_by: claude-lx-annotate-09
+    assessed_at: '2026-10-28T16:44:59.838912Z'
+- id: phase_gated_destructive_and_outbound_paths
+  category: security
+  title: Deletion and outbound transfer gates use native phases
+  acceptance:
+  - The media-management cleanup selects deletion candidates by native phase. Media in any in-progress
+    phase are not deleted unless the existing force contract applies; the behavior change is covered by
+    tests before it ships.
+  - The lx-annotate hub transfer gate (lx_annotate/hub/hub_export_payloads.py) admits only the awaiting_validation
+    and validated phases; the in-progress anonymized status is rejected. The explicit anonymization_validated
+    requirement at the transfer boundary is unchanged.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the media-management cleanup tests in endoreg-db and the hub export payload tests
+      in lx-annotate, including a media row in the anonymized (in-progress) status.
+    timeout_seconds: 900
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: /home/admin/dev/lx-annotate/lx_annotate/hub/hub_export_payloads.py
+    - kind: test
+      reference: '2026-10-28 lx-annotate HEAD d66892f2 + working tree, installed endoreg-db wheel: pyright
+        hub_export_payloads.py 0 errors (4 pre-existing SimpleNamespace errors in untouched guard tests);
+        pytest tests/hub/test_hub_export_payload_guards.py test_hub_export_payloads.py test_hub_export_end_to_end.py
+        test_hub_export_worker.py test_video_frame_provenance_export.py => 85 passed; every AnonymizationState
+        parametrized, anonymized rejected.'
+    note: Hub transfer gate done (bullet 2). Media-management cleanup (bullet 1) awaits a user decision
+      on in-progress deletion semantics.
+    assessed_by: claude-lx-annotate-09
+    assessed_at: '2026-10-28T16:50:34.587158Z'
+- id: conformance_tests
+  category: testing
+  title: Conformance tests prevent new diversions
+  acceptance:
+  - A test asserts that every UploadJob.Status value is mapped in the lifecycle table.
+  - A test asserts that every AnonymizationState value has exactly one native phase and that phase-based
+    consumers agree with the native classification for all statuses.
+  - Pyright passes for changed modules before pytest runs.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_upload_job_state_machine.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: not_assessed
+    evidence: []
+- id: native_vocabulary_single_source
+  category: requirements
+  title: Rust is the single source of every native state vocabulary
+  acceptance:
+  - Every native state machine declares each state, event and action token exactly once in Rust and exports
+    the complete vocabulary through native_state_vocabularies.
+  - Hub local status, receiver status and failure categories are Rust-owned vocabularies; persistence
+    and API share one failure mirror. Native acknowledgement/failure reduction preserves completed jobs,
+    rejects unknown tokens and runs under the caller's database lock without Python fallback.
+  - Every outbound hub local_status/failure_class change is one Rust hub_transfer_event applied through
+    endoreg_db.services.hub.outbound_transfer_state under a row lock; an exhaustive Rust test proves applied
+    results keep failure exactly on failed status and are idempotent under duplicate delivery, superseded
+    acknowledgements other than applied are no-ops, receiver lost is a non-retryable integrity failure,
+    and a stale worker cannot resume a transfer another writer failed or completed.
+  - Every VideoHlsArtifact.status change goes through endoreg_db.services.streaming.hls_artifact_state, whose
+    Rust table (hls_artifact_transition_v1) is exhaustively tested; ready is reachable only from validated
+    and superseded/failed artifacts are never revived.
+  - Every status/state/failure_class write in endoreg_db is listed in quality/state_mutation_owners.yml
+    with a reviewed writer kind; scripts/check_state_mutation_owners.py (pre-commit and tests/scripts)
+    fails on unlisted or stale writers and on a second writer of a field owned by a native single writer.
+  - Every remaining lifecycle field (report LLM jobs, video processing history, quarantine items, frame
+    annotation exports, AI dataset export artifacts, DICOM export jobs, patient examination reports, inbound
+    hub transfer and case resolution, upload source cleanup, outbound local cleanup) is written only by the
+    named functions in endoreg_db.services.runtime.status_writers, which read the persisted status under the
+    row lock and apply the Rust decide_status_transition table (status_transition_v1); the owner map has no
+    locked or unreviewed writers, and Rust tests prove final statuses never move and every non-legacy status
+    is reachable.
+  - Each Python mirror enum is registered once; application startup refuses to run when any mirror differs
+    from the Rust vocabulary in either direction, and a parametrized test covers every registered vocabulary.
+  - utils/rust_backend.py keeps no duplicate token sets and no Python re-implementation of a native decision;
+    a missing native function raises instead of falling back.
+  - Unknown frame task-mode and sampling-strategy tokens raise ValueError in Rust instead of defaulting.
+  - Rust unit tests, including vocabulary uniqueness and serde token parity, pass through the devenv rust:report-runtime
+    task.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/rust_backend/test_state_enum_parity.py
+    - -q
+    timeout_seconds: 600
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/state_vocabulary.rs
+    - kind: code
+      reference: endoreg_db/services/runtime/native_state_vocabulary.py
+    - kind: test
+      reference: '2026-11-02 HEAD 22a5cccf + working tree: RUSTFLAGS embed cargo test => 40 passed; pyright
+        project-wide 0 errors; pytest tests/rust_backend => 215 passed; lifecycle/lease/import-stack/checkpoint/state-model
+        suites => 219 passed after restoring wrapper contracts (81 lifecycle passed on rerun); HLS/integrity/training/transfer/export/post-validation
+        => 247 passed; frame annotation task suites => 100 passed; training compare-and-swap regression
+        test fails without the status guard and passes with it.'
+    - kind: test
+      reference: '2026-11-02 index-only checkout over HEAD 22a5cccf: cargo test (embedded Python) => 37
+        passed; stub_gen output equals staged endoreg_rust_backend.pyi after ruff format; pyright 0 errors
+        in staged files (22 pre-existing HEAD errors in text_finding_approval and test_hls_media/test_text_finding_approval);
+        pytest test_state_enum_parity + test_lifecycle_state_machine against the index tree => 134 passed.
+        Working tree: scripts/check_report_native_runtime.sh => exit 0.'
+    - kind: test
+      reference: '2026-11-02 working tree: pyright on processing, report_import_service, ingest, checkpoints
+        and test_import_processing_stack => 0 errors; pyright probe passing "validate" => reportArgumentType
+        error; zero literal events remain (rg); devenv shell pytest import stack, checkpoints, report
+        import service, upload endpoints, hub ingest provenance => 190 passed, 3 skipped.'
+    - kind: test
+      reference: '2026-11-17 hub native extension: scripts/check_report_native_runtime.sh passed (46 Rust
+        tests, generated stub parity, isolated release-wheel capability and absorbing-completion checks).
+        Project Pyright: 0 errors, 2 pre-existing warnings. pytest tests/rust_backend/test_hub_transfer_state.py
+        tests/rust_backend/test_state_enum_parity.py -q: 80 passed. Sender integrated against this rebuilt
+        backend: worker/reconciliation/payload/cleanup/API/concurrency suites 98 passed, including completion-versus-failure
+        races in both commit orders on separate PostgreSQL connections. One Python failure enum is shared
+        by model and API; all three hub vocabularies are verified against Rust at startup. No production
+        deployment.'
+    - kind: test
+      reference: '2026-11-18 working tree: scripts/check_report_native_runtime.sh exit 0 (54 Rust tests incl.
+        exhaustive HLS artifact transition table, stub parity, isolated wheel). Project Pyright 0 errors, 2 pre-existing
+        warnings. HLS media/profile/timing/stream/materialize/readiness + tests/rust_backend => 499 passed; scripts,
+        vocabulary parity, HLS cleanup/rotation/transcode/reimport/tasks suites => 571 passed. check_state_mutation_owners
+        clean (2 native single writers, 14 unreviewed writers frozen). No production deployment.'
+    - kind: test
+      reference: '2026-11-18 working tree: scripts/check_report_native_runtime.sh exit 0 (57 Rust tests incl.
+        per-machine status tables, stub parity, isolated wheel with status_transition_v1). Project Pyright 0
+        errors, 2 pre-existing warnings. 135 affected endoreg-db test files + tests/rust_backend + tests/scripts
+        => 2735 passed, 4 skipped, 2 failed (inventory boundary drift, a SimpleNamespace transfer double); both
+        fixed and rerun => 72 passed. tests/models/metadata/file_import/test_create_video_file.py rerun alone
+        => 48 passed (an earlier segfault was an in-place .so overwrite during a running session).
+        lx-annotate hub cleanup/audit/storage monitor against this checkout => 42 passed. Owner map clean
+        with 0 locked and 0 unreviewed writers. No production deployment.'
+    - kind: code
+      reference: endoreg_db/services/runtime/status_writers.py
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/status_transition.rs
+    - kind: code
+      reference: quality/state_mutation_owners.yml
+    - kind: code
+      reference: endoreg_db/services/streaming/hls_artifact_state.py
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/hub_transfer_state.rs
+    - kind: code
+      reference: endoreg_db/services/hub/outbound_transfer_state.py
+    - kind: test
+      reference: '2026-11-18 hub_transfer_state_v2: scripts/check_report_native_runtime.sh exit 0 (50
+        Rust tests incl. exhaustive duplicate-delivery idempotency and failure/status invariants, stub
+        parity, isolated wheel v2 assertions). Project Pyright 0 errors, 2 pre-existing warnings. pytest
+        tests/rust_backend: 297 passed. lx-annotate tests/hub against this checkout (PYTHONPATH): 296
+        passed, 2 failed in tests/hub/test_tasks.py from uncommitted is_retryable_outbound_failure failure_class
+        change whose SimpleNamespace/MagicMock doubles lack failure_class; new stale-worker and ineligibility-versus-completion
+        race tests pass. No production deployment.'
+    assessed_by: claude-hub-refactor
+    assessed_at: '2026-11-18T08:16:03.104884Z'
+- id: state_machine_documentation
+  category: documentation
+  title: Lifecycle mapping and phase rule are documented
+  acceptance:
+  - The hub ingest operations documentation lists the UploadJob status to native lifecycle mapping, including
+    cancellation, and states that consumers branch on native phases rather than status sets.
+  required: true
+  verification:
+    kind: manual
+    instructions: Compare docs/hub_ingest_operations.md with the lifecycle table and the native phase
+      rules.
+    timeout_seconds: 300
+  assessment:
+    status: not_assessed
+    evidence: []

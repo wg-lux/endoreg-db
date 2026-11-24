@@ -12,7 +12,7 @@ from rest_framework.test import APIRequestFactory
 from endoreg_db.authz.auth import KeycloakJWTAuthentication
 from endoreg_db.authz.backends import KeycloakOIDCBackend
 from endoreg_db.models import Center, PortalUserInfo, VideoFile
-from endoreg_db.services.center_access import CenterAccessConfigurationError
+from endoreg_db.services.centers.access import CenterAccessConfigurationError
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 
 pytestmark = pytest.mark.django_db

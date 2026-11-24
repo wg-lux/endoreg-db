@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = True) -> bool:
+def anonymize_video_file(video: "VideoFile", delete_original_raw: bool = False) -> bool:
     from ._anonymization import _anonymize
 
     return _anonymize(video, delete_original_raw=delete_original_raw)
@@ -38,7 +38,7 @@ def merge_outside_frame_intervals(
     *,
     only_validated: bool = False,
 ) -> list[tuple[int, int]]:
-    from endoreg_db.services.video_post_validation_blackening import (
+    from endoreg_db.services.video_files.post_validation_blackening import (
         merge_outside_frame_intervals as _merge_outside_frame_intervals,
     )
 
@@ -51,7 +51,7 @@ def rebuild_processed_video_without_outside_frames(
     only_validated: bool = False,
     outside_intervals: Sequence[tuple[int, int]] | None = None,
 ) -> bool:
-    from endoreg_db.services.video_post_validation_blackening import (
+    from endoreg_db.services.video_files.post_validation_blackening import (
         rebuild_processed_video_without_outside_frames as _rebuild,
     )
 

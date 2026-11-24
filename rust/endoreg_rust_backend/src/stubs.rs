@@ -4,6 +4,21 @@ use pyo3_stub_gen::{
     TypeInfo,
 };
 
+fn stub_type_status_rules() -> TypeInfo {
+    TypeInfo::builtin("list[tuple[str, list[tuple[str, bool]]]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "anonymization_status_rules",
+        args: &[ArgInfo { name: "report", r#type: stub_type_bool }],
+        r#return: stub_type_status_rules,
+        doc: "Ordered rules shared by native state derivation and SQL aggregation.",
+        signature: Some("report: bool"),
+        module: None,
+    }
+}
+
 fn stub_type_bytes() -> TypeInfo {
     TypeInfo::builtin("bytes")
 }
@@ -46,6 +61,53 @@ fn stub_type_str() -> TypeInfo {
 
 fn stub_type_bool() -> TypeInfo {
     TypeInfo::builtin("bool")
+}
+
+fn stub_type_hub_decision() -> TypeInfo {
+    TypeInfo::builtin("tuple[str, str | None, bool]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "reduce_hub_transfer_event",
+        args: &[
+            ArgInfo { name: "current_state", r#type: stub_type_str },
+            ArgInfo { name: "current_failure_class", r#type: stub_type_optional_str },
+            ArgInfo { name: "event", r#type: stub_type_str },
+            ArgInfo { name: "remote_status", r#type: stub_type_optional_str },
+            ArgInfo { name: "failure_class", r#type: stub_type_optional_str },
+        ],
+        r#return: stub_type_hub_decision,
+        doc: "Native hub transfer transition; callers hold the row lock and write only when applied.",
+        signature: Some("current_state: str, current_failure_class: str | None, event: str, remote_status: str | None = None, failure_class: str | None = None"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "hub_failure_is_retryable",
+        args: &[ArgInfo { name: "failure_class", r#type: stub_type_str }],
+        r#return: stub_type_bool,
+        doc: "Native retry classification; unknown failure categories raise.",
+        signature: Some("failure_class: str"),
+        module: None,
+    }
+}
+
+fn stub_type_state_vocabularies() -> TypeInfo {
+    TypeInfo::builtin("list[tuple[str, list[str]]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "native_state_vocabularies",
+        args: &[],
+        r#return: stub_type_state_vocabularies,
+        doc: "Every native state, event and action vocabulary; Python mirrors are verified against it.",
+        signature: Some(""),
+        module: None,
+    }
 }
 
 inventory::submit! {
@@ -112,22 +174,20 @@ inventory::submit! {
     }
 }
 
-
-
 inventory::submit! {
     PyFunctionInfo {
         name: "stable_file_identity",
         args: &[
             ArgInfo { name: "path", r#type: stub_type_path },
             ArgInfo { name: "chunk_size", r#type: stub_type_int },
+            ArgInfo { name: "master_keys", r#type: stub_type_list_bytes },
         ],
         r#return: stub_type_file_identity,
         doc: "",
-        signature: Some("path: pathlib.Path, chunk_size: int = ..."),
+        signature: Some("path: pathlib.Path, chunk_size: int = ..., master_keys: list[bytes] = ..."),
         module: None,
     }
 }
-
 
 inventory::submit! {
     PyFunctionInfo {
@@ -212,6 +272,46 @@ inventory::submit! {
         r#return: stub_type_str,
         doc: "",
         signature: Some("processing_error: bool, anonymization_validated: bool, sensitive_meta_processed: bool, anonymized: bool, processing_started: bool"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "anonymization_status_phase",
+        args: &[ArgInfo { name: "status", r#type: stub_type_str }],
+        r#return: stub_type_str,
+        doc: "",
+        signature: Some("status: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "decide_status_transition",
+        args: &[
+            ArgInfo { name: "machine", r#type: stub_type_str },
+            ArgInfo { name: "current", r#type: stub_type_str },
+            ArgInfo { name: "target", r#type: stub_type_str },
+        ],
+        r#return: stub_type_bool,
+        doc: "",
+        signature: Some("machine: str, current: str, target: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "decide_hls_artifact_transition",
+        args: &[
+            ArgInfo { name: "current_status", r#type: stub_type_str },
+            ArgInfo { name: "target_status", r#type: stub_type_str },
+        ],
+        r#return: stub_type_bool,
+        doc: "",
+        signature: Some("current_status: str, target_status: str"),
         module: None,
     }
 }
@@ -355,4 +455,92 @@ inventory::submit! {
     }
 }
 
+fn stub_type_list_list_int() -> TypeInfo {
+    TypeInfo::builtin("list[list[int]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "compose_frame_ancestry",
+        args: &[
+            ArgInfo { name: "source_frame_counts", r#type: stub_type_list_int },
+            ArgInfo { name: "source_frame_indices", r#type: stub_type_list_list_int },
+        ],
+        r#return: stub_type_list_int,
+        doc: "Map each final output frame to its original-recording frame index.",
+        signature: Some("source_frame_counts: list[int], source_frame_indices: list[list[int]]"),
+        module: None,
+    }
+}
+
 define_stub_info_gatherer!(stub_info);
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "new_import_processing_stack",
+        args: &[ArgInfo { name: "reference", r#type: stub_type_str }, ArgInfo { name: "media_type", r#type: stub_type_str }],
+        r#return: stub_type_str, doc: "Create a durable import processing stack.", signature: Some("reference: str, media_type: str"), module: None,
+    }
+}
+fn stub_type_optional_str() -> TypeInfo {
+    TypeInfo::builtin("str | None")
+}
+fn stub_type_optional_int() -> TypeInfo {
+    TypeInfo::builtin("int | None")
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "transition_import_processing_stack",
+        args: &[ArgInfo { name: "payload", r#type: stub_type_str }, ArgInfo { name: "event", r#type: stub_type_str }, ArgInfo { name: "media_id", r#type: stub_type_optional_int }, ArgInfo { name: "source_sha256", r#type: stub_type_optional_str }],
+        r#return: stub_type_str, doc: "Validate and advance a durable import processing stack.", signature: Some("payload: str, event: str, media_id: int | None = None, source_sha256: str | None = None"), module: None,
+    }
+}
+
+fn stub_type_list_bytes() -> TypeInfo {
+    TypeInfo::builtin("list[bytes]")
+}
+fn stub_type_header() -> TypeInfo {
+    TypeInfo::builtin("tuple[int, str, int, bytes, bytes, bytes]")
+}
+fn stub_type_header_metadata() -> TypeInfo {
+    TypeInfo::builtin("tuple[int, str, int, bytes, bytes, bytes, bytes | None, bytes | None]")
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "parse_encrypted_header",
+        args: &[ArgInfo { name: "data", r#type: stub_type_bytes }],
+        r#return: stub_type_header,
+        doc: "Validate the shared encrypted header contract.",
+        signature: Some("data: bytes"),
+        module: None,
+    }
+}
+
+fn stub_type_chunk_context() -> TypeInfo {
+    TypeInfo::builtin("tuple[bytes, bytes]")
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "parse_encrypted_header_metadata",
+        args: &[ArgInfo { name: "data", r#type: stub_type_bytes }],
+        r#return: stub_type_header_metadata,
+        doc: "Validate the shared encrypted header contract including versioned identifiers.",
+        signature: Some("data: bytes"),
+        module: None,
+    }
+}
+inventory::submit! {
+    PyFunctionInfo {
+        name: "encrypted_chunk_context",
+        args: &[
+            ArgInfo { name: "data", r#type: stub_type_bytes },
+            ArgInfo { name: "counter", r#type: stub_type_int },
+            ArgInfo { name: "ciphertext_length", r#type: stub_type_int },
+            ArgInfo { name: "final", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_chunk_context,
+        doc: "Validate chunk geometry and return the shared nonce and associated data.",
+        signature: Some("data: bytes, counter: int, ciphertext_length: int, final: bool"),
+        module: None,
+    }
+}

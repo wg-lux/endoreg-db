@@ -1,40 +1,62 @@
 from __future__ import annotations
 
-# pyright: reportPrivateUsage=false
+import csv
+import json
+import subprocess
 
+# pyright: reportPrivateUsage=false
 from collections.abc import Generator, Iterator
-from contextlib import AbstractContextManager, contextmanager
+from concurrent.futures import ThreadPoolExecutor
+from contextlib import AbstractContextManager, contextmanager, nullcontext
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-import json
 from pathlib import Path
 from types import SimpleNamespace
-from typing import cast
+from typing import Literal, cast
+from unittest.mock import patch
 
 import pytest
+from django.db import OperationalError, close_old_connections, connection, transaction
 from django.db.models import QuerySet
+from django.core.files.base import ContentFile
 from django.test.utils import override_settings
+from lx_dtypes.models.contracts.video_file import VideoFileMetaJsonValue
+from lx_dtypes.models.contracts.video_provenance import (
+    VideoFrameProvenancePayload,
+    VideoFrameTimeline,
+    VideoProvenanceBundle,
+)
 
 from endoreg_db.export.frames import export_frames_with_labels as export_module
-from endoreg_db.models.label.annotation.image_classification import (
-    ImageClassificationAnnotation,
-)
-from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models import (
     Center,
     Frame,
     InformationSource,
     Label,
     LabelVideoSegment,
+    SensitiveMeta,
     VideoState,
 )
+from endoreg_db.models.label.annotation.image_classification import (
+    ImageClassificationAnnotation,
+)
+from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.schemas.frame_annotation_export import FrameAnnotationExportSegment
 from endoreg_db.schemas.video_storage import (
     VideoArtifactProbe,
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
 )
+from endoreg_db.services.media import export_policy
+from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.services.video_storage.contracts import evidence_as_json
+from endoreg_db.services.video_storage.canonical_timelines import (
+    capture_canonical_timeline,
+)
+from endoreg_db.services.video_storage.probes import probe_video_artifact
+from endoreg_db.utils.video.executable_discovery import _resolve_ffmpeg_executable
 from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.utils.hashs import get_file_hash
 
 
 class _FakeValuesList:
@@ -60,7 +82,7 @@ class _FakeFrameAnnotations:
     def __init__(self, annotation: "_AnnotationDouble") -> None:
         self._annotation = annotation
 
-    def iterator(self) -> Iterator["_AnnotationDouble"]:
+    def __iter__(self) -> Iterator["_AnnotationDouble"]:
         yield self._annotation
 
 
@@ -72,6 +94,7 @@ class _FakeFrameRows:
         assert fields in {
             ("pk", "frame_number"),
             ("pk", "frame_number", "presentation_timestamp"),
+            ("pk", "frame_number", "presentation_timestamp", "timestamp"),
             ("pk", "presentation_timestamp"),
         }
         return self._frames
@@ -95,12 +118,15 @@ class _VideoState:
 class _VideoDouble:
     pk: int
     raw_video_hash: str = "raw-hash"
+    processed_video_hash: str = "a" * 64
     raw_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     processed_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     active_file: _NamedFile = field(default_factory=lambda: _NamedFile(""))
     state: _VideoState = field(default_factory=_VideoState)
     frames: _FakeFrameRows | None = None
     meta: dict[str, object] | None = None
+    original_file_name: str | None = None
+    sensitive_meta: SensitiveMeta | None = None
 
     def get_frame_dir_path(self) -> Path:
         raise AssertionError("canonical frame dir must not be used")
@@ -169,6 +195,11 @@ def test_export_videos_prefers_processed_artifact_over_raw(
     )
     monkeypatch.setattr(export_module.VideoFile.objects, "filter", filter_videos_by_id)
 
+    def hash_processed_file(_file: object) -> str:
+        return get_file_hash(processed_path)
+
+    monkeypatch.setattr(export_policy, "get_file_hash", hash_processed_file)
+    video.processed_video_hash = get_file_hash(processed_path)
     exported_count = export_module._export_videos_from_annotations(
         cast(QuerySet[ImageClassificationAnnotation], _FakeAnnotations(video.pk)),
         output_dir=output_dir,
@@ -202,6 +233,17 @@ def test_pts_dataset_forces_frames_from_processed_artifact() -> None:
 
     assert normalized.transcode_frames is True
     assert normalized.transcode_overwrite is True
+    assert normalized.use_frame_pk_paths is True
+
+
+def test_legacy_transcode_uses_matching_table_and_asset_names() -> None:
+    normalized = export_module._normalize_export_config(
+        export_module.export_config(
+            output_path="annotations.csv",
+            transcode_frames=True,
+            use_frame_pk_paths=None,
+        )
+    )
     assert normalized.use_frame_pk_paths is True
 
 
@@ -263,13 +305,17 @@ def test_segment_export_filters_nullable_provenance(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("approval_hash", ["a" * 64, "b" * 64, ""])
+@pytest.mark.parametrize("later_timestamp", [1.602488, 1.62])
 def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     tmp_path: Path,
+    approval_hash: str,
+    later_timestamp: float,
 ) -> None:
     center = Center.objects.create(name="pts-export-center")
     state = VideoState.objects.create(
         anonymization_validated=True,
-        processed_file_sha256="a" * 64,
+        processed_file_sha256=approval_hash,
     )
     timeline = VideoTimelineContract(
         fps_num=30_000,
@@ -297,6 +343,8 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
         center=center,
         state=state,
         raw_video_hash="pts-export-video",
+        processed_video_hash="a" * 64,
+        processed_file="processed.mp4",
         fps=timeline.fps,
         duration=timeline.duration_seconds,
         frame_count=timeline.frame_count,
@@ -306,7 +354,7 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
         video=video,
         frame_number=1,
         relative_path="frame_0000001.jpg",
-        timestamp=1.602488,
+        timestamp=later_timestamp,
         presentation_timestamp=144_224,
     )
     earlier_frame = Frame.objects.create(
@@ -339,6 +387,32 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     )
 
     output_path = tmp_path / "annotations.json"
+    if approval_hash == "b" * 64:
+        with pytest.raises(ValueError, match="readiness proof|Videogeneration"):
+            export_module.export_frames_with_labels_to_json(
+                output_path,
+                export_profile="pts_dataset_v1",
+                video_id=video.pk,
+                information_source_name=source.name,
+                only_validated=False,
+                use_export_flags=False,
+                export_frames=False,
+            )
+        assert not output_path.exists()
+        return
+    if later_timestamp == 1.62:
+        with pytest.raises(ValueError, match="[Tt]imestamp"):
+            export_module.export_frames_with_labels_to_json(
+                output_path,
+                export_profile="pts_dataset_v1",
+                video_id=video.pk,
+                information_source_name=source.name,
+                only_validated=False,
+                use_export_flags=False,
+                export_frames=False,
+            )
+        assert not output_path.exists()
+        return
     export_module.export_frames_with_labels_to_json(
         output_path,
         export_profile="pts_dataset_v1",
@@ -396,7 +470,7 @@ def test_export_videos_rejects_failed_lost_media() -> None:
     )
 
     with pytest.raises(ValueError, match="failed/lost"):
-        export_module._assert_video_media_export_ready(cast(VideoFile, video))
+        export_module.assert_video_media_export_ready(cast(VideoFile, video))
 
 
 @override_settings(ENDOREG_DEPLOYMENT_ROLE="local_study_server")
@@ -486,7 +560,7 @@ def test_local_transcode_uses_export_scoped_frame_directory(
 
     monkeypatch.setattr(
         export_module,
-        "_assert_video_media_export_ready",
+        "assert_video_media_export_ready",
         assert_video_media_export_ready,
     )
     monkeypatch.setattr(
@@ -532,7 +606,9 @@ def test_pts_transcode_uses_seekable_encrypted_processed_input(
         frame_pks: set[int] | None,
     ) -> export_module._RequestedFrameCoordinates:
         assert frame_pks == {1}
-        return export_module._RequestedFrameCoordinates({1}, [0], [(0, 1)], False)
+        return export_module._RequestedFrameCoordinates(
+            {1}, [0], [(0, 1)], False, {1: (0, 0, 0.0)}
+        )
 
     monkeypatch.setattr(
         export_module, "_requested_frame_coordinates", exact_coordinates
@@ -549,7 +625,7 @@ def test_pts_transcode_uses_seekable_encrypted_processed_input(
 
     monkeypatch.setattr(
         export_module,
-        "_assert_video_media_export_ready",
+        "assert_video_media_export_ready",
         fake_ready,
     )
     monkeypatch.setattr(
@@ -690,18 +766,61 @@ def test_legacy_transcode_fps_cannot_reindex_annotation_frames(
     assert (tmp_path / "frames" / "frame_41.jpg").read_bytes() == b"frame-10"
 
 
+@pytest.mark.ffmpeg
+@pytest.mark.parametrize("corruption", [None, "swapped_tick", "time_base"])
 def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    corruption: str | None,
 ) -> None:
+    ffmpeg = _resolve_ffmpeg_executable()
+    if ffmpeg is None:
+        pytest.skip("ffmpeg is unavailable")
     source_path = tmp_path / "processed.mp4"
-    source_path.write_bytes(b"processed")
+    subprocess.run(
+        [
+            ffmpeg,
+            "-v",
+            "error",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc2=size=64x48:rate=30",
+            "-frames:v",
+            "4",
+            "-vf",
+            "settb=1/90000,setpts='if(eq(N,0),45000,if(eq(N,1),60000,if(eq(N,2),90000,144224)))'",
+            "-copyts",
+            "-fps_mode",
+            "passthrough",
+            "-video_track_timescale",
+            "90000",
+            "-enc_time_base",
+            "1:90000",
+            "-c:v",
+            "libx264",
+            "-y",
+            str(source_path),
+        ],
+        check=True,
+        capture_output=True,
+    )
+    probe = probe_video_artifact(source_path)
+    canonical = capture_canonical_timeline(source_path, probe)
+    assert canonical.presentation_timestamps[0] == 45_000
+    assert canonical.presentation_timestamps[3] == 144_224
+    stored_video = VideoFile()
+    stored_video.processed_file.save(
+        "export-coordinate-source.mp4",
+        ContentFile(source_path.read_bytes()),
+        save=False,
+    )
     first = _FrameDouble(
         pk=51,
         video=cast(VideoFile, None),
         relative_path="frame_0000010.jpg",
         file_path="frame_0000010.jpg",
-        frame_number=10,
+        frame_number=0,
         timestamp=0.5,
         presentation_timestamp=45_000,
     )
@@ -710,34 +829,46 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
         video=cast(VideoFile, None),
         relative_path="frame_0001000.jpg",
         file_path="frame_0001000.jpg",
-        frame_number=1000,
+        frame_number=3,
         timestamp=1.602488,
         presentation_timestamp=144_224,
     )
-    video = _VideoDouble(pk=22, frames=_FakeFrameRows([first, second]))
+    if corruption == "swapped_tick":
+        first.presentation_timestamp, second.presentation_timestamp = (
+            second.presentation_timestamp,
+            first.presentation_timestamp,
+        )
+        first.timestamp, second.timestamp = second.timestamp, first.timestamp
+    video = _VideoDouble(
+        pk=22,
+        frames=_FakeFrameRows([first, second]),
+        processed_video_hash=canonical.content_hash,
+        processed_file=cast(_NamedFile, stored_video.processed_file),
+    )
+    source_probe = probe
+    if corruption == "time_base":
+        source_probe = probe.model_copy(
+            update={
+                "timeline": probe.timeline.model_copy(update={"time_base_den": 1000})
+            }
+        )
     video.meta = {
         "source_timeline": evidence_as_json(
             VideoSourceTimelineEvidence(
                 persisted_at=datetime.now(UTC),
-                source=VideoArtifactProbe(
-                    codec_name="h264",
-                    pixel_format="yuv420p",
-                    width=640,
-                    height=480,
-                    size_bytes=1024,
-                    timeline=VideoTimelineContract(
-                        fps_num=30_000,
-                        fps_den=1_001,
-                        duration_seconds=2.0,
-                        frame_count=2,
-                        variable_frame_rate=True,
-                        time_base_num=1,
-                        time_base_den=90_000,
-                    ),
-                ),
+                source=source_probe,
+                artifact_kind="processed",
+                content_hash=canonical.content_hash,
                 timestamp_mapping="ffprobe_pts",
             )
-        )
+        ),
+        "canonical_timeline_history": [
+            {
+                "artifact_kind": "processed",
+                "before": canonical.model_dump(mode="json"),
+                "after": canonical.model_dump(mode="json"),
+            }
+        ],
     }
     first.video = cast(VideoFile, video)
     second.video = cast(VideoFile, video)
@@ -771,6 +902,20 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     )
     monkeypatch.setattr(export_module, "ffmpeg_extract_frame_range", reject_range)
 
+    if corruption is not None:
+        with pytest.raises(ValueError, match="[Tt]ime base|[Tt]imestamp"):
+            export_module._extract_and_move_transcoded_frames(
+                cast(VideoFile, video),
+                source_path=source_path,
+                frame_dir=tmp_path / "frames",
+                frame_pks={51, 52},
+                fps=50.0,
+                quality=2,
+                ext="jpg",
+                overwrite=True,
+            )
+        assert captured_pts == []
+        return
     export_module._extract_and_move_transcoded_frames(
         cast(VideoFile, video),
         source_path=source_path,
@@ -785,3 +930,747 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     assert captured_pts == [45_000, 144_224]
     assert (tmp_path / "frames" / "frame_51.jpg").read_bytes() == b"frame-0"
     assert (tmp_path / "frames" / "frame_52.jpg").read_bytes() == b"frame-1"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("output_format", ["csv", "json"])
+def test_export_job_uses_one_annotation_snapshot(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="snapshot-center"),
+        raw_video_hash="snapshot-video",
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    label = Label.objects.create(name="snapshot-label")
+    source = InformationSource.objects.create(name="snapshot-source")
+    selected = ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=label,
+        information_source=source,
+        annotator="=formula",
+    )
+    original_writer = export_module._write_annotation_rows
+    asset_ids: list[int] = []
+
+    def write_then_change_selection(
+        path: Path,
+        rows: list[export_module.AnnotationRow],
+        *,
+        output_format: str,
+    ) -> Path:
+        result = original_writer(path, rows, output_format=output_format)
+        ImageClassificationAnnotation.objects.filter(pk=selected.pk).update(
+            annotator="changed"
+        )
+        ImageClassificationAnnotation.objects.create(
+            value=True,
+            frame=frame,
+            label=label,
+            information_source=source,
+            annotator="new",
+        )
+        return result
+
+    def capture_assets(
+        annotations: list[ImageClassificationAnnotation],
+        **kwargs: object,
+    ) -> export_module.ExportAssetResult:
+        asset_ids.extend(item.pk for item in annotations)
+        assert annotations[0].annotator == "=formula"
+        return {
+            "exported_video_count": 0,
+            "exported_frame_count": 1,
+            "video_output_dir": None,
+            "frame_output_dir": tmp_path / "frames",
+        }
+
+    monkeypatch.setattr(
+        export_module, "_write_annotation_rows", write_then_change_selection
+    )
+    monkeypatch.setattr(export_module, "_export_media_assets", capture_assets)
+    result = export_module.AnnotationExporterClient().run_export(
+        export_module.export_config(
+            output_path=tmp_path / f"annotations.{output_format}",
+            output_format=cast(Literal["csv", "json"], output_format),
+            use_export_flags=False,
+            only_validated=False,
+        )
+    )
+    assert result.row_count == 1
+    assert asset_ids == [selected.pk]
+    if output_format == "json":
+        rows = json.loads(result.output_path.read_text())
+        assert rows[0]["annotator"] == "=formula"
+    else:
+        with result.output_path.open() as exported_file:
+            rows = list(csv.DictReader(exported_file))
+        assert rows[0]["annotator"] == "'=formula"
+
+
+@pytest.mark.parametrize(
+    "value", ["=formula", "+formula", "-formula", "@formula", "normal"]
+)
+def test_file_and_browser_csv_use_same_text_encoding(
+    tmp_path: Path, value: str
+) -> None:
+    row = cast(
+        export_module.AnnotationRow, dict.fromkeys(export_module.DEFAULT_FIELDNAMES)
+    )
+    row["annotator"] = value
+    output = export_module._write_annotation_rows(
+        tmp_path / "annotations.csv", [row], output_format="csv"
+    )
+    assert output.read_bytes().decode() == "".join(
+        csv_lines(
+            [
+                export_module.DEFAULT_FIELDNAMES,
+                [row[name] for name in export_module.DEFAULT_FIELDNAMES],
+            ]
+        )
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("count", [1, 8])
+def test_export_shares_video_metadata_and_validates_timeline_once(
+    count: int, tmp_path: Path
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="shared-export-center"),
+        raw_video_hash="shared-export-video",
+    )
+    label = Label.objects.create(name="shared-export-label")
+    source = InformationSource.objects.create(name="shared-export-source")
+    for index in range(count):
+        frame = Frame.objects.create(
+            video=video, frame_number=index, relative_path=f"frame_{index}.jpg"
+        )
+        ImageClassificationAnnotation.objects.create(
+            value=True, frame=frame, label=label, information_source=source
+        )
+        LabelVideoSegment.objects.create(
+            video_file=video,
+            label=label,
+            source=source,
+            start_frame_number=index,
+            end_frame_number=index + 1,
+        )
+
+    original_from_db = VideoFile.from_db
+    comparisons: list[bool] = []
+
+    class CountedMeta(dict[str, VideoFileMetaJsonValue]):
+        def __ne__(self, other: object) -> bool:
+            comparisons.append(True)
+            return super().__ne__(other)
+
+    def load_video(db: str, field_names: list[str], values: list[object]) -> VideoFile:
+        result = original_from_db(db, field_names, values)
+        if "meta" in field_names:
+            result.meta = CountedMeta(result.meta or {})
+        return result
+
+    with patch.object(VideoFile, "from_db", side_effect=load_video) as loaded:
+        selected = export_module._snapshot_annotations(
+            ImageClassificationAnnotation.objects.select_related("frame__video")
+        )
+        assert loaded.call_count == 3
+    assert len(comparisons) == 1
+    assert len(selected) == count
+    assert all(item.frame.video is selected[0].frame.video for item in selected)
+    assert all(
+        item.frame.video.meta is selected[0].frame.video.meta for item in selected
+    )
+
+    with patch.object(VideoFile, "from_db", wraps=original_from_db) as loaded:
+        annotations = list(export_module._build_annotations_queryset())
+        assert loaded.call_count == 1
+    assert all(item.frame.video is annotations[0].frame.video for item in annotations)
+    with patch.object(
+        export_module,
+        "_video_timeline_evidence",
+        wraps=export_module._video_timeline_evidence,
+    ) as validated:
+        rows = export_module._build_annotation_rows(
+            annotations,
+            export_profile="legacy_table_v1",
+            use_frame_pk_paths=False,
+            frame_ext="jpg",
+        )
+        assert validated.call_count == 1
+    assert len(rows) == count
+    assert [row["frame_number"] for row in rows] == list(range(count))
+
+    with patch.object(VideoFile, "from_db", wraps=original_from_db) as loaded:
+        segments = export_module._selected_segments(
+            video_ids={video.pk}, segment_ids=None, use_export_flags=False
+        )
+        assert loaded.call_count == 1
+    assert len(segments) == count
+    assert all(item.video_file is segments[0].video_file for item in segments)
+
+    source_path = tmp_path / "source.jpg"
+    source_path.write_bytes(b"processed frame fixture")
+    with (
+        override_settings(ENDOREG_DEPLOYMENT_ROLE="standalone"),
+        patch.object(export_module, "assert_video_media_export_ready"),
+        patch.object(
+            export_module, "_resolve_frame_source_path", return_value=source_path
+        ),
+        patch.object(VideoFile, "from_db", wraps=original_from_db) as loaded,
+    ):
+        copied = export_module._export_frames_from_annotations(
+            export_module._build_annotations_queryset(),
+            output_dir=tmp_path / "frames",
+            use_frame_pk_paths=False,
+            frame_ext="jpg",
+        )
+        assert copied == count
+        assert loaded.call_count == 1
+    assert (
+        tmp_path / "frames" / f"video_{video.pk}" / "frame_0.jpg"
+    ).read_bytes() == source_path.read_bytes()
+
+
+@pytest.mark.django_db
+def test_snapshot_rejects_generation_changed_before_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="changed-generation-center"),
+        raw_video_hash="changed-generation-video",
+        processed_video_hash="a" * 64,
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=Label.objects.create(name="changed-generation-label"),
+    )
+    original_select_for_update = VideoFile.objects.select_for_update
+
+    def replace_before_lock() -> QuerySet[VideoFile]:
+        VideoFile.objects.filter(pk=video.pk).update(processed_video_hash="b" * 64)
+        return original_select_for_update()
+
+    monkeypatch.setattr(VideoFile.objects, "select_for_update", replace_before_lock)
+    with pytest.raises(ValueError, match="generation changed"):
+        export_module._snapshot_annotations(ImageClassificationAnnotation.objects.all())
+
+
+@pytest.mark.django_db(transaction=True)
+def test_export_snapshot_locks_generation_until_transaction_finishes() -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("PostgreSQL row locking is required")
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="locked-generation-center"),
+        raw_video_hash="locked-generation-video",
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=Label.objects.create(name="locked-generation-label"),
+    )
+
+    def attempt_publication_lock() -> bool:
+        close_old_connections()
+        try:
+            with transaction.atomic():
+                VideoFile.objects.select_for_update(nowait=True).get(pk=video.pk)
+            return True
+        except OperationalError:
+            return False
+        finally:
+            connection.close()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with transaction.atomic():
+            selected = export_module._snapshot_annotations(
+                export_module._build_annotations_queryset().filter(frame__video=video)
+            )
+            assert len(selected) == 1
+            assert executor.submit(attempt_publication_lock).result(timeout=5) is False
+        assert executor.submit(attempt_publication_lock).result(timeout=5) is True
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("output_format", ["csv", "json"])
+def test_direct_export_reuses_selection_after_transcode(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    output_format: str,
+) -> None:
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="direct-snapshot-center"),
+        raw_video_hash="direct-snapshot-video",
+    )
+    frame = Frame.objects.create(video=video, frame_number=0, relative_path="frame.jpg")
+    label = Label.objects.create(name="direct-snapshot-label")
+    source = InformationSource.objects.create(name="direct-snapshot-source")
+    selected = ImageClassificationAnnotation.objects.create(
+        value=True,
+        frame=frame,
+        label=label,
+        information_source=source,
+        annotator="original",
+    )
+
+    def transcode_then_change_selection(
+        annotations: list[ImageClassificationAnnotation],
+        **kwargs: object,
+    ) -> None:
+        assert [item.pk for item in annotations] == [selected.pk]
+        ImageClassificationAnnotation.objects.filter(pk=selected.pk).update(
+            annotator="changed"
+        )
+        ImageClassificationAnnotation.objects.create(
+            value=True, frame=frame, label=label, information_source=source
+        )
+
+    monkeypatch.setattr(
+        export_module,
+        "transcode_videos_for_annotations",
+        transcode_then_change_selection,
+    )
+    writer = (
+        export_module.export_frames_with_labels_to_json
+        if output_format == "json"
+        else export_module.export_frames_with_labels_to_csv
+    )
+    output = writer(
+        tmp_path / f"annotations.{output_format}",
+        video_id=video.pk,
+        transcode_frames=True,
+        use_export_flags=False,
+        only_validated=False,
+    )
+    if output_format == "json":
+        rows = json.loads(output.read_text())
+    else:
+        with output.open() as exported_file:
+            rows = list(csv.DictReader(exported_file))
+    assert len(rows) == 1
+    assert rows[0]["annotator"] == "original"
+
+
+def _line_up_row(
+    *, frame_number: int, presentation_timestamp: int | None
+) -> export_module.AnnotationRow:
+    row = cast(
+        export_module.AnnotationRow,
+        {name: None for name in export_module.DEFAULT_FIELDNAMES},
+    )
+    row.update(
+        annotation_id=frame_number + 100,
+        video_id=7,
+        label_id=3,
+        information_source_id=4,
+        frame_number=frame_number,
+        presentation_timestamp=presentation_timestamp,
+    )
+    return row
+
+
+def _line_up_segment() -> FrameAnnotationExportSegment:
+    return FrameAnnotationExportSegment(
+        segment_id=1,
+        video_id=7,
+        label_id=3,
+        label_name="label",
+        information_source_id=4,
+        start_frame_number=10,
+        end_frame_number=20,
+        start_presentation_timestamp=30_000,
+        end_presentation_timestamp=60_000,
+        start_presentation_time_seconds=1 / 3,
+        end_presentation_time_seconds=2 / 3,
+        stream_time_base_num=1,
+        stream_time_base_den=90_000,
+    )
+
+
+@pytest.mark.parametrize(
+    ("frame_number", "presentation_timestamp"),
+    [(10, 30_000), (15, 45_000), (20, 60_000)],
+)
+def test_rows_within_inclusive_segment_timestamps_line_up(
+    frame_number: int, presentation_timestamp: int
+) -> None:
+    export_module._assert_rows_line_up_with_segments(
+        [
+            _line_up_row(
+                frame_number=frame_number,
+                presentation_timestamp=presentation_timestamp,
+            )
+        ],
+        [_line_up_segment()],
+        require_segment_membership=True,
+    )
+
+
+@pytest.mark.parametrize(
+    ("frame_number", "presentation_timestamp", "message"),
+    [
+        (15, 29_999, "does not lie within segment"),
+        (15, 60_001, "does not lie within segment"),
+        (15, None, "does not lie within segment"),
+        (21, 63_000, "outside every exported segment"),
+    ],
+)
+def test_rows_that_do_not_line_up_fail_the_export(
+    frame_number: int, presentation_timestamp: int | None, message: str
+) -> None:
+    with pytest.raises(ValueError, match=message):
+        export_module._assert_rows_line_up_with_segments(
+            [
+                _line_up_row(
+                    frame_number=frame_number,
+                    presentation_timestamp=presentation_timestamp,
+                )
+            ],
+            [_line_up_segment()],
+            require_segment_membership=True,
+        )
+
+
+@pytest.mark.parametrize(
+    ("video_names", "expected"),
+    [
+        (
+            [(9, "room2.mp4"), (8, "room2.mp4")],
+            {8: "room2.mp4", 9: "room2_video9.mp4"},
+        ),
+        (
+            [(1, "room2_video3.mp4"), (2, "room2.mp4"), (3, "room2.mp4")],
+            {1: "room2_video3.mp4", 2: "room2.mp4", 3: "room2_video3_2.mp4"},
+        ),
+        (
+            [
+                (1, "room2_video5.mp4"),
+                (2, "room2_video5_2.mp4"),
+                (3, "room2_video5_3.mp4"),
+                (4, "room2.mp4"),
+                (5, "room2.mp4"),
+            ],
+            {
+                1: "room2_video5.mp4",
+                2: "room2_video5_2.mp4",
+                3: "room2_video5_3.mp4",
+                4: "room2.mp4",
+                5: "room2_video5_4.mp4",
+            },
+        ),
+        (
+            [(1, "room2.mp4"), (2, "room2.mp4"), (3, "room2_video2.mp4")],
+            {1: "room2.mp4", 2: "room2_video2.mp4", 3: "room2_video2_video3.mp4"},
+        ),
+    ],
+)
+def test_duplicate_export_file_names_gain_video_suffix(
+    video_names: list[tuple[int, str]], expected: dict[int, str]
+) -> None:
+    videos = [
+        _VideoDouble(
+            pk=pk,
+            raw_video_hash=f"hash-{pk}",
+            original_file_name=file_name,
+            sensitive_meta=SensitiveMeta(
+                patient_first_name="Max", patient_last_name="Mustermann"
+            ),
+        )
+        for pk, file_name in video_names
+    ]
+
+    names = export_module._unique_export_file_names(cast(list[VideoFile], videos))
+
+    assert names == expected
+    assert len(set(names.values())) == len(videos)
+    assert (
+        export_module._unique_export_file_names(
+            cast(list[VideoFile], list(reversed(videos)))
+        )
+        == expected
+    )
+
+
+@pytest.mark.django_db
+def test_segment_boundary_without_presentation_timestamp_fails() -> None:
+    timeline = VideoTimelineContract(
+        fps_num=25,
+        fps_den=1,
+        duration_seconds=0.2,
+        frame_count=5,
+        time_base_num=1,
+        time_base_den=90_000,
+    )
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="segment-boundary-center"),
+        raw_video_hash="segment-boundary-video",
+        fps=timeline.fps,
+        frame_count=timeline.frame_count,
+        duration=timeline.duration_seconds,
+        meta={
+            "source_timeline": evidence_as_json(
+                VideoSourceTimelineEvidence(
+                    persisted_at=datetime.now(UTC),
+                    source=VideoArtifactProbe(
+                        codec_name="h264",
+                        pixel_format="yuv420p",
+                        width=64,
+                        height=48,
+                        size_bytes=1024,
+                        timeline=timeline,
+                    ),
+                    timestamp_mapping="ffprobe_pts",
+                )
+            )
+        },
+    )
+    Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0.jpg",
+        timestamp=0.0,
+        presentation_timestamp=0,
+    )
+    # The last included frame exists only as an unextracted placeholder.
+    Frame.objects.create(video=video, frame_number=3, relative_path="frame_3.jpg")
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        label=Label.objects.create(name="segment-boundary-label"),
+        start_frame_number=0,
+        end_frame_number=4,
+    )
+
+    with pytest.raises(ValueError, match="boundary frame 3 has no persisted"):
+        export_module._manifest_segments(
+            cast(list[export_module._LabelVideoSegmentExportModel], [segment])
+        )
+
+
+def _provenance_timeline(
+    time_base: tuple[int, int], ticks: list[int], *, content_hash: str = "d" * 64
+) -> VideoFrameTimeline:
+    return VideoFrameTimeline(
+        content_hash=content_hash,
+        time_base_num=time_base[0],
+        time_base_den=time_base[1],
+        presentation_timestamps=ticks,
+    )
+
+
+@pytest.mark.parametrize(
+    ("output", "indices", "expected"),
+    [
+        (_provenance_timeline((1, 600), [0, 40]), [0, 2], "identical_ticks"),
+        (_provenance_timeline((1, 19_200), [0, 640]), [0, 1], "identical_instants"),
+    ],
+)
+def test_manifest_states_recording_timestamp_identity(
+    monkeypatch: pytest.MonkeyPatch,
+    output: VideoFrameTimeline,
+    indices: list[int],
+    expected: str,
+) -> None:
+    bundle = VideoProvenanceBundle(
+        transformations=[
+            VideoFrameProvenancePayload(
+                source=_provenance_timeline(
+                    (1, 600), [0, 20, 40], content_hash="c" * 64
+                ),
+                output=output,
+                source_frame_indices=indices,
+            )
+        ]
+    )
+
+    def resolved(_video: VideoFile) -> VideoProvenanceBundle:
+        return bundle
+
+    monkeypatch.setattr(export_module, "resolve_video_provenance", resolved)
+
+    assert (
+        export_module._recording_timestamp_identity(cast(VideoFile, None)) == expected
+    )
+
+
+def test_retimed_media_is_reported_not_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bundle = VideoProvenanceBundle(
+        transformations=[
+            VideoFrameProvenancePayload(
+                source=_provenance_timeline(
+                    (1, 600), [0, 20, 40], content_hash="c" * 64
+                ),
+                # Frame removal closed the gap: the last frame moved from 40 to 20.
+                output=_provenance_timeline((1, 600), [0, 20]),
+                source_frame_indices=[0, 2],
+            )
+        ]
+    )
+
+    def resolved(_video: VideoFile) -> VideoProvenanceBundle:
+        return bundle
+
+    monkeypatch.setattr(export_module, "resolve_video_provenance", resolved)
+    video = _VideoDouble(pk=31)
+
+    assert export_module._recording_timestamp_identity(cast(VideoFile, video)) == (
+        "changed"
+    )
+
+
+def test_missing_ancestry_is_reported_as_unverified(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable(_video: VideoFile) -> VideoProvenanceBundle:
+        raise ValueError("Actual frame provenance is unavailable for this recording")
+
+    monkeypatch.setattr(export_module, "resolve_video_provenance", unavailable)
+
+    assert export_module._recording_timestamp_identity(cast(VideoFile, None)) == (
+        "unverified"
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("collision", ["name", "table_alias", "manifest_alias"])
+def test_export_rejects_manifest_collision_before_writing(
+    collision: str, tmp_path: Path
+) -> None:
+    manifest = tmp_path / "export_manifest.json"
+    table = tmp_path / "annotations.json"
+    if collision == "name":
+        table = manifest
+    elif collision == "table_alias":
+        table.symlink_to(manifest)
+    else:
+        manifest.symlink_to(table)
+    table.write_text("existing export")
+
+    with pytest.raises(ValueError, match="reserved export manifest"):
+        export_module.AnnotationExporterClient().run_export(
+            export_module.export_config(
+                output_dir=tmp_path,
+                output_path=table.name,
+                export_profile="pts_dataset_v1",
+                export_frames=False,
+                all_centers=True,
+            )
+        )
+    assert table.read_text() == "existing export"
+    assert manifest.read_text() == "existing export"
+
+
+def _accept_test_media(_video: object) -> None:
+    pass
+
+
+@pytest.mark.parametrize("strict", [True, False])
+@pytest.mark.parametrize("failure", ["missing", "empty_path", "unsafe_path", "copy"])
+def test_frame_asset_failure_obeys_strict_export_contract(
+    strict: bool, failure: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _VideoDouble(pk=72)
+    source = tmp_path / "source.png"
+    if failure != "missing":
+        source.write_bytes(b"processed image")
+    relative_path = {
+        "empty_path": "",
+        "unsafe_path": "../outside.png",
+    }.get(failure, "frame.png")
+    frame = _FrameDouble(
+        pk=15,
+        video=cast(VideoFile, video),
+        relative_path=relative_path,
+        file_path=str(source),
+    )
+    annotations = cast(
+        list[ImageClassificationAnnotation], [_AnnotationDouble(frame=frame)]
+    )
+    monkeypatch.setattr(
+        export_module, "assert_video_media_export_ready", _accept_test_media
+    )
+
+    def frame_source(_frame: object, **_kwargs: object) -> Path:
+        return source
+
+    monkeypatch.setattr(export_module, "_resolve_frame_source_path", frame_source)
+
+    def refuse_copy(*, source: Path, destination: Path) -> None:
+        raise OSError("output volume unavailable")
+
+    if failure == "copy":
+        monkeypatch.setattr(export_module, "atomic_copy_file", refuse_copy)
+    with pytest.raises((ValueError, OSError)) if strict else nullcontext():
+        count = export_module._export_frames_from_annotations(
+            annotations,
+            output_dir=tmp_path / "exported",
+            use_frame_pk_paths=False,
+            frame_ext="png",
+            strict_media_validation=strict,
+        )
+        assert count == 0
+
+
+@pytest.mark.parametrize("strict", [True, False])
+@pytest.mark.parametrize("source_kind", ["local", "storage"])
+def test_video_copy_failure_obeys_strict_export_contract(
+    strict: bool, source_kind: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    video = _VideoDouble(pk=73, processed_file=_NamedFile("processed.mp4"))
+    source = tmp_path / "processed.mp4"
+    source.write_bytes(b"processed video")
+    frame = _FrameDouble(
+        pk=16,
+        video=cast(VideoFile, video),
+        relative_path="frame.png",
+        file_path="frame.png",
+    )
+    annotations = cast(
+        list[ImageClassificationAnnotation], [_AnnotationDouble(frame=frame)]
+    )
+    monkeypatch.setattr(
+        export_module, "assert_video_media_export_ready", _accept_test_media
+    )
+
+    def video_source(_video: object) -> Path | None:
+        return source if source_kind == "local" else None
+
+    monkeypatch.setattr(
+        export_module, "_resolve_processed_video_source_path", video_source
+    )
+
+    @contextmanager
+    def stored_file(_field: object) -> Generator[Path]:
+        yield source
+
+    def refuse_copy(*, source: Path, destination: Path) -> None:
+        raise OSError("output volume unavailable")
+
+    monkeypatch.setattr(export_module, "ensure_local_file", stored_file)
+    monkeypatch.setattr(export_module, "atomic_copy_file", refuse_copy)
+    if strict:
+        with pytest.raises(OSError, match="output volume unavailable"):
+            export_module._export_videos_from_annotations(
+                annotations,
+                output_dir=tmp_path / "videos",
+                strict_media_validation=True,
+                video_file_names={video.pk: "processed.mp4"},
+            )
+    else:
+        assert (
+            export_module._export_videos_from_annotations(
+                annotations,
+                output_dir=tmp_path / "videos",
+                strict_media_validation=False,
+                video_file_names={video.pk: "processed.mp4"},
+            )
+            == 0
+        )

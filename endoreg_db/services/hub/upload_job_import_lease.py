@@ -1,21 +1,31 @@
 from __future__ import annotations
 
 import logging
-import threading
 from collections.abc import Generator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
 from django.conf import settings
-from django.db import close_old_connections, transaction
+from django.db import transaction
 from django.db.models.functions import Now
 
+from endoreg_db.services.imports.lease import (
+    ImportLeaseHeartbeat,
+    database_now,
+    owns_live_lease,
+)
+
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.upload_job_state_machine import (
+    admit_upload_job_recovery,
+    upload_job_recovery_filter,
     validate_upload_job_interrupted_retry,
+    validate_upload_job_interruption,
 )
 from endoreg_db.utils.structured_logging import emit_structured_event
+from endoreg_db.utils.storage import file_exists
 
 logger = logging.getLogger(__name__)
 DEFAULT_VIDEO_IMPORT_LEASE_SECONDS = 300
@@ -34,6 +44,17 @@ class UploadJobImportLeaseBusy(RuntimeError):
 
 class UploadJobImportLeaseLost(RuntimeError):
     """Raised when a worker no longer owns the current fencing epoch."""
+
+
+class UploadJobImportInterrupted(RuntimeError):
+    """Interrupted ownership must pass recovery admission before another execution."""
+
+
+def raise_if_upload_job_import_interrupted(job: UploadJob) -> None:
+    if job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED.value:
+        raise UploadJobImportInterrupted(
+            "Interrupted import requires recovery admission before retry"
+        )
 
 
 class UploadJobCleanupInProgress(RuntimeError):
@@ -65,15 +86,7 @@ def _lease_duration() -> timedelta:
 
 
 def _database_now(upload_job_id: str) -> datetime:
-    value = (
-        UploadJob.objects.filter(pk=upload_job_id)
-        .annotate(database_now=Now())
-        .values_list("database_now", flat=True)
-        .get()
-    )
-    if not isinstance(value, datetime):
-        raise RuntimeError("Database did not return a typed current timestamp")
-    return value
+    return database_now(UploadJob.objects.filter(pk=upload_job_id))
 
 
 def _locked_job(upload_job_id: str) -> UploadJob:
@@ -101,6 +114,7 @@ def acquire_upload_job_import_lease(
         )
 
         raise_if_upload_job_cancellation_requested(job)
+        raise_if_upload_job_import_interrupted(job)
         if job.cleanup_status == UploadJob.CleanupStatus.DELETING.value:
             emit_structured_event(
                 logger,
@@ -113,6 +127,17 @@ def acquire_upload_job_import_lease(
                 f"Upload job {job.pk} source cleanup is in progress"
             )
         database_now = _database_now(upload_job_id)
+        if (
+            job.status == UploadJob.Status.RETRYING
+            and job.next_retry_at is not None
+            and job.next_retry_at > database_now
+        ):
+            raise UploadJobImportLeaseBusy(
+                "Upload job is waiting for its scheduled retry",
+                retry_after_seconds=max(
+                    1, int((job.next_retry_at - database_now).total_seconds())
+                ),
+            )
         current_expiry = job.processing_lease_expires_at
         has_live_owner = (
             bool(job.processing_lease_owner)
@@ -183,11 +208,13 @@ def _verify_locked_lease(
     *,
     database_now: datetime,
 ) -> None:
-    if (
-        job.processing_lease_owner != lease.owner
-        or int(job.processing_fencing_token) != lease.fencing_epoch
-        or job.processing_lease_expires_at is None
-        or job.processing_lease_expires_at <= database_now
+    if not owns_live_lease(
+        current_owner=job.processing_lease_owner,
+        expected_owner=lease.owner,
+        current_token=int(job.processing_fencing_token),
+        expected_token=lease.fencing_epoch,
+        expires_at=job.processing_lease_expires_at,
+        now=database_now,
     ):
         emit_structured_event(
             logger,
@@ -267,72 +294,170 @@ def release_upload_job_import_lease(lease: UploadJobImportLease) -> None:
     )
 
 
-class UploadJobImportLeaseHeartbeat:
-    """Renews a lease and surfaces background renewal failure at phase guards."""
+class UploadJobImportLeaseHeartbeat(ImportLeaseHeartbeat):
+    """Upload-job renewal retains its cancellation and ownership checks."""
 
     def __init__(self, lease: UploadJobImportLease) -> None:
         self._lease = lease
-        self._stop = threading.Event()
-        self._failure: BaseException | None = None
-        interval = max(
-            10.0,
-            min(60.0, _lease_duration().total_seconds() / 3),
-        )
-        self._interval_seconds = interval
-        self._thread = threading.Thread(
-            target=self._run,
-            name=f"video-import-heartbeat-{lease.upload_job_id}",
-            daemon=True,
+        super().__init__(
+            renew=self._renew_lease,
+            lost_error=UploadJobImportLeaseLost,
+            name=f"upload-import-heartbeat-{lease.upload_job_id}",
+            interval_seconds=max(
+                10.0, min(60.0, _lease_duration().total_seconds() / 3)
+            ),
+            on_failure=self._record_failure,
         )
 
     @property
     def lease(self) -> UploadJobImportLease:
         return self._lease
 
-    def __enter__(self) -> "UploadJobImportLeaseHeartbeat":
-        self._thread.start()
-        return self
+    def _renew_lease(self) -> None:
+        self._lease = heartbeat_upload_job_import_lease(self._lease)
 
     def guard(self) -> None:
-        if self._failure is not None:
-            from endoreg_db.services.jobs.error_handling import database_recovery_reason
-
-            if database_recovery_reason(self._failure) is not None:
-                # Unavailability does not prove another worker owns the attempt.
-                # Preserve the database exception so Celery's existing recovery
-                # path redelivers after repair rather than acknowledging failure.
-                raise self._failure
-            raise UploadJobImportLeaseLost(
-                f"Upload import heartbeat failed: {self._failure}"
-            ) from self._failure
-        self._lease = heartbeat_upload_job_import_lease(self._lease)
+        super().guard()
         with locked_upload_job_import_lease(self._lease):
             pass
 
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc: BaseException | None,
-        traceback: object,
-    ) -> None:
-        self._stop.set()
-        self._thread.join(timeout=min(5.0, self._interval_seconds))
-        close_old_connections()
+    @contextmanager
+    def mutation_guard(self) -> Generator[None, None, None]:
+        super().guard()
+        with locked_upload_job_import_lease(self._lease):
+            yield
 
-    def _run(self) -> None:
-        close_old_connections()
-        try:
-            while not self._stop.wait(self._interval_seconds):
-                self._lease = heartbeat_upload_job_import_lease(self._lease)
-        except BaseException as exc:
-            self._failure = exc
+    def _record_failure(self, error: BaseException) -> None:
+        emit_structured_event(
+            logger,
+            "video_import.heartbeat_failed",
+            level=logging.ERROR,
+            upload_job_id=self._lease.upload_job_id,
+            fencing_epoch=self._lease.fencing_epoch,
+            error_type=error.__class__.__name__,
+        )
+
+
+def reconcile_expired_upload_job_import_leases(*, limit: int = 100) -> int:
+    """Fence abandoned attempts without inferring media cleanup or success.
+
+    Expiry revokes publication authority, but does not prove the process exited
+    or its plaintext workspaces were removed. Preserve all artifacts for review.
+    """
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    active_statuses = (UploadJob.Status.PROCESSING, UploadJob.Status.CANCEL_REQUESTED)
+    candidates = tuple(
+        UploadJob.objects.filter(
+            status__in=active_statuses,
+            content_type__startswith="video/",
+            processing_lease_expires_at__lte=Now(),
+        )
+        .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+        .exclude(processing_lease_owner="")
+        .exclude(cleanup_status=UploadJob.CleanupStatus.DELETING)
+        .order_by("processing_lease_expires_at", "pk")
+        .values_list("pk", flat=True)[:limit]
+    )
+    reconciled = 0
+    for job_id in candidates:
+        with transaction.atomic():
+            job = _locked_job(str(job_id))
+            # Re-read after the lock: a heartbeat, new owner or finalizer may
+            # have committed since candidate selection.
+            if (
+                job.status not in active_statuses
+                or not job.processing_lease_owner
+                or job.processing_lease_expires_at is None
+                or job.processing_lease_expires_at > _database_now(str(job_id))
+                or job.cleanup_status == UploadJob.CleanupStatus.DELETING
+            ):
+                continue
+            cancellation = job.status == UploadJob.Status.CANCEL_REQUESTED
+            validate_upload_job_interruption(current_status=job.status)
+            job.processing_fencing_token += 1
+            job.processing_lease_owner = ""
+            job.processing_lease_expires_at = None
+            job.processing_heartbeat_at = None
+            set_upload_job_cleanup_status(job, UploadJob.CleanupStatus.SKIPPED.value)
+            job.save(
+                update_fields=[
+                    "processing_fencing_token",
+                    "processing_lease_owner",
+                    "processing_lease_expires_at",
+                    "processing_heartbeat_at",
+                    "cleanup_status",
+                    "updated_at",
+                ]
+            )
+            job.mark_error(
+                "Import lease expired; previous owner fenced. "
+                + ("Cancellation cleanup is unverified. " if cancellation else "")
+                + "Media retained; review attempt artifacts before explicit recovery.",
+                error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED.value,
+            )
             emit_structured_event(
                 logger,
-                "video_import.heartbeat_failed",
-                level=logging.ERROR,
-                upload_job_id=self._lease.upload_job_id,
-                fencing_epoch=self._lease.fencing_epoch,
-                error_type=exc.__class__.__name__,
+                "video_import.expired_lease_reconciled",
+                upload_job_id=str(job.pk),
+                fencing_epoch=int(job.processing_fencing_token),
+                cancellation_requested=cancellation,
             )
-        finally:
-            close_old_connections()
+            reconciled += 1
+    return reconciled
+
+
+def recover_interrupted_upload_jobs(*, limit: int = 100) -> int:
+    """Admit bounded retries of fenced raw imports with retained source identity.
+
+    Only the recurring recovery coordinator may clear an interruption. Workers
+    still enter through the ordinary source, capacity and publication gates;
+    neither a candidate master nor ready streaming proves import completion.
+    """
+    from endoreg_db.services.hub.import_monitoring import retry_delay_seconds
+
+    if limit < 1:
+        raise ValueError("limit must be positive")
+    eligible = (
+        UploadJob.objects.filter(
+            upload_job_recovery_filter(),
+            error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+            content_type__startswith="video/",
+            content_hash__regex=r"^[0-9a-f]{64}$",
+            source_center__isnull=False,
+            source_file_persisted=True,
+            overview_dismissed_at__isnull=True,
+            processing_fencing_token__gt=0,
+        )
+        .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+        .exclude(file="")
+    )
+    candidates = tuple(
+        eligible.order_by("updated_at", "pk").values_list("pk", flat=True)[:limit]
+    )
+    recovered = 0
+    for job_id in candidates:
+        with transaction.atomic():
+            # Recheck every admission condition after concurrent recovery,
+            # cancellation, cleanup or another worker has released the row.
+            job = eligible.select_for_update(of=("self",)).filter(pk=job_id).first()
+            if job is None or not file_exists(job.file):
+                continue
+            # This coordinator owns the locked interruption, unlike ordinary
+            # worker transitions which must continue rejecting that marker.
+            if not admit_upload_job_recovery(
+                job,
+                "Automatically retrying a fenced interrupted import from its retained source.",
+                delay_seconds=retry_delay_seconds(job.retry_count),
+            ):
+                continue
+            emit_structured_event(
+                logger,
+                "video_import.interrupted_retry_scheduled",
+                upload_job_id=str(job.pk),
+                fencing_epoch=job.processing_fencing_token,
+                retry_count=job.retry_count,
+                max_retries=job.max_retries,
+            )
+            recovered += 1
+    return recovered

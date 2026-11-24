@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from endoreg_db.utils.hashs import get_bytes_hash
+
 import hashlib
 import os
 from collections.abc import Callable, Generator, Iterator
@@ -11,19 +13,18 @@ from pathlib import Path
 from uuid import uuid4
 
 from cryptography.exceptions import InvalidTag
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 
-from endoreg_db.utils.filesystem.file_operations import (
+from endoreg_db.utils.file_operations import (
     advisory_file_lock,
     atomic_create_file,
     atomic_move_path,
     safe_unlink_file,
 )
 from endoreg_db.utils.encryption.encryption import (
-    CHUNK_LENGTH_STRUCT,
     HEADER_LENGTH_STRUCT,
     MAGIC,
     build_file_header,
+    encrypt_chunks,
     iter_decrypted_chunks,
     read_header,
     unwrap_file_dek,
@@ -39,7 +40,7 @@ class RotationResult:
 
 @contextmanager
 def storage_write_lock(path: Path) -> Generator[None]:
-    name = hashlib.sha256(path.name.encode()).hexdigest()
+    name = get_bytes_hash(path.name.encode())
     with advisory_file_lock(lock_path=path.parent / f".lx-rotation-{name}.lock"):
         yield
 
@@ -72,7 +73,8 @@ def rotate_encrypted_file(
     """Authenticate, re-encrypt with a fresh data key, verify, then replace.
 
     Dry runs authenticate the entire original. A resumed run authenticates and
-    skips files already using the active key. Plaintext exists only in memory.
+    skips version-two files already using the active key. Plaintext exists only
+    in memory; legacy files are upgraded even when their key is unchanged.
     """
     if path.is_symlink() or not path.is_file() or path.stat().st_nlink != 1:
         raise ValueError("Rotation requires a regular file without links")
@@ -93,9 +95,10 @@ def rotate_encrypted_file(
         if source_key is None:
             raise InvalidTag("File does not authenticate with the enrolled generations")
         resolved_key = source_key
-        # LXENC01 does not authenticate EOF. Preserve the authenticated source's
-        # exact plaintext hash/length; inventory must separately detect prior loss.
-        if source_key == active_key or not apply:
+        # Version-one sources do not authenticate EOF. Preserve the authenticated
+        # source's exact plaintext hash/length; inventory must separately detect
+        # prior loss. The replacement is written as version two, which does.
+        if (source_key == active_key and header.authenticates_end) or not apply:
             size, digest = _digest(path, source_key)
             if _identity(path) != snapshot:
                 raise ValueError("Source changed during authentication")
@@ -114,21 +117,20 @@ def rotate_encrypted_file(
             master_key=active_key, chunk_size=header.chunk_size
         )
         encoded = new_header.to_bytes()
-        cipher = AESGCM(unwrap_file_dek(new_header, active_key))
+        dek = unwrap_file_dek(new_header, active_key)
 
         def ciphertext() -> Iterator[bytes]:
-            nonlocal size
             yield MAGIC + HEADER_LENGTH_STRUCT.pack(len(encoded)) + encoded
             with path.open("rb") as source:
-                for counter, chunk in enumerate(
-                    iter_decrypted_chunks(source, master_key=resolved_key)
-                ):
-                    size += len(chunk)
-                    source_digest.update(chunk)
-                    nonce = new_header.nonce_prefix + counter.to_bytes(4, "big")
-                    encrypted = cipher.encrypt(nonce, chunk, encoded)
-                    yield CHUNK_LENGTH_STRUCT.pack(len(encrypted))
-                    yield encrypted
+
+                def plaintext() -> Iterator[bytes]:
+                    nonlocal size
+                    for chunk in iter_decrypted_chunks(source, master_key=resolved_key):
+                        size += len(chunk)
+                        source_digest.update(chunk)
+                        yield chunk
+
+                yield from encrypt_chunks(new_header, encoded, dek, plaintext())
 
         try:
             atomic_create_file(

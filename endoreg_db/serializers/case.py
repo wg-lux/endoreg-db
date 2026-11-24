@@ -16,7 +16,7 @@ from endoreg_db.models.medical.patient.patient_medication_schedule import (
     PatientMedicationSchedule,
 )
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
-from endoreg_db.services.cases import CASE_RELATION_FIELDS, persist_case_graph
+from endoreg_db.services.cases.lifecycle import CASE_RELATION_FIELDS, persist_case_graph
 
 
 class CaseSerializer(serializers.ModelSerializer[Case]):
@@ -100,7 +100,6 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
             "patient",
             "admission_date",
             "leave_date",
-            "hash",
             "is_active",
             "is_closed",
             "is_deleted",
@@ -135,8 +134,10 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
             )
         return attrs
 
-    def get_documents(self, instance: Case) -> list[dict[str, object]]:
-        documents: list[dict[str, object]] = []
+    def get_documents(
+        self, instance: Case
+    ) -> list[dict[str, str | int | datetime | None]]:
+        documents: list[dict[str, str | int | datetime | None]] = []
         for patient_examination in instance.patient_examinations.all():
             patient_examination_id = cast(int, patient_examination.pk)
             for pdf in patient_examination.raw_pdf_files.all():
@@ -147,7 +148,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
                         "uuid": str(pdf.uuid),
                         "patient_examination_id": patient_examination_id,
                         "occurrence_at": pdf.date_created,
-                        "file_name": getattr(pdf.file, "name", None),
+                        "file_name": f"report-{pdf.pk}.pdf",
                     }
                 )
             for video in patient_examination.video_files.all():
@@ -158,7 +159,7 @@ class CaseSerializer(serializers.ModelSerializer[Case]):
                         "uuid": str(video.uuid),
                         "patient_examination_id": patient_examination_id,
                         "occurrence_at": video.uploaded_at,
-                        "file_name": video.original_file_name,
+                        "file_name": f"video-{video.pk}",
                     }
                 )
             for report in patient_examination.reports.all():

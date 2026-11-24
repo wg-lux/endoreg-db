@@ -15,7 +15,7 @@ from lx_dtypes.models.contracts.ai_dataset import (
     AIDataSetActiveLearningSelectionContract,
 )
 from endoreg_db.utils.paths import get_runtime_paths
-from endoreg_db.services.aidataset_active_learning import (
+from endoreg_db.services.datasets.active_learning import (
     select_active_learning_candidates_locally,
     select_active_learning_frame_indices_from_candidates,
     select_active_learning_frame_indices,

@@ -24,6 +24,7 @@ class ExaminationIndicationEndpointTests(TestCase):
 
         self.indication = ExaminationIndication.objects.create(
             name=f"indication-main-{suffix}",
+            name_de="Hauptindikation",
             description="Main indication",
         )
         self.indication_secondary = ExaminationIndication.objects.create(
@@ -46,7 +47,7 @@ class ExaminationIndicationEndpointTests(TestCase):
             name=f"indication-choice-shared-{suffix}"
         )
         self.choice_only_a = ExaminationIndicationClassificationChoice.objects.create(
-            name=f"indication-choice-only-a-{suffix}"
+            name=f"indication-choice-only-a-{suffix}", name_de="Nur A"
         )
         self.choice_other_indication = (
             ExaminationIndicationClassificationChoice.objects.create(
@@ -76,12 +77,13 @@ class ExaminationIndicationEndpointTests(TestCase):
         returned_ids = {item["id"] for item in payload}
         assert returned_ids == {self.indication.pk, self.indication_secondary.pk}
         localized = next(item for item in payload if item["id"] == self.indication.pk)
-        assert localized["name_de"] == self.indication.name
+        assert localized["name_de"] == "Hauptindikation"
         assert localized["name_en"] == self.indication.name
         fallback = next(
             item for item in payload if item["id"] == self.indication_secondary.pk
         )
-        assert fallback["name_de"] == self.indication_secondary.name
+        # No catalogue German name: null, never the identifier.
+        assert fallback["name_de"] is None
         assert fallback["name_en"] == self.indication_secondary.name
 
     def test_get_indications_for_examination_returns_empty_list_when_unlinked(self):
@@ -109,14 +111,14 @@ class ExaminationIndicationEndpointTests(TestCase):
         assert row_by_id[self.choice_only_a.pk] == {
             "id": self.choice_only_a.pk,
             "name": self.choice_only_a.name,
-            "name_de": self.choice_only_a.name,
+            "name_de": "Nur A",
             "name_en": self.choice_only_a.name,
             "classification_ids": [self.classification_a.pk],
         }
         assert row_by_id[self.choice_shared.pk] == {
             "id": self.choice_shared.pk,
             "name": self.choice_shared.name,
-            "name_de": self.choice_shared.name,
+            "name_de": None,
             "name_en": self.choice_shared.name,
             "classification_ids": sorted(
                 [self.classification_a.pk, self.classification_b.pk]

@@ -1,17 +1,18 @@
 # pyright: reportPrivateUsage=false
 from __future__ import annotations
 
-import logging
+import math
+import io
 import subprocess
-from contextlib import AbstractContextManager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import IO, Callable, Iterator, Protocol, TypedDict, cast
+from typing import IO, TYPE_CHECKING, TypedDict, cast
+from collections.abc import Iterator
 
 import numpy as np
+from PIL import Image
 
-from endoreg_db.config.env import DEFAULT_VIDEO_FPS
-from endoreg_db.services.seekable_media_input import (
+from endoreg_db.services.streaming.seekable_media_input import (
     SeekableFieldFile,
     serve_seekable_media_input,
 )
@@ -19,13 +20,16 @@ from endoreg_db.utils.ffmpeg_wrapper import (
     _resolve_ffmpeg_executable,
     get_stream_info,
 )
-from endoreg_db.utils.storage import materialize_video_file as _materialize_video_file
 from endoreg_db.utils.storage_streaming import (
     field_file_has_decrypted_range_storage,
     maybe_local_plaintext_path,
 )
 
-logger = logging.getLogger(__name__)
+if TYPE_CHECKING:
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.models.media.frame.frame import Frame
+
+from endoreg_db.services.video_storage.probes import probe_video_frame_pts
 
 
 class _VideoStreamInfo(TypedDict):
@@ -40,34 +44,10 @@ class _FfprobeStreamInfo(TypedDict):
     streams: list[_VideoStreamInfo]
 
 
-class _VideoLike(Protocol):
-    raw_video_hash: str
-
-    def ensure_local_raw_file(self) -> AbstractContextManager[Path]: ...
-
-    def ensure_local_processed_file(self) -> AbstractContextManager[Path]: ...
-
-    raw_file: object
-    processed_file: object
-
-    def get_fps(self) -> float | int | str | None: ...
-
-    def frame_number_to_s(self, frame_number: int) -> float: ...
-
-
-def _materialize_video_file_typed(
-    video: _VideoLike,
-    file_type: str,
-) -> AbstractContextManager[Path]:
-    helper = cast(
-        Callable[[_VideoLike, str], AbstractContextManager[Path]],
-        _materialize_video_file,
-    )
-    return helper(video, file_type)
-
-
 @dataclass(frozen=True)
 class FrameSample:
+    """A decoded red, green and blue (RGB) frame with its presentation identity."""
+
     frame_number: int
     timestamp: float
     rgb_frame: np.ndarray
@@ -81,70 +61,18 @@ class EncodedFrameSample:
     image_bytes: bytes
 
 
-def _parse_frame_rate(value: object) -> float | None:
-    if value is None:
-        return None
-    text = str(value).strip()
-    if not text or text == "0/0":
-        return None
-    if "/" in text:
-        numerator_text, denominator_text = text.split("/", 1)
-        try:
-            numerator = float(numerator_text)
-            denominator = float(denominator_text)
-        except ValueError:
-            return None
-        if denominator == 0:
-            return None
-        return numerator / denominator
-    try:
-        return float(text)
-    except ValueError:
-        return None
-
-
-def _video_stream_metadata(
-    video_path: Path,
-    *,
-    fps_hint: float | None,
-) -> tuple[int, int, float]:
-    stream_info_payload = get_stream_info(video_path)
-    if stream_info_payload is None:
-        raise RuntimeError(f"ffprobe returned no streams for {video_path.name}.")
-    stream_info = cast(_FfprobeStreamInfo, stream_info_payload)
-    video_stream = next(
-        (
-            stream
-            for stream in stream_info["streams"]
-            if stream["codec_type"] == "video"
-        ),
-        None,
-    )
-    if video_stream is None:
-        raise RuntimeError(f"ffprobe returned no video stream for {video_path.name}.")
-    width = int(video_stream["width"])
-    height = int(video_stream["height"])
-    fps = (
-        fps_hint
-        or _parse_frame_rate(video_stream["avg_frame_rate"])
-        or _parse_frame_rate(video_stream["r_frame_rate"])
-        or DEFAULT_VIDEO_FPS
-    )
-    if fps <= 0:
-        fps = DEFAULT_VIDEO_FPS
-    return width, height, float(fps)
-
-
-def _video_stream_fps(
-    video_path: Path,
-    *,
-    fps_hint: float | None,
-) -> float:
-    if fps_hint is not None and fps_hint > 0:
-        return float(fps_hint)
-
-    _width, _height, fps = _video_stream_metadata(video_path, fps_hint=fps_hint)
-    return fps
+def _video_stream_metadata(video_path: Path) -> tuple[int, int]:
+    payload = get_stream_info(video_path)
+    if payload is None:
+        raise RuntimeError("ffprobe returned no streams.")
+    streams = cast(_FfprobeStreamInfo, payload)
+    for stream in streams["streams"]:
+        if stream["codec_type"] == "video":
+            width, height = int(stream["width"]), int(stream["height"])
+            if width <= 0 or height <= 0:
+                raise ValueError("Video dimensions must be positive.")
+            return width, height
+    raise RuntimeError("ffprobe returned no video stream.")
 
 
 def _read_exact(handle: IO[bytes], byte_count: int) -> bytes:
@@ -161,8 +89,6 @@ def _read_exact(handle: IO[bytes], byte_count: int) -> bytes:
 
 def iter_video_path_frame_samples(
     video_path: Path,
-    *,
-    fps_hint: float | None = None,
 ) -> Iterator[FrameSample]:
     ffmpeg_executable = _resolve_ffmpeg_executable()
     if not ffmpeg_executable:
@@ -170,7 +96,8 @@ def iter_video_path_frame_samples(
             "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
         )
 
-    width, height, fps = _video_stream_metadata(video_path, fps_hint=fps_hint)
+    width, height = _video_stream_metadata(video_path)
+    timestamps = probe_video_frame_pts(video_path)
     frame_size = width * height * 3
     command = [
         ffmpeg_executable,
@@ -184,6 +111,8 @@ def iter_video_path_frame_samples(
         "-an",
         "-sn",
         "-dn",
+        "-fps_mode",
+        "passthrough",
         "-f",
         "rawvideo",
         "-pix_fmt",
@@ -211,9 +140,11 @@ def iter_video_path_frame_samples(
             frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape(
                 (height, width, 3)
             )
+            if frame_number >= len(timestamps):
+                raise RuntimeError("Decoded frame count exceeds observed timestamps.")
             yield FrameSample(
                 frame_number=frame_number,
-                timestamp=frame_number / fps,
+                timestamp=timestamps[frame_number],
                 rgb_frame=frame,
             )
             frame_number += 1
@@ -230,100 +161,8 @@ def iter_video_path_frame_samples(
                 f"ffmpeg streaming decode failed for {video_path.name} "
                 f"with exit code {return_code}: {stderr.strip()}"
             )
-    finally:
-        if process.poll() is None:
-            process.terminate()
-            try:
-                process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        assert process.stdout is not None
-        assert process.stderr is not None
-        process.stdout.close()
-        process.stderr.close()
-
-
-def read_video_path_frame_sample(
-    video_path: Path,
-    *,
-    frame_number: int,
-    fps_hint: float | None = None,
-) -> FrameSample:
-    if frame_number < 0:
-        raise ValueError("frame_number must be non-negative.")
-
-    ffmpeg_executable = _resolve_ffmpeg_executable()
-    if not ffmpeg_executable:
-        raise FileNotFoundError(
-            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
-        )
-
-    width, height, fps = _video_stream_metadata(video_path, fps_hint=fps_hint)
-    frame_size = width * height * 3
-    select_filter = f"select='eq(n,{frame_number})'"
-    command = [
-        ffmpeg_executable,
-        "-nostdin",
-        "-v",
-        "error",
-        "-i",
-        str(video_path),
-        "-map",
-        "0:v:0",
-        "-an",
-        "-sn",
-        "-dn",
-        "-vf",
-        select_filter,
-        "-vsync",
-        "vfr",
-        "-frames:v",
-        "1",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgb24",
-        "pipe:1",
-    ]
-    process = subprocess.Popen(
-        command,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-    )
-    assert process.stdout is not None
-    stdout = process.stdout
-    try:
-        frame_bytes = _read_exact(stdout, frame_size)
-        return_code = process.wait()
-        stderr_pipe = process.stderr
-        stderr = (
-            stderr_pipe.read().decode("utf-8", errors="replace")
-            if stderr_pipe is not None
-            else ""
-        )
-
-        if return_code != 0:
-            raise RuntimeError(
-                f"ffmpeg single-frame decode failed for {video_path.name} "
-                f"with exit code {return_code}: {stderr.strip()}"
-            )
-        if not frame_bytes:
-            raise RuntimeError(
-                f"ffmpeg produced no decoded frame {frame_number} for {video_path.name}."
-            )
-        if len(frame_bytes) != frame_size:
-            raise RuntimeError(
-                "ffmpeg produced a partial decoded frame "
-                f"for {video_path.name}: expected={frame_size} actual={len(frame_bytes)}."
-            )
-
-        frame = np.frombuffer(frame_bytes, dtype=np.uint8).reshape((height, width, 3))
-        return FrameSample(
-            frame_number=frame_number,
-            timestamp=frame_number / fps,
-            rgb_frame=frame,
-        )
+        if frame_number != len(timestamps):
+            raise RuntimeError("Decoded frame count differs from observed timestamps.")
     finally:
         if process.poll() is None:
             process.terminate()
@@ -342,39 +181,33 @@ def read_video_path_frame_jpeg(
     video_path: Path,
     *,
     frame_number: int,
-    fps_hint: float | None = None,
-    timestamp: float | None = None,
+    timestamp: float,
     quality: int = 2,
 ) -> EncodedFrameSample:
-    if frame_number < 0:
-        raise ValueError("frame_number must be non-negative.")
-
-    if quality < 1 or quality > 31:
-        raise ValueError("quality must be between 1 and 31 for ffmpeg mjpeg output.")
-
-    resolved_timestamp = timestamp
-    if resolved_timestamp is None:
-        fps = _video_stream_fps(video_path, fps_hint=fps_hint)
-        resolved_timestamp = frame_number / fps
-    return _read_video_input_frame_jpeg(
+    return _read_video_input_frame_image(
         str(video_path),
         frame_number=frame_number,
-        timestamp=resolved_timestamp,
+        timestamp=timestamp,
         quality=quality,
         seekable_http=False,
     )
 
 
-def _read_video_input_frame_jpeg(
+def _read_video_input_frame_image(
     input_reference: str,
     *,
     frame_number: int,
     timestamp: float,
     quality: int,
     seekable_http: bool,
+    lossless: bool = False,
+    presentation_timestamp: int | None = None,
 ) -> EncodedFrameSample:
-    if timestamp < 0:
-        raise ValueError("timestamp must be non-negative.")
+    from endoreg_db.utils.video.timeline import validate_timestamp_seconds
+
+    if frame_number < 0:
+        raise ValueError("frame_number must be non-negative.")
+    timestamp = validate_timestamp_seconds(timestamp)
     if quality < 1 or quality > 31:
         raise ValueError("quality must be between 1 and 31 for ffmpeg mjpeg output.")
 
@@ -389,11 +222,15 @@ def _read_video_input_frame_jpeg(
         "-nostdin",
         "-v",
         "error",
+        "-seek_timestamp",
+        "1",
         "-ss",
         f"{timestamp:.9f}",
     ]
     if seekable_http:
         command.extend(["-seekable", "1"])
+    if presentation_timestamp is not None:
+        command.extend(["-noaccurate_seek", "-copyts"])
     command.extend(
         [
             "-i",
@@ -403,14 +240,23 @@ def _read_video_input_frame_jpeg(
             "-an",
             "-sn",
             "-dn",
+            *(
+                [
+                    "-vf",
+                    f"select='eq(pts\\,{presentation_timestamp})'",
+                    "-fps_mode",
+                    "passthrough",
+                ]
+                if presentation_timestamp is not None
+                else []
+            ),
             "-frames:v",
             "1",
-            "-q:v",
-            str(quality),
+            *([] if lossless else ["-q:v", str(quality)]),
             "-f",
             "image2pipe",
             "-vcodec",
-            "mjpeg",
+            "png" if lossless else "mjpeg",
             "pipe:1",
         ]
     )
@@ -433,7 +279,7 @@ def _read_video_input_frame_jpeg(
     stderr = stderr_bytes.decode("utf-8", errors="replace") if stderr_bytes else ""
     if process.returncode != 0:
         raise RuntimeError(
-            "ffmpeg single-frame jpeg decode failed "
+            "ffmpeg single-frame image decode failed "
             f"with exit code {process.returncode}: {stderr.strip()}"
         )
     if not stdout:
@@ -442,84 +288,162 @@ def _read_video_input_frame_jpeg(
     return EncodedFrameSample(
         frame_number=frame_number,
         timestamp=timestamp,
-        content_type="image/jpeg",
+        content_type="image/png" if lossless else "image/jpeg",
         image_bytes=stdout,
     )
 
 
 def iter_video_file_frame_samples(
-    video: _VideoLike,
+    video: VideoFile,
     *,
     file_type: str = "raw",
 ) -> Iterator[FrameSample]:
-    fps_hint = None
-    try:
-        fps_value = video.get_fps()
-        if isinstance(fps_value, (int, float)):
-            fps_hint = float(fps_value) or None
-        elif isinstance(fps_value, str):
-            fps_hint = float(fps_value) or None
-    except (TypeError, ValueError):
-        fps_hint = None
+    from endoreg_db.services.video_files.frame_coordinates import (
+        artifact_frame_timestamps,
+    )
+    from endoreg_db.services.video_files.types import VideoArtifactKind
 
-    with _materialize_video_file_typed(video, file_type) as source_path:
-        yield from iter_video_path_frame_samples(source_path, fps_hint=fps_hint)
-
-
-def read_video_file_frame_sample(
-    video: _VideoLike,
-    *,
-    frame_number: int,
-    file_type: str = "raw",
-) -> FrameSample:
-    fps_hint: float | None = None
-    try:
-        fps_value = video.get_fps()
-        if isinstance(fps_value, (int, float)):
-            fps_hint = float(fps_value) or None
-        elif isinstance(fps_value, str):
-            fps_hint = float(fps_value) or None
-    except (TypeError, ValueError):
-        fps_hint = None
-
-    with _materialize_video_file_typed(video, file_type) as source_path:
-        return read_video_path_frame_sample(
-            source_path,
-            frame_number=frame_number,
-            fps_hint=fps_hint,
+    kind = VideoArtifactKind(file_type.strip().lower())
+    materialize = (
+        video.ensure_local_raw_file
+        if kind == VideoArtifactKind.RAW
+        else video.ensure_local_processed_file
+    )
+    with materialize() as source_path:
+        timestamps = artifact_frame_timestamps(
+            video, file_type=file_type, source_path=source_path
         )
+        decoded_count = 0
+        for sample in iter_video_path_frame_samples(source_path):
+            if sample.frame_number >= len(timestamps) or not math.isclose(
+                sample.timestamp,
+                timestamps[sample.frame_number],
+                abs_tol=1e-6,
+                rel_tol=0,
+            ):
+                raise ValueError(
+                    "Decoded frame differs from the selected canonical timeline."
+                )
+            decoded_count += 1
+            yield FrameSample(
+                sample.frame_number, timestamps[sample.frame_number], sample.rgb_frame
+            )
+
+        if decoded_count != len(timestamps):
+            raise ValueError("Decoded frame count differs from the canonical timeline.")
 
 
 def read_video_file_frame_jpeg(
-    video: _VideoLike,
+    video: VideoFile,
     *,
     frame_number: int,
     file_type: str = "raw",
     quality: int = 2,
 ) -> EncodedFrameSample:
-    normalized_type = file_type.strip().lower()
-    if normalized_type == "raw":
+    return _read_video_file_frame_image(
+        video,
+        frame_number=frame_number,
+        file_type=file_type,
+        quality=quality,
+    )
+
+
+def read_video_file_frame_sample(
+    video: VideoFile,
+    *,
+    frame_number: int,
+    file_type: str = "raw",
+) -> FrameSample:
+    """Decode losslessly to red, green and blue (RGB) pixels for checks or recognition."""
+    encoded = _read_video_file_frame_image(
+        video,
+        frame_number=frame_number,
+        file_type=file_type,
+        quality=2,
+        lossless=True,
+    )
+    with Image.open(io.BytesIO(encoded.image_bytes)) as image:
+        pixels = np.asarray(image.convert("RGB"), dtype=np.uint8)
+    return FrameSample(encoded.frame_number, encoded.timestamp, pixels)
+
+
+def read_processed_frame_jpeg(frame: Frame, *, quality: int = 2) -> EncodedFrameSample:
+    """Decode a selected row only when its exact coordinates match the processed source."""
+    if frame.presentation_timestamp is None or frame.timestamp is None:
+        if frame._state.adding:
+            raise ValueError(
+                "Selected frame requires exact persisted presentation coordinates."
+            )
+        from endoreg_db.services.video_files.timestamp_backfill import (
+            backfill_missing_video_timestamps,
+        )
+
+        backfill_missing_video_timestamps(frame.video)
+        frame.refresh_from_db(fields=["timestamp", "presentation_timestamp"])
+        if frame.presentation_timestamp is None or frame.timestamp is None:
+            raise ValueError(
+                "Selected frame requires exact persisted presentation coordinates."
+            )
+    return _read_video_file_frame_image(
+        frame.video,
+        frame_number=frame.frame_number,
+        file_type="processed",
+        quality=quality,
+        expected_coordinate=(frame.presentation_timestamp, frame.timestamp),
+    )
+
+
+def _read_video_file_frame_image(
+    video: VideoFile,
+    *,
+    frame_number: int,
+    file_type: str,
+    quality: int,
+    lossless: bool = False,
+    expected_coordinate: tuple[int, float] | None = None,
+) -> EncodedFrameSample:
+    from endoreg_db.services.video_files.types import VideoArtifactKind
+
+    kind = VideoArtifactKind(file_type.strip().lower())
+    if kind == VideoArtifactKind.RAW:
         field_file = video.raw_file
-    elif normalized_type == "processed":
-        field_file = video.processed_file
     else:
-        raise ValueError(f"Unsupported video file type: {file_type}")
+        field_file = video.processed_file
 
     field_file_name = getattr(field_file, "name", None)
     if not isinstance(field_file_name, str) or not field_file_name:
         raise FileNotFoundError(
-            f"{normalized_type.title()} video file is not available for "
+            f"{kind.value.title()} video file is not available for "
             f"{video.raw_video_hash}."
         )
 
-    timestamp = float(video.frame_number_to_s(frame_number))
+    from endoreg_db.services.video_files.frame_coordinates import (
+        artifact_frame_timeline,
+        validate_frame_timeline_coordinate,
+    )
+    from endoreg_db.utils.video.timeline import (
+        presentation_timestamp_seconds,
+        validate_display_frame_number,
+    )
+
+    timeline = artifact_frame_timeline(video, file_type=kind)
+    validate_display_frame_number(frame_number, len(timeline.presentation_timestamps))
+    if expected_coordinate is not None:
+        validate_frame_timeline_coordinate(timeline, frame_number, *expected_coordinate)
+    tick = timeline.presentation_timestamps[frame_number]
+    timestamp = presentation_timestamp_seconds(
+        tick, timeline.time_base_num, timeline.time_base_den
+    )
     local_path = maybe_local_plaintext_path(field_file)
     if local_path is not None:
-        return read_video_path_frame_jpeg(
-            local_path,
+        return _read_video_input_frame_image(
+            str(local_path),
             frame_number=frame_number,
             timestamp=timestamp,
             quality=quality,
+            seekable_http=False,
+            lossless=lossless,
+            presentation_timestamp=tick,
         )
 
     if not field_file_has_decrypted_range_storage(field_file):
@@ -528,12 +452,14 @@ def read_video_file_frame_jpeg(
         )
 
     with serve_seekable_media_input(cast(SeekableFieldFile, field_file)) as source:
-        return _read_video_input_frame_jpeg(
+        return _read_video_input_frame_image(
             source.url,
             frame_number=frame_number,
             timestamp=timestamp,
             quality=quality,
             seekable_http=True,
+            lossless=lossless,
+            presentation_timestamp=tick,
         )
 
 
@@ -544,6 +470,6 @@ __all__ = [
     "iter_video_path_frame_samples",
     "read_video_file_frame_jpeg",
     "read_video_file_frame_sample",
+    "read_processed_frame_jpeg",
     "read_video_path_frame_jpeg",
-    "read_video_path_frame_sample",
 ]

@@ -1,16 +1,16 @@
 from .datamodels import LabData, PatientData, ReadoutData, TransplantData
-from typing import List, Optional
+from typing import Optional
 
 
 def export2json(
-    patient_data_list: Optional[List[PatientData]] = None,
-    readout_data_list: Optional[List[ReadoutData]] = None,
-    lab_data_list: Optional[List[LabData]] = None,
-    fu_tx_data_list: Optional[List[TransplantData]] = None,
+    patient_data_list: Optional[list[PatientData]] = None,
+    readout_data_list: Optional[list[ReadoutData]] = None,
+    lab_data_list: Optional[list[LabData]] = None,
+    fu_tx_data_list: Optional[list[TransplantData]] = None,
 ):
     """
     Export the processed data to JSONL files.
-    All List fields of the supplied pydantic datamodels should be serialized as JSON arrays.
+    All list fields of the supplied pydantic datamodels should be serialized as JSON arrays.
     """
     if patient_data_list is None:
         patient_data_list = []

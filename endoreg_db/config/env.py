@@ -20,7 +20,6 @@ from math import isfinite
 from pathlib import Path
 from typing import (
     Any,
-    Dict,
     Literal,
     Optional,
     TypeAlias,
@@ -74,7 +73,6 @@ DEFAULT_VIDEO_TEMPORAL_INFERENCE_JOB_MODE: JobExecutionMode = "celery"
 DEFAULT_VIDEO_TEMPORAL_INFERENCE_FRAME_SOURCE_MODE: FrameSourceMode = "stream"
 DEFAULT_CELERY_DEFAULT_QUEUE = "default"
 DEFAULT_CELERY_PIPELINE_QUEUE = "pipeline"
-DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE = "frame_extraction"
 DEFAULT_CELERY_FFMPEG_MEDIA_QUEUE = "ffmpeg_media"
 DEFAULT_CELERY_INFERENCE_QUEUE = "inference"
 DEFAULT_CELERY_TRAINING_QUEUE = "model_training"
@@ -166,6 +164,11 @@ def _is_production_runtime() -> bool:
         or settings_module.endswith(".prod")
         or settings_module.endswith(".settings_prod")
     )
+
+
+def inline_master_key_allowed() -> bool:
+    """Permit inline media keys only in an explicitly selected test profile."""
+    return _is_explicit_test_settings() and not _is_production_runtime()
 
 
 def _default_test_runtime_root() -> Path:
@@ -463,13 +466,6 @@ def get_celery_pipeline_queue() -> str:
     return env_str("CELERY_PIPELINE_QUEUE", DEFAULT_CELERY_PIPELINE_QUEUE).strip()
 
 
-def get_celery_frame_extraction_queue() -> str:
-    return env_str(
-        "CELERY_FRAME_EXTRACTION_QUEUE",
-        DEFAULT_CELERY_FRAME_EXTRACTION_QUEUE,
-    ).strip()
-
-
 def get_celery_ffmpeg_media_queue() -> str:
     return env_str(
         "CELERY_FFMPEG_MEDIA_QUEUE",
@@ -530,17 +526,10 @@ def celery_broker_transport_error(
     )
 
 
-def celery_frame_extraction_requires_secure_transport() -> bool:
-    return env_bool(
-        "CELERY_FRAME_EXTRACTION_REQUIRE_SECURE_TRANSPORT",
-        celery_requires_secure_transport(),
-    )
-
-
 def celery_ffmpeg_media_requires_secure_transport() -> bool:
     return env_bool(
         "CELERY_FFMPEG_MEDIA_REQUIRE_SECURE_TRANSPORT",
-        celery_frame_extraction_requires_secure_transport(),
+        celery_requires_secure_transport(),
     )
 
 
@@ -681,6 +670,7 @@ def get_video_storage_max_height() -> int:
 
 
 def get_video_storage_max_source_fps() -> float:
+    """Read the deprecated compatibility setting; it does not cap native FPS."""
     value = env_float(
         "ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS",
         DEFAULT_VIDEO_STORAGE_MAX_SOURCE_FPS,
@@ -741,8 +731,21 @@ def video_storage_destructive_migration_enabled() -> bool:
 
 
 def upload_job_source_reaper_apply_enabled() -> bool:
-    """Require explicit operator rollout authorization for source deletion."""
-    return env_bool("UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED", False)
+    """Apply gate of the periodic media cleanup task; ``false`` forces dry runs."""
+    return env_bool("UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED", True)
+
+
+# A staging entry younger than this may still belong to a running attempt; the
+# floor exceeds the six-hour hard worker time limit.
+STAGING_CLEANUP_MINIMUM_GRACE_SECONDS = 6 * 60 * 60
+
+
+def staging_cleanup_grace_seconds() -> int:
+    return env_int(
+        "ENDOREG_STAGING_CLEANUP_GRACE_SECONDS",
+        24 * 60 * 60,
+        minimum=STAGING_CLEANUP_MINIMUM_GRACE_SECONDS,
+    )
 
 
 def get_ffmpeg_env_candidates() -> list[str]:
@@ -885,7 +888,7 @@ def get_drf_throttle_anon_rate() -> str:
     return env_str("DRF_THROTTLE_ANON", DEFAULT_DRF_THROTTLE_ANON)
 
 
-def build_default_cache_settings() -> Dict[str, Dict[str, Any]]:
+def build_default_cache_settings() -> dict[str, dict[str, Any]]:
     return {
         "default": {
             "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -895,7 +898,7 @@ def build_default_cache_settings() -> Dict[str, Dict[str, Any]]:
     }
 
 
-def build_base_rest_framework_settings() -> Dict[str, Any]:
+def build_base_rest_framework_settings() -> dict[str, Any]:
     return {
         "DEFAULT_THROTTLE_CLASSES": [
             "rest_framework.throttling.UserRateThrottle",

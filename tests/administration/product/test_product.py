@@ -43,7 +43,8 @@ class ProductModelTest(TestCase):
     # Test suite works on pre-loaded fixture models created in shared data loader.
     products: list[Product]
 
-    def setUp(self):
+    @classmethod
+    def setUpTestData(cls) -> None:
         load_unit_data()
         load_examination_data()
         load_distribution_data()

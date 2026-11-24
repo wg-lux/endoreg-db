@@ -60,10 +60,10 @@ class VideoMeta(models.Model):
     processor: models.ForeignKey["EndoscopyProcessor | None"] = models.ForeignKey(
         "EndoscopyProcessor", on_delete=models.CASCADE, blank=True, null=True
     )
-    endoscope: models.ForeignKey["Endoscope | None"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    endoscope: models.ForeignKey["Endoscope | None"] = models.ForeignKey(
         "Endoscope", on_delete=models.CASCADE, blank=True, null=True
     )
-    center: models.ForeignKey["Center"] = models.ForeignKey(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    center: models.ForeignKey["Center"] = models.ForeignKey(
         "Center", on_delete=models.CASCADE
     )
     import_meta: models.OneToOneField["VideoImportMeta | None"] = models.OneToOneField(
@@ -117,7 +117,7 @@ class VideoMeta(models.Model):
             meta.initialize_ffmpeg_meta(video_path)
         except Exception as e:
             # Re-raise exceptions from ffmpeg meta initialization
-            logger.error(
+            logger.exception(
                 "Failed during FFMpegMeta initialization within create_from_file for %s: %s",
                 video_path.name,
                 e,
@@ -206,7 +206,7 @@ class VideoMeta(models.Model):
 
         except Exception as e:
             # Log the error and re-raise it
-            logger.error(
+            logger.exception(
                 "Failed to create or link FFMpegMeta from %s: %s",
                 video_path,
                 e,
@@ -274,15 +274,17 @@ class VideoMeta(models.Model):
 
     @property
     def frame_count(self) -> int | None:
-        """Calculates frame count based on duration and FPS from FFMpegMeta."""
-        if (
-            self.ffmpeg_meta
-            and self.ffmpeg_meta.duration is not None
-            and self.ffmpeg_meta.fps is not None
-            and self.ffmpeg_meta.fps > 0
-        ):
-            return int(self.ffmpeg_meta.duration * self.ffmpeg_meta.fps)
-        return None
+        """Return the observed stream count; duration and rate are not frame identity."""
+        if self.ffmpeg_meta is None or self.ffmpeg_meta.raw_probe_data is None:
+            return None
+        payload = FfmpegProbeDataPayload.model_validate(self.ffmpeg_meta.raw_probe_data)
+        stream = next(iter(payload.video_streams), None)
+        if stream is None or stream.nb_frames in (None, "N/A"):
+            return None
+        count = int(stream.nb_frames)
+        if count <= 0:
+            raise ValueError("Observed video frame count must be positive.")
+        return count
 
 
 class FFMpegMeta(models.Model):
@@ -290,28 +292,22 @@ class FFMpegMeta(models.Model):
     Stores technical video stream information extracted using FFmpeg (ffprobe).
     """
 
-    width: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    width: models.IntegerField[Any, Any] = models.IntegerField(null=True, blank=True)
+    height: models.IntegerField[Any, Any] = models.IntegerField(null=True, blank=True)
+    duration: models.FloatField[Any, Any] = models.FloatField(null=True, blank=True)
+    frame_rate_num: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )
-    height: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    frame_rate_den: models.IntegerField[Any, Any] = models.IntegerField(
         null=True, blank=True
     )
-    duration: models.FloatField[Any, Any] = models.FloatField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-        null=True, blank=True
-    )
-    frame_rate_num: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-        null=True, blank=True
-    )
-    frame_rate_den: models.IntegerField[Any, Any] = models.IntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
-        null=True, blank=True
-    )
-    codec_name: models.CharField[Any, Any] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    codec_name: models.CharField[Any, Any] = models.CharField(
         max_length=50, null=True, blank=True
     )
-    pixel_format: models.CharField[Any, Any] = models.CharField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    pixel_format: models.CharField[Any, Any] = models.CharField(
         max_length=50, null=True, blank=True
     )
-    bit_rate: models.BigIntegerField[Any, Any] = models.BigIntegerField(  # pyright: ignore[reportUnknownVariableType, reportAssignmentType]
+    bit_rate: models.BigIntegerField[Any, Any] = models.BigIntegerField(
         null=True, blank=True
     )
     raw_probe_data: models.JSONField[Any, Any] = models.JSONField(null=True, blank=True)
@@ -353,7 +349,7 @@ class FFMpegMeta(models.Model):
                 file_path
             )  # Use the new utility
         except Exception as probe_err:
-            logger.error(
+            logger.exception(
                 "ffprobe execution failed for %s: %s",
                 file_path,
                 probe_err,
@@ -447,7 +443,7 @@ class FFMpegMeta(models.Model):
             )
             return instance
         except Exception as e:
-            logger.error(
+            logger.exception(
                 "Error creating FFMpegMeta DB record from %s: %s",
                 file_path.name,
                 e,

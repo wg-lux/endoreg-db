@@ -53,14 +53,10 @@ def _write_candidate(
 @pytest.mark.parametrize("media_kind", ["video", "pdf"])
 @pytest.mark.parametrize("same_media", [True, False])
 def test_concurrent_metadata_imports_keep_one_patient_and_examination(
-    base_db_data: bool,
+    gender_data: None,
     media_kind: Literal["video", "pdf"],
     same_media: bool,
 ) -> None:
-    if connection.vendor != "postgresql":
-        pytest.skip(
-            "Requires PostgreSQL row locking; SQLite is not concurrency evidence"
-        )
     center = Center.objects.create(name=f"metadata-concurrency-{uuid4().hex}")
     media_ids: list[int] = []
     for _ in range(1 if same_media else 4):
@@ -96,7 +92,7 @@ def test_concurrent_metadata_imports_keep_one_patient_and_examination(
 
 @pytest.mark.django_db(transaction=True)
 def test_metadata_transaction_failure_leaves_no_dangling_relation(
-    base_db_data: bool,
+    gender_data: None,
 ) -> None:
     if connection.vendor != "postgresql":
         pytest.skip("Requires PostgreSQL transaction evidence")

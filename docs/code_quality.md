@@ -4,41 +4,38 @@ This document describes the repository's executable quality controls. Current
 scope and readiness evidence remain in
 [`feature-tracking/CodeQuality.yml`](../feature-tracking/CodeQuality.yml).
 
-## Verbindliche Abnahme: zentrale Medien-Hashes und Laufzeitpfade
+## Mandatory acceptance: centralized media hashes and runtime paths
 
-Diese Grenzen gelten für jede zukünftige Änderung an Import, Speicherung,
-Streaming, Integritätsprüfung, Bereinigung und Export. Abweichende lokale
-Implementierungen sind ein Abnahmehindernis.
+These boundaries apply to every future change to import, storage, streaming,
+integrity checks, cleanup, and export. Divergent local implementations prevent
+acceptance.
 
-- Gespeicherte Video- und Reportartefakte verwenden
-  `VideoArtifactFieldFile.get_hash()` beziehungsweise
-  `ReportArtifactFieldFile.get_hash()`. Beide delegieren an
-  `endoreg_db.utils.hashs.get_file_hash`; Re-Exports dürfen keine eigene
-  Implementierung enthalten. Lokale Eingangsdateien verwenden denselben Helper.
-  Eine Prüfung von Größe, Änderungszeit und Hash derselben Quellgeneration darf
-  weiterhin den zentralen nativen `stable_file_identity`-Vertrag verwenden.
-- Der Artefakt-Hash beschreibt den Klartext. Verschlüsselte FieldFiles werden
-  über ihren authentifizierten Storage-Stream gelesen, nicht über ihren
-  Ciphertext-Pfad. Fehlende Dateien, Authentifizierungsfehler und nicht verfügbare
-  Hash-Backends müssen fehlschlagen; ein Ersatzwert ist unzulässig.
-- Die zentrale Pfadverwaltung (auch als „EndoregPathsModule“ bezeichnet) ist
-  `endoreg_db.utils.paths`. Ihr typisierter Vertrag heißt `EndoregPathsModel`;
-  Verbraucher verwenden `get_runtime_paths()` und die vorhandenen
-  StorageTier- und Boundary-Helper. `LX_RUNTIME_ROOT` ist die einzige
-  Konfigurationsquelle dieser Laufzeittopologie. Private Pfadmodelle,
-  importzeitlich aufgelöste Medienpfade, wiederbelebte Pfadkonstanten und
-  alternative Root-Umgebungsvariablen sind unzulässig.
-- Tests ändern den Root über `LX_RUNTIME_ROOT` und leeren anschließend den
-  Pfadcache; lokale Test-Seams ersetzen `get_runtime_paths()` durch ein
-  typisiertes Modell. Das Auflösen eines Pfades erzeugt keine Verzeichnisse.
-  Pfade außerhalb der jeweils erlaubten Grenze werden abgewiesen.
+- Stored video and report artifacts use `VideoArtifactFieldFile.get_hash()` and
+  `ReportArtifactFieldFile.get_hash()`, respectively. Both delegate to
+  `endoreg_db.utils.hashs.get_file_hash`; re-exports must not contain their own
+  implementation. Local input files use the same helper. Checking the size,
+  modification time, and hash of the same source generation may continue to use
+  the central native `stable_file_identity` contract.
+- The artifact hash describes plaintext. Encrypted FieldFiles are read through
+  their authenticated storage stream, not their ciphertext path. Missing files,
+  authentication errors, and unavailable hash backends must fail; substitute
+  values are prohibited.
+- Central path management (also called “EndoregPathsModule”) lives in
+  `endoreg_db.utils.paths`. Its typed contract is `EndoregPathsModel`; consumers
+  use `get_runtime_paths()` and the existing StorageTier and boundary helpers.
+  `LX_RUNTIME_ROOT` is the only configuration source for this runtime topology.
+  Private path models, media paths resolved at import time, revived path
+  constants, and alternative root environment variables are prohibited.
+- Tests change the root through `LX_RUNTIME_ROOT` and then clear the path cache;
+  local test seams replace `get_runtime_paths()` with a typed model. Resolving a
+  path creates no directories. Paths outside the applicable boundary are rejected.
 
-Die ausführbare Abnahme besteht aus `tests/contracts/test_media_centralization.py`,
-`tests/utils/test_paths.py`, `tests/utils/test_file_operations.py` und
-`tests/services/test_video_source_hash.py`. Nach Pyright müssen diese Tests sowie
-die betroffenen Import-/Streamingtests bestehen. Zusätzlich prüft das Review
-neue Aufrufstellen auf Umgehungen dieser zentralen APIs. Hashes für Patienten,
-Signaturen oder andere Nicht-Medieninhalte fallen nicht unter den Artefaktvertrag.
+Executable acceptance consists of `tests/contracts/test_media_centralization.py`,
+`tests/utils/test_paths.py`, `tests/utils/test_file_operations.py`, and
+`tests/services/test_video_source_hash.py`. After Pyright, these tests and the
+relevant import/streaming tests must pass. Review also checks new call sites for
+bypasses of these central APIs. Hashes for patients, signatures, or other non-media
+content are outside the artifact contract.
 
 ## Dead-code process
 
@@ -84,6 +81,68 @@ are desirable. Update it only as part of a named cohort:
 4. Run Pyright, the boundary guard, and focused failure-path tests.
 
 ## Reproducible quality run
+
+Normal commits run the locked environment's Ruff on changed Python files only.
+Structure changes trigger the structure validator; dependency changes trigger
+`uv lock --check --offline`, which never updates the lock. No default commit hook
+starts Django, Pyright, Rust tests or pytest. The target for a warm normal commit
+is under ten seconds; first-time environment setup is separate. Run
+`devenv tasks run agent:sync` explicitly when dependencies change.
+
+Before pushing, run `devenv tasks run ci:checks` for the same complete quality,
+type, ownership, startup and migration checks used by GitHub Actions. This does
+not synchronize dependencies or modify source. `devenv tasks run ci:sync` prepares
+the exact committed dependency set with `--locked`; CI always runs it first.
+`devenv tasks run ci:tests` runs the Python suite with two workers and writes
+`test-results/pytest.xml`. Run `scripts/run_rust_tests.sh --locked` inside devenv
+for native tests. Check for existing pytest processes before launching a suite.
+These commands are deliberately outside the commit path. Individual comprehensive
+hooks remain available through `prek run --stage manual <hook-id> --all-files`.
+
+CI uses read-only permissions, no persisted checkout credential, immutable action
+commits, the devenv revision in `devenv.lock`, cancellation of superseded runs and
+a 90-minute job limit. Test result artifacts are retained for 14 days. Dependency
+update pull requests require review; baseline expiry checks remain active.
+Repository administrators must require the `checks` status for protected branches;
+workflow YAML alone cannot enforce branch protection.
+
+Current metrics are derived from existing guards; historical test results in
+the feature tracker are not current target counts. After a reviewed architecture
+change, only the corresponding YAML inventories are updated:
+
+```bash
+devenv tasks run quality:dead-code quality:boundaries
+.devenv/state/venv/bin/python scripts/check_lx_dtypes_model_inventory.py
+```
+
+Report selection orchestration lives in
+`endoreg_db/services/reports/frame_selection.py`. The HTTP adapter is in
+`endoreg_db/views/patient_report/patient_examination_report.py`, and PDF redaction
+in `endoreg_db/views/pdf/pdf_redaction.py`. Existing test files remain in
+`tests/views/report/`; mock targets must use the new Python module paths.
+Selection is stored exclusively in the validated `PatientExaminationReport.editor_payload`.
+Additional report video/frame containers do not constitute a second contract.
+
+Focused verification of these boundaries follows below. Install missing
+development tools first with `devenv tasks run agent:sync`. These commands use
+the prepared environment directly. Shell entry does not synchronize dependencies;
+only an explicitly requested sync task may do so.
+
+```bash
+.devenv/state/venv/bin/pyright
+.devenv/state/venv/bin/pytest \
+  tests/views/report/test_patient_examination_report_ninja_api.py \
+  tests/views/report/test_reporting_shell_finalization_aaa.py \
+  tests/views/report/test_pdf_redaction.py \
+  tests/utils/test_media_urlpatterns_contract.py \
+  tests/app/test_clean_layer_cohorts.py \
+  tests/scripts/test_check_lx_dtypes_model_inventory.py -q
+```
+
+Model and query contracts use the existing
+`tests/app/test_clean_layer_cohorts.py` and
+`tests/scripts/test_check_lx_dtypes_model_inventory.py`; the removed
+`tests/app/test_model_import_boundaries.py` is not an executable test call.
 
 `devenv tasks run quality:code-regression` runs Pyright, the dead-code guard,
 the boundary guard, and the fast Pytest marker lane in the synchronized project

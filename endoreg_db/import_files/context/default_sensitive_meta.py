@@ -90,7 +90,7 @@ def default_sensitive_meta(
         )
         return meta
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to create default SensitiveMeta for report %s: %s",
             _instance_log_identifier(typed_instance),
             e,

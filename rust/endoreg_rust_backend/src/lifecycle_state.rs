@@ -1,80 +1,76 @@
+use crate::state_token::{state_tokens, Vocabulary};
 use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ServiceState {
-    Stopped,
-    Starting,
-    Running,
-    Degraded,
-    Stopping,
-    Failed,
-    Lost,
-}
-
-impl ServiceState {
-    fn parse(value: &str) -> PyResult<Self> {
-        match value {
-            "stopped" => Ok(Self::Stopped),
-            "starting" => Ok(Self::Starting),
-            "running" => Ok(Self::Running),
-            "degraded" => Ok(Self::Degraded),
-            "stopping" => Ok(Self::Stopping),
-            "failed" => Ok(Self::Failed),
-            "lost" => Ok(Self::Lost),
-            _ => Err(PyValueError::new_err(format!(
-                "unsupported service lifecycle state: {value}"
-            ))),
-        }
-    }
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Stopped => "stopped",
-            Self::Starting => "starting",
-            Self::Running => "running",
-            Self::Degraded => "degraded",
-            Self::Stopping => "stopping",
-            Self::Failed => "failed",
-            Self::Lost => "lost",
-        }
+state_tokens! {
+    enum ServiceState {
+        Stopped => "stopped",
+        Starting => "starting",
+        Running => "running",
+        Degraded => "degraded",
+        Stopping => "stopping",
+        Failed => "failed",
+        Lost => "lost",
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ServiceEvent {
-    StartRequested,
-    StartSucceeded,
-    StartFailed,
-    HealthDegraded,
-    HealthRestored,
-    StopRequested,
-    StopSucceeded,
-    StopFailed,
-    RuntimeFailed,
-    OwnershipLost,
-    ReconcileStopped,
+state_tokens! {
+    enum ServiceEvent {
+        StartRequested => "start_requested",
+        StartSucceeded => "start_succeeded",
+        StartFailed => "start_failed",
+        HealthDegraded => "health_degraded",
+        HealthRestored => "health_restored",
+        StopRequested => "stop_requested",
+        StopSucceeded => "stop_succeeded",
+        StopFailed => "stop_failed",
+        RuntimeFailed => "runtime_failed",
+        OwnershipLost => "ownership_lost",
+        ReconcileStopped => "reconcile_stopped",
+    }
 }
 
-impl ServiceEvent {
-    fn parse(value: &str) -> PyResult<Self> {
-        match value {
-            "start_requested" => Ok(Self::StartRequested),
-            "start_succeeded" => Ok(Self::StartSucceeded),
-            "start_failed" => Ok(Self::StartFailed),
-            "health_degraded" => Ok(Self::HealthDegraded),
-            "health_restored" => Ok(Self::HealthRestored),
-            "stop_requested" => Ok(Self::StopRequested),
-            "stop_succeeded" => Ok(Self::StopSucceeded),
-            "stop_failed" => Ok(Self::StopFailed),
-            "runtime_failed" => Ok(Self::RuntimeFailed),
-            "ownership_lost" => Ok(Self::OwnershipLost),
-            "reconcile_stopped" => Ok(Self::ReconcileStopped),
-            _ => Err(PyValueError::new_err(format!(
-                "unsupported service lifecycle event: {value}"
-            ))),
-        }
+state_tokens! {
+    enum OperationState {
+        Queued => "queued",
+        Claimed => "claimed",
+        Running => "running",
+        RetryWait => "retry_wait",
+        Succeeded => "succeeded",
+        Failed => "failed",
+        Cancelled => "cancelled",
+        Lost => "lost",
     }
+}
+
+state_tokens! {
+    enum OperationEvent {
+        Claim => "claim",
+        Start => "start",
+        Succeed => "succeed",
+        Fail => "fail",
+        RetryScheduled => "retry_scheduled",
+        RetryReady => "retry_ready",
+        RetryRequested => "retry_requested",
+        Cancel => "cancel",
+        OwnershipLost => "ownership_lost",
+        IntegrityLost => "integrity_lost",
+        ReconcileRetry => "reconcile_retry",
+        ReconcileFail => "reconcile_fail",
+    }
+}
+
+pub(crate) fn vocabularies() -> Vec<Vocabulary> {
+    vec![
+        ("service_lifecycle_state", ServiceState::tokens()),
+        ("service_lifecycle_event", ServiceEvent::tokens()),
+        ("operation_lifecycle_state", OperationState::tokens()),
+        ("operation_lifecycle_event", OperationEvent::tokens()),
+    ]
+}
+
+fn parse_token<T>(value: &str, parsed: Option<T>, kind: &str) -> PyResult<T> {
+    parsed.ok_or_else(|| PyValueError::new_err(format!("unsupported {kind}: {value}")))
 }
 
 fn reduce_service_state(current: ServiceState, event: ServiceEvent) -> Option<ServiceState> {
@@ -111,87 +107,6 @@ fn reduce_service_state(current: ServiceState, event: ServiceEvent) -> Option<Se
         (State::Lost, Event::ReconcileStopped) => Some(State::Stopped),
         (State::Stopped, Event::ReconcileStopped) => Some(State::Stopped),
         _ => None,
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OperationState {
-    Queued,
-    Claimed,
-    Running,
-    RetryWait,
-    Succeeded,
-    Failed,
-    Cancelled,
-    Lost,
-}
-
-impl OperationState {
-    fn parse(value: &str) -> PyResult<Self> {
-        match value {
-            "queued" => Ok(Self::Queued),
-            "claimed" => Ok(Self::Claimed),
-            "running" => Ok(Self::Running),
-            "retry_wait" => Ok(Self::RetryWait),
-            "succeeded" => Ok(Self::Succeeded),
-            "failed" => Ok(Self::Failed),
-            "cancelled" => Ok(Self::Cancelled),
-            "lost" => Ok(Self::Lost),
-            _ => Err(PyValueError::new_err(format!(
-                "unsupported operation lifecycle state: {value}"
-            ))),
-        }
-    }
-
-    const fn as_str(self) -> &'static str {
-        match self {
-            Self::Queued => "queued",
-            Self::Claimed => "claimed",
-            Self::Running => "running",
-            Self::RetryWait => "retry_wait",
-            Self::Succeeded => "succeeded",
-            Self::Failed => "failed",
-            Self::Cancelled => "cancelled",
-            Self::Lost => "lost",
-        }
-    }
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum OperationEvent {
-    Claim,
-    Start,
-    Succeed,
-    Fail,
-    RetryScheduled,
-    RetryReady,
-    RetryRequested,
-    Cancel,
-    OwnershipLost,
-    IntegrityLost,
-    ReconcileRetry,
-    ReconcileFail,
-}
-
-impl OperationEvent {
-    fn parse(value: &str) -> PyResult<Self> {
-        match value {
-            "claim" => Ok(Self::Claim),
-            "start" => Ok(Self::Start),
-            "succeed" => Ok(Self::Succeed),
-            "fail" => Ok(Self::Fail),
-            "retry_scheduled" => Ok(Self::RetryScheduled),
-            "retry_ready" => Ok(Self::RetryReady),
-            "retry_requested" => Ok(Self::RetryRequested),
-            "cancel" => Ok(Self::Cancel),
-            "ownership_lost" => Ok(Self::OwnershipLost),
-            "integrity_lost" => Ok(Self::IntegrityLost),
-            "reconcile_retry" => Ok(Self::ReconcileRetry),
-            "reconcile_fail" => Ok(Self::ReconcileFail),
-            _ => Err(PyValueError::new_err(format!(
-                "unsupported operation lifecycle event: {value}"
-            ))),
-        }
     }
 }
 
@@ -245,8 +160,12 @@ pub(crate) fn transition_service_lifecycle(
     current_state: &str,
     event: &str,
 ) -> PyResult<&'static str> {
-    let current = ServiceState::parse(current_state)?;
-    let parsed_event = ServiceEvent::parse(event)?;
+    let current = parse_token(
+        current_state,
+        ServiceState::parse(current_state),
+        "service lifecycle state",
+    )?;
+    let parsed_event = parse_token(event, ServiceEvent::parse(event), "service lifecycle event")?;
     reduce_service_state(current, parsed_event)
         .map(ServiceState::as_str)
         .ok_or_else(|| {
@@ -261,8 +180,16 @@ pub(crate) fn transition_operation_lifecycle(
     current_state: &str,
     event: &str,
 ) -> PyResult<&'static str> {
-    let current = OperationState::parse(current_state)?;
-    let parsed_event = OperationEvent::parse(event)?;
+    let current = parse_token(
+        current_state,
+        OperationState::parse(current_state),
+        "operation lifecycle state",
+    )?;
+    let parsed_event = parse_token(
+        event,
+        OperationEvent::parse(event),
+        "operation lifecycle event",
+    )?;
     reduce_operation_state(current, parsed_event)
         .map(OperationState::as_str)
         .ok_or_else(|| {

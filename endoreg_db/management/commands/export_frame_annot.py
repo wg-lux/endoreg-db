@@ -15,9 +15,9 @@ from lx_dtypes.models.contracts.video_frame_export import (
 from pydantic import ValidationError
 
 from endoreg_db.export.frames.export_frames_with_labels import (
-    annotation_exporter_client,
+    AnnotationExporterClient,
     export_config,
-    export_job_failed_error,
+    ExportJobFailedError,
 )
 
 # Usage Example:
@@ -263,10 +263,10 @@ class Command(BaseCommand):
         **options: Unpack[ExportFrameAnnotOptions],
     ) -> None:
         config = self._build_config(options)
-        client = annotation_exporter_client()
+        client = AnnotationExporterClient()
         try:
             result = client.run_export(config)
-        except export_job_failed_error as exc:
+        except ExportJobFailedError as exc:
             raise CommandError(str(exc)) from exc
 
         self.stdout.write(

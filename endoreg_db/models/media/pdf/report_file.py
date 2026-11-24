@@ -164,20 +164,6 @@ class AnonymExaminationReport(AbstractExaminationReport):
 
         return examiner, created
 
-    def set_examination_date_and_time(self, report_meta: DocumentMeta = None) -> None:
-        # TODO
-        if not report_meta:
-            report_meta = self.meta
-        # examination_date_str = report_meta["examination_date"]
-        # examination_time_str = report_meta["examination_time"]
-
-        # if examination_date_str:
-        #     # TODO: get django DateField compatible date from string (e.g. "2021-01-01")
-        #     self.date = date.fromisoformat(examination_date_str)
-        # if examination_time_str:
-        #     # TODO: get django TimeField compatible time from string (e.g. "12:00")
-        #     self.time = time.fromisoformat(examination_time_str)
-
 
 class AnonymHistologyReport(AbstractExaminationReport):
     """

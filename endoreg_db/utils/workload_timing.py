@@ -52,7 +52,6 @@ class WorkloadTaskFamily(StrEnum):
     VIDEO_REIMPORT = "video_reimport"
     VIDEO_FPS_NORMALIZATION = "video_fps_normalization"
     VIDEO_ANONYMIZATION_CORRECTION = "video_anonymization_correction"
-    FRAME_EXTRACTION = "frame_extraction"
     VIDEO_POST_VALIDATION_REBUILD = "video_post_validation_rebuild"
     VIDEO_HLS_MATERIALIZATION = "video_hls_materialization"
     SEGMENT_ANNOTATION_EXPANSION = "segment_annotation_expansion"
@@ -64,13 +63,13 @@ class WorkloadTaskFamily(StrEnum):
     UPLOAD_JOB_RETRY = "upload_job_retry"
     MODEL_TRAINING_RETRY = "model_training_retry"
     AUDIT_LEDGER_INTEGRITY = "audit_ledger_integrity"
+    FRAME_ANNOTATION_EXPORT = "frame_annotation_export"
     UNKNOWN = "unknown"
 
 
 class WorkloadQueue(StrEnum):
     DEFAULT = "default"
     PIPELINE = "pipeline"
-    FRAME_EXTRACTION = "frame_extraction"
     FFMPEG_MEDIA = "ffmpeg_media"
     INFERENCE = "inference"
     MODEL_TRAINING = "model_training"
@@ -94,7 +93,6 @@ _TASK_FAMILY_BY_NAME: dict[str, WorkloadTaskFamily] = {
     "endoreg_db.video_anonymization_correction": (
         WorkloadTaskFamily.VIDEO_ANONYMIZATION_CORRECTION
     ),
-    "endoreg_db.frame_extraction_request": WorkloadTaskFamily.FRAME_EXTRACTION,
     "endoreg_db.video_post_validation_rebuild": (
         WorkloadTaskFamily.VIDEO_POST_VALIDATION_REBUILD
     ),
@@ -116,6 +114,7 @@ _TASK_FAMILY_BY_NAME: dict[str, WorkloadTaskFamily] = {
     "endoreg_db.refresh_audit_ledger_integrity_status": (
         WorkloadTaskFamily.AUDIT_LEDGER_INTEGRITY
     ),
+    "endoreg_db.frame_annotation_export": WorkloadTaskFamily.FRAME_ANNOTATION_EXPORT,
 }
 
 

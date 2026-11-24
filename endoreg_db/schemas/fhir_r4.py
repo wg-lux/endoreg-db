@@ -4,6 +4,8 @@ from datetime import date
 import re
 from typing import Annotated, Literal, Self
 
+from lx_dtypes.models.contracts import fhir_clinical as shared
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -23,10 +25,8 @@ class FhirIdentifier(FhirR4Model):
     value: str = Field(min_length=1)
 
 
-class FhirCoding(FhirR4Model):
-    system: str = Field(min_length=1)
-    code: str = Field(min_length=1)
-    display: str | None = None
+class FhirCoding(shared.FhirCoding):
+    model_config = FhirR4Model.model_config
 
 
 class FhirMeta(FhirR4Model):
@@ -45,9 +45,8 @@ class FhirCodeableConcept(FhirR4Model):
         return self
 
 
-class FhirReference(FhirR4Model):
-    reference: str = Field(min_length=1)
-    display: str | None = None
+class FhirReference(shared.FhirReference):
+    model_config = FhirR4Model.model_config
 
 
 class FhirHumanName(FhirR4Model):

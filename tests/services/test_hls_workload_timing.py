@@ -7,8 +7,9 @@ from unittest.mock import Mock
 import pytest
 
 from endoreg_db.exceptions import MediaOperationDeferred
-from endoreg_db.services import hls_media
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup
+from endoreg_db.services.video_storage.workflow import (
     VideoStorageNormalizationError,
 )
 from endoreg_db.utils.workload_timing import (
@@ -19,6 +20,8 @@ from endoreg_db.utils.workload_timing import (
     WorkloadRetryBucket,
     WorkloadTaskFamily,
 )
+
+pytestmark = pytest.mark.no_db
 
 
 def _result(status: str) -> hls_media.HlsMaterializationResult:
@@ -59,10 +62,16 @@ def test_materialize_hls_emits_one_bounded_total_outcome(
         return _result(status)
 
     monkeypatch.setattr(hls_media, "_materialize_video_hls_impl", result_with_status)
+    cleanup = Mock(return_value=())
+    monkeypatch.setattr(generation_cleanup, "cleanup_validated_raw_video", cleanup)
 
     result = hls_media.materialize_video_hls(17)
 
     assert result.status == status
+    if status in {"materialized", "already_ready"}:
+        cleanup.assert_called_once_with(17, apply=True)
+    else:
+        cleanup.assert_not_called()
     timing.assert_called_once_with(
         hls_media.logger,
         started_at=10.0,
@@ -97,6 +106,8 @@ def test_materialize_hls_emits_one_bounded_total_outcome(
             WorkloadOutcome.VALIDATION_FAILED,
         ),
         (lambda: RuntimeError("encoder failed"), WorkloadOutcome.FAILED),
+        (lambda: ValueError("invalid provenance"), WorkloadOutcome.VALIDATION_FAILED),
+        (lambda: KeyboardInterrupt("cancelled"), WorkloadOutcome.FAILED),
     ],
 )
 def test_materialize_hls_emits_total_outcome_when_work_raises(
@@ -132,6 +143,9 @@ def test_materialize_hls_emits_total_outcome_when_work_raises(
             WorkloadOutcome.VALIDATION_FAILED,
         ),
         (RuntimeError("preflight failed"), WorkloadOutcome.FAILED),
+        (MediaOperationDeferred("busy"), WorkloadOutcome.DEFERRED),
+        (ValueError("invalid provenance"), WorkloadOutcome.VALIDATION_FAILED),
+        (KeyboardInterrupt("cancelled"), WorkloadOutcome.FAILED),
     ],
 )
 def test_hls_phase_timer_preserves_outcome_and_uses_fixed_dimensions(

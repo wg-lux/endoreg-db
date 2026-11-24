@@ -20,10 +20,9 @@ weights_search_patterns:
   - "*_colonoscopy_*.safetensors"
 
 # Search directories for local weights.
-# Prefer runtime-managed storage first; repo-local paths remain fallbacks for
-# development and tests.
+# Runtime-managed storage from get_runtime_paths().weights is searched first.
+# These additional paths support development and tests.
 weights_search_dirs:
-  - "${STORAGE_DIR}/model_weights" # Environment variable substitution
   - "tests/assets"
   - "assets"
   - "model_weights"

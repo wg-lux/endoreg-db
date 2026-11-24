@@ -10,6 +10,43 @@ The recommended export unit is:
 - optional copied frame images under the export directory
 - optional copied anonymized processed videos for local audit only
 
+## Direct browser downloads
+
+On the lx-annotate **Export → Videos und Annotationen** page, select a video and
+use **Direkt herunterladen**. The existing server-side training export remains
+available below it. This workflow is tracked by
+[`browser_video_annotation_downloads`](../feature-tracking/VideoStorageNormalization.yml).
+
+- **Anonymisiertes Video herunterladen** downloads the accepted canonical
+  processed MP4, with authenticated decryption, integrity verification and
+  byte-range support. The content hash is the entity tag; an `If-Range` request
+  for an older generation restarts the full download. It never selects raw media. Active media-operation leases
+  defer conflicting generation changes and are renewed during long downloads.
+- **Annotationen als CSV herunterladen** downloads existing frame classification
+  annotations, including persisted frame numbers, integer presentation timestamps
+  (PTS), rational time base, label/provenance fields and processed content identity.
+  The existing export-flags switch controls segment selection. It does not create
+  annotations or include image files; use the existing annotation-generation and
+  frame-image export actions when needed.
+- **Zeitstempel als CSV herunterladen** offers **Anonymisiertes Video** or
+  **Original vor dem Import**. Both are separate complete canonical sequences,
+  bound to the stored processed or original-source content hash. `frame_index`
+  starts at zero within that sequence; it is not a database frame identifier.
+  Original and processed sequences may differ after resampling and are never
+  joined by index. Missing or conflicting historical evidence blocks the export;
+  timestamps are never reconstructed from nominal frames per second.
+
+The read-only routes are `GET /api/media/videos/<id>/download/`,
+`GET /api/media/videos/<id>/annotations.csv?use_export_flags=false`, and
+`GET /api/media/videos/<id>/timestamps.csv?timeline=original` (or `processed`).
+Deployment uses the existing configured API prefix. Requests require a logged-in
+user, the video read role and center access. Existing local-study-server readiness
+gates remain in force. Files are returned as attachments without creating a new
+plaintext export directory. Invalid options return 400, missing videos 404,
+unavailable/unvalidated/inconsistent media or timelines 409, and invalid video
+byte ranges 416. Text cells beginning with spreadsheet formula characters are
+escaped with an apostrophe.
+
 ## Safety Boundary
 
 Export only anonymized processed media. Raw media export is prohibited.
@@ -19,9 +56,24 @@ the exporter must never fall back to raw media. Unvalidated, unavailable, failed
 or lost media fail closed. For most model-training runs, prefer
 `export_frames=true` and `export_videos=false`.
 
-API exports require authentication. Annotation data and anonymized processed
-exports may span centers because annotation datasets can combine material from
-multiple sites. Raw-video viewing remains independently center-scoped. In local
+Browser downloads and file exports share the integrity policy in
+`endoreg_db.services.media.export_policy`: the processed file must match
+`VideoFile.processed_video_hash`, and an existing export approval must refer to
+that same content. Local study-server approval requirements remain additional
+gates. Annotation manifests use the canonical processed content hash, not an
+independent copy of the approval hash. Both CSV outputs use the same text-cell
+encoding to escape spreadsheet formula prefixes.
+
+Each file-export invocation fixes its annotation selection once for the table,
+row count and media assets. It locks the selected video records in identifier
+order until the export finishes and rejects a generation change observed while
+acquiring those locks. This also fences generation replacement after a stream
+lease would expire. New playback lease acquisition and writes to those selected
+videos can wait for a long export; unrelated videos remain independent.
+
+API exports require authentication and access to the requested video's center.
+Annotation datasets can combine material from multiple sites within their
+authorized export scope. In local
 study-server mode, callers must still select exactly one center unless a staff
 user explicitly requests all centers; that is an explicit export selection
 rule, not an annotation ownership boundary.
@@ -69,7 +121,7 @@ For an endoreg-db caller, prefer the in-process exporter instead of shelling out
 from pathlib import Path
 
 from endoreg_db.export.frames.export_frames_with_labels import (
-    annotation_exporter_client,
+    AnnotationExporterClient,
     export_config,
 )
 
@@ -88,7 +140,7 @@ config = export_config(
     only_validated=True,
 )
 
-result = annotation_exporter_client().run_export(config)
+result = AnnotationExporterClient().run_export(config)
 
 annotation_table = result.output_path
 frame_dir = result.frame_output_dir
@@ -160,6 +212,19 @@ devenv shell -- python manage.py export_frame_annot \
   --config /data/endoreg-training/gastronet_run_001/export.yaml
 ```
 
+The reusable example script runs the same YAML through the in-process exporter.
+Copy `scripts/examples/frame_annotation_export.yml`, adjust the selection, check
+it with `--validate-only`, then reuse it for several runs via `--output-dir`:
+
+```bash
+devenv shell -- python scripts/export_frame_annotations.py \
+  --config scripts/examples/frame_annotation_export.yml --validate-only
+
+devenv shell -- python scripts/export_frame_annotations.py \
+  --config scripts/examples/frame_annotation_export.yml \
+  --output-dir /data/endoreg-training/gastronet_run_002
+```
+
 `load_base_data: true` calls `load_base_db_data()` before export. Use it when the
 target environment may not already have the base labels and information sources.
 
@@ -179,7 +244,7 @@ With `output_dir: /data/endoreg-training/gastronet_run_001` and
 
 The annotation table columns are:
 
-- `annotation_id`, `video_id`, `video_hash`
+- `annotation_id`, `video_id`, `raw_video_hash`
 - `frame_id`, `frame_number`, `frame_relative_path`, `frame_timestamp`
 - `presentation_timestamp`, `presentation_time_seconds`
 - `stream_time_base_num`, `stream_time_base_den`, `timeline_version`
@@ -316,6 +381,50 @@ and `limit` are optional filters because selected segments already carry their
 label and provenance identity. The safe defaults are `export_frames=true`,
 `export_videos=false`, and `use_export_flags=true`.
 
+## Dataset Export Jobs (Frontend)
+
+The lx-annotate export page (`/export?mode=dataset`, tab "Trainingsdatensatz")
+starts the same YAML-configured export as `scripts/export_frame_annotations.py`
+across many videos. Scope and readiness are tracked in
+`feature-tracking/AnnotationDatasetExportJobs.yml`.
+
+The request body is the YAML export contract
+(`VideoFrameAnnotationExportConfigPayload`); the form can import a YAML file
+and download its current state as YAML. Unknown fields fail with `400`.
+
+| Route | Purpose |
+|---|---|
+| `POST /endoreg-api/media/videos/export-annotated/jobs/validate/` | Check config, center scope and run directory without side effects |
+| `POST /endoreg-api/media/videos/export-annotated/jobs/start/` | Queue a Celery job; answers `202` with the job |
+| `GET /endoreg-api/media/videos/export-annotated/jobs/` | Latest 20 jobs within the caller's center scope |
+| `GET /endoreg-api/media/videos/export-annotated/jobs/<job_id>/` | One job's status, counts and output locations |
+
+Rules enforced by the backend:
+
+- Exactly one scope: `center_key` or `all_centers`. Center staff may only use
+  centers on their portal profile; `all_centers` requires a staff or superuser
+  account. Job lists only show jobs in the caller's scope.
+- `output_dir` is a run name: one path segment of letters, digits, `.`, `_`,
+  `-`, starting with a letter or digit. It is created directly beneath the
+  protected `frame_annotation_exports` storage directory; `output_path` is one
+  file name inside it. Run names that resolve elsewhere through symlinks fail.
+- `load_base_data` cannot be started from the browser; use the script.
+- A second active job for the same run name answers `409`.
+- Results report locations relative to `frame_annotation_exports`.
+- `export_manifest.json` is reserved; annotation tables cannot use that name
+  or a symlink alias of the manifest. Strict exports fail if a requested frame
+  or video is missing, unsafe to access, or cannot be copied. A failed run's
+  partial files are not a complete dataset.
+
+Job states are `queued`, `running`, `completed`, `failed` and `lost`. The worker
+holds a process-owned lock on the run directory from claim to completion and
+revalidates scope and paths before exporting. A duplicate delivery while that
+lock is held changes nothing; a running job whose lock is free, whose heartbeat
+is older than 10 minutes, or that stayed queued for 24 hours becomes `lost`. A
+new job whose run directory is still locked by a lost but running worker
+fails instead of writing in parallel. Start a new run name after `failed` or
+`lost`; partial output of the old run is not reused.
+
 ## Segment API Inputs
 
 Create or update a segment. ICA is generated automatically:
@@ -389,10 +498,15 @@ For in-process endoreg-db training, attach persisted annotations to an
 - `AIDataSet.image_annotations` contains the `ImageClassificationAnnotation`
   rows selected for training.
 
-`endoreg_db.utils.ai.data_loader_for_model_training.build_dataset_for_training`
+`endoreg_db.utils.ai.multilabel_dataset_builder.build_dataset_for_training`
 builds aligned `image_paths`, `label_vectors`, `label_masks`, `labels`,
 `frame_ids`, and `old_examination_ids`. The GastroNet trainer consumes that
 structure through `EndoMultiLabelDataset`.
+
+The duplicate `data_loader_for_model_training` module has been removed. Migrate
+imports to `endoreg_db.utils.ai.multilabel_dataset_builder`; all exported names
+are available there unchanged. The existing `data_loader_for_model_input`
+compatibility import remains available.
 
 ## Notes and Caveats
 

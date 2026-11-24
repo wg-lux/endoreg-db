@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, ClassVar, Any
+from typing import TYPE_CHECKING, ClassVar, Any, Unpack
 
 from datetime import datetime as dt
 
 from django.db import models
+from django.core.exceptions import ValidationError
+from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.ledger.medical.Write import PatientMedicationScheduleCreate
+from pydantic import ValidationError as PydanticValidationError
 
 
 if TYPE_CHECKING:
@@ -33,6 +38,25 @@ class PatientMedicationSchedule(models.Model):
     ] = models.ManyToManyField(
         "PatientMedication", related_name="patient_medication_schedules", blank=True
     )
+
+    # None identifies a legacy flat plan; [] is an explicitly empty BMP plan.
+    blocks: models.JSONField[list[JsonObject] | None, list[JsonObject] | None] = (
+        models.JSONField(null=True, blank=True)
+    )
+
+    def clean(self) -> None:
+        super().clean()
+        if self.blocks is not None:
+            try:
+                PatientMedicationScheduleCreate.model_validate({"blocks": self.blocks})
+            except PydanticValidationError as exc:
+                raise ValidationError(
+                    {"blocks": "Invalid medication plan blocks."}
+                ) from exc
+
+    def save(self, *args: object, **kwargs: Unpack[DjangoModelSaveKwargs]) -> None:
+        self.clean()
+        super().save(*args, **kwargs)
 
     created_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now_add=True)
     updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)

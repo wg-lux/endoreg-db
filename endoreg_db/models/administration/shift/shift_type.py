@@ -34,6 +34,10 @@ class ShiftType(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 
@@ -59,7 +63,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_REGULAR)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_REGULAR}' does not exist. Base data might be missing."
             )
             return None
@@ -75,7 +79,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_ON_CALL)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_ON_CALL}' does not exist. Base data might be missing."
             )
             return None
@@ -91,7 +95,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_WARD)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_WARD}' does not exist. Base data might be missing."
             )
             return None
@@ -107,7 +111,7 @@ class ShiftType(models.Model):
         try:
             return cls.objects.get(name=NAME_OFF_HOURS)
         except cls.DoesNotExist:
-            logger.error(
+            logger.exception(
                 f"ShiftType with name '{NAME_OFF_HOURS}' does not exist. Base data might be missing."
             )
             return None

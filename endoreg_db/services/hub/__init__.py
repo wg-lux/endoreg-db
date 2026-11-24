@@ -66,11 +66,11 @@ _EXPORTS = {
     "reap_upload_job_sources": (".cleanup", "reap_upload_job_sources"),
     "run_upload_job_source_reaper": (".cleanup", "run_upload_job_source_reaper"),
     "assert_environment_readiness": (
-        "..environment_readiness",
+        "..runtime.environment_readiness",
         "assert_environment_readiness",
     ),
     "check_environment_readiness": (
-        "..environment_readiness",
+        "..runtime.environment_readiness",
         "check_environment_readiness",
     ),
     "_default_processor_name": (".ingest", "_default_processor_name"),
@@ -89,7 +89,7 @@ _EXPORTS = {
     "start_upload_job_processing": (".ingest", "start_upload_job_processing"),
     "hub_mode_enabled": (".ingest", "hub_mode_enabled"),
     "resolve_allowed_center_id": (".ingest", "resolve_allowed_center_id"),
-    "resolve_allowed_center_ids": ("..center_access", "resolve_allowed_center_ids"),
+    "resolve_allowed_center_ids": ("..centers.access", "resolve_allowed_center_ids"),
     "resolve_declared_upload_center": (
         ".ingest",
         "resolve_declared_upload_center",
@@ -120,7 +120,7 @@ _EXPORTS = {
 }
 
 if TYPE_CHECKING:
-    from endoreg_db.services.environment_readiness import (
+    from endoreg_db.services.runtime.environment_readiness import (
         assert_environment_readiness,
         check_environment_readiness,
     )
@@ -147,7 +147,7 @@ if TYPE_CHECKING:
         resolve_upload_center,
         start_upload_job_processing,
     )
-    from ..center_access import resolve_allowed_center_ids
+    from endoreg_db.services.centers.access import resolve_allowed_center_ids
     from .media_integrity import (
         MediaIntegrityError,
         MediaIntegrityExpectation,

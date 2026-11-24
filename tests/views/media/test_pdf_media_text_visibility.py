@@ -1,65 +1,76 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
 import json
+from typing import cast
+
+import pymupdf
 from django.contrib.auth.models import User
-from django.test import TestCase
+from django.test import TransactionTestCase
 from lx_dtypes.models import SensitiveMeta
+from lx_dtypes.models.contracts.report_anonymization import (
+    ReportAnonymizationProvenance,
+    ReportAnonymizationRequest,
+    ReportAnonymizationResult,
+    ReportArtifactValidation,
+    ReportExtractionEvidence,
+    ReportExtractionReceipt,
+)
 
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.processing.report_processing.report_anonymization import (
     ReportAnonymizer,
 )
 from endoreg_db.models import RawPdfFile
-from endoreg_db.services.report_import import ReportImportService
+from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.services.raw_pdf_files.types import PdfDocument
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.file_operations import atomic_write_file
 from tests.helpers.default_objects import DEFAULT_CENTER_NAME
 
-MINIMAL_PDF_BYTES = b"""%PDF-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
-endobj
-4 0 obj
-<< /Length 44 >>
-stream
-BT
-/F1 12 Tf
-100 700 Td
-(Sample PDF) Tj
-ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f
-0000000010 00000 n
-0000000060 00000 n
-0000000110 00000 n
-0000000210 00000 n
-trailer
-<< /Size 5 /Root 1 0 R >>
-startxref
-310
-%%EOF
-"""
+MINIMAL_PDF_BYTES = render_single_page_pdf("Sample PDF")
 
 
-class PdfMediaTextVisibilityTests(TestCase):
-    @classmethod
-    def setUpClass(cls):
-        super().setUpClass()
+class _ReportReader:
+    llm_available = False
+
+    def process_report(
+        self, request: ReportAnonymizationRequest
+    ) -> ReportAnonymizationResult:
+        artifact = request.output_directory / "anonymized.pdf"
+        atomic_write_file(destination=artifact, content=(MINIMAL_PDF_BYTES,))
+        return ReportAnonymizationResult(
+            attempt_id=request.attempt_id,
+            source_sha256=request.source_sha256,
+            original_text="pdf original text",
+            anonymized_text="pdf anonymized text",
+            extracted_metadata=SensitiveMeta(),
+            artifact_path=artifact,
+            artifact_sha256=get_file_hash(artifact),
+            artifact_size_bytes=len(MINIMAL_PDF_BYTES),
+            artifact_validation=ReportArtifactValidation(page_count=1, repaired=False),
+            extraction_evidence=ReportExtractionEvidence(
+                outcome="fallback",
+                backend="spacy_regex",
+                finding_count=0,
+                provider_attempted=False,
+            ),
+            provenance=ReportAnonymizationProvenance(
+                anonymizer_version="test", used_llm=False, deterministic=True
+            ),
+        )
+
+
+class PdfMediaTextVisibilityTests(TransactionTestCase):
+    def setUp(self) -> None:
+        super().setUp()
         from endoreg_db.helpers.data_load_orchestrator import load_base_db_data
 
         load_base_db_data()
-
-    def setUp(self) -> None:
         self.client.force_login(
             User.objects.create_user(
                 username="pdf-media-text-reader",
@@ -79,7 +90,23 @@ class PdfMediaTextVisibilityTests(TestCase):
             )
             try:
                 self.assertEqual(converted_path.suffix, ".pdf")
-                self.assertTrue(converted_path.read_bytes().startswith(b"%PDF-1.4"))
+                document = cast(PdfDocument, pymupdf.open(filename=str(converted_path)))
+                try:
+                    self.assertFalse(document.is_repaired)
+                    self.assertFalse(document.needs_pass)
+                    self.assertGreater(document.page_count, 0)
+                    rendered_text = " ".join(
+                        document[index].get_text()
+                        for index in range(document.page_count)
+                    )
+                    # The rendered report carries no digest of the raw source.
+                    self.assertEqual(
+                        " ".join(rendered_text.split()),
+                        " ".join(txt_content.split()),
+                    )
+                    self.assertNotIn(get_file_hash(txt_path), rendered_text)
+                finally:
+                    document.close()
             finally:
                 converted_path.unlink(missing_ok=True)
         finally:
@@ -90,29 +117,11 @@ class PdfMediaTextVisibilityTests(TestCase):
             pdf_path = Path(tmp.name)
         pdf_path.write_bytes(MINIMAL_PDF_BYTES)
 
-        def _fake_pdf_anonymize(
-            anonymizer_self: ReportAnonymizer,
-            ctx: ImportContext,
-        ) -> ImportContext:
-            assert ctx.current_report is not None
-            ctx.original_text = "pdf original text"
-            ctx.anonymized_text = "pdf anonymized text"
-            ctx.extracted_metadata = SensitiveMeta()
-            ctx.anonymized_path = ctx.file_path.with_name(
-                f"{ctx.file_path.stem}-anonymized.pdf"
-            )
-            ctx.anonymized_path.write_bytes(MINIMAL_PDF_BYTES)
-            ctx.current_report.text = ctx.original_text
-            ctx.current_report.anonymized_text = ctx.anonymized_text
-            ctx.current_report.save(update_fields=["text", "anonymized_text"])
-            ctx.extracted_metadata = SensitiveMeta()
-            return ctx
-
         try:
             with patch.object(
                 ReportAnonymizer,
-                "anonymize_report",
-                new=_fake_pdf_anonymize,
+                "_instantiate_report_reader",
+                return_value=_ReportReader(),
             ):
                 report_obj = ReportImportService().import_and_anonymize(
                     file_path=pdf_path,
@@ -139,11 +148,22 @@ class PdfMediaTextVisibilityTests(TestCase):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
             pdf_path = Path(tmp.name)
         pdf_path.write_bytes(MINIMAL_PDF_BYTES)
+        source_hash = get_file_hash(pdf_path)
+        anonymize_report = ReportAnonymizer.anonymize_report
 
         def _fake_without_output(
             anonymizer_self: ReportAnonymizer,
             ctx: ImportContext,
         ) -> ImportContext:
+            ctx = anonymize_report(anonymizer_self, ctx)
+            assert ctx.current_report is not None
+            assert ctx.current_report.sensitive_meta_id is not None
+            receipt = ReportExtractionReceipt.model_validate(
+                (ctx.current_report.raw_meta or {})["report_extraction_receipt"]
+            )
+            self.assertEqual(receipt.attempt_id, ctx.attempt_id)
+            self.assertEqual(receipt.source_sha256, source_hash)
+            # Lose only the prepared output reference, after valid extraction.
             ctx.anonymized_path = None
             return ctx
 
@@ -151,12 +171,17 @@ class PdfMediaTextVisibilityTests(TestCase):
             with (
                 patch.object(
                     ReportAnonymizer,
+                    "_instantiate_report_reader",
+                    return_value=_ReportReader(),
+                ),
+                patch.object(
+                    ReportAnonymizer,
                     "anonymize_report",
                     new=_fake_without_output,
                 ),
                 self.assertRaisesRegex(
                     RuntimeError,
-                    "without an anonymized PDF output",
+                    "Prepared import lacks its artifact, source or sensitive metadata",
                 ),
             ):
                 ReportImportService().import_and_anonymize(
@@ -164,5 +189,11 @@ class PdfMediaTextVisibilityTests(TestCase):
                     center_name=DEFAULT_CENTER_NAME,
                     retry=False,
                 )
+            report = RawPdfFile.objects.get(pdf_hash=source_hash)
+            self.assertIsNotNone(report.sensitive_meta_id)
+            self.assertIn("report_extraction_receipt", report.raw_meta or {})
+            self.assertFalse(report.processed_file)
+            assert report.state is not None
+            self.assertFalse(report.state.anonymized)
         finally:
             pdf_path.unlink(missing_ok=True)

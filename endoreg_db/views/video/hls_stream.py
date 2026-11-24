@@ -18,16 +18,17 @@ from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.config.env import nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.hls_media import (
+from endoreg_db.services.streaming.hls_media import (
     coerce_hls_artifact_kind,
     dispatch_video_hls_materialization,
     get_ready_hls_artifact,
-    get_ready_hls_artifact_by_key,
     hls_playlist_path,
     hls_segment_path,
+    ready_hls_artifact_kind_for_key,
     unwrap_hls_content_key,
+    verify_ready_hls_source_before_lock,
 )
-from endoreg_db.services.media_operation_gate import create_video_stream_lease
+from endoreg_db.services.media.operation_gate import create_video_stream_lease
 from endoreg_db.services.video_files import VideoArtifactKind
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.nginx_accel import build_nginx_accel_response_for_path
@@ -85,6 +86,28 @@ def _artifact_kind_from_request(request: Request) -> VideoArtifactKind:
         raise Http404(str(exc)) from exc
 
 
+def _assert_hls_scope(request: Request, video: VideoFile, artifact_kind: str) -> None:
+    authorize = (
+        assert_anonymized_center_scope_allowed
+        if artifact_kind == VideoArtifactKind.PROCESSED
+        else assert_center_scope_allowed
+    )
+    authorize(request=request, obj=video)
+
+
+def _verify_key_addressed_source_before_lock(
+    request: Request,
+    video: VideoFile,
+    key_id: UUID,
+) -> None:
+    artifact_kind = ready_hls_artifact_kind_for_key(video=video, key_id=key_id)
+    if artifact_kind is None:
+        return
+    # Authorize before reading the source; the locked lookup authorizes again.
+    _assert_hls_scope(request, video, artifact_kind)
+    verify_ready_hls_source_before_lock(video=video, artifact_kind=artifact_kind)
+
+
 def _file_response(path: Path, *, content_type: str) -> FileResponse:
     return FileResponse(path.open("rb"), content_type=content_type)
 
@@ -115,7 +138,9 @@ def _ready_hls_playlist_path(
     artifact_kind: VideoArtifactKind,
 ) -> Path:
     with transaction.atomic():
-        locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
+        locked_video = (
+            VideoFile.objects.select_for_update().defer("meta").get(pk=video.pk)
+        )
         artifact = get_ready_hls_artifact(
             video=locked_video,
             artifact_kind=artifact_kind,
@@ -140,13 +165,11 @@ class HLSPlaylistView(APIView):
         request: Request,
         pk: int | str | None = None,
     ) -> HttpResponse | StreamingHttpResponse:
-        video = _get_video_or_404(pk)
+        video = _get_video_or_404(pk, defer_metadata=True)
         artifact_kind = _artifact_kind_from_request(request)
-        if artifact_kind == VideoArtifactKind.PROCESSED:
-            assert_anonymized_center_scope_allowed(request=request, obj=video)
-        else:
-            assert_center_scope_allowed(request=request, obj=video)
+        _assert_hls_scope(request, video, artifact_kind)
         self.check_object_permissions(request, video)
+        verify_ready_hls_source_before_lock(video=video, artifact_kind=artifact_kind)
         try:
             path = _ready_hls_playlist_path(
                 video=video,
@@ -167,18 +190,12 @@ class HLSPlaylistView(APIView):
                     status="dispatch_unavailable",
                     unavailable=True,
                 )
-            if dispatch.status in {"queued", "already_queued"}:
+            if dispatch.status in {"queued", "already_queued", "dispatch_failed"}:
                 return _hls_not_ready_response(
                     request=request,
                     artifact_kind=artifact_kind,
                     status=dispatch.status,
-                )
-            if dispatch.status == "dispatch_failed":
-                return _hls_not_ready_response(
-                    request=request,
-                    artifact_kind=artifact_kind,
-                    status=dispatch.status,
-                    unavailable=True,
+                    unavailable=dispatch.status == "dispatch_failed",
                 )
             try:
                 path = _ready_hls_playlist_path(
@@ -222,22 +239,20 @@ class HLSKeyView(APIView):
     ) -> HttpResponse:
         if key_id is None:
             raise Http404("HLS key ID is required")
-        video = _get_video_or_404(pk)
+        video = _get_video_or_404(pk, defer_metadata=True)
         self.check_object_permissions(request, video)
+        _verify_key_addressed_source_before_lock(request, video, key_id)
         try:
             with transaction.atomic():
-                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
-                artifact = get_ready_hls_artifact_by_key(
+                locked_video = (
+                    VideoFile.objects.select_for_update().defer("meta").get(pk=video.pk)
+                )
+                artifact = get_ready_hls_artifact(
                     video=locked_video,
                     key_id=key_id,
                 )
                 key = unwrap_hls_content_key(artifact)
-                if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
-                    assert_anonymized_center_scope_allowed(
-                        request=request, obj=locked_video
-                    )
-                else:
-                    assert_center_scope_allowed(request=request, obj=locked_video)
+                _assert_hls_scope(request, locked_video, artifact.artifact_kind)
                 create_video_stream_lease(
                     locked_video,
                     file_type=f"hls_{artifact.artifact_kind}_key",
@@ -267,24 +282,22 @@ class HLSSegmentView(APIView):
     ) -> HttpResponse:
         if key_id is None:
             raise Http404("HLS key ID is required")
-        video = _get_video_or_404(pk)
+        video = _get_video_or_404(pk, defer_metadata=True)
         self.check_object_permissions(request, video)
         if not nginx_offload_enabled():
             raise Http404("HLS segment offload is not configured")
+        _verify_key_addressed_source_before_lock(request, video, key_id)
         try:
             with transaction.atomic():
-                locked_video = VideoFile.objects.select_for_update().get(pk=video.pk)
-                artifact = get_ready_hls_artifact_by_key(
+                locked_video = (
+                    VideoFile.objects.select_for_update().defer("meta").get(pk=video.pk)
+                )
+                artifact = get_ready_hls_artifact(
                     video=locked_video,
                     key_id=key_id,
                 )
                 path = hls_segment_path(artifact, segment_name)
-                if artifact.artifact_kind == VideoArtifactKind.PROCESSED:
-                    assert_anonymized_center_scope_allowed(
-                        request=request, obj=locked_video
-                    )
-                else:
-                    assert_center_scope_allowed(request=request, obj=locked_video)
+                _assert_hls_scope(request, locked_video, artifact.artifact_kind)
                 create_video_stream_lease(
                     locked_video,
                     file_type=f"hls_{artifact.artifact_kind}_segment",

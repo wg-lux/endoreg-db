@@ -3,6 +3,11 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal, Self
 
+from lx_dtypes.models.contracts.video_provenance import (
+    RecordingTimeRange,
+    VideoFrameTimeline as CanonicalFrameTimeline,
+)
+
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
@@ -133,6 +138,9 @@ class SegmentTimelineReference(BaseModel):
     end_frame: int = Field(gt=0)
     start_timestamp_seconds: float = Field(ge=0)
     end_timestamp_seconds: float = Field(gt=0)
+    origin_timestamp_seconds: float | None = Field(
+        default=None, ge=0, allow_inf_nan=False
+    )
     timeline_version: Literal["pts_v1"] = "pts_v1"
 
     @model_validator(mode="after")
@@ -143,6 +151,23 @@ class SegmentTimelineReference(BaseModel):
             raise ValueError(
                 "end_timestamp_seconds must be greater than start_timestamp_seconds"
             )
+        return self
+
+
+class SegmentTimelineRemapping(BaseModel):
+    """Auditable nearest-boundary mapping without deleting annotation identities."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+    coordinate_kind: Literal["label_video_segment", "video_segmentation_annotation"] = (
+        "label_video_segment"
+    )
+    before: SegmentTimelineReference
+    after: SegmentTimelineReference
+
+    @model_validator(mode="after")
+    def validate_identity(self) -> Self:
+        if self.before.segment_id != self.after.segment_id:
+            raise ValueError("Segment mapping must preserve annotation identity")
         return self
 
 
@@ -180,6 +205,23 @@ class VideoArtifactProbe(BaseModel):
     timeline: VideoTimelineContract
 
 
+class CanonicalTimestampTransformation(BaseModel):
+    """Separate source/output sequences, including coordinate-changing resampling."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    before: CanonicalFrameTimeline
+    after: CanonicalFrameTimeline
+
+
+class CanonicalTimelineHistoryEntry(CanonicalTimestampTransformation):
+    schema_version: Literal["1"] = "1"
+    artifact_kind: Literal["raw", "processed"]
+    segment_mappings: list[SegmentTimelineRemapping] = Field(
+        default_factory=lambda: list[SegmentTimelineRemapping]()
+    )
+
+
 class VideoStorageNormalizationEvidence(BaseModel):
     """Persisted proof that a canonical output passed storage and timeline gates."""
 
@@ -195,6 +237,11 @@ class VideoStorageNormalizationEvidence(BaseModel):
     )
     temporal_equivalent: Literal[True]
     storage_compliant: Literal[True]
+    # Absent only for legacy evidence and noncanonical streaming derivatives.
+    canonical_timestamps: CanonicalTimestampTransformation | None = None
+    segment_mappings: list[SegmentTimelineRemapping] = Field(
+        default_factory=lambda: list[SegmentTimelineRemapping]()
+    )
 
     @field_validator("normalized_at", mode="before")
     @classmethod
@@ -235,6 +282,21 @@ class VideoSourceTimelineEvidence(BaseModel):
     persisted_at: datetime
     source: VideoArtifactProbe
     timestamp_mapping: Literal["ffprobe_pts", "rational_cfr"]
+    artifact_kind: Literal["raw", "processed"] | None = None
+    content_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    first_timestamp_seconds: float = Field(default=0.0, ge=0, allow_inf_nan=False)
+    end_timestamp_seconds: float | None = Field(default=None, gt=0, allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def validate_selected_timeline(self) -> Self:
+        if self.artifact_kind == "processed" and not self.content_hash:
+            raise ValueError("Processed timeline requires its content identity")
+        if (
+            self.end_timestamp_seconds is not None
+            and self.end_timestamp_seconds <= self.first_timestamp_seconds
+        ):
+            raise ValueError("Timeline end must follow its origin")
+        return self
 
     @field_validator("persisted_at", mode="before")
     @classmethod
@@ -264,7 +326,49 @@ class ClinicalFrameQualityEvidence(BaseModel):
         return value
 
 
+class VideoRecordingTimeEvidence(BaseModel):
+    """Wall-clock recording time captured from the raw container before anonymization."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["1"] = "1"
+    recording_hash: str = Field(min_length=1)
+    source: Literal["container_creation_time"]
+    recording: RecordingTimeRange
+
+
+type VideoExportFileNameSource = Literal[
+    "original_file_name", "recording_started_at", "raw_video_hash"
+]
+
+
+class VideoExportFileName(BaseModel):
+    """Identifier-free file name used when exporting the anonymized video."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["1"] = "1"
+    file_name: str = Field(min_length=1)
+    source: VideoExportFileNameSource
+    recording_hash: str = Field(min_length=1)
+
+    @field_validator("file_name")
+    @classmethod
+    def validate_plain_file_name(cls, value: str) -> str:
+        if (
+            value != value.strip()
+            or value.startswith(".")
+            or "/" in value
+            or "\\" in value
+        ):
+            raise ValueError("Export file name must be a plain file name")
+        return value
+
+
 __all__ = [
+    "VideoExportFileName",
+    "VideoExportFileNameSource",
+    "VideoRecordingTimeEvidence",
     "FramePresentationTimestamp",
     "MeasuredAverageFrameRate",
     "NominalFrameRate",

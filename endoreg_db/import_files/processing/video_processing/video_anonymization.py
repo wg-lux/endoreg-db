@@ -1,13 +1,18 @@
+from endoreg_db.utils.hashs import get_bytes_hash
+
 from endoreg_db.utils.storage.files import canonical_media_name
-import hashlib
 import json
 import logging
+from endoreg_db.services.hub.upload_job_files import record_working_file
 import math
 import os
 import uuid
 from contextlib import nullcontext
 from fractions import Fraction
+from itertools import batched
 from pathlib import Path
+
+from django.db import DatabaseError
 from typing import TYPE_CHECKING, NoReturn, Protocol, cast, runtime_checkable
 
 from pydantic import ValidationError
@@ -16,7 +21,9 @@ from endoreg_db.utils.ffmpeg_wrapper import (
     resolve_ffmpeg_executable as _resolve_ffmpeg_executable,
     resolve_ffprobe_executable as _resolve_ffprobe_executable,
 )
-from lx_anonymizer.frame_cleaner import FrameCleaner  # pyright: ignore[reportMissingTypeStubs]
+from endoreg_db.services.video_storage.provenance_cleaner import (
+    create_frame_cleaner as FrameCleaner,
+)
 from lx_dtypes.models import SensitiveMeta
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from lx_dtypes.models.contracts.media_streaming import (
@@ -773,11 +780,6 @@ def _require_staged_anonymization_output(
 
 
 class VideoAnonymizer:
-    def __init__(self):
-        _ensure_ffmpeg_tools_on_path()
-        self._frame_cleaning_available: bool = False
-        self._ensure_frame_cleaning_available()
-
     def anonymize_video(self, ctx: ImportContext) -> ImportContext:
         _ensure_ffmpeg_tools_on_path()
         video, anonymized_output_path, temp_output_path = (
@@ -785,6 +787,7 @@ class VideoAnonymizer:
         )
         # Register ownership before compute so interruption can remove partial output.
         ctx.anonymized_path = temp_output_path
+        record_working_file(temp_output_path)
         frame_cleaner = self._new_frame_cleaner()
         endoscope_roi, endoscope_roi_nested = self._get_processor_roi_info(ctx)
         temp_result_path, extracted_metadata = self._run_frame_cleaner(
@@ -796,6 +799,7 @@ class VideoAnonymizer:
             endoscope_roi_nested=endoscope_roi_nested,
         )
         ctx.anonymized_path = temp_result_path
+        record_working_file(temp_result_path)
         _require_staged_anonymization_output(
             temp_result_path,
             anonymized_output_path=anonymized_output_path,
@@ -808,9 +812,9 @@ class VideoAnonymizer:
             temp_result_path,
         )
 
-        if ctx.execution_guard is not None:
-            ctx.execution_guard()
-        self._persist_anonymizer_metadata(ctx, extracted_metadata)
+        ctx.require_execution_ownership()
+        with ctx.owned_mutation():
+            self._persist_anonymizer_metadata(ctx, extracted_metadata)
         return ctx
 
     def _prepare_anonymization_attempt(
@@ -833,7 +837,7 @@ class VideoAnonymizer:
             video.raw_video_hash, ".mp4"
         )
         temp_output_path = _temp_media_path(
-            anonymized_output_path,
+            get_runtime_paths().transcoding / anonymized_output_path.name,
             marker=f"attempt-{ctx.attempt_id}",
         )
         safe_unlink_file(temp_output_path, missing_ok=True)
@@ -893,10 +897,6 @@ class VideoAnonymizer:
         return result_path, extracted_metadata or {}
 
     def _new_frame_cleaner(self) -> _FrameCleaner:
-        if not self._frame_cleaning_available:
-            self._ensure_frame_cleaning_available()
-        if not self._frame_cleaning_available:
-            raise RuntimeError("Frame cleaning is unavailable.")
         # FrameCleaner owns mutable frame, metadata, OCR, and LLM run state.
         # A fresh instance is mandatory for every attempt.
         return cast(_FrameCleaner, FrameCleaner(quality_profile="exhaustive"))
@@ -961,6 +961,10 @@ class VideoAnonymizer:
             if not observations:
                 return 0
             return self._persist_phi_region_proposals_unchecked(video, observations)
+        except DatabaseError:
+            # A failed database write can invalidate the enclosing owned
+            # metadata transaction. Never turn that rollback into success.
+            raise
         except Exception as exc:
             logger.warning(
                 "Failed to persist lx-anonymizer PHI region proposals for video %s: %s",
@@ -986,17 +990,26 @@ class VideoAnonymizer:
         )[0]
         raw_video_hash = str(getattr(video, "raw_video_hash", "") or "")
         persisted_count = 0
+        frame_numbers = {
+            number
+            for observation in observations
+            if (number := observation.resolved_frame_number) is not None
+        }
+        frame_ids: dict[int, int] = {}
+        # (video, frame_number) is unique; fetch only identity, never derive coordinates.
+        for numbers in batched(frame_numbers, 500):
+            frame_ids.update(
+                Frame.objects.filter(video=video, frame_number__in=numbers)
+                .order_by()
+                .values_list("frame_number", "pk")
+            )
 
         for observation in observations:
             frame_number = observation.resolved_frame_number
             if frame_number is None:
                 continue
-            frame = (
-                Frame.objects.filter(video=video, frame_number=frame_number)
-                .order_by("pk")
-                .first()
-            )
-            if frame is None:
+            frame_id = frame_ids.get(frame_number)
+            if frame_id is None:
                 logger.debug(
                     "Skipping PHI proposals for video=%s frame=%s because no Frame row exists.",
                     raw_video_hash,
@@ -1023,25 +1036,8 @@ class VideoAnonymizer:
                     height=height,
                 )
                 confidence = self._region_confidence(region)
-                annotation, _ = FrameBoxAnnotation.objects.get_or_create(
-                    frame=frame,
-                    information_source=information_source,
-                    annotator=PHI_REGION_ANNOTATOR,
-                    external_annotation_id=external_annotation_id,
-                    defaults={
-                        "label": label,
-                        "value": True,
-                        "float_value": confidence,
-                        "x": x,
-                        "y": y,
-                        "width": width,
-                        "height": height,
-                        "image_width": image_width,
-                        "image_height": image_height,
-                    },
-                )
-                updates: dict[str, Label | bool | float | int | None] = {
-                    "label": label,
+                updates: dict[str, bool | float | int | None] = {
+                    "label_id": label.pk,
                     "value": True,
                     "float_value": confidence,
                     "x": x,
@@ -1051,6 +1047,13 @@ class VideoAnonymizer:
                     "image_width": image_width,
                     "image_height": image_height,
                 }
+                annotation, _ = FrameBoxAnnotation.objects.get_or_create(
+                    frame_id=frame_id,
+                    information_source=information_source,
+                    annotator=PHI_REGION_ANNOTATOR,
+                    external_annotation_id=external_annotation_id,
+                    defaults=updates,
+                )
                 changed = False
                 for field, value in updates.items():
                     if getattr(annotation, field) != value:
@@ -1104,18 +1107,8 @@ class VideoAnonymizer:
         height: float,
     ) -> str:
         box_payload = f"{x:.3f}:{y:.3f}:{width:.3f}:{height:.3f}"
-        box_hash = hashlib.sha256(box_payload.encode("utf-8")).hexdigest()[:16]
+        box_hash = get_bytes_hash(box_payload.encode("utf-8"))[:16]
         return f"{raw_video_hash}:{frame_number}:{source}:{box_hash}"
-
-    def _ensure_frame_cleaning_available(self):
-        """
-        Ensure frame cleaning modules are available by adding lx-anonymizer to path.
-
-        Returns:
-            Tuple of (availability_flag, FrameCleaner_class, ReportReader_class)
-        """
-        assert FrameCleaner is not None
-        self._frame_cleaning_available = True
 
     def _get_processor_roi_info(
         self,

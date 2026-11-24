@@ -1,12 +1,14 @@
+from tests.helpers.pdf import render_single_page_pdf
+
 """
-Unit tests for report import service functionality.
+Integration tests for report import service functionality.
 
 Tests the import_and_anonymize service function that combines RawPdfFile creation
-with text/anonymization pipeline.
+with text/anonymization pipeline. These run the real OCR/anonymizer runtime and
+are skipped at collection by the ``expensive`` marker when
+SKIP_EXPENSIVE_TESTS=true (see tests/conftest.py).
 """
 
-import logging
-import os
 import tempfile
 from datetime import date
 from pathlib import Path
@@ -17,14 +19,11 @@ from django.test import TransactionTestCase
 from django.utils import timezone
 
 from endoreg_db.models import Center, PatientExamination, RawPdfFile
-from endoreg_db.services.report_import import ReportImportService
-from endoreg_db.services.report_materialization import (
+from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.services.reports.materialization import (
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.utils.file_operations import (
-    atomic_write_file,
-    safe_unlink_file,
-)
+from endoreg_db.utils.file_operations import atomic_write_file
 from tests.helpers.default_objects import (
     DEFAULT_PATIENT_BIRTH_DATE,
     DEFAULT_PATIENT_FIRST_NAME,
@@ -34,49 +33,21 @@ from tests.helpers.default_objects import (
     get_default_processor,
 )
 
-# Environment-based test control (mirror video tests)
-SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
 pytestmark = pytest.mark.expensive
 
-logger = logging.getLogger(__name__)
-
-MINIMAL_report_BYTES = b"""%report-1.4
-1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
-endobj
-2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
-endobj
-3 0 obj
-<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R >>
-endobj
-4 0 obj
-<< /Length 44 >>
-stream
-BT
-/F1 12 Tf
-100 700 Td
-(Sample report) Tj
-ET
-endstream
-endobj
-xref
-0 5
-0000000000 65535 f 
-0000000010 00000 n 
-0000000060 00000 n 
-0000000110 00000 n 
-0000000210 00000 n 
-trailer
-<< /Size 5 /Root 1 0 R >>
-startxref
-310
-%%EOF
-"""
+# Realistic text layers without patient identity (no names, dates or numbers).
+_IDENTITY_FREE_FINDING = "Koloskopie bis Zökum, Schleimhaut unauffällig, keine Polypen."
+_IDENTITY_FREE_REPAIR_FINDING = (
+    "Koloskopie bis Zökum, Schleimhaut unauffällig, kein Polyp."
+)
+# lx_anonymizer applies OCR below 50 text-layer characters (literal in
+# report_reader.reader) and LLM metadata extraction from
+# REPORT_LLM_MIN_TEXT_LENGTH on; neither path is under test here.
+_OCR_FALLBACK_BELOW = 50
 
 
 class TestReportImportService(TransactionTestCase):
-    """Test cases for report (report) import service."""
+    """Test cases for report import service."""
 
     def setUp(self):
         """Load fixtures outside a test-wide transaction for heartbeat threads."""
@@ -86,169 +57,120 @@ class TestReportImportService(TransactionTestCase):
         load_base_db_data()
         self.center = get_default_center()
         self.processor = get_default_processor()
+        self.source_dir = Path(self.enterContext(tempfile.TemporaryDirectory()))
+
+    def _write_report(self, text: str) -> Path:
+        """Write a valid single-page PDF; distinct text yields a distinct hash.
+
+        The text layer stays between the OCR and LLM thresholds so the import
+        uses deterministic spaCy/regex metadata extraction and avoids ~12 s of
+        OCR or an LLM call per import.
+        """
+        from lx_anonymizer.config import settings as anonymizer_settings
+
+        length = len(text.strip())
+        assert (
+            _OCR_FALLBACK_BELOW
+            <= length
+            < anonymizer_settings.REPORT_LLM_MIN_TEXT_LENGTH
+        ), f"text layer of {length} characters leaves the spaCy/regex window"
+        pdf_path = self.source_dir / "report.pdf"
+        atomic_write_file(
+            destination=pdf_path,
+            content=(render_single_page_pdf(text),),
+        )
+        return pdf_path
 
     @pytest.mark.integration
     def test_import_and_anonymize_success(self):
         """
-        Test successful import and anonymization of a report file.
-
-        Creates a temporary report file, calls import_and_anonymize,
-        and verifies a RawPdfFile was created and linked to the center/processor.
+        Import an identity-free report, verify the stored artifacts, then
+        promote the RawPdfFile into an AnonymExaminationReport.
         """
-        if SKIP_EXPENSIVE_TESTS:
-            self.skipTest(
-                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
+        pdf_path = self._write_report(_IDENTITY_FREE_FINDING)
 
-        # Create a temporary report file
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            pdf_path = Path(tmp.name)
-        atomic_write_file(destination=pdf_path, content=(MINIMAL_report_BYTES,))
-
-        try:
-            service = ReportImportService()
-
-            pdf_file = service.import_and_anonymize(
-                file_path=pdf_path,
-                center_name=self.center.name,
-                retry=False,
-            )
-
-            # Basic checks
-            self.assertIsNotNone(pdf_file, "RawPdfFile should be created")
-            self.assertIsInstance(pdf_file, RawPdfFile)
-            self.assertIsNotNone(pdf_file)
-            assert pdf_file is not None
-            self.assertIsInstance(pdf_file.center, Center)
-            self.assertEqual(pdf_file.center, self.center)
-
-            # State exists and is attached
-            assert pdf_file is not None
-            if hasattr(pdf_file, "state") and pdf_file.state:
-                self.assertIsNotNone(pdf_file.state)
-
-        finally:
-            safe_unlink_file(pdf_path, missing_ok=True)
-
-    @pytest.mark.integration
-    def test_imported_raw_pdf_can_link_to_anonym_examination_report(self):
-        """
-        Verify that a successfully imported RawPdfFile can be promoted into
-        a report_file artifact (AnonymExaminationReport) later in the workflow.
-        """
-        if SKIP_EXPENSIVE_TESTS:
-            self.skipTest(
-                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            pdf_path = Path(tmp.name)
-        atomic_write_file(
-            destination=pdf_path,
-            content=(MINIMAL_report_BYTES + b"\n%report-link-check\n",),
+        raw_pdf = ReportImportService().import_and_anonymize(
+            file_path=pdf_path,
+            center_name=self.center.name,
+            retry=False,
         )
 
-        try:
-            service = ReportImportService()
-            raw_pdf = service.import_and_anonymize(
-                file_path=pdf_path,
-                center_name=self.center.name,
-                retry=False,
-            )
+        assert isinstance(raw_pdf, RawPdfFile)
+        raw_pdf.refresh_from_db()
+        self.assertIsInstance(raw_pdf.center, Center)
+        self.assertEqual(raw_pdf.center, self.center)
+        self.assertTrue(bool(raw_pdf.file))
+        self.assertTrue(bool(raw_pdf.processed_file))
+        assert raw_pdf.state is not None
+        self.assertTrue(raw_pdf.state.anonymized)
+        sensitive_meta = raw_pdf.sensitive_meta
+        assert sensitive_meta is not None
+        # This document contains no identity; resolve reviewed metadata before
+        # promoting the imported artifact into a patient-linked report.
+        self.assertIsNone(sensitive_meta.pseudo_patient_id)
+        self.assertIsNone(sensitive_meta.pseudo_examination_id)
+        sensitive_meta.update_from_dict(
+            {
+                "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
+                "patient_last_name": DEFAULT_PATIENT_LAST_NAME,
+                "patient_dob": DEFAULT_PATIENT_BIRTH_DATE,
+                "patient_gender": DEFAULT_PATIENT_GENDER_NAME,
+                "examination_date": date(2024, 2, 15),
+            }
+        )
+        sensitive_meta.refresh_from_db()
+        self.assertIsNotNone(sensitive_meta.pseudo_patient_id)
 
-            self.assertIsInstance(raw_pdf, RawPdfFile)
-            assert isinstance(raw_pdf, RawPdfFile)
-            raw_pdf.refresh_from_db()
+        raw_pdf.examination = PatientExamination.objects.create(
+            patient=sensitive_meta.pseudo_patient
+        )
+        raw_pdf.save(update_fields=["examination"])
 
-            self.assertIsNotNone(raw_pdf.pk)
-            self.assertTrue(bool(raw_pdf.file))
-            self.assertTrue(bool(raw_pdf.processed_file))
-            self.assertIsNotNone(raw_pdf.sensitive_meta_id)
-            sensitive_meta = raw_pdf.sensitive_meta
-            assert sensitive_meta is not None
-            # This document contains no identity; resolve reviewed metadata before
-            # promoting the imported artifact into a patient-linked report.
-            self.assertIsNone(sensitive_meta.pseudo_patient_id)
-            self.assertIsNone(sensitive_meta.pseudo_examination_id)
-            sensitive_meta.update_from_dict(
-                {
-                    "patient_first_name": DEFAULT_PATIENT_FIRST_NAME,
-                    "patient_last_name": DEFAULT_PATIENT_LAST_NAME,
-                    "patient_dob": DEFAULT_PATIENT_BIRTH_DATE,
-                    "patient_gender": DEFAULT_PATIENT_GENDER_NAME,
-                    "examination_date": date(2024, 2, 15),
-                }
-            )
-            sensitive_meta.refresh_from_db()
-            self.assertIsNotNone(sensitive_meta.pseudo_patient_id)
+        report_obj, _created = upsert_anonym_examination_report_from_pdf(
+            pdf=raw_pdf,
+            payload={"anonymized_text": "validated report text"},
+            document_type_name="report_draft",
+            validated_at_iso=timezone.now().isoformat(),
+        )
 
-            raw_pdf.examination = PatientExamination.objects.create(
-                patient=sensitive_meta.pseudo_patient
-            )
-            raw_pdf.save(update_fields=["examination"])
-
-            report_obj, _created = upsert_anonym_examination_report_from_pdf(
-                pdf=raw_pdf,
-                payload={"anonymized_text": "validated report text"},
-                document_type_name="report_draft",
-                validated_at_iso=timezone.now().isoformat(),
-            )
-
-            raw_pdf.refresh_from_db()
-            self.assertIsNotNone(raw_pdf.anonym_examination_report_id)
-            self.assertEqual(raw_pdf.anonym_examination_report_id, report_obj.pk)
-            linked_raw_pdf = cast(RawPdfFile, getattr(report_obj, "raw_pdf_file"))
-            self.assertEqual(linked_raw_pdf.pk, raw_pdf.pk)
-            report_type = cast(_AnonymizedReportType, getattr(report_obj, "type"))
-            assert report_type is not None
-            self.assertEqual(report_type.name, "report_draft")
-
-        finally:
-            safe_unlink_file(pdf_path, missing_ok=True)
+        raw_pdf.refresh_from_db()
+        self.assertEqual(raw_pdf.anonym_examination_report_id, report_obj.pk)
+        linked_raw_pdf = cast(RawPdfFile, getattr(report_obj, "raw_pdf_file"))
+        self.assertEqual(linked_raw_pdf.pk, raw_pdf.pk)
+        report_type = cast(_AnonymizedReportType, getattr(report_obj, "type"))
+        assert report_type is not None
+        self.assertEqual(report_type.name, "report_draft")
 
     @pytest.mark.integration
     def test_success_history_with_missing_processed_pdf_is_repaired(self):
-        if SKIP_EXPENSIVE_TESTS:
-            self.skipTest(
-                "Skipping expensive report import test (SKIP_EXPENSIVE_TESTS=true)"
-            )
+        pdf_path = self._write_report(_IDENTITY_FREE_REPAIR_FINDING)
 
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-            pdf_path = Path(tmp.name)
-        atomic_write_file(
-            destination=pdf_path,
-            content=(MINIMAL_report_BYTES + b"\n%report-repair-check\n",),
+        first = ReportImportService().import_and_anonymize(
+            file_path=pdf_path,
+            center_name=self.center.name,
+            retry=False,
+        )
+        assert isinstance(first, RawPdfFile)
+        first.refresh_from_db()
+        assert first.processed_file
+        first.processed_file.delete(save=True)
+
+        repaired = ReportImportService().import_and_anonymize(
+            file_path=pdf_path,
+            center_name=self.center.name,
+            retry=False,
         )
 
-        try:
-            first = ReportImportService().import_and_anonymize(
-                file_path=pdf_path,
-                center_name=self.center.name,
-                retry=False,
-            )
-            assert isinstance(first, RawPdfFile)
-            first.refresh_from_db()
-            assert first.processed_file
-            first.processed_file.delete(save=True)
-
-            repaired = ReportImportService().import_and_anonymize(
-                file_path=pdf_path,
-                center_name=self.center.name,
-                retry=False,
-            )
-
-            assert isinstance(repaired, RawPdfFile)
-            repaired.refresh_from_db()
-            assert repaired.pk == first.pk
-            assert repaired.processed_file
-            processed_name = repaired.processed_file.name
-            assert processed_name is not None
-            assert repaired.processed_file.storage.exists(processed_name)
-            assert repaired.state is not None
-            assert repaired.state.anonymized is True
-            assert len(repaired.state.processed_file_sha256) == 64
-        finally:
-            safe_unlink_file(pdf_path, missing_ok=True)
+        assert isinstance(repaired, RawPdfFile)
+        repaired.refresh_from_db()
+        assert repaired.pk == first.pk
+        assert repaired.processed_file
+        processed_name = repaired.processed_file.name
+        assert processed_name is not None
+        assert repaired.processed_file.storage.exists(processed_name)
+        assert repaired.state is not None
+        assert repaired.state.anonymized is True
+        assert len(repaired.state.processed_file_sha256) == 64
 
 
 class _AnonymizedReportType(Protocol):

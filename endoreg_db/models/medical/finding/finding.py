@@ -20,6 +20,10 @@ class FindingManager(models.Manager["Finding"]):
 
 class Finding(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     finding_types: "models.ManyToManyField[FindingType, FindingType]" = (
         models.ManyToManyField("FindingType", blank=True, related_name="findings")
@@ -72,7 +76,7 @@ class Finding(models.Model):
                 classification_type (str, optional): If provided, only classifications with a matching type name are returned.
 
         Returns:
-                List[FindingClassification]: List of related classification objects, filtered by type if specified.
+                list[FindingClassification]: list of related classification objects, filtered by type if specified.
         """
         if classification_type:
             return self.finding_classifications.filter(

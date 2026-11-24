@@ -22,29 +22,32 @@ transfer gating, and cleanup semantics, see
 ## Key environment variables
 
 General
+
 - DJANGO_SETTINGS_MODULE: choose the settings module. `manage.py` does not supply a default; `pytest.ini` selects `endoreg_db.config.settings.test`, while Celery and packaged production entry points select `endoreg_db.config.settings.prod`.
 - STATIC_URL, STATIC_ROOT, MEDIA_URL: override static/media paths if embedding.
 
 - TIME_ZONE: defaults to Europe/Berlin.
 
 Path roles
+
 - `endoreg_db/data/`: package-owned seed and setup data shipped with the app. Use this for YAML/bootstrap content loaded by commands such as `load_base_db_data`.
 - `LX_RUNTIME_ROOT`: single canonical protected runtime root. This is the top-level contract for deployment-owned data in this project.
 
-
 Development (endoreg_db.config.settings.dev)
-- DEV_DB_ENGINE: default django.db.backends.sqlite3
-- DEV_DB_NAME: default BASE_DIR/dev_db.sqlite3
+
+- DEV_DB_ENGINE: default django.db.backends.postgresql
 - DEV_DB_USER, DEV_DB_PASSWORD, DEV_DB_HOST, DEV_DB_PORT: used for non-SQLite engines.
 
 Testing (endoreg_db.config.settings.test)
-- TEST_DB_ENGINE: default django.db.backends.sqlite3
+
+- TEST_DB_ENGINE: default django.db.backends.postgresql
 - TEST_DB_NAME: overrides the database name. Under pytest, the default SQLite filename is process-specific unless `TEST_DB_REUSE=true`.
 - TEST_DB_FILE: alternative way to set SQLite DB path
 - TEST_DB_REUSE: true|false; defaults to false under pytest and true for ordinary management commands using test settings.
 - TEST_DISABLE_MIGRATIONS: true|false (default false)
 
 Production (endoreg_db.config.settings.prod)
+
 - DJANGO_SECRET_KEY: required (must be a strong random value; never commit real secrets)
 - DJANGO_DEBUG: must be false in production
 - DJANGO_ALLOWED_HOSTS: comma-separated
@@ -190,44 +193,47 @@ Center-scoped callers must only receive resources for their own center. The pack
 ## Typical usage patterns
 
 As an embedded app in a host project:
+
 - Add 'endoreg_db' to INSTALLED_APPS in the host settings.
 - Define `LX_RUNTIME_ROOT` in the host environment.
 - Run migrations in the host project (this app contributes its migrations).
 - Run the complete setup command: `python manage.py setup_endoreg_db`
 
 After migrations, the `setup_endoreg_db` command performs repository setup:
+
 1. Loads base database data (medical vocabularies, centers, etc.)
 2. Creates Django cache table for API functionality (only when using database-backed caching)
 3. Sets up AI models and labels (unless --skip-ai-setup is used)
 4. Creates AI model metadata; weights are attached when a configured local file or Hugging Face fallback is available
-5. Runs its built-in table and metadata checks
-
-The built-in table check currently queries SQLite's `sqlite_master`; it is not
-a database-independent production readiness check and currently fails on
-PostgreSQL. See `setup/AI_MODEL_SETUP.md` for the exact limitation and a manual
+5. Runs its built-in table and metadata checks. See `setup/AI_MODEL_SETUP.md` for the exact limitation and a manual
 verification command.
 
 The command automatically detects your cache configuration:
+
 - For LocMemCache (default): Skips cache table creation
 - For database caching: Creates the required cache tables
 
 Use `--skip-ai-setup` if AI video processing features are not needed, or `--force-recreate` to recreate AI metadata.
 
 This repo standalone (local):
+
 - Development server: DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.dev python manage.py runserver
 - Tests (isolated process-specific test DB by default): pytest
 - Reused test DB (explicit opt-in): TEST_DB_REUSE=true pytest --reuse-db --create-db
-- Clean test DB: rm -f data/tests/db/test_db.sqlite3
+- Clean test DB: rm -f data/tests/db/test_db.postgresql
 
 CI tips
+
 - Use DJANGO_SETTINGS_MODULE=endoreg_db.config.settings.test
 - Set `TEST_DB_REUSE=true` before using `--reuse-db`; otherwise pytest selects a process-specific database file.
 - Override TEST_DB_NAME to a workspace cache path if needed.
 
 ## Direnv/Devenv
+
 - Ensure devenv.nix and direnv don’t mutate repo files. Editor should inherit direnv env if used.
 
 ## Settings selection
+
 - The repository contains only the `endoreg_db.config.settings.prod`, `.dev`,
   `.test`, and `.case_gen` settings modules; it does not ship legacy settings
   wrappers.
@@ -240,25 +246,32 @@ CI tips
 When using EndoReg DB's AI-powered video processing features, ensure model weights are available:
 
 ### Model Weights Location
+
 The system looks for model weights in these locations (in order of preference):
+
 1. `{get_runtime_paths().storage}/model_weights/` (recommended for production)
 2. `tests/assets/` (for development/testing)
 3. `assets/` (fallback location)
 4. `model_weights/` (repository-relative fallback)
 
 ### Required Model Files
+
 Accepted filenames are governed by `weights_search_patterns` in
 `endoreg_db/data/setup_config.yaml`; no single repository-local filename is the
 production contract.
 
 ### Automatic Setup
+
 The `setup_endoreg_db` command automatically:
+
 - Loads AI model definitions and labels
 - Creates model metadata and attaches weights when a configured source is available
 - Sets up the default AI model for video processing
 
 ### Manual Setup (if needed)
+
 If automatic setup fails, run these commands individually:
+
 ```bash
 python manage.py load_ai_model_data
 python manage.py load_ai_model_label_data
@@ -269,12 +282,14 @@ Run `createcachetable` separately only when the configured cache backend is
 database backed.
 
 ### Troubleshooting AI Setup
+
 - **"Model file not found"**: Ensure model weights are in one of the expected locations
 - **"No model metadata found"**: Run the setup commands or use `--force-recreate`
 - **Import errors**: inspect the current traceback and the service modules under `endoreg_db/services/video_files/`; there is no `video_import.py` compatibility step to apply.
 
 ## Production checklist
-- Set DJANGO_SECRET_KEY to a strong random value (never commit). 
+
+- Set DJANGO_SECRET_KEY to a strong random value (never commit).
 - Set DJANGO_ALLOWED_HOSTS to your domains.
 - Enforce HTTPS: SECURE_SSL_REDIRECT=true, cookie secure flags true.
 - Consider HSTS: set SECURE_HSTS_SECONDS (e.g., 31536000) only when ready; include subdomains/preload as appropriate.

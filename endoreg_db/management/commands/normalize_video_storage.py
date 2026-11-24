@@ -13,11 +13,11 @@ from django.core.management.base import CommandError, CommandParser
 from endoreg_db.config.env import video_storage_destructive_migration_enabled
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.services.video_files.io import delete_raw_file_after_validation
-from endoreg_db.services.video_processed_transcode import (
+from endoreg_db.services.video_storage.processed_transcode import (
     ProcessedVideoTranscodeResult,
     transcode_processed_video_for_storage_pressure,
 )
-from endoreg_db.services.video_storage_normalization import (
+from endoreg_db.services.video_storage.workflow import (
     VideoStorageCapacityReport,
     VideoStorageInventoryReport,
     VideoStorageProfile,

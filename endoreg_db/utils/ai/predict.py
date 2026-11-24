@@ -3,9 +3,8 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from pathlib import Path
-from typing import Callable, cast
+from typing import cast
 
-import numpy as np
 import torch
 from icecream import ic
 from torch import nn
@@ -15,23 +14,11 @@ from tqdm import tqdm
 from endoreg_db.utils.file_operations import atomic_write_file
 from lx_dtypes.models.contracts.ai_prediction import (
     AiPredictionConfigPayload,
-    AiPredictionPostProcessPayload,
     AiPredictionResultPayload,
-    AiPredictionSequencePayload,
-    AiPredictionSerializablePostProcessPayload,
     to_json_path,
 )
 
 from .inference_dataset import InferenceDataset
-from .postprocess import concat_pred_dicts, find_true_pred_sequences, make_smooth_preds
-
-ConcatPredDicts = Callable[[list[dict[str, list[float]]]], dict[str, list[float]]]
-MakeSmoothPreds = Callable[[list[float], int, int], np.ndarray]
-FindTruePredSequences = Callable[[np.ndarray], list[tuple[int, int]]]
-
-concat_pred_dicts_typed = cast(ConcatPredDicts, concat_pred_dicts)
-make_smooth_preds_typed = cast(MakeSmoothPreds, make_smooth_preds)
-find_true_pred_sequences_typed = cast(FindTruePredSequences, find_true_pred_sequences)
 
 sample_config = AiPredictionConfigPayload(
     mean=(0.45211223, 0.27139644, 0.19264949),
@@ -158,79 +145,3 @@ class Classifier:
         )
         if self.verbose:
             ic(f"Saved predictions to {target_path}")
-
-    def post_process_predictions(
-        self,
-        pred_dicts: list[dict[str, list[float]]],
-        window_size_s: int = 1,
-        fps: int = 50,
-        min_seq_len_s: float = 0.5,
-    ) -> AiPredictionPostProcessPayload:
-        predictions = concat_pred_dicts_typed(pred_dicts)
-        smooth_predictions: dict[str, list[float]] = {}
-        for key in predictions:
-            smooth_predictions[key] = np.asarray(
-                make_smooth_preds_typed(predictions[key], window_size_s, fps),
-                dtype=float,
-            ).tolist()
-
-        binary_predictions: dict[str, list[bool]] = {}
-        for key, values in smooth_predictions.items():
-            binary_predictions[key] = [p > 0.5 for p in values]
-
-        raw_sequences: dict[str, list[AiPredictionSequencePayload]] = {}
-        for key, values in binary_predictions.items():
-            raw_sequences[key] = [
-                AiPredictionSequencePayload(start=start, stop=stop)
-                for start, stop in find_true_pred_sequences_typed(np.array(values))
-            ]
-
-        filtered_sequences: dict[str, list[AiPredictionSequencePayload]] = {}
-        min_seq_len = int(min_seq_len_s * fps)
-        for key, sequences in raw_sequences.items():
-            filtered_sequences[key] = [
-                sequence
-                for sequence in sequences
-                if sequence.stop - sequence.start > min_seq_len
-            ]
-
-        return AiPredictionPostProcessPayload(
-            predictions=predictions,
-            smooth_predictions=smooth_predictions,
-            binary_predictions=binary_predictions,
-            raw_sequences=raw_sequences,
-            filtered_sequences=filtered_sequences,
-        )
-
-    def post_process_predictions_serializable(
-        self,
-        pred_dicts: list[dict[str, list[float]]],
-        window_size_s: int = 1,
-        fps: int = 50,
-        min_seq_len_s: float = 0.5,
-    ) -> AiPredictionSerializablePostProcessPayload:
-        result = self.post_process_predictions(
-            pred_dicts, window_size_s, fps, min_seq_len_s
-        )
-
-        def _split_sequences(
-            sequences: list[AiPredictionSequencePayload],
-        ) -> dict[str, list[int]]:
-            return {
-                "start": [sequence.start for sequence in sequences],
-                "stop": [sequence.stop for sequence in sequences],
-            }
-
-        return AiPredictionSerializablePostProcessPayload(
-            predictions=result.predictions,
-            smooth_predictions=result.smooth_predictions,
-            binary_predictions=result.binary_predictions,
-            raw_sequences={
-                key: _split_sequences(value)
-                for key, value in result.raw_sequences.items()
-            },
-            filtered_sequences={
-                key: _split_sequences(value)
-                for key, value in result.filtered_sequences.items()
-            },
-        )

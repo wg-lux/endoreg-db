@@ -5,13 +5,18 @@
 from __future__ import annotations
 
 import multiprocessing
+import signal
 from datetime import timedelta
+from pathlib import Path
 from multiprocessing.connection import Connection
 from multiprocessing.synchronize import Barrier
+from typing import Literal, NoReturn, cast
 from unittest.mock import patch
 
 import pytest
-from django.db import connection, connections
+from django.contrib.auth.models import User
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.db import connections, models, transaction
 from django.db.models.functions import Now
 from lx_dtypes.models.contracts.json_types import JsonObject
 
@@ -21,7 +26,16 @@ from endoreg_db.services.hub import ingest
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.services.hub.upload_job_cancellation import (
+    UploadJobCancellationConflict,
+    UploadJobImportCancelled,
+    finalize_upload_job_cancellation,
+    request_upload_job_cancellation,
+)
+from endoreg_db.services.hub.upload_job_state_machine import mark_upload_job_processing
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.services.hub.upload_job_import_lease import (
+    reconcile_expired_upload_job_import_leases,
     UploadJobImportLeaseBusy,
     UploadJobImportLeaseLost,
     acquire_upload_job_import_lease,
@@ -80,6 +94,47 @@ def _delayed_worker(job_id: str, result: Connection) -> None:
         result.close()
 
 
+def _await_termination(result: Connection, checkpoint: str) -> NoReturn:
+    result.send(checkpoint)
+    if not result.poll(30):
+        raise TimeoutError("Parent did not terminate completion worker")
+    raise AssertionError("Worker must be killed at the commit checkpoint")
+
+
+def _delayed_completion(
+    job_id: str,
+    result: Connection,
+    kill_checkpoint: Literal["before_commit", "after_commit"] | None = None,
+) -> None:
+    connections.close_all()
+    try:
+        lease = acquire_upload_job_import_lease(
+            upload_job_id=job_id, owner="completion-worker"
+        )
+        with locked_upload_job_import_lease(lease) as job:
+            mark_upload_job_processing(job)
+        result.send("ready")
+        if not result.poll(20):
+            raise TimeoutError("Parent did not permit completion")
+        assert result.recv() == "complete"
+        try:
+            with transaction.atomic():
+                ingest._complete_fenced_video_upload(lease=lease, sensitive_meta=None)
+                if kill_checkpoint == "before_commit":
+                    _await_termination(result, kill_checkpoint)
+            if kill_checkpoint == "after_commit":
+                _await_termination(result, kill_checkpoint)
+        except UploadJobImportCancelled:
+            assert finalize_upload_job_cancellation(lease)
+            result.send("cancelled")
+        else:
+            release_upload_job_import_lease(lease)
+            result.send("anonymized")
+    finally:
+        connections.close_all()
+        result.close()
+
+
 def _competing_insert(
     center_id: int, content_hash: str, barrier: Barrier, result: Connection
 ) -> None:
@@ -129,11 +184,135 @@ def _competing_state(video_id: int, barrier: Barrier, result: Connection) -> Non
 
 @pytest.fixture
 def postgres_job(transactional_db: None) -> UploadJob:
-    if connection.vendor != "postgresql":
-        pytest.skip(
-            "Requires PostgreSQL row locking; SQLite is not concurrency evidence"
-        )
     return UploadJob.objects.create(content_type="video/mp4")
+
+
+@pytest.fixture
+def encrypted_postgres_job(
+    transactional_db: None,
+    monkeypatch: pytest.MonkeyPatch,
+) -> UploadJob:
+    assert connections["default"].vendor == "postgresql"
+    monkeypatch.setattr(
+        cast(models.FileField, UploadJob._meta.get_field("file")),
+        "storage",
+        EncryptedStorage(),
+    )
+    return UploadJob.objects.create(
+        content_type="video/mp4",
+        source_file_persisted=True,
+        file=SimpleUploadedFile("retained.mp4", b"retained import source"),
+    )
+
+
+@pytest.mark.parametrize("cancel_first", [True, False])
+def test_process_cancellation_and_completion_preserve_one_terminal_result(
+    encrypted_postgres_job: UploadJob,
+    cancel_first: bool,
+) -> None:
+    postgres_job = encrypted_postgres_job
+    user = User.objects.create_user(username="process-cancellation-operator")
+    source_path = Path(postgres_job.file.path)
+    ciphertext = source_path.read_bytes()
+    assert ciphertext.startswith(b"LXENC01")
+    job_id = str(postgres_job.pk)
+    connections.close_all()
+    context = multiprocessing.get_context("fork")
+    parent, child = context.Pipe()
+    process = context.Process(target=_delayed_completion, args=(job_id, child))
+    process.start()
+    child.close()
+    try:
+        assert parent.poll(30), "Completion worker failed to acquire ownership"
+        assert parent.recv() == "ready"
+        if cancel_first:
+            requested = request_upload_job_cancellation(job_id=job_id, actor_id=user.pk)
+            assert requested.status == "cancel_requested"
+        parent.send("complete")
+        assert parent.poll(30), "Completion worker failed to report its result"
+        expected_status = "cancelled" if cancel_first else "anonymized"
+        assert parent.recv() == expected_status
+        process.join(timeout=10)
+        assert process.exitcode == 0
+        if not cancel_first:
+            with pytest.raises(UploadJobCancellationConflict):
+                request_upload_job_cancellation(job_id=job_id, actor_id=user.pk)
+        postgres_job.refresh_from_db()
+        assert postgres_job.status == expected_status
+        assert postgres_job.processing_lease_owner == ""
+        assert postgres_job.processing_lease_expires_at is None
+        assert postgres_job.cancellation_requested_by == (
+            user if cancel_first else None
+        )
+        assert source_path.read_bytes() == ciphertext
+    finally:
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=10)
+        parent.close()
+
+
+@pytest.mark.parametrize("checkpoint", ["before_commit", "after_commit"])
+def test_killed_completion_preserves_commit_boundary_and_source(
+    encrypted_postgres_job: UploadJob,
+    checkpoint: Literal["before_commit", "after_commit"],
+) -> None:
+    job = encrypted_postgres_job
+    source_path = Path(job.file.path)
+    ciphertext = source_path.read_bytes()
+    assert ciphertext.startswith(b"LXENC01")
+    job_id = str(job.pk)
+    connections.close_all()
+    context = multiprocessing.get_context("fork")
+    parent, child = context.Pipe()
+    process = context.Process(
+        target=_delayed_completion, args=(job_id, child, checkpoint)
+    )
+    process.start()
+    child.close()
+    try:
+        assert parent.poll(30), "Completion worker failed to acquire ownership"
+        assert parent.recv() == "ready"
+        job.refresh_from_db()
+        original_epoch = job.processing_fencing_token
+        parent.send("complete")
+        assert parent.poll(30), "Completion worker failed to reach commit checkpoint"
+        assert parent.recv() == checkpoint
+        process.kill()
+        process.join(timeout=10)
+        assert process.exitcode == -signal.SIGKILL
+        job.refresh_from_db()
+        assert job.status == (
+            UploadJob.Status.PROCESSING
+            if checkpoint == "before_commit"
+            else UploadJob.Status.ANONYMIZED
+        )
+        assert job.processing_lease_owner == "completion-worker"
+        assert job.processing_fencing_token == original_epoch
+        assert source_path.read_bytes() == ciphertext
+        if checkpoint == "before_commit":
+            # Process death alone must not bypass the durable lease.
+            with pytest.raises(UploadJobImportLeaseBusy):
+                acquire_upload_job_import_lease(upload_job_id=job_id, owner="recovery")
+            # Advance the persisted deadline instead of waiting for the lease timeout.
+            UploadJob.objects.filter(pk=job.pk).update(
+                processing_lease_expires_at=Now() - timedelta(seconds=1)
+            )
+            recovered = acquire_upload_job_import_lease(
+                upload_job_id=job_id, owner="recovery"
+            )
+            assert recovered.fencing_epoch == original_epoch + 1
+            ingest._complete_fenced_video_upload(lease=recovered, sensitive_meta=None)
+            release_upload_job_import_lease(recovered)
+            job.refresh_from_db()
+            assert job.status == UploadJob.Status.ANONYMIZED
+            assert job.processing_lease_owner == ""
+            assert source_path.read_bytes() == ciphertext
+    finally:
+        if process.is_alive():
+            process.kill()
+        process.join(timeout=10)
+        parent.close()
 
 
 @pytest.mark.parametrize("same_owner", [False, True])
@@ -184,8 +363,10 @@ def test_simultaneous_deliveries_have_one_execution_owner(
             writer.close()
 
 
+@pytest.mark.parametrize("reconcile", [False, True])
 def test_delayed_process_cannot_write_or_release_after_takeover(
     postgres_job: UploadJob,
+    reconcile: bool,
 ) -> None:
     connections.close_all()
     context = multiprocessing.get_context("fork")
@@ -201,9 +382,16 @@ def test_delayed_process_cannot_write_or_release_after_takeover(
         UploadJob.objects.filter(pk=postgres_job.pk).update(
             processing_lease_expires_at=Now() - timedelta(seconds=1)
         )
-        current = acquire_upload_job_import_lease(
-            upload_job_id=str(postgres_job.pk), owner="new-worker"
-        )
+        if reconcile:
+            UploadJob.objects.filter(pk=postgres_job.pk).update(
+                status=UploadJob.Status.PROCESSING
+            )
+            assert reconcile_expired_upload_job_import_leases() == 1
+            current = None
+        else:
+            current = acquire_upload_job_import_lease(
+                upload_job_id=str(postgres_job.pk), owner="new-worker"
+            )
         parent.send("takeover")
         for expected in ("write_fenced", "release_fenced"):
             assert parent.poll(30)
@@ -211,9 +399,13 @@ def test_delayed_process_cannot_write_or_release_after_takeover(
         process.join(timeout=10)
         assert process.exitcode == 0
         postgres_job.refresh_from_db()
-        assert postgres_job.error_detail == ""
-        assert postgres_job.processing_lease_owner == current.owner
-        release_upload_job_import_lease(current)
+        if current is not None:
+            assert postgres_job.error_detail == ""
+            assert postgres_job.processing_lease_owner == current.owner
+            release_upload_job_import_lease(current)
+        else:
+            assert postgres_job.error_code == UploadJob.ErrorCode.IMPORT_INTERRUPTED
+            assert not postgres_job.processing_lease_owner
     finally:
         if process.is_alive():
             process.terminate()
@@ -307,3 +499,65 @@ def test_simultaneous_state_creation_preserves_one_state(
         for reader, writer in pipes:
             reader.close()
             writer.close()
+
+
+def _blocked_reconciler(job_id: str, result: Connection) -> None:
+    from endoreg_db.services.hub import upload_job_import_lease as leases
+
+    connections.close_all()
+    original = leases._locked_job
+
+    def signal_selection(selected_id: str) -> UploadJob:
+        assert selected_id == job_id
+        result.send("selected")
+        return original(selected_id)
+
+    try:
+        if not result.poll(30):
+            raise TimeoutError("Parent did not acquire row lock")
+        assert result.recv() == "start"
+        with patch.object(leases, "_locked_job", side_effect=signal_selection):
+            result.send(reconcile_expired_upload_job_import_leases())
+    finally:
+        connections.close_all()
+        result.close()
+
+
+def test_reconciler_rechecks_new_owner_after_waiting_for_row_lock(
+    postgres_job: UploadJob,
+) -> None:
+    assert connections["default"].vendor == "postgresql"
+    acquire_upload_job_import_lease(upload_job_id=str(postgres_job.pk), owner="expired")
+    UploadJob.objects.filter(pk=postgres_job.pk).update(
+        status=UploadJob.Status.PROCESSING,
+        processing_lease_expires_at=Now() - timedelta(seconds=1),
+    )
+    connections.close_all()
+    context = multiprocessing.get_context("fork")
+    parent, child = context.Pipe()
+    process = context.Process(
+        target=_blocked_reconciler, args=(str(postgres_job.pk), child)
+    )
+    process.start()
+    child.close()
+    try:
+        with transaction.atomic():
+            UploadJob.objects.select_for_update().get(pk=postgres_job.pk)
+            parent.send("start")
+            assert parent.poll(30)
+            assert parent.recv() == "selected"
+            current = acquire_upload_job_import_lease(
+                upload_job_id=str(postgres_job.pk), owner="replacement"
+            )
+        assert parent.poll(30)
+        assert parent.recv() == 0
+        process.join(timeout=10)
+        assert process.exitcode == 0
+        with locked_upload_job_import_lease(current) as job:
+            assert job.status == UploadJob.Status.PROCESSING
+            assert job.error_code == ""
+    finally:
+        if process.is_alive():
+            process.terminate()
+        process.join(timeout=10)
+        parent.close()

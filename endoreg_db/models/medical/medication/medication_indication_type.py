@@ -22,6 +22,10 @@ class MedicationIndicationType(models.Model):
     """Model representing a medication indication type."""
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     objects = MedicationIndicationTypeManager()
 

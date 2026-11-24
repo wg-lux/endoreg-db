@@ -4,6 +4,7 @@ from typing import Protocol, TypeVar, cast
 
 from django.db import models, transaction
 from django.db.models import QuerySet
+from django.http import HttpResponse
 from pydantic import ValidationError as PydanticValidationError
 from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action
@@ -16,13 +17,13 @@ from endoreg_db.schemas.case_documents import CaseDocumentAttachmentPayload
 from endoreg_db.schemas.case_creation import CreateCaseWithExaminationPayload
 from endoreg_db.serializers.case import CaseSerializer
 from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
-from endoreg_db.services.cases import (
+from endoreg_db.services.cases.lifecycle import (
     CaseLifecycleError,
     close_case,
     persist_case_graph,
     reopen_case,
 )
-from endoreg_db.services.case_documents import (
+from endoreg_db.services.cases.documents import (
     CaseDocumentConflict,
     CaseDocumentNotFound,
     attach_document_to_case,
@@ -68,12 +69,15 @@ class CaseViewSet(viewsets.ModelViewSet["Case"]):
             user=self.request.user,
             center_field="patient__center_id",
         )
-        patient_id = self.request.query_params.get("patient_id")
-        if patient_id:
-            queryset = queryset.filter(patient_id=patient_id)
-        patient_examination_id = self.request.query_params.get("patient_examination_id")
-        if patient_examination_id:
-            queryset = queryset.filter(patient_examinations__id=patient_examination_id)
+        for parameter, field in (
+            ("patient_id", "patient_id"),
+            ("patient_examination_id", "patient_examinations__id"),
+        ):
+            if parameter in self.request.query_params:
+                value = serializers.IntegerField(min_value=1).run_validation(
+                    self.request.query_params[parameter]
+                )
+                queryset = queryset.filter(**{field: value})
         return queryset
 
     def _assert_patient_scope(
@@ -113,20 +117,133 @@ class CaseViewSet(viewsets.ModelViewSet["Case"]):
             )
         except CaseLifecycleError as exc:
             raise serializers.ValidationError({"leave_date": str(exc)}) from exc
-        return Response(
-            cast(_SerializerDataLike, CaseSerializer(patient_case)).data,
-            status=status.HTTP_200_OK,
-        )
+        return Response(self.get_serializer(patient_case).data)
 
     @action(detail=True, methods=["post"])
     def reopen(self, request: Request, case_id: str | None = None) -> Response:
         """Reopen a closed case."""
         del request, case_id
         patient_case = reopen_case(instance=self.get_object())
-        return Response(
-            cast(_SerializerDataLike, CaseSerializer(patient_case)).data,
-            status=status.HTTP_200_OK,
+        return Response(self.get_serializer(patient_case).data)
+
+    @action(detail=True, methods=["get", "post"], url_path="select-examination")
+    def select_examination(
+        self, request: Request, case_id: str | None = None
+    ) -> Response:
+        from lx_dtypes.models.contracts.examination_revision import (
+            CaseExaminationSelection,
         )
+        from endoreg_db.services.cases.examination_revisions import (
+            select_case_examination_revision,
+        )
+
+        case = self.get_object()
+        if request.method == "GET":
+            from endoreg_db.models.medical.patient.examination_revision import (
+                CaseExaminationRecord,
+            )
+
+            return Response(
+                list(
+                    CaseExaminationRecord.objects.filter(case=case)
+                    .order_by("patient_examination_id")
+                    .values("patient_examination_id", "revision_id")
+                )
+            )
+        try:
+            payload = CaseExaminationSelection.model_validate(request.data)
+            selected = select_case_examination_revision(case, payload)
+        except PydanticValidationError:
+            return Response({"detail": "Invalid examination selection."}, status=422)
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        return Response(
+            {
+                "patient_examination_id": selected.patient_examination.pk,
+                "revision_id": selected.revision.pk,
+            }
+        )
+
+    @action(detail=True, methods=["get"], url_path="research-export")
+    def research_export(
+        self, request: Request, case_id: str | None = None
+    ) -> Response | HttpResponse:
+        from endoreg_db.services.studies.revision_export import (
+            case_export_workbook,
+            selected_case_export,
+        )
+
+        case = self.get_object()
+        output = request.query_params.get("output", "json")
+        if output not in {"json", "xlsx"}:
+            return Response({"detail": "output must be json or xlsx"}, status=400)
+        try:
+            payload = selected_case_export(case)
+            workbook = case_export_workbook(payload) if output == "xlsx" else None
+        except PydanticValidationError:
+            return Response(
+                {"detail": "Invalid finalized export snapshot."}, status=409
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        if output == "json":
+            return Response(payload, headers={"Cache-Control": "private, no-store"})
+        response = HttpResponse(
+            workbook,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = (
+            f'attachment; filename="case-{case.case_id}.xlsx"'
+        )
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+    @action(detail=False, methods=["post"], url_path="research-export")
+    def research_study_export(self, request: Request) -> Response | HttpResponse:
+        from lx_dtypes.models.contracts.examination_revision import (
+            CaseStudyExportSelection,
+        )
+        from endoreg_db.services.studies.revision_export import (
+            case_export_workbook,
+            selected_case_export,
+        )
+
+        try:
+            selection = CaseStudyExportSelection.model_validate(request.data)
+        except PydanticValidationError:
+            return Response(
+                {"detail": "Select unique case UUIDs and json or xlsx output."},
+                status=422,
+            )
+        cases = list(
+            self.get_queryset().filter(case_id__in=selection.case_ids).order_by("pk")
+        )
+        if len(cases) != len(selection.case_ids):
+            return Response({"detail": "A selected case is unavailable."}, status=404)
+        try:
+            with transaction.atomic():
+                payloads = [selected_case_export(case) for case in cases]
+            workbook = (
+                case_export_workbook(payloads) if selection.output == "xlsx" else None
+            )
+        except PydanticValidationError:
+            return Response(
+                {"detail": "Invalid finalized export snapshot."}, status=409
+            )
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=409)
+        if selection.output == "json":
+            return Response(
+                {"schema_version": "1.0", "cases": payloads},
+                headers={"Cache-Control": "private, no-store"},
+            )
+        response = HttpResponse(
+            workbook,
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = 'attachment; filename="study-cases.xlsx"'
+        response["Cache-Control"] = "private, no-store"
+        return response
 
     @action(detail=True, methods=["post"], url_path="documents")
     def attach_document(self, request: Request, case_id: str | None = None) -> Response:
@@ -161,13 +278,7 @@ class CaseViewSet(viewsets.ModelViewSet["Case"]):
             )
 
         patient_case = self.get_queryset().get(pk=patient_case.pk)
-        return Response(
-            cast(
-                _SerializerDataLike,
-                CaseSerializer(patient_case, context={"request": request}),
-            ).data,
-            status=status.HTTP_200_OK,
-        )
+        return Response(self.get_serializer(patient_case).data)
 
     @action(detail=False, methods=["post"], url_path="create-with-examination")
     def create_with_examination(self, request: Request) -> Response:
@@ -179,7 +290,10 @@ class CaseViewSet(viewsets.ModelViewSet["Case"]):
 
         with transaction.atomic():
             examination_serializer = PatientExaminationSerializer(
-                data=payload.patient_examination.model_dump(mode="json")
+                data=payload.patient_examination.model_dump(
+                    mode="json", exclude_unset=True
+                ),
+                context=self.get_serializer_context(),
             )
             examination_serializer.is_valid(raise_exception=True)
             patient_examination = examination_serializer.save()
@@ -197,7 +311,7 @@ class CaseViewSet(viewsets.ModelViewSet["Case"]):
                 relationships={"patient_examinations": [patient_examination]},
             )
             response_data = {
-                "case": cast(_SerializerDataLike, CaseSerializer(patient_case)).data,
+                "case": self.get_serializer(patient_case).data,
                 "patient_examination": cast(
                     _SerializerDataLike,
                     PatientExaminationSerializer(patient_examination),

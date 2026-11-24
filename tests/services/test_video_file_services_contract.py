@@ -12,6 +12,8 @@ from django.core.files.base import ContentFile
 
 import endoreg_db.services.video_files as video_file_services
 import endoreg_db.services.video_files.queries as video_query_services
+from endoreg_db.services.video_files._imports import check_storage_capacity
+from endoreg_db.utils import file_operations
 from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
@@ -70,6 +72,34 @@ class _TrackingVideoManager:
 
 class _CustomVideoModel:
     objects = _TrackingVideoManager()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [
+        PermissionError("access denied"),
+        OSError("statvfs unavailable"),
+        OSError("Insufficient disk space: probe failed"),
+    ],
+)
+def test_import_capacity_check_propagates_probe_errors(
+    tmp_path: Path, monkeypatch: MonkeyPatch, failure: OSError
+) -> None:
+    source = tmp_path / "source.mp4"
+    source.write_bytes(b"video")
+
+    def disk_usage(_path: Path) -> object:
+        raise failure
+
+    monkeypatch.setattr(file_operations.shutil, "disk_usage", disk_usage)
+    with pytest.raises(type(failure)) as caught:
+        check_storage_capacity(source, tmp_path)
+    assert caught.value is failure
+
+
+def test_import_capacity_check_propagates_missing_source(tmp_path: Path) -> None:
+    with pytest.raises(FileNotFoundError):
+        check_storage_capacity(tmp_path / "missing.mp4", tmp_path)
 
 
 @pytest.mark.django_db
@@ -242,7 +272,9 @@ def test_video_pipeline_and_anonymization_services_preserve_wrappers(
     video: VideoFile,
     monkeypatch: MonkeyPatch,
 ) -> None:
-    from endoreg_db.services import video_post_validation_blackening
+    from endoreg_db.services.video_files import (
+        post_validation_blackening as video_post_validation_blackening,
+    )
     from endoreg_db.services.video_files import (
         _anonymization as video_file_anonymize,
     )

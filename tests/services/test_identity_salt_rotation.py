@@ -5,6 +5,7 @@ from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from io import StringIO
+import json
 
 import pytest
 from django.test import override_settings
@@ -13,6 +14,7 @@ from django.db import connection, connections
 from django.core.management import call_command, CommandError
 
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.models.administration.person.examiner.examiner import Examiner
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
@@ -22,6 +24,7 @@ from endoreg_db.services.secret_rotation.identity import (
     migrate_identity_group,
     salt_fingerprint,
 )
+from tests.conftest import gen_salt_pair
 from tests.services.test_secret_rotation import write_ring
 
 
@@ -43,15 +46,19 @@ def make_identity() -> SensitiveMeta:
 def test_online_import_rotates_existing_group_without_duplicate_links(
     base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    old = b"old-test-identity-salt"
-    new = b"new-test-identity-salt"
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
     with override_settings(DJANGO_SALT=old.decode()):
         original = make_identity()
     patient_id, exam_id = original.pseudo_patient_id, original.pseudo_examination_id
     before = Patient.objects.count(), PatientExamination.objects.count()
     old_hash = original.patient_hash
-    ring = write_ring(tmp_path, new, (old,), kind="identity")
-    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+
+    def activate(retiring: tuple[bytes, ...]) -> None:
+        ring = write_ring(tmp_path, new, retiring, kind="identity")
+        monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+
+    activate((old,))
     repeated = SensitiveMeta.objects.create(
         center=original.center,
         patient_first_name="Ada",
@@ -65,7 +72,7 @@ def test_online_import_rotates_existing_group_without_duplicate_links(
     assert original.patient_hash == repeated.patient_hash != old_hash
     assert (Patient.objects.count(), PatientExamination.objects.count()) == before
     assert original.identity_salt_fingerprint == salt_fingerprint(new)
-    write_ring(tmp_path, new, (), kind="identity")
+    activate(())
     repeated.save()
     assert repeated.pseudo_patient_id == patient_id
 
@@ -74,6 +81,7 @@ def test_online_import_rotates_existing_group_without_duplicate_links(
 def test_legacy_default_salt_migration_and_erased_review(
     base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    _, new = gen_salt_pair()
     original = make_identity()
     assert original.center is not None
     patient_id, exam_id = original.pseudo_patient_id, original.pseudo_examination_id
@@ -93,8 +101,8 @@ def test_legacy_default_salt_migration_and_erased_review(
     SensitiveMeta.objects.filter(pk=original.pk).update(
         patient_hash=patient_hash,
         examination_hash=exam_hash,
-        identity_fingerprint="",
         identity_salt_fingerprint="",
+        identity_fingerprint="",
         patient_first_name=None,
         patient_last_name=None,
         patient_dob=None,
@@ -103,7 +111,7 @@ def test_legacy_default_salt_migration_and_erased_review(
     original.refresh_from_db()
     ring = write_ring(
         tmp_path,
-        b"new-test-salt",
+        new,
         (b"default_salt",),
         kind="identity",
         allow_legacy=True,
@@ -143,14 +151,15 @@ def test_legacy_default_salt_migration_and_erased_review(
 def test_group_failure_rolls_back_every_link(
     base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    old = b"old-test-identity-salt"
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
     with override_settings(DJANGO_SALT=old.decode()):
         original = make_identity()
     old_hash = original.patient_hash
     PatientExamination.objects.create(
         patient_id=original.pseudo_patient_id, hash="unmapped-examination"
     )
-    ring = write_ring(tmp_path, b"new-test-salt", (old,), kind="identity")
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
     monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
     with pytest.raises(ValueError, match="Every linked examination"):
         migrate_identity_group(original)
@@ -160,10 +169,23 @@ def test_group_failure_rolls_back_every_link(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("field", "message"),
+    [
+        ("patient_hash", "inconsistent"),
+        ("identity_salt_fingerprint", "does not authenticate"),
+        ("examination_hash", "Examination identity"),
+    ],
+)
 def test_rotation_rejects_inconsistent_metadata_link_instead_of_leaving_it_behind(
-    base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    base_db_data: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    field: str,
+    message: str,
 ) -> None:
-    old = b"old-test-identity-salt"
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
     with override_settings(DJANGO_SALT=old.decode()):
         original = make_identity()
         duplicate = SensitiveMeta.objects.create(
@@ -174,23 +196,29 @@ def test_rotation_rejects_inconsistent_metadata_link_instead_of_leaving_it_behin
             examination_date=original.examination_date,
         )
     old_hash = original.patient_hash
+    old_exam_hash = original.examination_hash
     SensitiveMeta.objects.filter(pk=duplicate.pk).update(
-        patient_hash="inconsistent-reference"
+        **{field: "inconsistent-reference"}
     )
-    ring = write_ring(tmp_path, b"new-test-salt", (old,), kind="identity")
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
     monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
-    with pytest.raises(ValueError, match="inconsistent"):
+    with pytest.raises(ValueError, match=message):
         migrate_identity_group(original)
     original.refresh_from_db()
     assert original.patient_hash == old_hash
     assert Patient.objects.get(pk=original.pseudo_patient_id).patient_hash == old_hash
+    assert (
+        PatientExamination.objects.get(pk=original.pseudo_examination_id).hash
+        == old_exam_hash
+    )
 
 
 @pytest.mark.django_db
 def test_identity_command_reports_blocked_erased_group_without_disclosing_source(
     base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    old = b"old-test-identity-salt"
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
     with override_settings(DJANGO_SALT=old.decode()):
         original = make_identity()
     old_hash = original.patient_hash
@@ -200,7 +228,7 @@ def test_identity_command_reports_blocked_erased_group_without_disclosing_source
         patient_dob=None,
         direct_identifiers_cleared_at=timezone.now(),
     )
-    ring = write_ring(tmp_path, b"new-test-salt", (old,), kind="identity")
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
     monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
     output = StringIO()
     with pytest.raises(CommandError, match="incomplete"):
@@ -212,8 +240,100 @@ def test_identity_command_reports_blocked_erased_group_without_disclosing_source
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("allow_partial", [False, True])
+def test_identity_command_requires_explicit_partial_commit(
+    base_db_data: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    allow_partial: bool,
+) -> None:
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
+    with override_settings(DJANGO_SALT=old.decode()):
+        original = make_identity()
+        blocked = SensitiveMeta.objects.create(
+            center=original.center,
+            patient_first_name="Grace",
+            patient_last_name="Hopper",
+            patient_dob=original.patient_dob,
+            examination_date=original.examination_date,
+        )
+    old_hash = original.patient_hash
+    old_exam_hash = original.examination_hash
+    blocked_hash = blocked.patient_hash
+    SensitiveMeta.objects.filter(pk=blocked.pk).update(
+        patient_first_name=None, direct_identifiers_cleared_at=timezone.now()
+    )
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    output = StringIO()
+    with pytest.raises(CommandError, match="incomplete"):
+        call_command(
+            "rotate_identity_salt",
+            apply=True,
+            allow_partial=allow_partial,
+            stdout=output,
+        )
+    summary = json.loads(output.getvalue())
+    assert summary["patient_groups"] == 1
+    assert summary["blocked_groups"] == 1
+    assert summary["applied"] is allow_partial
+    assert summary["rolled_back"] is not allow_partial
+    original.refresh_from_db()
+    blocked.refresh_from_db()
+    patient = Patient.objects.get(pk=original.pseudo_patient_id)
+    examination = PatientExamination.objects.get(pk=original.pseudo_examination_id)
+    assert (original.patient_hash != old_hash) is allow_partial
+    assert patient.patient_hash == original.patient_hash
+    assert (examination.hash != old_exam_hash) is allow_partial
+    assert examination.hash == original.examination_hash
+    assert blocked.patient_hash == blocked_hash
+
+
+def test_identity_command_rejects_partial_preview() -> None:
+    with pytest.raises(CommandError, match="requires --apply"):
+        call_command("rotate_identity_salt", allow_partial=True)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("apply", [False, True])
+@pytest.mark.parametrize("pending_examiner", [False, True])
+def test_identity_command_complete_run_commits_only_when_requested(
+    base_db_data: bool,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    apply: bool,
+    pending_examiner: bool,
+) -> None:
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
+    with override_settings(DJANGO_SALT=old.decode()):
+        original = make_identity()
+    assert Examiner.objects.exists()
+    if not pending_examiner:
+        # Model creation seeds a default examiner; represent completed examiner
+        # enrollment explicitly when exercising a fully eligible command run.
+        Examiner.objects.update(identity_salt_fingerprint=salt_fingerprint(new))
+    old_hash = original.patient_hash
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    output = StringIO()
+    if pending_examiner:
+        with pytest.raises(CommandError, match="incomplete"):
+            call_command("rotate_identity_salt", apply=apply, stdout=output)
+    else:
+        call_command("rotate_identity_salt", apply=apply, stdout=output)
+    summary = json.loads(output.getvalue().splitlines()[0])
+    assert summary["applied"] is (apply and not pending_examiner)
+    assert summary["rolled_back"] is (apply and pending_examiner)
+    original.refresh_from_db()
+    assert (original.patient_hash != old_hash) is (apply and not pending_examiner)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("legacy", [False, True])
 def test_examiner_rotation_preserves_links_and_rejects_conflicting_evidence(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy: bool
 ) -> None:
     from endoreg_db.models.administration.person.examiner.examiner import Examiner
     from endoreg_db.services.secret_rotation.identity import (
@@ -222,11 +342,18 @@ def test_examiner_rotation_preserves_links_and_rejects_conflicting_evidence(
     )
 
     center = Center.objects.create(name="examiner-rotation-center")
-    old = b"old-test-identity-salt"
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
     with override_settings(DJANGO_SALT=old.decode()):
         examiner, _ = Examiner.custom_get_or_create("Ada", "Lovelace", center)
+    if legacy:
+        Examiner.objects.filter(pk=examiner.pk).update(
+            hash=legacy_hash(
+                "Ada", "Lovelace", None, center.name, None, old, double_hash=False
+            )
+        )
     before = examiner.pk, examiner.first_name, examiner.last_name
-    ring = write_ring(tmp_path, b"new-test-salt", (old,), kind="identity")
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
     monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
     review = ReviewedExaminer(
         examiner_id=examiner.pk,
@@ -243,9 +370,44 @@ def test_examiner_rotation_preserves_links_and_rejects_conflicting_evidence(
     assert (examiner.pk, examiner.first_name, examiner.last_name) == before
     repeated, created = Examiner.custom_get_or_create("Ada", "Lovelace", center)
     assert repeated.pk == examiner.pk and not created
+    from endoreg_db.utils.hashs import get_examiner_hash
+
+    assert examiner.hash == get_examiner_hash(
+        "Ada", "Lovelace", center_key=center.center_key
+    )
     Examiner.objects.filter(pk=examiner.pk).update(identity_fingerprint="invalid")
     with pytest.raises(ValueError, match="evidence"):
         migrate_reviewed_examiner(review, apply=True)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("legacy", [False, True])
+def test_online_examiner_rotation_reuses_existing_identity(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, legacy: bool
+) -> None:
+    center = Center.objects.create(name="online-examiner-rotation")
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
+    with override_settings(DJANGO_SALT=old.decode()):
+        original, _ = Examiner.custom_get_or_create("Ada", "Lovelace", center)
+    if legacy:
+        Examiner.objects.filter(pk=original.pk).update(
+            hash=legacy_hash(
+                "Ada", "Lovelace", None, center.name, None, old, double_hash=False
+            )
+        )
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    for _ in range(2):
+        repeated, created = Examiner.custom_get_or_create("Ada", "Lovelace", center)
+        assert repeated.pk == original.pk and not created
+        assert repeated.identity_salt_fingerprint == salt_fingerprint(new)
+    assert Examiner.objects.filter(center=center).count() == 1
+    Examiner.objects.filter(pk=original.pk).update(identity_fingerprint="invalid")
+    with pytest.raises(ValueError, match="explicit review"):
+        Examiner.custom_get_or_create("Ada", "Lovelace", center)
+    original.refresh_from_db()
+    assert original.identity_fingerprint == "invalid"
 
 
 @pytest.mark.django_db(transaction=True)
@@ -254,10 +416,11 @@ def test_concurrent_imports_during_salt_rotation_keep_one_identity(
 ) -> None:
     if connection.vendor != "postgresql":
         pytest.skip("Requires PostgreSQL advisory locks")
-    old = b"old-test-identity-salt"
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
     with override_settings(DJANGO_SALT=old.decode()):
         original = make_identity()
-    ring = write_ring(tmp_path, b"new-test-identity-salt", (old,), kind="identity")
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
     monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
     barrier = Barrier(3)
 
@@ -284,6 +447,124 @@ def test_concurrent_imports_during_salt_rotation_keep_one_identity(
         (original.pseudo_patient_id, original.pseudo_examination_id)
     }
     original.refresh_from_db()
-    assert original.identity_salt_fingerprint == salt_fingerprint(
-        b"new-test-identity-salt"
+    assert original.identity_salt_fingerprint == salt_fingerprint(new)
+
+
+@pytest.mark.django_db
+def test_whole_run_pins_one_snapshot_when_manifest_changes(
+    base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.services.secret_rotation import migration
+
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
+    with override_settings(DJANGO_SALT=old.decode()):
+        original = make_identity()
+        second = SensitiveMeta.objects.create(
+            center=original.center,
+            patient_first_name="Grace",
+            patient_last_name="Hopper",
+            patient_dob=original.patient_dob,
+            examination_date=original.examination_date,
+        )
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    Examiner.objects.update(identity_salt_fingerprint=salt_fingerprint(new))
+    migrate = migration.migrate_identity_group
+
+    def migrate_then_replace(
+        row: SensitiveMeta, *, reviewed: dict[int, ReviewedIdentity], apply: bool
+    ) -> int:
+        count = migrate(row, reviewed=reviewed, apply=apply)
+        _, unexpected = gen_salt_pair()
+        write_ring(tmp_path, unexpected, (new, old), kind="identity")
+        return count
+
+    monkeypatch.setattr(migration, "migrate_identity_group", migrate_then_replace)
+    result = migration.rotate_identity_salt(
+        apply=True, expected_active_fingerprint=salt_fingerprint(new)
     )
+    assert result.applied and result.patient_groups == 2
+    for row in (original, second):
+        row.refresh_from_db()
+        assert row.identity_salt_fingerprint == salt_fingerprint(new)
+
+
+@pytest.mark.django_db
+def test_compromised_recovery_requires_review_and_generation(
+    base_db_data: bool, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.services.secret_rotation.migration import rotate_identity_salt
+
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
+    with override_settings(DJANGO_SALT=old.decode()):
+        original = make_identity()
+    old_hash = original.patient_hash
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    Examiner.objects.update(identity_salt_fingerprint=salt_fingerprint(new))
+    with pytest.raises(ValueError, match="expected active"):
+        rotate_identity_salt(compromised=True, apply=True)
+    with pytest.raises(ValueError, match="expected generation"):
+        rotate_identity_salt(
+            expected_active_fingerprint=salt_fingerprint(old), apply=True
+        )
+    with pytest.raises(ValueError, match="forbidden"):
+        rotate_identity_salt(compromised=True, apply=True, allow_partial=True)
+    result = rotate_identity_salt(
+        compromised=True, apply=True, expected_active_fingerprint=salt_fingerprint(new)
+    )
+    assert result.blocked_groups == 1 and result.rolled_back and not result.applied
+    original.refresh_from_db()
+    assert original.patient_hash == old_hash
+    review = ReviewedIdentity(
+        sensitive_meta_id=original.pk,
+        first_name="Ada",
+        last_name="Lovelace",
+        dob=date(1980, 1, 2),
+        examination_date=date(2026, 9, 21),
+        reviewed_by="independent-reviewer",
+        review_reference="authorized-original",
+    )
+    result = rotate_identity_salt(
+        compromised=True,
+        apply=True,
+        expected_active_fingerprint=salt_fingerprint(new),
+        reviewed={original.pk: review},
+    )
+    assert result.applied and not result.incomplete
+    repeat = rotate_identity_salt(
+        compromised=True,
+        apply=True,
+        expected_active_fingerprint=salt_fingerprint(new),
+        reviewed={original.pk: review},
+    )
+    assert repeat.applied and repeat.patient_groups == 0
+
+
+@pytest.mark.django_db
+def test_reviewed_examiner_preview_has_no_false_pending_count(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.services.secret_rotation.identity import ReviewedExaminer
+    from endoreg_db.services.secret_rotation.migration import rotate_identity_salt
+
+    center = Center.objects.create(name="preview-examiner-center")
+    _, old = gen_salt_pair()
+    _, new = gen_salt_pair()
+    with override_settings(DJANGO_SALT=old.decode()):
+        examiner, _ = Examiner.custom_get_or_create("Ada", "Lovelace", center)
+    ring = write_ring(tmp_path, new, (old,), kind="identity")
+    monkeypatch.setenv("DJANGO_IDENTITY_SALT_KEYRING_FILE", str(ring))
+    review = ReviewedExaminer(
+        examiner_id=examiner.pk,
+        first_name="Ada",
+        last_name="Lovelace",
+        reviewed_by="reviewer",
+        review_reference="reviewed-original",
+    )
+    result = rotate_identity_salt(examiners=(review,))
+    assert not result.incomplete and not result.applied
+    examiner.refresh_from_db()
+    assert examiner.identity_salt_fingerprint == salt_fingerprint(old)

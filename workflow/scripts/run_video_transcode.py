@@ -66,7 +66,7 @@ with stage_lifecycle(
     configure_django(snakemake.params.django_settings_module)
 
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.video_processed_transcode import (
+    from endoreg_db.services.video_storage.processed_transcode import (
         transcode_processed_video_for_storage_pressure,
     )
 

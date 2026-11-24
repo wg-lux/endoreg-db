@@ -101,10 +101,13 @@ class DeadCodeComparison:
     unexpected: tuple[VultureFinding, ...]
     stale: tuple[AcceptedDeadCodeFinding, ...]
     expired: tuple[AcceptedDeadCodeFinding, ...]
+    expired_candidates: tuple[DeadCodeDeletionCandidate, ...]
 
     @property
     def is_clean(self) -> bool:
-        return not (self.unexpected or self.stale or self.expired)
+        return not (
+            self.unexpected or self.stale or self.expired or self.expired_candidates
+        )
 
 
 def load_baseline(path: Path) -> DeadCodeBaseline:
@@ -166,6 +169,9 @@ def compare_findings(
         expired=tuple(
             item for item in baseline.accepted_findings if item.review_after < today
         ),
+        expired_candidates=tuple(
+            item for item in baseline.deletion_candidates if item.review_after < today
+        ),
     )
 
 
@@ -210,6 +216,11 @@ def _print_comparison(comparison: DeadCodeComparison) -> None:
         print(
             f"EXPIRED {item.path}: {item.message} "
             f"(review_after={item.review_after.isoformat()}, owner={item.owner})"
+        )
+    for candidate in comparison.expired_candidates:
+        print(
+            f"EXPIRED CANDIDATE {candidate.path}: {candidate.symbol} "
+            f"(review_after={candidate.review_after.isoformat()}, owner={candidate.owner})"
         )
 
 

@@ -6,7 +6,8 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from io import StringIO
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
+from collections.abc import Callable
 
 import pytest
 from django.core.files.base import ContentFile
@@ -16,17 +17,17 @@ from django.db.models.fields.files import FieldFile
 from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services import (
-    video_processed_transcode as service,
-    processed_video_cleanup as cleanup,
-    hls_media,
-)
+from endoreg_db.services.video_storage import processed_transcode as service
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
+from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.utils.paths import to_protected_media_relative
-from endoreg_db.services.hls_media import HlsMaterializationResult
+from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 pytestmark = pytest.mark.django_db
 
@@ -91,6 +92,9 @@ def _patch_transcode_and_streamable(
         return output_path
 
     monkeypatch.setattr(service, "transcode_video", fake_transcode_video)
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     probe = VideoArtifactProbe(
         codec_name="h264",
         pixel_format="yuv420p",
@@ -103,6 +107,8 @@ def _patch_transcode_and_streamable(
             fps_den=1,
             duration_seconds=10.0,
             frame_count=250,
+            time_base_num=1,
+            time_base_den=1000,
         ),
     )
 

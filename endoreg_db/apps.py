@@ -4,6 +4,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Protocol, cast
 from logging import getLogger
+
 from django.apps import AppConfig
 from django.core.exceptions import ImproperlyConfigured
 from django.db.backends.base.base import BaseDatabaseWrapper
@@ -65,7 +66,6 @@ class EndoregDbConfig(AppConfig):
                     f"{service.registry_path}"
                 )
 
-            # Verify that the selected identity is actually loadable.
             service.load(*identity)
 
         except TerminologyError as exc:
@@ -73,7 +73,6 @@ class EndoregDbConfig(AppConfig):
                 f"Terminology startup failed for {service.registry_path}: {exc}"
             ) from exc
 
-        # Only record success after both provisioning and loading succeed.
         self._terminology_initialized = True
 
         logger.info(
@@ -87,15 +86,18 @@ class EndoregDbConfig(AppConfig):
         """
         Finalize app startup integration hooks.
 
-        This currently ensures auth-related settings are normalized and, for
-        runtime server entrypoints only, attaches the reconciliation service to
-        Django's `connection_created` signal so startup repair runs after the
-        first database connection becomes available.
+        Normalize authentication settings, register Django signals,
+        validate runtime storage and native state vocabularies, and
+        configure startup reconciliation for runtime server processes.
         """
         ensure_keycloak_settings()
-        import_module("endoreg_db.checks")
 
-        from endoreg_db.celery_observability import register_celery_timing_signals
+        import_module("endoreg_db.checks")
+        import_module("endoreg_db.models.state.signals")
+
+        from endoreg_db.celery_observability import (
+            register_celery_timing_signals,
+        )
 
         register_celery_timing_signals()
 
@@ -104,10 +106,20 @@ class EndoregDbConfig(AppConfig):
             EndoregPathsModel,
         )
 
-        EndoregPathsModel.model_rebuild()    
-        
+        EndoregPathsModel.model_rebuild()
+
+        validate_runtime_storage_contract()
+
+        from endoreg_db.services.runtime.native_state_vocabulary import (
+            verify_native_state_vocabularies,
+        )
+
+        # Rust owns every state vocabulary.
+        # A drifted Python mirror must not start.
+        verify_native_state_vocabularies()
 
         executable = Path(sys.argv[0]).name if sys.argv else ""
+
         if (
             "pytest" in executable
             or executable == "py.test"
@@ -115,6 +127,7 @@ class EndoregDbConfig(AppConfig):
             or len(sys.argv) < 2
         ):
             return
+
         runtime_commands = {
             "runserver",
             "run_gunicorn",
@@ -122,12 +135,11 @@ class EndoregDbConfig(AppConfig):
             "uvicorn",
             "daphne",
         }
+
         if sys.argv[1] not in runtime_commands:
             return
 
-        validate_runtime_storage_contract()
-
-        from endoreg_db.services.reconciliation import (
+        from endoreg_db.services.runtime.reconciliation import (
             ReconciliationService,
             should_run_startup_reconciliation,
         )
@@ -146,6 +158,7 @@ class EndoregDbConfig(AppConfig):
             typed_connection_created = cast(
                 _ConnectionCreatedSignal, connection_created
             )
+
             typed_connection_created.connect(
                 _run_reconciliation,
                 dispatch_uid="endoreg_db_startup_reconciliation",

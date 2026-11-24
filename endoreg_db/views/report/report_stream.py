@@ -22,6 +22,7 @@ from endoreg_db.utils.nginx_accel import (
 )
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.utils.storage_streaming import (
+    BoundedStreamingHttpResponse,
     add_cors_headers,
     build_partial_content_response,
     field_file_is_local_encrypted_without_reader,
@@ -184,7 +185,7 @@ def _serve_remote_processed_report(
     except OSError:
         manager.close()
         raise
-    response = StreamingHttpResponse(
+    response = BoundedStreamingHttpResponse(
         iterator,
         status=status_code,
         content_type="application/pdf",

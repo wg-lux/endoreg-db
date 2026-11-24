@@ -7,30 +7,14 @@ from endoreg_db.models import Center, VideoFile
 from endoreg_db.services.video_files import initialize_video_specs
 
 
-class _FakeVideoCapture:
-    def __init__(self, _path: str) -> None:
-        self.released = False
+def _observed_probe(path: Path):
+    from tests.services.test_video_processed_transcode_encryption import probe
 
-    def isOpened(self) -> bool:
-        return True
+    return probe()
 
-    def get(self, property_id: int) -> float:
-        from cv2 import (
-            CAP_PROP_FPS,
-            CAP_PROP_FRAME_COUNT,
-            CAP_PROP_FRAME_HEIGHT,
-            CAP_PROP_FRAME_WIDTH,
-        )
 
-        return {
-            CAP_PROP_FPS: 25.0,
-            CAP_PROP_FRAME_WIDTH: 1920.0,
-            CAP_PROP_FRAME_HEIGHT: 1080.0,
-            CAP_PROP_FRAME_COUNT: 250.0,
-        }[property_id]
-
-    def release(self) -> None:
-        self.released = True
+def _observed_timestamps(path: Path) -> list[float]:
+    return [index * 0.04 for index in range(250)]
 
 
 def _video(**kwargs: object) -> VideoFile:
@@ -56,8 +40,13 @@ def test_initialize_video_specs_preserves_existing_timeline_metadata(
         meta={"legacy_timeline_marker": "preserve"},
     )
     monkeypatch.setattr(
-        "endoreg_db.services.video_files._metadata.initialize_video_specs.cv2.VideoCapture",
-        _FakeVideoCapture,
+        "endoreg_db.services.video_files._metadata.initialize_video_specs.probe_video_artifact",
+        _observed_probe,
+    )
+
+    monkeypatch.setattr(
+        "endoreg_db.services.video_files._metadata.initialize_video_specs.probe_video_frame_pts",
+        _observed_timestamps,
     )
 
     assert initialize_video_specs(video, local_video_path=source_path) is True
@@ -68,7 +57,7 @@ def test_initialize_video_specs_preserves_existing_timeline_metadata(
     assert video.width == 1920
     assert video.height == 1080
     assert video.duration is not None
-    assert abs(video.duration - (300 / existing_frames_per_second)) < 1e-9
+    assert video.duration == 10.0
     assert video.meta == {"legacy_timeline_marker": "preserve"}
 
 

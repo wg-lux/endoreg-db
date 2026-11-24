@@ -33,14 +33,14 @@ def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
     return serializer.errors
 
 
-class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):  # pyright: ignore[reportInvalidTypeArguments]
+class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):
     """
     Create new PatientExamination instances.
     POST /api/examinations/create/
 
     Expected payload:
     {
-        "patient": "patient_hash_string",  # or patient_id integer
+        "patient": 2,  # local patient ID
         "examination": "examination_name", # examination name string
         "date_start": "2024-01-15",
     }
@@ -53,7 +53,7 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):  # pyri
     @transaction.atomic
     def create(self, request: Request, *args: str, **kwargs: str) -> Response:
         try:
-            logger.info(f"Creating examination with data: {request.data}")
+            logger.info("Creating examination")
 
             # Use the serializer for validation and creation
             serializer = cast(
@@ -82,7 +82,7 @@ class ExaminationCreateView(generics.CreateAPIView[PatientExamination]):  # pyri
                 )
 
         except Exception as e:
-            logger.error(f"Error creating examination: {str(e)}")
+            logger.exception(f"Error creating examination: {str(e)}")
             return Response(
                 {"error": "Failed to create examination", "message": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Protocol, cast
+from collections.abc import Callable
 
 from django.contrib.admin.views.decorators import staff_member_required  # pyright: ignore[reportUnknownVariableType]
 from django.http import HttpRequest, HttpResponse
@@ -65,7 +66,7 @@ def _medical_contract_module_missing(exc: ModuleNotFoundError) -> bool:
 
 def _build_patient_medical_ledger(patient: Patient) -> _MedicalLedgerPayload:
     try:
-        from endoreg_db.services.medical_ledger import (
+        from endoreg_db.services.interoperability.medical_ledger import (
             build_patient_medical_ledger_for_patient,
         )
     except ModuleNotFoundError as exc:
@@ -166,7 +167,7 @@ def start_examination(request: HttpRequest) -> HttpResponse:
     return render(request, "admin/start_examination.html")  # Loads the simple HTML page
 
 
-class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportInvalidTypeArguments]
+class PatientViewSet(viewsets.ModelViewSet[Patient]):
     """API endpoint for managing patients."""
 
     queryset = Patient.objects.all()
@@ -189,7 +190,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 from lx_dtypes.models.ledger.medical.Write import (
                     PatientMedicalLedgerCreate,
                 )
-                from endoreg_db.services.medical_ledger import (
+                from endoreg_db.services.interoperability.medical_ledger import (
                     MedicalLedgerIdempotencyConflict,
                     MedicalLedgerIdempotencyKeyInvalid,
                     MedicalLedgerReferenceConflict,
@@ -234,13 +235,23 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             status=status.HTTP_200_OK,
         )
 
+    @action(detail=True, methods=["get"], url_path="medical-terminology")
+    def medical_terminology(self, request: Request, pk: int | None = None) -> Response:
+        """list canonical medication, laboratory and unit definitions for entry."""
+        self.get_object()
+        from endoreg_db.services.interoperability.medical_ledger import (
+            medical_ledger_terminology,
+        )
+
+        return Response(medical_ledger_terminology().model_dump(mode="json"))
+
     @action(detail=True, methods=["post"], url_path="medications")
     def create_medication(self, request: Request, pk: int | None = None) -> Response:
         """Create one validated medication record for this visible patient."""
         del pk
         try:
             from lx_dtypes.models.ledger.medical.Write import PatientMedicationCreate
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerReferenceConflict,
                 create_patient_medication,
             )
@@ -283,7 +294,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             return _medical_resource_not_found_response()
         try:
             from lx_dtypes.models.ledger.medical.Write import PatientMedicationUpdate
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerPatientResourceNotFound,
                 MedicalLedgerReferenceConflict,
                 update_patient_medication,
@@ -304,6 +315,8 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             )
         except MedicalLedgerPatientResourceNotFound:
             return _medical_resource_not_found_response()
+        except PydanticValidationError as exc:
+            return _medical_validation_response(exc)
         except MedicalLedgerReferenceConflict as exc:
             return _medical_reference_conflict_response(exc.field_name)
         return Response(
@@ -321,7 +334,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             from lx_dtypes.models.ledger.medical.Write import (
                 PatientMedicationScheduleCreate,
             )
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerPatientResourceNotFound,
                 create_patient_medication_schedule,
             )
@@ -366,7 +379,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
             from lx_dtypes.models.ledger.medical.Write import (
                 PatientMedicationScheduleUpdate,
             )
-            from endoreg_db.services.medical_ledger import (
+            from endoreg_db.services.interoperability.medical_ledger import (
                 MedicalLedgerPatientResourceNotFound,
                 update_patient_medication_schedule,
             )
@@ -563,7 +576,7 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 status=status.HTTP_400_BAD_REQUEST,
             )
 
-        from endoreg_db.services.pseudonym_service import (
+        from endoreg_db.services.privacy.patient_pseudonyms import (
             generate_patient_pseudonym,
             validate_patient_for_pseudonym,
         )
@@ -585,14 +598,13 @@ class PatientViewSet(viewsets.ModelViewSet[Patient]):  # pyright: ignore[reportI
                 )
 
             # Generate the pseudonym
-            patient_hash, persisted = generate_patient_pseudonym(patient)
+            _, persisted = generate_patient_pseudonym(patient)
 
             if patient_id is None:
                 raise ValueError("Patient id is required for pseudonym response")
 
             payload = PatientPseudonymPayload(
                 patient_id=patient_id,
-                patient_hash=patient_hash,
                 source="server",
                 persisted=persisted,
                 message="Pseudonym generated successfully",

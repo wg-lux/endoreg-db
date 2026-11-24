@@ -7,11 +7,11 @@ from typing import TYPE_CHECKING, Protocol, cast
 from django.db import transaction
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
-from endoreg_db.models.metadata.sensitive_meta_logic import (
+from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
+from endoreg_db.services.patient_identity.sensitive_meta_ingestion import (
     update_or_create_sensitive_meta_from_dict,
 )
-from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
-from endoreg_db.services.sensitive_meta_external_ids import (
+from endoreg_db.services.patient_identity.external_ids import (
     assign_patient_external_id,
     split_patient_external_id,
 )
@@ -76,7 +76,7 @@ def _update_text_metadata(
                 else None
             )
     except Exception as text_extract_e:
-        logger.error(
+        logger.exception(
             "Failed during text extraction step for video %s: %s",
             video.raw_video_hash,
             text_extract_e,
@@ -106,8 +106,8 @@ def _update_text_metadata(
 
             # Add center info if not already present in extracted data
             extracted_data_dict = (
-                extracted_data_dict.model_copy(
-                    update={"center_name": video.center.name}
+                VideoTextMetaPayload.model_validate(
+                    {**extracted_data_dict.root, "center_name": video.center.name}
                 )
                 if "center_name" not in extracted_data_dict.root and video.center
                 else extracted_data_dict
@@ -170,7 +170,7 @@ def _update_text_metadata(
             return sensitive_meta
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to update/create SensitiveMeta or state for video %s: %s",
             video.raw_video_hash,
             e,

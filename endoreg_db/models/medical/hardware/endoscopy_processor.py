@@ -47,6 +47,10 @@ class EndoscopyProcessor(models.Model):
     )
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     image_width: models.IntegerField[Any, Any] = models.IntegerField(default=1)
     image_height: models.IntegerField[Any, Any] = models.IntegerField(default=1)
     # image_fps = models.IntegerField()

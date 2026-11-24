@@ -1,9 +1,9 @@
-import shutil
+from tests.helpers.pdf import render_single_page_pdf
 from pathlib import Path
 from typing import Protocol
+from unittest.mock import Mock
 
 import pytest
-from pytest import MonkeyPatch
 
 # report equivalents
 import endoreg_db.import_files.file_storage.create_report_file as create_from_file_module  # <-- pdf create_from_file
@@ -26,16 +26,6 @@ class _MockStorageLayout(Protocol):
     sensitive_report: Path
 
 
-@pytest.fixture(autouse=True)
-def cleanup_temp_files() -> object:
-    # Setup: do nothing
-    yield
-    # Teardown: Scan for any leftover .tmp files and delete them
-    # although tmp_path handles this, this is good for extra safety
-    for tmp_file in Path().glob("**/*.tmp.*"):
-        safe_unlink_file(tmp_file, missing_ok=True)
-
-
 def _configure_storage_layout(mock_paths: _MockStorageLayout) -> tuple[Path, Path]:
     """
     Returns the storage root and sensitive directory from the mocked model.
@@ -50,10 +40,8 @@ def _configure_storage_layout(mock_paths: _MockStorageLayout) -> tuple[Path, Pat
 
 
 def _write_minimal_pdf(path: Path) -> None:
-    """
-    Write a tiny valid-ish report (enough to be treated as a report file on disk).
-    """
-    content = b"%report-1.4\n1 0 obj\n<<>>\nendobj\ntrailer\n<<>>\n%%EOF\n"
+    """Write a parseable report with the existing PDF renderer."""
+    content = render_single_page_pdf("Report import fixture")
     ensure_directory(path.parent)
     atomic_write_file(
         destination=path,
@@ -63,7 +51,9 @@ def _write_minimal_pdf(path: Path) -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("history", [None, False, True])
 def test_create_from_file_happy_path(
+    history: bool | None,
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
     base_db_data: object,
@@ -92,6 +82,11 @@ def test_create_from_file_happy_path(
         processor_name=processor_name,
         original_path=Path(src_file),
     )
+
+    if history is not None:
+        ProcessingHistory.get_or_create_for_hash(
+            file_hash=get_file_hash(src_file), success=history
+        )
 
     report, processed, needs_processing = (
         create_from_file_module.create_or_retrieve_report_file(ctx)
@@ -161,10 +156,12 @@ def test_create_from_file_uses_sensitive_copy_as_input_but_not_as_canonical_raw_
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("completed", [False, True])
 def test_create_from_file_duplicate_with_existing_file(
+    completed: bool,
+    monkeypatch: pytest.MonkeyPatch,
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
-    monkeypatch: MonkeyPatch,
     base_db_data: object,
 ) -> None:
     """
@@ -211,26 +208,27 @@ def test_create_from_file_duplicate_with_existing_file(
         center_name=center_name,
         processor_name=processor_name,
     )
+    if completed:
+        monkeypatch.setattr(
+            create_from_file_module, "require_usable_completed_report", Mock()
+        )
     r2, processed2, needs_processing2 = (
         create_from_file_module.create_or_retrieve_report_file(ctx2)
     )
 
-    assert processed2 is True
-    assert needs_processing2 is False
+    assert processed2 is completed
+    assert needs_processing2 is not completed
     assert r2.pk == r1.pk
 
 
 @pytest.mark.django_db
-def test_create_from_file_duplicate_with_missing_file_short_circuits_when_success_history_exists(
+def test_create_from_file_duplicate_with_missing_file_requires_processing(
     mock_storage: _MockStorageLayout,
     tmp_path: Path,
-    monkeypatch: MonkeyPatch,
     base_db_data: object,
 ) -> None:
     """
-    Successful ProcessingHistory wins over orphan detection in the current
-    implementation, so a missing raw file still short-circuits to the existing
-    report instance.
+    History alone cannot establish success; keep the existing record for repair.
     """
     _storage_root, _sensitive_dir = _configure_storage_layout(mock_storage)
 
@@ -281,34 +279,7 @@ def test_create_from_file_duplicate_with_missing_file_short_circuits_when_succes
         create_from_file_module.create_or_retrieve_report_file(ctx2)
     )
 
-    assert processed2 is True
-    assert needs_processing2 is False
+    assert processed2 is False
+    assert needs_processing2 is True
     assert reused_report.pk == orphan_pk
     assert reused_report.get_raw_file_path() is None
-
-
-def test_check_storage_capacity_raises_on_insufficient_space(
-    tmp_path: Path,
-    monkeypatch: MonkeyPatch,
-) -> None:
-    """
-    Unit-test check_storage_capacity in isolation by faking disk_usage.
-    """
-    src_file = tmp_path / "report.pdf"
-    _write_minimal_pdf(src_file)
-
-    class FakeUsage:
-        def __init__(self, free: int) -> None:
-            self.total = 10 * 1024
-            self.used = 0
-            self.free = free
-
-    def fake_disk_usage(path: str | Path) -> FakeUsage:
-        return FakeUsage(free=100)
-
-    monkeypatch.setattr(
-        shutil,
-        "disk_usage",
-        fake_disk_usage,
-        raising=True,
-    )

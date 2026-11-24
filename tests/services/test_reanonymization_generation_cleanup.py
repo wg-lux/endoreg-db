@@ -8,6 +8,7 @@ from uuid import uuid4
 from unittest.mock import Mock
 
 import pytest
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from django.core.files.base import ContentFile
 from django.db import connection
 from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
@@ -15,18 +16,24 @@ from lx_dtypes.models.contracts.endoscopy_processor import RoiBoxCore
 from endoreg_db.models import Center, VideoFile, SensitiveMeta
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import cleanup_receipts
-from endoreg_db.services import hls_media, processed_video_cleanup as cleanup
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
 from endoreg_db.services.video_files import _anonymization as service
 from endoreg_db.utils.file_operations import atomic_write_file, get_file_hash
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from tests.services.test_video_processed_transcode_encryption import probe
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
 
 @pytest.fixture
 def video(monkeypatch: pytest.MonkeyPatch) -> VideoFile:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     center = Center.objects.create(name=f"reanonymize-{uuid4().hex}")
     sensitive = SensitiveMeta.objects.create(center=center)
     state = sensitive.get_or_create_state()
@@ -101,7 +108,7 @@ def test_repeated_reanonymization_retires_transcoded_and_previous_generations(
     for attempt in range(3):
         previous_name = str(video.processed_file.name)
         video.meta = {**(video.meta or {}), "clinical_review": {"attempt": attempt}}
-        assert video.anonymize(delete_original_raw=False)
+        assert video.anonymize()
         video.refresh_from_db()
         assert video.processed_file.name != previous_name
         assert Path(str(video.processed_file.name)).name.startswith(
@@ -115,6 +122,10 @@ def test_repeated_reanonymization_retires_transcoded_and_previous_generations(
         metadata = video.meta
         assert metadata is not None
         assert metadata["clinical_review"] == {"attempt": attempt}
+        history = VideoFileMetaPayload.model_validate(
+            metadata
+        ).canonical_timeline_history
+        assert history is not None and len(history) == attempt + 1
         assert video.raw_file.name == raw_name
         state = video.get_or_create_state()
         state.anonymized = False
@@ -168,17 +179,15 @@ def test_cleanup_failure_preserves_committed_master_and_retry_reaps_receipt(
     assert video.processed_file.name == published
 
 
-def test_changed_raw_timeline_cannot_rewrite_existing_annotation_coordinates(
-    video: VideoFile, monkeypatch: pytest.MonkeyPatch
+def test_stale_fps_metadata_does_not_reject_native_decoded_timeline(
+    video: VideoFile,
 ) -> None:
     previous_name = str(video.processed_file.name)
     video.fps = 50
     video.save(update_fields=["fps"])
-    encoder = Mock()
-    monkeypatch.setattr(service, "mask_video_to_roi_and_blacken_intervals", encoder)
-    with pytest.raises(RuntimeError, match="Anonymization failed"):
-        video.anonymize(delete_original_raw=False)
-    encoder.assert_not_called()
+    assert video.anonymize(delete_original_raw=False)
     video.refresh_from_db()
-    assert video.processed_file.name == previous_name
-    assert not cleanup_receipts(video.meta)
+    assert video.processed_file.name != previous_name
+    assert video.fps == 25
+    assert video.frame_count == 250
+    assert video.frames.count() == 250

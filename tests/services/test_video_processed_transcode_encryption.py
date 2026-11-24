@@ -6,21 +6,33 @@ from uuid import uuid4
 from unittest.mock import patch
 
 import pytest
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from django.core.files.base import ContentFile
 from django.db import connection
 
-from endoreg_db.models import Center, VideoFile
-from endoreg_db.schemas.video_storage import VideoArtifactProbe, VideoTimelineContract
-from endoreg_db.services import (
-    video_processed_transcode as service,
-    hls_media,
-    processed_video_cleanup as cleanup,
+from endoreg_db.models import (
+    Center,
+    VideoFile,
+    Frame,
+    Label,
+    ImageClassificationAnnotation,
 )
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoTimelineContract,
+    FramePresentationTimestamp,
+)
+from endoreg_db.services.video_storage import processed_transcode as service
+from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.video_storage import generation_cleanup as cleanup
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.schemas.processed_video_cleanup import (
     cleanup_receipts,
+    ProcessedGenerationCleanupResult,
 )
-from endoreg_db.services.hls_media import HlsMaterializationResult
+from endoreg_db.services.streaming.hls_media import HlsMaterializationResult
 from endoreg_db.services.video_files.queries import (
     get_video_by_content_hash,
     video_hash_exists,
@@ -65,7 +77,12 @@ def probe() -> VideoArtifactProbe:
         bit_rate_bps=800_000,
         size_bytes=10,
         timeline=VideoTimelineContract(
-            fps_num=25, fps_den=1, duration_seconds=10, frame_count=250
+            fps_num=25,
+            fps_den=1,
+            duration_seconds=10,
+            frame_count=250,
+            time_base_num=1,
+            time_base_den=1000,
         ),
     )
 
@@ -97,6 +114,10 @@ def ready_hls(video_id: int, **_kwargs: object) -> HlsMaterializationResult:
 
 @pytest.fixture(autouse=True)
 def validated_hls(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
+
     # The encoder/HLS integration suite verifies segment encryption and playlists.
     # This suite exercises real encrypted storage and publication cleanup.
     def ready(*, video: VideoFile, artifact_kind: str) -> VideoHlsArtifact:
@@ -145,6 +166,11 @@ def test_ciphertext_source_scoped_plaintext_and_encrypted_publication(
     assert result.published
     video.refresh_from_db()
     target = video.processed_file
+    history = VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+    assert history is not None
+    assert len(history) == 1
+    assert history[0].after.content_hash == video.processed_video_hash
+    assert len(history[0].before.presentation_timestamps) == 250
     assert Path(target.path).read_bytes().startswith(MAGIC)
     with target.open("rb") as plaintext:
         assert plaintext.read() == b"small copy"
@@ -153,6 +179,68 @@ def test_ciphertext_source_scoped_plaintext_and_encrypted_publication(
     assert scoped_paths
     assert all(not path.exists() for path in scoped_paths)
     assert not scoped_paths[0].parent.exists()
+
+
+@pytest.mark.parametrize("failure", ["shift", "drop"])
+def test_native_timestamp_failure_preserves_master_and_annotations(
+    video: VideoFile,
+    monkeypatch: pytest.MonkeyPatch,
+    failure: str,
+) -> None:
+    original_name = str(video.processed_file.name)
+    frame = Frame.objects.create(video=video, frame_number=10, timestamp=0.4)
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=Label.objects.create(name="preserved-annotation"),
+        value=True,
+    )
+    annotation_before = (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+    )
+    paths: list[Path] = []
+
+    def encode(source: Path, destination: Path, **_kwargs: object) -> Path:
+        paths.extend([source, destination])
+        atomic_write_file(
+            destination=destination, content=[b"small copy"], file_mode=0o600
+        )
+        return destination
+
+    def timestamps(path: Path) -> list[FramePresentationTimestamp]:
+        rows = decoded_test_timestamps(path)
+        if path.read_bytes() == b"small copy":
+            if failure == "drop":
+                return rows[:-1]
+            rows[-1] = rows[-1].model_copy(
+                update={
+                    "presentation_timestamp": 10040,
+                    "presentation_time_seconds": 10.04,
+                }
+            )
+        return rows
+
+    monkeypatch.setattr(canonical_timelines, "probe_video_frame_timestamps", timestamps)
+    with (
+        patch.object(service, "transcode_video", side_effect=encode),
+        patch.object(service, "probe_video_artifact", return_value=probe()),
+        patch.object(service, "materialize_video_hls") as publish_hls,
+    ):
+        result = service.transcode_processed_video_for_storage_pressure(
+            video, apply=True
+        )
+    assert result.status == "failed"
+    assert not result.published
+    publish_hls.assert_not_called()
+    video.refresh_from_db()
+    frame.refresh_from_db()
+    assert str(video.processed_file.name) == original_name
+    assert Path(video.processed_file.path).read_bytes().startswith(MAGIC)
+    assert frame.frame_number == 10 and frame.timestamp == 0.4
+    assert (
+        ImageClassificationAnnotation.objects.filter(pk=annotation.pk).values().get()
+        == annotation_before
+    )
+    assert all(not path.exists() for path in paths)
 
 
 @pytest.mark.parametrize("failure", ["wrong_key", "tamper", "loader"])
@@ -371,3 +459,20 @@ def test_failed_attempt_cleanup_blocks_another_attempt_directory(
             service.transcode_processed_video_for_storage_pressure(video, apply=True)
     encoder.assert_not_called()
     assert set(root.rglob("*")) == existing
+
+
+def test_pending_cleanup_logs_safe_reason_without_discarding_receipt(
+    video: VideoFile, caplog: pytest.LogCaptureFixture
+) -> None:
+    result = ProcessedGenerationCleanupResult(
+        video_id=video.pk, pending=1, reason="active_media_lease"
+    )
+    with patch.object(
+        service, "cleanup_processed_video_generations", return_value=result
+    ):
+        with pytest.raises(service.ProcessedVideoTranscodeCleanupError):
+            service._cleanup_committed_processed_assets(video_id=video.pk)  # pyright: ignore[reportPrivateUsage]
+    assert '"reason": "active_media_lease"' in caplog.text
+    assert '"pending": 1' in caplog.text
+    assert str(video.processed_file.name) not in caplog.text
+    assert Path(video.processed_file.path).exists()

@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass
+from datetime import UTC, datetime
+from fractions import Fraction
 from typing import Literal, cast
 from uuid import uuid4
 
@@ -23,8 +25,16 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     LabelVideoSegment,
 )
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.video_segments_bulk_mutation import bulk_mutate_video_segments
+from endoreg_db.schemas.video_storage import (
+    VideoArtifactProbe,
+    VideoSourceTimelineEvidence,
+    VideoTimelineContract,
+)
+from endoreg_db.services.annotations.segments_bulk_mutation import (
+    bulk_mutate_video_segments,
+)
 from endoreg_db.views.video.correction import update_segments_after_frame_removal
 
 type _Operation = Literal["bulk-mutation", "frame-removal", "both"]
@@ -179,7 +189,6 @@ class Command(BaseCommand):
                     seed_segments=seed_segments,
                     options=command_options,
                     frame_count=frame_count,
-                    fps=fps,
                 ),
                 config=profiling_config,
             )
@@ -229,7 +238,6 @@ def _run_profiled_segment_updates(
     seed_segments: list[LabelVideoSegment],
     options: _CommandOptions,
     frame_count: int,
-    fps: float,
 ) -> dict[str, object]:
     payload: dict[str, object] = {}
     if options.runs_bulk_mutation:
@@ -238,7 +246,6 @@ def _run_profiled_segment_updates(
             label=label,
             seed_segments=seed_segments,
             options=options,
-            fps=fps,
         )
 
     if options.runs_frame_removal:
@@ -257,7 +264,6 @@ def _run_bulk_mutation_profile(
     label: Label,
     seed_segments: list[LabelVideoSegment],
     options: _CommandOptions,
-    fps: float,
 ) -> dict[str, object]:
     label_id = _required_pk(label, "Label")
     update_targets = seed_segments[: options.update_count]
@@ -272,7 +278,7 @@ def _run_bulk_mutation_profile(
             {
                 "client_id": -(index + 1),
                 "label_id": label_id,
-                **_time_payload(create_start_index + index, fps),
+                **_time_payload(create_start_index + index, video),
             }
             for index in range(options.create_count)
         ],
@@ -280,7 +286,7 @@ def _run_bulk_mutation_profile(
             {
                 "id": _required_pk(segment, "LabelVideoSegment"),
                 "label_id": label_id,
-                **_time_payload(update_start_index + index, fps),
+                **_time_payload(update_start_index + index, video),
             }
             for index, segment in enumerate(update_targets)
         ],
@@ -372,12 +378,49 @@ def _resolve_video(
         name=f"profile-segment-updates-{uuid4().hex[:12]}",
         display_name="Segment Update Profiling",
     )
+    # Synthetic profiler coordinates are generated explicitly, never inferred
+    # for the existing-video path above.
+    rate = Fraction(str(options.fps))
+    timeline = VideoTimelineContract(
+        fps_num=rate.numerator,
+        fps_den=rate.denominator,
+        duration_seconds=float(frame_count / rate),
+        frame_count=frame_count,
+        time_base_num=rate.denominator,
+        time_base_den=rate.numerator,
+    )
     video = VideoFile.objects.create(
         center=center,
         raw_video_hash=f"profile-segment-updates-{uuid4().hex}",
         original_file_name="profile_segment_updates.mp4",
         fps=options.fps,
         frame_count=frame_count,
+        meta={
+            "source_timeline": VideoSourceTimelineEvidence(
+                persisted_at=datetime.now(UTC),
+                timestamp_mapping="rational_cfr",
+                source=VideoArtifactProbe(
+                    codec_name="synthetic",
+                    pixel_format="synthetic",
+                    width=1,
+                    height=1,
+                    size_bytes=1,
+                    timeline=timeline,
+                ),
+            ).model_dump(mode="json")
+        },
+    )
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video,
+                frame_number=index,
+                presentation_timestamp=index,
+                timestamp=float(index / rate),
+            )
+            for index in range(frame_count)
+        ],
+        batch_size=1_000,
     )
     return video, frame_count, options.fps, True
 
@@ -437,11 +480,11 @@ def _frame_bounds(index: int) -> tuple[int, int]:
     return start, start + 2
 
 
-def _time_payload(index: int, fps: float) -> dict[str, float]:
+def _time_payload(index: int, video: VideoFile) -> dict[str, float]:
     start_frame, end_frame = _frame_bounds(index)
     return {
-        "start_time": start_frame / fps,
-        "end_time": end_frame / fps,
+        "start_time": video.frame_number_to_s(start_frame),
+        "end_time": video.frame_number_to_s(end_frame),
     }
 
 

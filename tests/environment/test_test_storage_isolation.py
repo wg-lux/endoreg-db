@@ -9,6 +9,16 @@ from django.conf import settings
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.runtime_paths import build_test_run_namespace
 
+pytestmark = pytest.mark.no_db
+
+
+def test_pure_test_does_not_allocate_database_or_temporary_directory(
+    request: pytest.FixtureRequest,
+) -> None:
+    assert "db" not in request.fixturenames
+    assert "django_db_setup" not in request.fixturenames
+    assert "tmp_path" not in request.fixturenames
+
 
 @pytest.mark.parametrize(
     ("worker_id", "process_id", "expected"),
@@ -45,3 +55,23 @@ def test_video_and_pdf_storage_share_the_session_root() -> None:
         paths.anonym_report,
     ):
         media_path.resolve().relative_to(storage_root)
+
+
+def test_unit_video_test_replaces_real_anonymizer() -> None:
+    from endoreg_db.import_files import video_import_service
+
+    anonymizer = video_import_service.VideoAnonymizer
+    assert anonymizer is not None
+    assert anonymizer.__name__ == "DummyVideoAnonymizer"
+
+
+@pytest.mark.integration
+def test_video_integration_keeps_real_anonymizer_without_temporary_directory(
+    request: pytest.FixtureRequest,
+) -> None:
+    from endoreg_db.import_files import video_import_service
+
+    # None means the real class is still loaded lazily on first use.
+    anonymizer = video_import_service.VideoAnonymizer
+    assert anonymizer is None or anonymizer.__name__ != "DummyVideoAnonymizer"
+    assert "tmp_path" not in request.fixturenames

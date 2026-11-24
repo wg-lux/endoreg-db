@@ -10,6 +10,15 @@ tracking:
   state: active
   history: []
 source_documents:
+- path: docs/image_hash_publication.md
+  disposition: reference
+  note: Synthetic image-hash publication protocol and reproducible artifact export.
+- path: docs/agent_context.md
+  disposition: reference
+  note: Hierarchical navigation schema, maintenance rules and public context guidance.
+- path: docs/persistence_model_ownership.md
+  disposition: reference
+  note: Canonical persistence ownership and coordinated reversible application cutover.
 - path: docs/model_layer_map_for_agents.md
   disposition: reference
   note: Definiert bestehende Modell-, Service-, Helper- und Importgrenzen.
@@ -17,10 +26,511 @@ source_documents:
   disposition: reference
   note: Definiert Dead-Code-Baseline, Ownership-, Exception- und Reviewregeln.
 definition_of_done:
+- id: devenv_precommit_runner
+  category: testing
+  title: Entwicklungsumgebung installiert und startet die konfigurierten Pre-Commit-Hooks
+  acceptance:
+  - Ein leer geerbtes PREK_HOME wird durch den absoluten projektlokalen Cache ersetzt; Hook-Installation
+    funktioniert nach dem Laden der Entwicklungsumgebung.
+  - Formatierungs- und Preflight-Tasks verwenden den deklarierten und installierten prek-Runner sowie
+    vorhandene Hook-IDs.
+  - Die Standard-Hooks werden vollständig ausgeführt; Ergebnisse und verbleibende fachliche Prüffehler
+    werden dokumentiert, ohne Hooks zu überspringen oder Abhängigkeiten automatisch neu zu synchronisieren.
+  - Installation ersetzt alle in default_install_hook_types deklarierten Hook-Typen einschließlich alter
+    commit-msg.legacy-Shims; der Commit-Message-Hook läuft ohne das entfernte Python-Modul pre_commit.
+  required: true
+  verification:
+    kind: manual
+    instructions: Leeres PREK_HOME beim Laden von devenv prüfen, mit prek install -f alle deklarierten
+      Hooks installieren und agent:pre-commit vollständig ausführen; Commit-Message-Hook direkt und bestehende
+      Umgebungstests prüfen.
+    timeout_seconds: 1800
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-11-17: Leeres PREK_HOME reproduziert exakt cannot make an empty path absolute.
+        Nach Laden der korrigierten devenv-Konfiguration mit leer geerbtem PREK_HOME: absoluter Cache
+        .devenv/state/prek und prek install -f --hook-type pre-commit erfolgreich.'
+    - kind: command
+      reference: '2026-11-17: devenv tasks run agent:pre-commit: Exit 0, 241 s; alle acht Standard-Hooks
+        bestanden, einschließlich Pyright, Typverträgen, Routen, Dokumentation, Django-Startup und Deployment-Check.
+        Erster Lauf hatte saubere Prüfergebnisse, aber zwei Dateiänderungs-Meldungen durch gleichzeitig
+        aktualisierte Tracker-Evidenz; abschließender Lauf erfolgte ohne parallele Dateiänderungen.'
+    - kind: test
+      reference: '2026-11-17: Nach dem Pyright-Hook: .devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py
+        -q --tb=short: 6 bestanden, 1 bestehende Plugin-Warnung, 0,25 s. Keine neuen Spiegeltests für
+        reine Konfigurationsänderungen; tatsächlicher Shell-/Installations- und Task-Aufruf geprüft.'
+    - kind: test
+      reference: '2026-11-17: Tatsächlicher git hook run commit-msg mit temporärer Commit-Nachricht reproduziert
+        Exit 1 und No module named pre_commit. Nach Sicherung des alten generierten Shims außerhalb von
+        .git/hooks und prek install -f: beide Hook-Typen installiert, commit-msg.legacy entfernt, tatsächlicher
+        Commit-Message-Hook Exit 0. Nachricht und SHA-256 des Git-Index unverändert. README verwendet
+        nun die gemeinsame default_install_hook_types-Konfiguration. Strukturprüfung: 67 Manifeste; Dokumentationsprüfung:
+        0 Fehler/0 Warnungen; git diff --check bestanden. Standard-Pre-Commit-Suite bereits im vorherigen
+        Lauf und im vom Benutzer gezeigten Commit-Versuch erfolgreich; keine erneute Ausführung für reine
+        Dokumentations- und Hook-Installationskorrektur.'
+    note: 'Nachtrag: Die ursprüngliche Installation nur für pre-commit ließ einen alten commit-msg.legacy-Shim
+      aktiv. prek install -f ersetzt jetzt beide bereits deklarierten Hook-Typen und entfernt die Legacy-Verkettung.
+      Kein Commit erstellt, keine Abhängigkeit installiert und Git-Index unverändert.'
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T14:55:23.011603Z'
+- id: release_failure_cluster_regressions
+  category: testing
+  title: Fehlercluster aus dem Release-Testlauf sind reproduziert und an ihrer Ursache behoben
+  acceptance:
+  - Fehlende Paketdateien und kaskadierende Django-Registry- oder Datenbankfehler werden mit unverändertem
+    installiertem Paketbestand erneut geprüft; Umgebungswechsel laufen nicht parallel zu Tests.
+  - Migrationskopf und geprüfte Persistenz- sowie Referenzinventare stimmen mit dem tatsächlichen Modellbestand
+    überein.
+  - Videoimport, Publikation und Test-Fixtures bewahren kanonische Präsentationszeitstempel, Inhaltsidentität
+    und exklusive Medienoperationen; ungültige Eingaben erhalten keinen stillen Fallback.
+  - Synchrone Zeitstempelerfassung hinterlässt keine eigene Wiedergabesitzung; fremde Wiedergabe-Leases
+    bleiben unverändert, und exklusive Schreiber sowie autorisierte Speicherbereinigung blockieren den
+    Zugriff weiterhin.
+  - Modellabhängige Tests unterscheiden deterministische Vertragsprüfungen von explizit provisionierten
+    echten Modellen; fehlende Produktionsressourcen bleiben sichtbare Fehler.
+  - Reproduzierte lx-dtypes-Vertragsfehler werden in ihrem zuständigen Paket behoben und gegen betroffene
+    Endoreg-Verbraucher geprüft.
+  - Pyright vor pytest, fokussierte Clusterprüfungen und abschließende gemeinsame Regression dokumentieren
+    genaue Ergebnisse und verbleibende Grenzen.
+  required: true
+  verification:
+    kind: manual
+    instructions: Betroffene Tests aus dem bereitgestellten Fehlerprotokoll zunächst gezielt reproduzieren;
+      nach Ursachenbehebung gemeinsame Regression in unveränderter Umgebung ausführen.
+    timeout_seconds: 3600
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-11-17: Endoreg-Gesamtlauf der 371 gemeldeten Fehlerfälle mit zwei Prozessen und
+        echten Videooperationen: 368 bestanden, 3 fehlgeschlagen, 42 Warnungen, 844,43 s. Die drei verbleibenden
+        Fehler waren unvollständige Test-Doubles für kanonische Publikation beziehungsweise Berichtsmetadaten
+        und Extraktionsbelege. Nach Korrektur ausschließlich dieser Fixtures bestanden beide vollständigen
+        Dateien tests/services/test_video_import_orchestration.py und tests/views/media/test_pdf_media_text_visibility.py:
+        11 bestanden, 2 Warnungen, 169,18 s. Kein erneuter Gesamtlauf nach diesen Fixture-Korrekturen.'
+    - kind: test
+      reference: '2026-11-17: lx-data-models: .venv/bin/pytest tests -q --tb=short: 2291 bestanden, 1
+        bestehender hostabhängiger Skip, 500,29 s. Zusätzliche Umgebungs- und Strukturprüfungen: 33 bestanden.
+        Vollständiger Pyright: lx-data-models 0 Fehler und 0 Warnungen; Endoreg 0 Fehler und 2 bestehende
+        Warnungen. Letzte geänderte Import-Fixtures zusätzlich mit Pyright ohne Fehler oder Warnungen
+        geprüft, jeweils vor pytest.'
+    - kind: test
+      reference: '2026-11-17: Automatisches direnv/devenv-Neuanlegen der gemeinsam verwendeten Python-Umgebung
+        reproduziert und in beiden Repositories durch explizite Synchronisierung ersetzt. Frühere dadurch
+        unterbrochene Läufe nicht als Nachweis gewertet. Vor der abschließenden Endoreg-Regression eingefrorene
+        Abhängigkeiten mit Python 3.12.14 wiederhergestellt; uv pip check bestätigt 331 kompatible Pakete.
+        Tatsächliche wiederholte Shell-Neuladungen verändern weder Umgebungsverzeichnis/Python-Verknüpfung
+        noch Inodes und Hashes der RECORD-Dateien: Endoreg 331, lx-data-models .venv 143 und .devenv/state/venv
+        142.'
+    - kind: test
+      reference: '2026-11-17: Installiertes lx-dtypes 0.6.8: 1332 RECORD-Hashes geprüft und 20 Katalogidentitäten
+        gültig. Kandidaten-Wheel, Paketquellen und Endoreg-Installation stimmen für 1318 Paketdateien
+        bytegenau überein; keine spekulative Bibliotheksänderung. Migration auf Kopf 0118, vorhandene
+        gender_alias-Felder und drei tatsächliche Service-Verbraucher in den geprüften Inventaren korrigiert;
+        alle 101 Fälle des Inventar-/Startup-Clusters über Haupt- und Nachlauf bestanden. Isolations-/Nebenläufigkeitscluster:
+        70 bestanden.'
+    - kind: test
+      reference: '2026-11-17: Kombinierte Prüfung von Medienoperationen, Zeitstempeln, Labeln, Video-Inferenz,
+        Umgebung und echtem Embedding-Modell: 100 bestanden; danach alle drei Aufrufer des korrigierten
+        Watcher-Testhelfers bestanden. Schneller Mock-Modus: 2 bestanden, 1 bestehender Policy-Skip. Neun
+        neue Lease-Fälle prüfen ausschließlich eigene Freigabe, unveränderte fremde Wiedergabe, Fehler-Rollback,
+        exklusive Schreiber und Speicherbereinigung einschließlich PostgreSQL-Sperre. Gepinntes de_core_news_lg
+        3.8.0 aus bestehender Nixpkgs-Quelle als reine Modelldaten provisioniert; alle 30 Dateien stimmen
+        mit dem kanonischen Manifest überein.'
+    - kind: test
+      reference: '2026-11-17: Ruff und Diff-Prüfungen für die Änderungen bestanden. Endoreg-Strukturprüfung:
+        67 gültige Manifeste; lx-data-models-Strukturprüfung bestanden. Feature-Tracker: 40 gültige Definitionen.
+        Bestehende Änderungen in beiden Arbeitsverzeichnissen erhalten; keine Serveränderung, kein Commit
+        und keine Bereitstellung.'
+    note: Alle 371 eindeutig identifizierten Fehlerfälle aus dem bereitgestellten Protokoll haben bestandene
+      Nachweise über den gemeinsamen Lauf und den abschließenden Nachlauf. Keine Rust-Zustands-, Präsentationszeitstempel-,
+      Integritäts- oder Importvalidierung abgeschwächt. Verifikation betrifft diese Regressionen, nicht
+      die vollständige Produktionsfreigabe; keine Veröffentlichung oder Bereitstellung durchgeführt.
+    assessed_by: codex-storage-retry-20261117
+    assessed_at: '2026-11-17T14:08:39.773065Z'
+- id: retired_media_shadow_implementations
+  category: functionality
+  title: Stillgelegte Medienpfade bilden keine konkurrierenden Produktionsimplementierungen
+  acceptance:
+  - Alte Video- und Bericht-Transferannahme samt exklusiven Rohupload-Helfern und Tests ist entfernt;
+    der öffentliche Klartext-Einstieg lehnt weiter ab und verschlüsselte Transfers bleiben geprüft.
+  - Der ungenutzte Streaming-Materializer samt exklusiven Tests, das verwaiste Frame-Anonymisierungsmodul
+    und die ausdrücklich zur Entfernung freigegebenen Legacy-Query-Exporte sind entfernt.
+  - Aufruferprüfung, Pyright, fokussierte Import-, Transfer-, Streaming- und Exportregressionen sowie
+    Strukturprüfung sind dokumentiert; bestehende globale Guard-Abweichungen bleiben sichtbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Siehe reports/retired_media_paths_removal.yml; Pyright vor den dort genannten Tests
+      ausführen.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: feature-tracking/reports/retired_media_paths_removal.yml
+    - kind: test
+      reference: 486 passed, 8 subtests; final trace 47 passed; full Pyright 0 errors, 24 warnings
+    note: Vier ausdrücklich freigegebene Altpfade samt exklusiven Helfern und Tests entfernt; erhaltene
+      Service-ASTs unverändert. Bestehende globale Dead-Code-, Boundary- und Modellinventar-Drift bleibt
+      offen; keine repositoryweite Produktionsfreigabe.
+    assessed_by: codex-dead-code-20261019-a
+    assessed_at: '2026-10-19T09:09:38.869272Z'
+- id: image_content_hash_pixel_experiment
+  category: testing
+  title: Reproduzierbares Ein-Pixel-Experiment unterscheidet Dateiidentität und Bildähnlichkeit
+  acceptance:
+  - Deterministische RGB-Beispielbilder werden verlustfrei gespeichert; pro Generation ändert sich genau
+    ein Pixel um eine Intensitätsstufe in einem Farbkanal, kumulativ über alle Pixel.
+  - Zwei Bildgrößen und alle drei Farbkanäle werden mit dem echten get_file_hash geprüft; jede veränderte
+    Generation unterscheidet sich vom Original und allen vorherigen Vorwärtsgenerationen.
+  - Byteidentische Kopien stimmen überein; schrittweise Rücknahme erreicht den Originalhash erst nach
+    vollständiger Wiederherstellung. Gleiche Pixel mit anderen PNG-Metadaten haben andere Dateihashes.
+  - Der endliche Versuch belegt keine allgemeine Kollisionsfreiheit und definiert keinen visuellen Schwellenwert.
+  - Ein reproduzierbarer Export archiviert alle tatsächlich gehashten PNG-Dateien, Einzelmesswerte, Quellcode-Snapshots,
+    Softwareversionen, Testprotokoll, Prüfsummen, Tabellen und Vektorgrafiken. Die Messwertzahl und die
+    archivierten Dateien werden gegen den tatsächlichen Testlauf geprüft.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - -m
+    - scripts.collect_image_hash_publication
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: .devenv/state/venv/bin/pytest tests/utils/test_image_content_hash.py -q
+      note: Exit-Code 0
+    - kind: test
+      reference: 'tests/utils/test_image_content_hash.py: 7 passed, 1 warning in 1.12s'
+    - kind: command
+      reference: '.devenv/state/venv/bin/python -m scripts.collect_image_hash_publication: exit 0; 7 passed;
+        1934 rows; ZIP verified'
+    - kind: document
+      reference: docs/image_hash_publication.md
+    - kind: test
+      reference: data/publication-artifacts/export/image-hash-20261016T081010Z-8094c8de/pytest.log
+    note: 'Neutraler Publikationsexport gegen unveränderte Testfälle: 7 passed, 1 bestehende Plugin-Warnung
+      in 1.81s. 1934 PNG-Beobachtungen, 960 Vorwärts- und 960 Rücknahmeschritte; Messwerte, zwei CSV-Tabellen,
+      drei Grafiken in PDF/SVG/PNG, deutsches Protokoll, 15 Code-/Konfigurationssnapshots und Umgebungsversionen
+      archiviert. ZIP enthält 1964 Dateien; CRC und byteweiser Vergleich sämtlicher Mitglieder bestanden.
+      Vollständiger Pyright: 0 Fehler/24 bestehende Warnungen; finaler Exporter: 0 Fehler/0 Warnungen.
+      Ruff bestanden. Frühere Exportanbindung erfasste 0 Zeilen und wurde durch die Mengenprüfung abgewiesen;
+      Anbindung an tatsächliches pytest.Function.module korrigiert. Kein visueller Schwellenwert oder
+      unabhängiger Replikationsnachweis.'
+    assessed_by: codex-pixel-hash-20261016
+    assessed_at: '2026-10-16T08:11:49.727259Z'
+- id: hierarchical_agent_context
+  category: documentation
+  title: Hierarchical agent context maps describe actual ownership and navigation
+  acceptance:
+  - Root and bounded domain manifests form a reachable hierarchy with actual file, dependency, contract
+    and test references.
+  - Existing service relocation and hub helper ownership metadata remain compatible with their consumers.
+  - AGENTS.md requires progressive discovery, scoped delegation and same-change manifest maintenance.
+  - The typed validator rejects malformed schemas, stale references, escaping paths, broken parent links
+    and orphan manifests; focused tests and pre-commit integration pass.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/python
+    - scripts/lint_structure.py
+    timeout_seconds: 60
+  assessment:
+    status: verified
+    evidence:
+    - kind: command
+      reference: '.devenv/state/venv/bin/python scripts/lint_structure.py: 65 manifests valid'
+    - kind: test
+      reference: '.devenv/state/venv/bin/pytest tests/scripts/test_lint_structure.py tests/services/test_service_structure.py
+        feature-tracking/test_tracker.py -q: 259 passed, 1 pytest import-rewrite warning; cleanup warnings
+        from existing temporary runtime directories'
+    - kind: command
+      reference: 'Full project Pyright: 0 errors, 18 warnings in existing files; explicit validator and
+        tracker Pyright: 0 errors, 0 warnings'
+    - kind: command
+      reference: 'uv tool run --from pre-commit pre-commit run repository-structure --all-files: passed;
+        project interpreter used by hook'
+    - kind: document
+      reference: docs/agent_context.md
+    - kind: command
+      reference: '2026-10-20: python scripts/lint_structure.py: Successfully validated 66 structure.yml
+        manifests; Strukturtests im abschließenden 222-bestanden-Lauf erfolgreich; git diff --check bestanden.'
+    note: Veraltete Verweise auf gelöschte Referenzskripte und deren Test entfernt; parallel wiederhergestelltes
+      Lean-Modul bleibt am Root erreichbar. Ownership für JSON-Antwortlebenszyklus und empfangene Videokoordinaten
+      aktualisiert. 66 Strukturmanifeste gültig; Strukturregressionen im abschließenden 222-bestanden-Lauf
+      erfolgreich. Geänderte Python-Dateien ohne Pyright-Fehler; 13 Gesamt-Pyright-Fehler außerhalb dieses
+      Patches bleiben sichtbar.
+    assessed_by: codex-test-review-20261020
+    assessed_at: '2026-10-20T11:24:17.335913Z'
+- id: anonymization_validation_helpers
+  category: maintainability
+  title: Anonymisierungsvalidierung verwendet eindeutige Helper und den kanonischen Metadatenvertrag
+  acceptance:
+  - Nicht verwendete Pagination ist nach Prüfung interner, dynamischer und bekannter externer Verbraucher
+    entfernt; aktive Typing-Verträge bleiben erhalten.
+  - Videovalidierung übergibt VideoTextMetaPayload ohne lokale Nachbildung oder verschleiernden Cast.
+  - Dispatch und Metrikvorbereitung haben jeweils eine Implementierung; explizite Medientypen, Video-Vorrang,
+    Fehlermeldungen und Metrikinhalt bleiben erhalten.
+  - Pyright, fokussierte Positiv- und Negativtests sowie Radon- und Guard-Ergebnisse sind im Kohortenbericht
+    nachvollziehbar.
+  required: true
+  verification:
+    kind: manual
+    instructions: Siehe feature-tracking/reports/anonymization_helper_consolidation.yml; Pyright vor pytest
+      ausführen und bestehende Fehler getrennt ausweisen.
+    timeout_seconds: 1200
+  assessment:
+    status: verified
+    evidence:
+    - kind: review
+      reference: feature-tracking/reports/anonymization_helper_consolidation.yml
+    - kind: test
+      reference: 'Trace: 80 Overview-/External-ID-Fälle bestanden; finaler Validierungsnachlauf: 32 bestanden,
+        2 Warnungen in 52.48s'
+    - kind: command
+      reference: 'Pyright: 0 Fehler, 10 bestehende Warnungen; Ruff check/format und git diff --check bestanden;
+        Produktion netto -87 Zeilen'
+    note: Gezielte Helper-Kohorte verifiziert. quality:dead-code bleibt durch das vorher bestehende master_keys-Protocol-Finding
+      rot; quality:boundaries meldet unveränderte, unabhängige Baseline-Drift. Keine repositoryweite Freigabe.
+    assessed_by: codex-workflow-validation-20261007
+    assessed_at: '2026-10-07T11:39:43.347262Z'
+- id: test_suite_fixture_overhead
+  category: testing
+  title: Test-Fixtures vermeiden unnötige Datenbank-, Datei- und Ausgabearbeit
+  acceptance:
+  - Reine Namen-, Datums-, Task-Konfigurations- und Runtime-Isolationstests laufen ohne Datenbank-Fixture.
+  - Die automatische Video-Anonymizer-Fixture fordert temporäre Verzeichnisse nur für betroffene Tests
+    an.
+  - Produkt-Testdaten werden einmal pro TestCase-Klasse geladen; jede Testmethode bleibt durch Rollback
+    isoliert.
+  - Test-Tasks zeigen langsame Testphasen statt zusätzlicher Start-/Endausgaben und erlauben eine explizite
+    Worker-Begrenzung.
+  - Fokussierte Regressionen und Typprüfung werden dokumentiert; PostgreSQL-Prozessisolation und echte
+    Migrationen bleiben erhalten.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor pytest ausführen. Namen-, Datums-, Task-, Runtime-Isolations-, Produkt-
+      und Video-Fixture-Regressionen prüfen. Laufzeiten mit --durations=30 erfassen; Worker-Vergleiche
+      nur ohne konkurrierende Tests durchführen. PYTEST_XDIST_AUTO_NUM_WORKERS begrenzt die Worker bei
+      -n auto.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/utils/test_names.py tests/utils/test_dates.py
+        tests/scripts/test_devenv_quality_tasks.py tests/environment/test_test_storage_isolation.py tests/administration/product/test_product.py
+        tests/environment/test_base_db_data.py -q --durations=30 --tb=short: 27 bestanden, 2 Warnungen
+        in 115.10 s. Einschließlich Datenbank-Flush und bedingter temporärer Verzeichnisse. Produktklasse:
+        erstes Setup 69.44 s, drei Aufrufe zusammen 0.26 s; Ausgangslauf erstes Setup 68.97 s, drei Aufrufe
+        zusammen 49.19 s; fremde parallele Last.'
+    - kind: command
+      reference: 'Pyright geänderte Python-Dateien: 0 Fehler, 1 bestehende Warnung. Gesamt-Pyright vor
+        Änderungen: 26 Fehler/8 Warnungen; danach: 16 Fehler/8 Warnungen außerhalb der geänderten Dateien.
+        Ruff, nix-instantiate --parse devenv.nix und git diff --check bestanden.'
+    note: 'Gezielter Umfang verifiziert. Keine neue Aussage zur Gesamtsuite: fremde pytest-Suite PID 381809
+      verhindert einen unbelasteten Worker-Vergleich. Temporäre PostgreSQL-Server bleiben isoliert; langlebige
+      gemeinsame Datenbank nicht eingeführt. Vorherlauf: 19 bestanden, zwei während der Task-Umstellung
+      veraltete Konfigurationsassertionen fehlgeschlagen; keine belastbare Vorher/Nachher-Gesamtquote.'
+    assessed_by: codex-testsuite-audit-20261001
+    assessed_at: '2026-10-01T15:09:12.661792Z'
+- id: import_function_profiling
+  category: operations
+  title: Large import and reimport functions support opt-in call profiling
+  acceptance:
+  - Profiling is disabled by default and scoped to the current execution thread.
+  - Nested calls share one profile; unique artifacts contain call statistics without argument values.
+  - Success and failure profiles are readable by pstats and existing command profiling remains compatible.
+  required: true
+  verification:
+    kind: manual
+    instructions: See docs/profiling.md for usage. Run profiling unit tests and import/reimport/management
+      command regression tests.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '207 focused tests passed across profiling, three management-command suites, import timing/finalization,
+        both import services and video reimport jobs/views. Log: .devenv/state/function-profile-tests.log.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors/6 existing warnings. Final profiling module/tests typing: 0 errors/0
+        warnings. Ruff and git diff HEAD --check passed.'
+    - kind: command
+      reference: 'Documentation-only verification: docs/profiling.md links and Python example syntax passed;
+        README.md and docs/README.md link to the guide; no profiling YAML guide remains; tracker validation
+        and git diff --check passed.'
+    note: Profiling implementation and prior regression evidence unchanged. Concise Markdown guide is
+      canonical for usage and linked from both README entry points; feature YAML retains verification
+      tracking only.
+    assessed_by: codex-overview-20260924-a
+    assessed_at: '2026-09-24T12:08:15.548565Z'
+- id: reimport_outcome_parity
+  category: functionality
+  title: Inline and worker reimports share typed completion decisions
+  acceptance:
+  - Optional prediction dispatch failures produce the same typed JSON outcome in both execution modes.
+  - Non-ready HLS and invalid finalization inputs cannot be reported as completed imports.
+  - Radon measurements and focused regression tests document the consolidated paths.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Radon, Pyright and reimport/finalization regression tests.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '214 tests passed: video reimport jobs/views, async view, storage state management, both
+        workload timing suites, both import unit suites, report LLM jobs, hub ingest import contract and
+        workflow import tests.'
+    - kind: command
+      reference: 'Repository Pyright: 0 errors, 6 unrelated warnings. Final typed reimport response/view
+        check: 0 errors, 0 warnings. Ruff passed.'
+    - kind: command
+      reference: 'Radon: inline prediction helper 4 -> 1; shared worker prediction handler 2 -> 4 (grade
+        A); HLS guard 3 -> 4. Higher guard complexity is intentional; divergent execution paths removed.'
+    note: Shared prediction outcomes, ready-only HLS completion and non-null import returns verified across
+      execution modes; no deployment.
+    assessed_by: codex-overview-20260924-a
+    assessed_at: '2026-09-24T08:47:17.759675Z'
+- id: rust_runtime_interop
+  category: functionality
+  title: Native Rust-Arbeit trennt Python-Konvertierung und Berechnung
+  acceptance:
+  - Aufwendige native Schleifen geben den Global Interpreter Lock frei; Frame-Eingaben werden vorab in
+    native Sammlungen konvertiert und Fehler erst an der Python-Grenze übersetzt.
+  - Der native PDF-Renderer liefert bytes passend zum Typstub; Frame-Ergebnisse und bestehende Python-Fallback-Verträge
+    bleiben erhalten.
+  - Native Validierungsfehler ergeben ValueError; Dateisystemfehler behalten über die Standardkonvertierung
+    ihre spezifischen Python-Ausnahmetypen. Direkte Binding-Tests prüfen Fehler, Ergebnisse und parallele
+    Aufrufe.
+  required: true
+  verification:
+    kind: manual
+    instructions: Native Erweiterung neu bauen, Pyright sowie Rust- und Python-Integrationstests ausführen.
+    timeout_seconds: 600
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: 'pytest tests/rust_backend tests/services/test_video_frame_initialization.py tests/utils/test_file_hash_integrity.py
+        tests/utils/test_file_operations.py tests/services/test_report_import_service_unit.py -q --tb=short:
+        150 passed, 3 warnings.'
+    - kind: test
+      reference: 'RUSTFLAGS="-C link-arg=-lpython3.12" cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
+        --lib: 17 passed.'
+    - kind: command
+      reference: 'maturin develop --skip-install erfolgreich; vollständiger Pyright: 0 Fehler, 6 bestehende
+        Warnungen; Ruff check/format, rustfmt und git diff HEAD --check bestanden.'
+    - kind: review
+      reference: Native Schleifen in frames, pdf, file_identity, file_copy, encrypted_range und encryption_state
+        verwenden allow_threads. Frame-Helfer liefern native InvalidInput-Werte; From<InvalidInput> for
+        PyErr übersetzt nach Rückkehr. PDF liefert PyBytes; gemeinsamer E/A-Mapper verwendet PyO3-Standardkonvertierung.
+    note: Direkte Binding-Tests prüfen bytes-Rückgabe, ValueError, FileNotFoundError und parallele Frame-Rundläufe
+      ohne optionalen Fallback. Bestehende Python-Adapter bleiben unverändert; keine Produktionsbereitstellung
+      und kein Leistungsbenchmark.
+    assessed_by: codex-rust-interop-20260924
+    assessed_at: '2026-09-24T08:31:05.495421Z'
+- id: import_state_consistency
+  category: functionality
+  title: Import and reimport share failure and retry state handling
+  acceptance:
+  - Video and report failures remain failed; state persistence and critical cleanup errors propagate.
+  - Owned retries revoke prior readiness without bypassing integrity-loss or source checks.
+  - Reimport endpoints delegate transitions; reconciliation observes canonical in-flight statuses without
+    resetting ownership.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright and focused import, reimport, finalization and reconciliation tests.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '190 import/reimport/state/reconciliation tests passed; final tests/services/test_report_import_service_unit.py,
+        test_report_import_fencing.py and test_report_llm_jobs.py: 82 passed.'
+    - kind: command
+      reference: 'Pyright: 0 errors, 6 unrelated warnings. Ruff and git diff --check passed.'
+    - kind: test
+      reference: 'Cleanup follow-up: 204 unique focused cases pass across the expanded eight-file run
+        (203 passed, one fixture failure) and corrected video-finalization rerun (10 passed). Logs: .devenv/state/cleanup-tests-final.log
+        and .devenv/state/cleanup-video-final.log.'
+    - kind: command
+      reference: 'Full Pyright: 0 errors, 6 existing warnings; final video test typing: 0 errors, 0 warnings.
+        Ruff and git diff HEAD --check passed. Radon cancellation 12 to 3, failure cleanup 7 to 4, duplicate
+        methods 4 to 1; 54 production lines removed net in this cleanup pass.'
+    - kind: command
+      reference: 'Ownership consolidation: 188 tests passed (.devenv/state/ownership-tests.log); Pyright
+        0 errors/6 existing warnings; Ruff passed. Radon duplicate cleanup 5 to 3; production net -11
+        lines.'
+    - kind: test
+      reference: 'Callback validation: 140 import/fencing tests passed; full Pyright 0 errors/6 existing
+        warnings; Ruff passed. Logs: .devenv/state/guard-validation-tests.log and .devenv/state/guard-validation-pyright.log.'
+    - kind: test
+      reference: 'Reported-failure repair: 37 passed, zero skipped with RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false;
+        central hub training access, workflow failure injection and two video import regressions. Full
+        Pyright 0 errors/6 existing warnings; Ruff passed. Log: .devenv/state/test-repair-results.log.'
+    note: Retained reported regression tests and repaired outdated exception expectations, subprocess
+      import, staging ownership fixture and HLS callback signature. Production contracts unchanged.
+    assessed_by: codex-overview-20260924-a
+    assessed_at: '2026-09-24T11:42:06.751371Z'
+- id: rust_anonymization_status
+  category: functionality
+  title: Rust owns anonymization status precedence across Python and SQL
+  acceptance:
+  - Models, transfer eligibility, polling and metrics use the canonical processing_anonymization token.
+  - Rust rules drive state derivation and SQL cases; processing failure takes precedence over validation.
+  - Exhaustive flag parity, API string conversion and unavailable native backend rejection are tested.
+  - Standardization produces a net repository line reduction without changing storage or annotation states.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Rust tests, Pyright and focused state, overview, transfer and metrics tests; review
+      git diff --stat.
+    timeout_seconds: 300
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: 'pytest tests/rust_backend/test_video_state_status_parity.py tests/models/state/test_video_anonymization_status.py
+        tests/models/state/test_raw_pdf_state.py tests/views/anonymization/test_anonymization_overview.py
+        tests/views/media/test_anonymization_metrics.py tests/services/test_transfer_job_contract.py -q
+        --tb=short: 104 passed, 3 subtests passed; all 160 flag combinations checked.'
+    - kind: command
+      reference: 'pyright: 0 errors, 6 unrelated warnings; focused final Pyright: 0 errors, 0 warnings;
+        Ruff and git diff --check passed.'
+    - kind: test
+      reference: 'RUSTFLAGS="-C link-arg=-lpython3.12" cargo test --manifest-path rust/endoreg_rust_backend/Cargo.toml
+        import_state: 2 passed. Plain cargo test needs explicit Python linkage here.'
+    - kind: command
+      reference: 'maturin develop --skip-install: native extension built; Rust-generated Python stubs
+        synchronized.'
+    note: Rust owns status precedence and SQL projection; StrEnum and strict polling conversion preserve
+      wire tokens. Net line reduction includes tests and tracking. Native extension rebuilt locally; no
+      production deployment.
+    assessed_by: codex-overview-20260924-a
+    assessed_at: '2026-09-24T08:06:03.883644Z'
 - id: media_hash_and_path_centralization
   category: testing
   title: Zentrale Medien-Hashes und Laufzeitpfade sind verbindliche Abnahmegrenzen
   acceptance:
+  - Serialisierte Hub-Steuerungsdaten, Interoperabilitätskennungen, DICOM-Manifeste, Evaluationskennungen,
+    Protokollreferenzen, Zugriffstoken und Modellprüfsummen verwenden get_bytes_hash aus utils.hashs ohne
+    Änderung ihrer Kodierung oder bestehenden SHA-256-Werte. Identitäts-Hashes bleiben schlüsselgebunden;
+    historische Migrationsformate und Kryptografieprotokolle werden nicht durch ungesalzene Dateihashes
+    ersetzt.
+  - Streambare Medien verwenden get_file_hash auch ohne lokalen Pfad; unvollständige Streams, negative
+    oder veränderte Klartextgrößen und Authentifizierungsfehler werden abgewiesen.
   - Zukünftige Medienänderungen verwenden die get_hash-Methoden der Artefaktfelder und den gemeinsamen
     get_file_hash-Helper; private Hashimplementierungen und Ciphertext-Hashes ersetzen diese nicht.
   - EndoregPathsModel aus endoreg_db.utils.paths und get_runtime_paths sind der alleinige Vertrag für
@@ -34,6 +544,8 @@ definition_of_done:
     command:
     - .devenv/state/venv/bin/pytest
     - tests/contracts/test_media_centralization.py
+    - tests/utils/test_file_hash_integrity.py
+    - tests/environment/test_identity_hashing.py
     - tests/utils/test_paths.py
     - tests/utils/test_file_operations.py
     - tests/services/test_video_source_hash.py
@@ -50,14 +562,32 @@ definition_of_done:
     - kind: command
       reference: 'pyright: 0 errors, 5 existing warnings; pytest --lf -vv --tb=short: 8 passed, 2 skipped,
         580 deselected (2026-09-21)'
-    note: Zentrale Hash- und Pfadgrenzen sind dokumentiert und durch parametrisierte Vertragstests abgesichert.
-      PostgreSQL-spezifische Tests im --lf-Lauf wurden übersprungen.
-    assessed_by: codex-pytest-lf-20260921
-    assessed_at: '2026-09-21T12:03:01.551853Z'
+    - kind: test
+      reference: '2026-10-19: devenv shell -- pytest tests/contracts/test_media_centralization.py tests/utils/test_file_hash_integrity.py
+        tests/environment/test_identity_hashing.py tests/utils/test_paths.py tests/utils/test_file_operations.py
+        tests/utils/test_structured_logging.py tests/services/test_video_source_hash.py tests/schemas/test_dicom_export_payloads.py
+        sowie fünf Report-Pseudonym-Resolver-Fälle: 220 passed, 133 warnings, 122.12s.'
+    - kind: command
+      reference: '2026-10-19: Fokussierter Pyright für Hash-Helfer/Audit-Payload/Vertragstests: 0 Fehler,
+        0 Warnungen. Integrierter vollständiger Pyright der koordinierten Fixture-Prüfung: 0 Fehler, 24
+        Warnungen. Ruff und git diff --check erfolgreich; 65 Strukturmanifeste und 37 Feature-Definitionen
+        gültig.'
+    note: Dateien verwenden den Klartext-Helper get_file_hash, serialisierte Bytes get_bytes_hash und
+      aktive Identitäten den validierenden get_identity_hash. Kodierung und Hashkürzungen der gewöhnlichen
+      Aufrufstellen bleiben erhalten. Streambare Dateien erben vollständige Größen- und Authentifizierungsprüfungen.
+      Direkte HMAC-Schreiber und Report-Auflösung wurden mit der separaten Identitätsmigration integriert.
+      Ein breiterer Lauf wurde nach 60 bestandenen Fällen und drei durch bereits ersetzte Report-Implementierung
+      verursachten Fehlern gestoppt; alle fünf Resolver-Fälle bestanden im frischen 220-Test-Lauf. Keine
+      vollständige Repository-Testfreigabe; native Streaming-/Kryptografie- und historische Migrationsprimitive
+      bleiben spezialisiert.
+    assessed_by: codex-hash-standardization-01a1530a
+    assessed_at: '2026-10-19T08:02:29.911607Z'
 - id: dead_code_baseline
   category: requirements
   title: Toter Code ist repositoryweit belastbar inventarisiert und klassifiziert
   acceptance:
+  - Ablauf- und Reviewfristen gelten für accepted_findings und deletion_candidates gleichermaßen; abgelaufene
+    Einträge beider Gruppen verhindern einen erfolgreichen Guard-Exit.
   - Das Inventar erfasst ungenutzte Dateien, Symbole, Imports, Re-Exports, Kompatibilitätswrapper und
     unerreichbare Zweige mit Fundstelle, Evidenz, Konfidenz und Entscheidung.
   - Dynamische Django-Registrierung, String-Imports, Plugins, Management Commands, Signale, Migrationen
@@ -113,7 +643,21 @@ definition_of_done:
     - kind: command
       reference: devenv tasks run agent:smoke (2026-09-09; zentraler Integrationslauf des koordinierenden
         Agenten; exit 0, 33.1s)
-    note: Die Python-Baseline für endoreg_db und scripts ist nach Einzelprüfung von fünf neuen Protokollparametern
+    - kind: code
+      reference: scripts/check_dead_code.py; tests/scripts/test_check_dead_code.py; quality/dead_code_baseline.yml
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    note: 'Die Python-Baseline für endoreg_db und scripts ist nach Einzelprüfung von fünf neuen Protokollparametern
       und vier veralteten Einträgen wieder grün (34 Funde). Es wurde kein Laufzeitcode entfernt. Die drei
       früheren Report-Parameter wurden bereits durch den typisierten Request-Vertrag ersetzt; die beiden
       Django-sender-Parameter bleiben erhalten und werden aufgrund globaler Namensverwendung von Vulture
@@ -121,8 +665,12 @@ definition_of_done:
       Die fünf unverändert offenen öffentlichen Kompatibilitätskandidaten besitzen das überfällige Reviewdatum
       2026-08-31; deren externe Consumer-Prüfung sowie vollständige sprachübergreifende Inventarisierung
       wurden in dieser Kohorte nicht erneuert. Deshalb ist das Gesamtkriterium nicht erneut verifiziert.
-    assessed_by: codex-ppf-dead-code-20260909
-    assessed_at: '2026-09-09T09:55:42.708252Z'
+
+      2026-11-02: Fristen werden nun auch für Löschkandidaten durchgesetzt; vier Grenz-/CLI-Regressionen
+      bestanden. Die zuständige parallele Kohorte entfernte die beiden freigegebenen Kandidaten nach Review;
+      keine bloße Fristverlängerung.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T14:11:41.508288Z'
 - id: dead_code_reduction
   category: functionality
   title: Bestätigter toter Code ist sicher entfernt oder kontrolliert deprecatet
@@ -140,7 +688,7 @@ definition_of_done:
       Verbraucher abgleichen.
     timeout_seconds: 600
   assessment:
-    status: verified
+    status: in_progress
     evidence:
     - kind: command
       reference: /endoreg-db/.devenv/state/venv/bin/python scripts/check_dead_code.py after six cleanup
@@ -177,19 +725,109 @@ definition_of_done:
         no internal, dynamic or known external consumers
     - kind: command
       reference: /endoreg-db/.devenv/state/venv/bin/pytest coordinated boundary cohort (139 passed)
-    note: Bestätigte Dead-Code-Kohorten entfernten zusätzlich drei private SensitiveMeta-Delegationsmethoden,
-      den unverdrahteten Legacy-Frame-Cache-Anonymisierungspfad samt ausschließlich abhängigen Helfern
-      sowie den verwaisten SensitiveMetaVerificationSerializer mit Barrel-Re-Exports. Interne, dynamische,
-      historische und bekannte repositoryübergreifende Consumer wurden vor der Löschung geprüft. Aktive
-      Identitäts-, Streaming-, Timeline-, Storage-, Lease- und Publikationspfade bleiben unverändert.
-      Der Dead-Code-Guard ist ausschließlich durch die fremde Änderung endoreg_db/services/hls_media.py:219
-      blockiert; die Baseline wurde nicht angepasst.
-    assessed_by: codex-boundary-cleanup-20260825
-    assessed_at: '2026-08-25T11:15:35.993624Z'
+    - kind: document
+      reference: feature-tracking/reports/integrity_dead_code_removal.yml
+    - kind: command
+      reference: '2026-09-23: quality:dead-code bestanden, 34 geprüfte Ausnahmen; Pyright vollständig
+        0 Fehler/6 Warnungen, fokussiert 0 Fehler/0 Warnungen; SQLite-Integritäts-/Import-/Guard-Tests
+        84 passed, 2 warnings, 46.87s; Ruff check/format und git diff --check bestanden.'
+    - kind: review
+      reference: 'Radon via radon.raw.analyze/radon.complexity.cc_visit gegen Git-Index: hls_media.py
+        2566 -> 2535 LOC; source staging 3 -> 2, validation 11 -> 7, entfernte Generator-Komplexität 4.
+        Private Call-Sites und dynamische Registrierungen geprüft.'
+    - kind: command
+      reference: 'RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_hls_encoder_preflight.py
+        tests/services/test_hls_media.py tests/services/test_hls_workload_timing.py -q --tb=short: 82
+        passed, 1 failed (unveränderter _timed_hls_phase meldet failed statt validation_failed; AST identisch
+        zu HEAD). Alle 10 Hochbildraten-/Timestamp-Fälle bestanden.'
+    - kind: command
+      reference: 'Pyright HLS-Modul und beide geänderten HLS-Testdateien: 0 Fehler/0 Warnungen. Vollständiger
+        Pyright: 4 Fehler in tests/dataloader/test_load_base_db_data_repeat.py, 2 Warnungen außerhalb
+        HLS. Ruff check/format und git diff --check bestanden.'
+    - kind: command
+      reference: 'devenv tasks run quality:dead-code vor/nach Änderung bestanden. quality:boundaries:
+        bestehender Drift broad_exception 354 -> 351, type_suppression 107 -> 73; scan_source-Befunde
+        des HLS-Moduls identisch zum Index. Keine Baselineänderung.'
+    - kind: command
+      reference: 'CWD /home/admin/endoreg-db, HEAD 22a5cccf19e02dc556e709c383258d1b2cebbc6d plus Arbeitsänderungen:
+        RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/python -m trace --count
+        -C /tmp/codex-gc10-hls-throughput-trace --ignore-dir /nix/store:/home/admin/endoreg-db/.devenv/state/venv
+        --module pytest tests/services/test_hls_encoder_preflight.py tests/services/test_hls_workload_timing.py
+        -q --tb=short: 16 passed, 1 bestehender Timing-Fehler. Trace bestätigt vier Materialisierungen
+        (drei erfolgreich, eine Lesefehlerbereinigung), Fortschrittsabfrage mit regulärer Datei, Verzeichnis
+        und fehlender Playlist. Trace-Wrapper liefert trotz pytest-Fehler Exit 0; Testergebnis maßgeblich.
+        67 Strukturmanifeste und 40 Feature-Definitionen gültig; tracker check code_quality weiterhin
+        nicht produktionsreif (16/23).'
+    - kind: code
+      reference: endoreg_db/import_files/report_import_service.py; tests/helpers/pdf.py; endoreg_db/logger_conf.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    - kind: review
+      reference: '2026-11-18: Zwei private, nicht exportierte und in endoreg-db sowie /home/admin/dev/lx-annotate
+        nicht referenzierte Fassaden aus services/video_files/_ai.py entfernt: _predict_video_entry und
+        _extract_text_information. Aktive Modell-/Serviceaufrufe verwenden weiterhin ai.predict_video/_predict_video_pipeline
+        und extract_text_from_video_frames. Retained-AST-Vergleich unverändert; 81 Produktionszeilen entfernt,
+        Radon-Summe 215 auf 210. Ausschließlich zugehörige save_results-Ausnahme und ein Handler entfernt
+        (344 auf 343), 74 bestehende Typunterdrückungen unverändert; fremde Baseline-Evidenz erhalten.'
+    - kind: test
+      reference: '2026-11-18: Finaler fokussierter Pyright für beide geänderten Produktionsdateien und
+        test_model_links.py: 0 Fehler/0 Warnungen. Vorheriger Gesamt-Pyright: 0 Fehler/2 bestehende Warnungen.
+        Alle Tests in test_frame_materialization_boundary.py, test_video_metadata_ocr_boundary.py und
+        test_video_file_services_contract.py bestanden im gemeinsamen Lauf (48 bestanden, 5 neue ModelLinks-Fixturefehler
+        separat korrigiert). LX-Annotate: 21 Import-/API-Vertragstests bestanden; PYTHONPATH und Assertion
+        belegen /home/admin/endoreg-db/endoreg_db/__init__.py als Quelle. quality:dead-code und quality:boundaries
+        bestanden. Keine vollständige Python-/Rust-Suite oder Produktionsfreigabe.'
+    - kind: review
+      reference: '2026-11-18 Runde 2: Nur PolicyPermission._required_roles, die exklusiven cached_property/REQUIRED_ROLES-Imports
+        und überholte Cache-Dokumentation entfernt. Keine statischen, reflektiven, Subklassen- oder bekannten
+        lx-annotate-Verbraucher; DRF verwendet has_permission direkt. satisfies-Reexport für lx-annotate
+        erhalten. has_permission AST-identisch und Radon 7 unverändert; permissions.py 139 auf 130 LOC
+        und 69 auf 65 SLOC. Keine Baseline- oder Berechtigungsänderung. Verbleibende unsichere Kandidaten
+        nicht gelöscht.'
+    - kind: test
+      reference: '2026-11-18 Runde 2: Berechtigungs- und Patienten-API-Tests im zentralen 36-Test-Lauf
+        bestanden; Ausführungstrace belegt aktiven get_needed_role/satisfies-Pfad. LX-Annotate mit expliziten
+        Test-Settings und Assertion auf /home/admin/endoreg-db/endoreg_db/__init__.py: test_lx_annotate_import_smoke.py,
+        test_endoreg_db_service_contract.py, test_quarantine_unit.py zusammen 42 bestanden in 6.77 s.
+        Fokus-Pyright 0 Fehler/0 Warnungen; Dead-Code-/Boundary-Guards bestanden. Insgesamt 21 Produktionszeilen
+        in Runde 2 entfernt. Native Frame-Fallback-Duplikation wegen abweichender Fehler-/Verfügbarkeitsverträge
+        beibehalten; keine Rust-Migration, keine umfassende Python-/Rust-Suite oder Produktionsfreigabe.'
+    assessed_by: codex-opt-20261118-root
+    assessed_at: '2026-11-18T15:33:56.514593Z'
 - id: helper_class_boundaries
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
   acceptance:
+  - Exakt gleiche Intervallzusammenführung und Task-ID-Persistenz haben je einen fachlichen Service-Owner;
+    private Kompatibilitätsnamen, Sortiermutation, angrenzende Intervalle, unterschiedliche Caller-Validierung
+    und idempotente task_id-only Speicherung bleiben durch Regressionen erhalten.
+  - Ausschließlich von Tests konsumierte PDF-Fixture-Erzeugung liegt in einem gemeinsamen Testhelper statt
+    im produktiven Reportimport; eine unabhängige Referenz prüft weiterhin die native PDF-Parität.
+  - safe_log_value verwendet eine gemeinsame Collection-Konvertierung und safe_log_payload als einzige
+    Mapping-Konvertierung; Dispatcher und skalarer Helper erreichen Radon-Komplexität höchstens B. Direkte
+    Unit-Tests erhalten Redaktionspriorität, verschachtelte Schlüssel, Skalartypen und die Grenze von
+    100 Elementen für list, tuple, set und frozenset ohne Mutation der Eingabe.
+  - Die sechs Radon-E/F-Funktionen der Kohorte radon_function_consolidation erreichen höchstens C; gemeinsame
+    Entscheidungen werden zentralisiert, Transaktions- und Sperrgrenzen bleiben erhalten, Pyright sowie
+    positive, negative und konkurrierende Regressionen werden dokumentiert.
+  - Die Service-Wurzel enthält ausschließlich die Paketinitialisierung und eine YAML-Strukturübersicht;
+    jedes Unterpaket hat eine beschriebene fachliche Zuständigkeit. Alle verschobenen Service-Module sind
+    über ihren kanonischen neuen Pfad importierbar; interne Aufrufer und aktive Qualitätsinventare verwenden
+    diese Pfade. Die bisherigen Service-Modulpfade bleiben über zentrale, verzögert geladene Aliase importierbar;
+    Modulidentität und bestehende cases-Symbole bleiben erhalten. Typprüfung und Import-/Service-Regressionen
+    werden dokumentiert.
+  - Standalone root examples and diagnostic utilities have explicit folders; their launcher references
+    remain valid and relocation introduces no missing Python imports.
   - Reine Transformationen leben in typisierten, seiteneffektfreien Funktionen; Datenbank-, Dateisystem-
     und Netzwerkoperationen liegen an expliziten Servicegrenzen.
   - Django-Modelle enthalten Persistenz, Constraints und dünne Zustandsübergänge, aber keine neue Workflow-Orchestrierung
@@ -198,6 +836,12 @@ definition_of_done:
     Sammelmodule oder konkurrierende Implementierungen geführt.
   - Importzyklen, neue Barrel-Abhängigkeiten und mehrfach verantwortliche Klassen werden durch Architekturtests
     verhindert.
+  - Der SensitiveMeta-Dictionary-Import (Anlage, Aktualisierung, Anlage-oder-Aktualisierung samt privater
+    Helfer) liegt unverändert in services/patient_identity; sensitive_meta_logic.py behält nur Hashing-,
+    Speicher- und Datumslogik, importiert den Service nicht auf Modulebene und stellt die drei öffentlichen
+    Namen verzögert bereit. Modellfassaden, Patienten- und Untersuchungshashes, Idempotenz, Rollback und
+    konkurrierende Updates bleiben durch Regressionen belegt; die Anzahl modulweiter Modell-Service-Importe
+    und Barrel-Importe steigt nicht.
   required: true
   verification:
     kind: manual
@@ -224,14 +868,134 @@ definition_of_done:
     - kind: command
       reference: /endoreg-db/.devenv/state/venv/bin/pyright (0 errors, 0 warnings, 0 informations); integrierter
         Pytest-Lauf über 13 Boundary-/Runtime-Dateien (90 passed)
-    note: Die AIDataSet-Kohorte besitzt nun keine Model→Service-Abhängigkeit und keine der sieben Legacy-Servicefassaden;
-      bekannte Consumer in Endoreg, lx-annotate und lx-data-models sind auf direkte Services migriert
-      beziehungsweise leer geprüft. SensitiveMeta-PATCH validiert nur noch am HTTP-Rand und delegiert
-      Relation-, Skalar- und Verifikationsmutation atomar an einen Service; explizites false bleibt erhalten,
-      die PDF-Doppelmutation und sensitive Response-Protokollierung entfallen. AST-Tests erzwingen die
-      Nullgrenzen. Weitere Modell-, View- und Serializer-Altbestände bleiben kohortenweise zu migrieren.
-    assessed_by: codex-boundary-cleanup-20260825
-    assessed_at: '2026-08-25T11:51:30.946367Z'
+    - kind: review
+      reference: '2026-09-23: Berichtsauswahl-Kohorte: PatientExaminationFrames, SelectedReportFrame und
+        PatientExaminationVideo waren neue, unmigrierte Parallelmodelle; ihre einzigen Verbraucher lagen
+        in zwei Report-Endpunkten. Auf kanonische VideoFile.examination-/Frame-Beziehungen und PatientExaminationReport.editor_payload
+        migriert; Modelldateien und unbenutzten privaten _assign_report_editor_payload-Wrapper entfernt.
+        Suche in Endoreg, lx-annotate und lx-data-models: keine verbleibenden Verbraucher der entfernten
+        Symbole. HTTP-Endpunkte bleiben erhalten. Service besitzt Auswahl und gesperrte Persistenz; bestehende
+        lx_dtypes-Verträge bleiben führend.'
+    - kind: command
+      reference: '2026-09-23: vollständiger .devenv/state/venv/bin/pyright: 0 Fehler, 6 bestehende Warnungen.
+        SKIP_EXPENSIVE_TESTS=false TEST_DB_ENGINE=django.db.backends.postgresql .devenv/state/venv/bin/pytest
+        tests/views/report/test_patient_examination_report_ninja_api.py tests/views/report/test_reporting_shell_finalization_aaa.py
+        tests/views/report/test_pdf_redaction.py tests/utils/test_media_urlpatterns_contract.py tests/contracts/test_media_centralization.py
+        tests/import_files/test_file_storage.py tests/utils/test_file_hash_integrity.py tests/app/test_clean_layer_cohorts.py
+        -q --tb=short: 82 passed, 2 warnings in 62.61s. Kein PostgreSQL-Konkurrenznachweis.'
+    - kind: command
+      reference: 'Radon raw -s: entfernte Container und View vorher 1788 LOC/1525 SLOC; Service und View
+        nachher 1719 LOC/1514 SLOC; zusätzlich 13 Zeilen im bestehenden Schema. Radon cc -s neuer Service:
+        report_frame_candidates A(5), persist_segment_selection A(2), _save_selections A(2), auto_select_report_frames
+        B(8). Ausgangsrevision e68abf11 mit bereits vorhandenen Indexänderungen, Arbeitsverzeichnis /home/admin/endoreg-db.'
+    - kind: document
+      reference: feature-tracking/reports/repository_structure.yml
+    - kind: review
+      reference: 'Runtime-Syntaxbaumvergleich: 127 Service-Dateien ohne Abweichung nach Normalisierung
+        der Importpfade; Paketinitialisierungen separat geprüft.'
+    - kind: test
+      reference: feature-tracking/reports/service_structure.yml
+    - kind: review
+      reference: endoreg_db/services/structure.yml
+    - kind: command
+      reference: '2026-10-02: Datumshelfer lesbarer strukturiert und Monats-/Tagesauswahl wiederverwendet;
+        bestehende Auswahl- und Fehlersemantik erhalten. Vollständiger .devenv/state/venv/bin/pyright:
+        0 Fehler, 9 Warnungen außerhalb der Änderungen. .devenv/state/venv/bin/pytest tests/utils/test_dates.py
+        -q --tb=short: 13 bestanden, 1 Plugin-Warnung. Ruff check/format und git diff --check bestanden.
+        Keine Gesamtsuite oder Produktionsfreigabe behauptet.'
+    - kind: review
+      reference: 'Logging-Kohorte: rg-Aufrufsuche in endoreg_db, tests, lx-data-models und lx-annotate;
+        aktive Aufrufer in Audit, Medienintegrität, UploadJob, Hub-Ingest und transfer_logging. Vier Collection-Zweige
+        und Mapping-Comprehension konsolidiert; öffentliche Namen erhalten. transfer_logging.sanitize
+        bleibt wegen abweichender Schlüssel-, Identifier- und Objektredaktion ein eigener Vertrag. Keine
+        Symbole als confirmed_dead gelöscht; keine Aussage über globale Nichterreichbarkeit oder Nicht-Python-Code.'
+    - kind: command
+      reference: 'Radon cc/raw endoreg_db/utils/structured_logging.py sowie radon.complexity.cc_visit/radon.raw.analyze
+        ohne Shell-Subprozess: Basis fd95ba86ccc56782fc2f5a41cbf64c5c08741616 safe_log_value=18, LOC=284,
+        SLOC=252; danach Dispatcher=6, skalarer Helper=7, LOC=279, SLOC=244.'
+    - kind: test
+      reference: 'devenv shell -- .devenv/state/venv/bin/pytest tests/utils/test_structured_logging.py
+        tests/test_request_logging.py -q: 52 bestanden; pytest --noconftest tests/services/test_hub_transfer_logging.py
+        -q: 5 bestanden. Vor Refactoring: 35 direkte Vertragstests bestanden. Log /tmp/codex-quality-tests-after.log.
+        no_db nutzt bestehenden Opt-out für reine Unit-Tests; Transferprüfung isoliert globale Datenbank-Fixtures.'
+    - kind: command
+      reference: 'CWD /home/admin/endoreg-db, Basis fd95ba86ccc56782fc2f5a41cbf64c5c08741616 plus Logging-Kohorte:
+        devenv shell -- .devenv/state/venv/bin/python -m trace --count -C /tmp/codex-quality-logging-trace
+        --ignore-dir /nix/store:/home/admin/endoreg-db/.devenv --module pytest --noconftest tests/utils/test_structured_logging.py
+        -q: 40 bestanden; Trace zeigt Dispatcher, skalaren Helper und Mapping-Konvertierung ausgeführt.'
+    - kind: command
+      reference: 'Vollständiger Pyright vor finalem pytest: 0 Fehler, 17 Warnungen; fokussierter Pyright:
+        0 Fehler/0 Warnungen. Ruff check/format und git diff --check bestanden. quality:dead-code vor/nach:
+        einzig neues Finding rust_backend.py:24 master_keys (100%). quality:boundaries vor/nach: unverändert
+        broad_exception 367 statt 389, type_suppression 107 statt 109; keine Baseline angepasst. Tracker
+        check: nicht produktionsreif, 13/19.'
+    - kind: code
+      reference: endoreg_db/services/media/frame_intervals.py; endoreg_db/services/jobs/processing_history.py;
+        tests/services/test_shared_video_helpers.py; tests/helpers/pdf.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    - kind: command
+      reference: Vorher-Trace PDF 7 passed; gemeinsame Helper 26 passed und je Originalfunktion 4 Bodyaufrufe.
+        Nachher-Trace zusammen 33 passed in 12.96s; AST-identische Signaturen/Körper. Vier Mergekopien
+        zentralisiert, letzte Funktion CC9→CC6; Task-ID dreifach CC2→einmal CC2; Reportpersistenz CC18→CC15.
+        Statische Consumerprüfung in verfügbarem lx-annotate und lx-* Checkouts; unbekannte externe Consumer
+        nicht pauschal ausgeschlossen.
+    - kind: code
+      reference: endoreg_db/services/patient_identity/sensitive_meta_ingestion.py
+    - kind: test
+      reference: '2026-11-02 working tree, devenv shell: pyright touched files 0 errors; makemigrations
+        --check no changes; tests/services/test_sensitive_meta_ingestion.py 16 passed 2 xfailed (strict);
+        identity set (clean_layer_cohorts, models/metadata, sensitive_meta_logic, patient_identity_input_variations,
+        sensitive_meta_update service+schema, anonymization serializer, sensitive_meta_verification, external_id_validation,
+        sensitive_metadata_concurrency_postgresql) 172 passed; facade callers (report_import_service,
+        video_metadata_validation, anonymization validate view, ingestion) 58 passed 2 xfailed.'
+    - kind: test
+      reference: '2026-11-02 after Gender revert: pyright cohort files 0 errors; scripts/check_quality_boundaries.py
+        clean (344 handlers, 73 suppressions); tests/services/test_sensitive_meta_ingestion.py 16 passed
+        2 xfailed (strict).'
+    - kind: review
+      reference: '2026-11-18: ModelLinks.get_first_patient vereinigt sieben identische Schleifen über
+        itertools.chain; Laborwert-Sample-vor-Direktpatient, Abschnittsreihenfolge und frühzeitige Rückgabe
+        unverändert. Radon cc_visit: 18 auf 6; radon.raw.analyze: 366 auf 343 LOC, 254 auf 239 SLOC. Öffentliche
+        Klasse/Methode und ORM-Beziehungen bleiben erhalten; keine sinnvolle Rust-Verlagerung dieses Django-Objektgraphen.
+        Zusammen mit dem getrennten privaten AI-Fassadenabbau 104 Produktionszeilen entfernt.'
+    - kind: test
+      reference: '2026-11-18: tests/utils/test_model_links.py: 13 bestanden (no_db erzwingt keine Datenbankzugriffe),
+        fokussierter Pyright 0 Fehler/0 Warnungen. Neue Fixtures verwenden konkrete Modellkonstruktoren,
+        PatientFinding über PatientExamination; fünf anfängliche Fixturefehler korrigiert. Gezielter stdlib
+        trace.Trace nach Django-Initialisierung führt zehn vorhandene Testfälle aus: alle erfolgreich,
+        sämtliche Auswahl-/Rückgabepfade Zeilen 262-287 ausgeführt; Artefakt /tmp/codex-opt-20261118-model-links-trace/endoreg_db.utils.links.model_links.cover.
+        Zwei vorherige python -m trace pytest-Anläufe wegen Initialisierungsaufwand abgebrochen und nicht
+        als bestandene Tests gewertet. LX-Annotate-Quellkompatibilität: 21 Import-/API-Tests bestanden;
+        keine dortigen Dateien geändert. Gesamtfeature bleibt in_progress.'
+    - kind: review
+      reference: '2026-11-18 Runde 2: Doppelte choice_name-Suffixauswertung und exakte/von Großschreibung
+        unabhängige Label-Suche aus frame_annotation_bulk.py und frame_box_annotation.py zentralisiert.
+        Staticmethod-Kompatibilitätsnamen und self-Dispatch erhalten; getrennte Primärschlüsselprüfungen,
+        Kopie/In-place-Verhalten sowie Geometrie unverändert. validate-Radon 12 auf 9 und 17 auf 14; beide
+        Produktionsdateien zusammen 282 auf 270 LOC/SLOC 237 auf 225. serializers/structure.yml benennt
+        gemeinsamen Owner. Unabhängige lx-annotate-Aufrufer-/Importzyklusprüfung ohne Befund.'
+    - kind: test
+      reference: '2026-11-18 Runde 2: Nach Korrektur von vier neuen Test-Typfehlern fokussierter Pyright
+        0 Fehler/0 Warnungen; Gesamt-Pyright 0 Fehler/2 bestehende Warnungen. Zentraler pytest-Lauf test_policy_permission.py,
+        test_patient_api_rbac.py, test_frame_annotation_bulk_upsert.py und test_frame_box_annotation.py:
+        36 bestanden, 4 Subtests bestanden, 1 bekannte Plugin-Warnung, 86.03 s. Neue parametrisierte Fälle
+        prüfen beide Serializer einschließlich exakter Suchpriorität, 0/1/2 Datenbankabfragen, Suffixen,
+        Fehlereingaben und Mutation. stdlib trace nur während relevanter pytest_runtest_call-Aufrufe:
+        97 Anwendungszeilen, Artefakte /tmp/codex-opt-20261118-round2-trace. Beide Qualitätsguards und
+        67 Strukturmanifeste bestanden; keine globale Coverage-Aussage.'
+    assessed_by: codex-opt-20261118-root
+    assessed_at: '2026-11-18T15:33:37.528014Z'
 - id: centralized_exception_contracts
   category: functionality
   title: Exception-Verträge und Boundary-Übersetzung sind zentralisiert
@@ -341,6 +1105,21 @@ definition_of_done:
   category: testing
   title: Automatisierte Guards verhindern neue Qualitätsregressionen
   acceptance:
+  - Standard-Pre-Commit prüft nur geänderte Python-Dateien mit dem gesperrten Ruff und betroffene Struktur-
+    oder Lockdateien; keine vollständige Typprüfung, Django-Initialisierung oder Tests.
+  - Lokale ci:checks und Remote-CI verwenden dieselben vollständigen Qualitätsprüfungen. CI synchronisiert
+    mit --locked, verwendet unveränderliche Action-Referenzen, begrenzte Laufzeit und Lesezugriff; Python-
+    und Rust-Tests bleiben verpflichtend und Testergebnisse werden auch bei Fehlern archiviert.
+  - Boundary-Baselines werden nur nach überprüfter Signaturdifferenz einschließlich Umbenennungen und
+    neuer Fehlergrenzen aktualisiert; eine Zählerreduktion allein ist keine Freigabe.
+  - Basisdaten-Fixtures schreiben innerhalb der jeweiligen Testtransaktion; nachfolgende Frischdatenbanktests
+    bleiben leer. Migrationstests stellen im finally-Block alle aktuellen Migrationsblätter wieder her.
+    Job-Fixtures erfüllen die aktuellen Fehlerzustands-Constraints, schützen laufende Video-Jobs vor altersbasierter
+    Übernahme und verwenden für erfolgreiche PDF-Freigaben ein gültiges verarbeitetes Dokument.
+  - Test-Fixtures überstehen Datenbank-Flushes zwischen Transaktionstests; PDF-Erfolgsfälle verwenden
+    vollständig parsebare Dokumente und prüfen Textinhalt statt einer festen PDF-Version. Subprozess-
+    und parallele Subtest-Prüfungen verwenden aktuelle Imports und serialisierbare Parameter. Tests ohne
+    Produktivaufruf und Assertion werden entfernt.
   - Der Paketbuild entfernt den devenv-Linker-Override für das explizite Zig-Ziel und isoliert portable
     Cargo-Artefakte von nativen Entwicklungsbuilds. Maturins manylinux2014-Prüfung bleibt verpflichtend;
     Wheel und Quelldistribution werden erfolgreich erzeugt und ihre Paketmetadaten geprüft.
@@ -424,12 +1203,131 @@ definition_of_done:
         aus devenv überschrieb zuvor den Zig-Linker; separater Cargo-Build ohne Entfernung reproduzierte
         den Fehler. Bestehende Rust-Warnungen und nicht fataler Cargo.toml-Suchhinweis bei sdist bleiben
         sichtbar.'
-    assessed_by: codex-final-tests-20260921
-    assessed_at: '2026-09-21T14:38:10.265432Z'
+    - kind: command
+      reference: '2026-09-23: devenv tasks run quality:dead-code quality:boundaries bestanden. Aktueller
+        Dead-Code-Guard: 31 geprüfte Findings, keine neuen/veralteten/abgelaufenen Ausnahmen, 0 bestätigte
+        Löschkandidaten; 5 öffentliche Kompatibilitätskandidaten bleiben mangels vollständigen externen
+        Verbrauchernachweises erhalten. Boundary-Guard: 389 breite Handler, 109 Typunterdrückungen. Review
+        und Fingerprint-Begründung in quality/quality_boundary_baseline.yml; keine pauschale Sicherheitsfreigabe.'
+    - kind: command
+      reference: '2026-09-23: scripts/check_lx_dtypes_model_inventory.py nach Aktualisierung reproduzierbarer
+        Aufrufstellen und Importmetadaten bestanden: 166 registrierte und 5 abstrakte Modelle, 53 shared_lx_dtypes_contract,
+        60 local_boundary_schema, 58 persistence_only. Manuelle Zielklassifikationen unverändert. Breiter
+        quality:code-regression-Lauf wegen fremdem pytest PID 934853 nicht parallel gestartet.'
+    - kind: test
+      reference: '2026-09-24: gezielte parallele Regression ohne Schnelltest-Skips über Fixture-Flush,
+        Berichtserzeugung, externe Identität, Berichtshistorie, Import-Locks, PDF-Redaktion, Textsichtbarkeit
+        und Neuinstallation: 37 passed, 9 subtests passed, 7 warnings (94.08s).'
+    - kind: command
+      reference: '2026-09-24: vollständiger .devenv/state/venv/bin/pyright: 0 errors, 6 bestehende Warnungen.'
+    - kind: test
+      reference: '2026-09-24: SKIP_EXPENSIVE_TESTS=true RUN_VIDEO_TESTS=false USE_STUB_MODEL_META=true
+        TEST_DB_REUSE=true .devenv/state/venv/bin/pytest -q -m "not (expensive or video or pipeline or
+        ai or slow or ffmpeg)" -n 4 --dist=loadscope --tb=short: 2179 passed, 15 skipped, 16 warnings,
+        896 subtests passed in 260.31s; keine Fehler.'
+    - kind: command
+      reference: '2026-09-29: .devenv/state/venv/bin/pyright: 0 errors, 6 warnings, exit 0; focused Pyright
+        for seven changed test files: 0 errors, 0 warnings; scoped Ruff and git diff --check passed.'
+    - kind: command
+      reference: '2026-09-29: .devenv/state/venv/bin/pytest tests/services/test_report_artifact_integrity.py
+        tests/migrations tests/services/test_anonymization_operational_recovery.py tests/services/test_center_defaults.py
+        tests/services/test_clinical_reference_data.py tests/services/test_hub_cleanup.py tests/services/test_reference_catalog.py
+        tests/services/test_study_presets.py tests/services/test_upload_job_cancellation.py tests/services/test_upload_job_import_lease.py
+        tests/services/test_report_import_service.py tests/services/test_identity_salt_rotation.py tests/services/test_video_reimport_budget.py
+        tests/views/anonymization/test_sensitive_metadata_view.py -q --tb=short: 205 passed, 3 skipped,
+        2 warnings, exit 0.'
+    - kind: command
+      reference: '2026-09-29: SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest tests/services/test_report_import_service.py
+        -q -rs --tb=short: 2 passed, 1 failed with SQLite database table is locked during first cold import.
+        Isolated rerun of ::TestReportImportService::test_import_and_anonymize_success: 1 passed, 2 warnings,
+        exit 0. No retries or error suppression added to application code.'
+    - kind: command
+      reference: '2026-10-13: PostgreSQL-Regressionslauf der neun gemeldeten Fehler samt angrenzender
+        Integrationen: 419 passed, 1 failed in 314.29s. Geprüft: frame_provenance, anonymization overview/validate,
+        deployment_setup, service_structure, video_correction_jobs, media_urlpatterns_contract, openapi_metadata,
+        video_masks (Service/API), finding_extraction, anonymization_quality_evaluation, video_finalize_success
+        und video_import_normalization. Restfehler ExaminationRevisionViewSet-OpenAPI-Metadaten korrigiert.
+        Nachlauf: PYTHONPATH=/home/admin/lx-data-models .devenv/state/venv/bin/pytest tests/utils/test_openapi_metadata.py
+        tests/utils/test_media_urlpatterns_contract.py tests/services/test_examination_revisions.py -q
+        --tb=short: 11 passed, 1 warning in 51.80s. Installierter Nachlauf durch parallelen neuen StudySetupImportReceipt-Import
+        blockiert; Typ nur im Geschwister-Checkout vorhanden. Abschließender Gesamt-Pyright: 0 errors,
+        19 warnings; Ruff und git diff --check bestanden. Vollsuite nicht wiederholt. Tracker-CLI nach
+        paralleler Änderung an ImportPipelineRobustness.yml ungültig: ingest_helper_modules fehlen assessed_by/assessed_at;
+        Evidenz über vorhandene validierte Tracker-Funktionen gespeichert, keine Produktionsfreigabe.'
+    - kind: test
+      reference: '2026-10-16, koordinierter Elternagent: kombinierter Lauf über acht Lifecycle-, Import-Monitoring-,
+        UploadJob-/Lease-/PostgreSQL-/Cancellation-, Hub-Dispatch- und Overview-Dateien: 261 passed, 1
+        Plugin-Warnung, keine Skips, 69.26s, Exit 0. RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false;
+        devenv-Profil bin/lib explizit gesetzt. Bestehende temporäre Cleanup-Warnungen nach Zusammenfassung.
+        Vollständiger Pyright zuvor: 0 Fehler/24 Warnungen; abschließend sieben geänderte Python-Dateien:
+        0 Fehler/0 Warnungen. Ruff und git diff --check für tests/services/test_lifecycle_state_machine.py
+        bestanden.'
+    - kind: test
+      reference: '2026-10-28: Gemeinsame Regression über AST-JSONField-Guard, datensparsame Fehlerlogs,
+        Profiling, Schlüsselkonfiguration, Upload-Fencing, UUID-Schemarestaurierung, Bitraten-Retry, Storage-Rotation,
+        Report-Fencing, Legacy-Hash-Migration und DICOM: 221 passed, 1 warning in 100.90s. UUID-Migrationstest
+        stellt alle aktuellen Migrationsblätter im finally wieder her.'
+    - kind: command
+      reference: '2026-10-28: Vollständiger Pyright 0 Fehler/2 bestehende Warnungen; AST-Guard separat
+        0 Fehler/0 Warnungen; fokussierter Ruff und git diff --check bestanden; 67 Strukturmanifeste validiert.'
+    - kind: test
+      reference: '2026-10-28: 129 verbleibende ursprüngliche Fehler-/Error-Fälle nachgeprüft: 128 passed,
+        1 fehlende Modellkonfiguration, 151 warnings in 267.99s. Anschließend vollständige Report-Embedding-Suite
+        mit dem vorhandenen LuxNix-Modell de_core_news_lg 3.8.0 über ENDOREG_REPORT_EMBEDDING_MODEL_PATH:
+        29 passed, 2 warnings in 67.22s; Modellinventar samt Dateihashes verifiziert. Keine Ersatzmodelle
+        oder Konfigurations-Fallbacks eingeführt. Historische Terminologie-, Prefork- und alte temporäre
+        Aufräumwarnungen bleiben sichtbar.'
+    - kind: code
+      reference: quality/quality_boundary_baseline.yml; tests/scripts/test_check_quality_boundaries.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    - kind: test
+      reference: '2026-11-18: Pyright vor pytest: 0 Fehler, 2 bestehende Warnungen. tests/scripts/test_devenv_quality_tasks.py
+        und tests/scripts/test_check_dead_code.py: 18 bestanden, 1 bestehende Plugin-Warnung. Actionlint
+        1.7.9 und prek validate-config bestanden; unveränderliche devenv-Referenz aus devenv.lock als
+        2.3.2 aufgelöst.'
+    - kind: command
+      reference: '2026-11-18: Standard-Pre-Commit ohne Django, Pyright oder Tests: einzelne Python-Datei
+        0,190 s; Struktur-/Lockdateien 2,022 s; alle versionierten Dateien 2,397 s, jeweils bestanden.
+        Vollständige Prüfungen sind als ci:checks lokal und in GitHub Actions identisch konfiguriert.
+        Python- und Rust-Gesamtläufe nicht zusätzlich zu fremden laufenden Suiten gestartet; Remote-Ausführung
+        der Änderungen und Branch-Protection unbestätigt (GitHub-Integration liefert HTTP 403 für Schutzregeln).'
+    - kind: command
+      reference: '2026-11-18: devenv tasks run ci:checks vollständig bestanden, Exit 0, 309 s. Enthält
+        Lock-Konsistenz, Pyright, Ruff, 67 Strukturmanifeste, 40 Feature-Definitionen, Dead-Code, überprüfte
+        Boundary-Deltas, Typ-/Modell-/Zustandsinventare, Dokumentation, Routen, Django-Startup und Migrationsdrift.
+        Bestehende Warnungen: 2 Pyright, 5 Deployment-Warnungen des Testprofils und nicht erreichbare
+        Testdatenbank bei Historienprüfung; keine Modelländerungen erkannt. tracker check code_quality
+        bleibt wegen bereits offener Gesamtkriterien nicht produktionsreif (18/25).'
+    assessed_by: codex-report-validation-20261118
+    assessed_at: '2026-11-18T15:10:30.285604Z'
 - id: secure_failure_semantics
   category: security
   title: Zentralisierte Fehlerbehandlung bleibt fail-closed und datensparsam
   acceptance:
+  - Rohvideo-Bereinigung nach Metadatenfreigabe startet erst nach erfolgreichem Datenbank- und Auditcommit;
+    ein Auditfehler verwirft die Bereinigung und erhält Quelldatei und Referenzen.
+  - Öffentliche Report-PDF-Persistenz verwendet standardmäßig den vollständigen Renderer; Rendererfehler
+    oder ein explizit angeforderter verlustbehafteter Modus erzeugen kein Artefakt und keinen still gekürzten
+    Ersatz.
+  - Klinische Datenbankänderung und ihr OperationLog werden in derselben Transaktion gespeichert; Auditfehler
+    rollen beide zurück und werden nicht durch on_commit-Persistenz oder Erfolgsantworten verdeckt.
+  - 'Synchroner Import benötigt Autocommit: Ein dauerhaftes Audit des Startversuchs muss vor externer
+    Arbeit bestehen. Fehlendes Versuchsaudit verhindert den Start; Erfolgsaudit und Fehler bleiben sichtbar,
+    ohne Dateisystem-Rollback vorzutäuschen.'
+  - Nicht implementierte Report- und Schichtplanungsmethoden scheitern ausdrücklich statt als No-op Erfolg
+    vorzutäuschen. CenterShift-Präsenzanteile liegen bei Modellvalidierung und Datenbankschreiben zwischen
+    null und eins; ungültiger Bestand blockiert die Constraint-Migration ohne Datenkorrektur.
   - Klinische, Berechtigungs-, Kryptografie-, Storage- und Transferinvarianten schlagen laut und fail-closed
     fehl.
   - Fehlerantworten und Logs enthalten keine Secrets, Master Keys, direkten Patientenidentifikatoren oder
@@ -492,14 +1390,36 @@ definition_of_done:
     - kind: review
       reference: LuxNix supplies explicit protected roots; lx-annotate resolves its empty Secretspec sentinel
         to DATA_DIR in devenv.nix before exporting the Python runtime environment
-    note: Die zentrale Pfadkonfiguration unterscheidet nun strikt zwischen nicht gesetzten und explizit
+    - kind: code
+      reference: tests/utils/test_operation_log.py; tests/services/test_video_metadata_validation.py;
+        tests/administration/center/test_center_shift.py; tests/models/test_report_file_meta_validation.py;
+        tests/services/test_report_pdf_artifact.py
+    - kind: test
+      reference: '2026-11-02: großer fokussierter Integrationslauf 807 passed, 21 failed, 36 warnings,
+        9 subtests in 1200.14s. Alle 21 Fehlfälle anschließend behoben: 17 durch deklarierte native libmagic-Laufzeit,
+        4 durch vollständige Audit-Fixtures. Finaler Nachlauf unter ausgewertetem LuxNix-Dienstlaufzeitpfad:
+        109 passed, 1 bewusst separat geprüfter Fall deselected, 2 warnings, 9 subtests in 229.86s; separater
+        realer Audit-SQL-/Rohdateierhaltungstest 1 passed in 89.73s. Uploadsuite zusätzlich in korrigierter
+        deklarierter Devenv-Shell: 35 passed, 1 warning, 9 subtests in 82.18s. Keine Produktionsausführung.'
+    - kind: command
+      reference: '2026-11-02: vollständiger Pyright am Endstand 0 errors, 2 bekannte externe Warnungen;
+        fokussierte Typprüfungen fehlerfrei. Dead-code baseline clean: 29 reviewed, keine neuen/stale/expired
+        Einträge, 0 Kandidaten. Quality-boundary baseline clean: 344 geprüfte breite Handler, 73 Typunterdrückungen.
+        Ruff, Diffprüfung und 67 Strukturmanifeste bestanden.'
+    note: 'Die zentrale Pfadkonfiguration unterscheidet nun strikt zwischen nicht gesetzten und explizit
       leeren Werten. Ein fehlender geschützter Runtime-Root wird deterministisch als <base>/data abgeleitet;
       leere oder nur aus Leerzeichen bestehende Werte für Runtime-, Storage-, Daten-, Medien-, Asset-,
       Static- oder Staging-Pfade schlagen mit einem datensparsamen EnvironmentValueError fehl und können
       weder den Repository-Root noch einen aus None abgeleiteten Pfad aktivieren. EndoReg-, lx-annotate-
       und Nix-Verträge sind grün; weitere Security- und Storage-Grenzen bleiben zu prüfen.
-    assessed_by: Codex
-    assessed_at: '2026-08-04T18:03:55.627863Z'
+
+      2026-11-02: Audit-Schreibfehler propagieren und rollen klinische Datenbankmutationen zurück. Start
+      verlangt Autocommit und persistiert Versuch vor externer Arbeit; Rohvideo-Cleanup wird bei Auditrollback
+      verworfen und erst nach äußerstem Commit ausgeführt. Report-PDFs haben keinen verlustbehafteten
+      Ersatzrenderer. No-op-Methoden scheitern ausdrücklich; Schichtanteile durch Validatoren/DB-Constraint
+      begrenzt.'
+    assessed_by: codex-storage-review-20261102
+    assessed_at: '2026-11-02T14:11:48.120965Z'
 - id: incremental_rollout
   category: operations
   title: Qualitätsrefactorings besitzen einen kontrollierten Rollout- und Rollbackpfad
@@ -674,3 +1594,93 @@ definition_of_done:
       is not claimed as verified.
     assessed_by: codex-storage-reaper-20260910
     assessed_at: '2026-09-10T12:45:08.812355Z'
+- id: persistence_ownership
+  category: functionality
+  title: Endoreg-db owns reusable persistence from lx-annotate
+  acceptance:
+  - All six remaining lx-annotate concrete models register under endoreg_db only; old Python imports resolve
+    to the same classes.
+  - Split snapshot validation has one owning implementation without an endoreg-db dependency on lx-annotate.
+  - Fresh installation and reversible upgrade preserve primary keys, foreign keys, immutable snapshots,
+    job state, constraints, content types and permission assignments.
+  - Occupied target tables fail migration atomically; schema checks and existing import, streaming, transfer
+    and concurrency tests pass.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run Pyright, migration and model ownership tests, inventory guard, and affected lx-annotate
+      consumer suites.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: 'Core persistence and inventory: 14 passed; scoped moved-model inventory: 1 passed; import,
+        encrypted streaming, lease and report concurrency regressions: 249 passed. Logs: .devenv/state/persistence-model-tests.log,
+        persistence-inventory-tests.log, persistence-integration-tests.log.'
+    - kind: command
+      reference: 'Full Endoreg Pyright: 0 errors, 10 existing warnings. Full LX-Annotate Pyright: 0 errors,
+        0 warnings. Both makemigrations --check --dry-run: No changes detected; test-profile database
+        port 1 unavailable for history checks. Focused Ruff and both git diff --check passed.'
+    - kind: test
+      reference: 'Initial PostgreSQL ownership and reversible migration suite: 10 passed. Expanded final
+        consumer suite in progress in lx-annotate/.devenv/state/persistence-consumer-tests.log.'
+    - kind: test
+      reference: 'Final lx-annotate consumer and migration lane: 275 passed in 56.80s. Includes actual
+        PostgreSQL upgrade/rollback, occupied-target atomic rejection, identities/timestamps/JSON, sequences,
+        user/group permission merges, admin history, cohort permission retention on six-model rollback,
+        registry aliases, nullable retry guards, split/transcode APIs/workers and storage/hub regressions.
+        Log: /home/admin/dev/lx-annotate/.devenv/state/persistence-consumer-tests.log.'
+    - kind: document
+      reference: docs/persistence_model_ownership.md describes ownership, matching package release, stopped
+        writers, table locking, fail-closed migration conflicts and rollback order.
+    note: 'Local scope verified: 539 unique focused tests pass across both repositories; full Pyright
+      zero errors in each, no migration drift, focused Ruff and diff checks pass. Existing Study/StudyCohort
+      work preserved. No application persistence models remain registered under lx_annotate. Whole inventory
+      guard still reports unrelated UploadJobFile and consumer-metadata drift; six transferred entries
+      pass their own reusable scoped inventory guard. No matching package release, deployment or production
+      database migration performed.'
+    assessed_by: codex-persistence-move-20261009
+    assessed_at: '2026-10-09T08:26:51.923855Z'
+- id: sensitive_meta_verification_authority
+  category: functionality
+  title: Sensitive-Meta-Verifikation hat einen zentralen Schreibweg
+  acceptance:
+  - Verifikations-Service, Metadaten-PATCH und Modellfassaden schreiben Prüfflags über dieselbe transaktionale
+    Operation; Video- und PDF-Validierung bestätigen beide Flags gemeinsam.
+  - is_verified bleibt aus Namen- und Geburtsdatumsprüfung abgeleitet; fehlender Zustand ergibt auch für
+    state_verified false.
+  - Persistierte Änderungen an Namen oder Geburtsdatum widerrufen ausschließlich die betroffene Prüfung;
+    unveränderte Werte und nicht gespeicherte Felder erhalten sie. Explizite Bestätigung im selben PATCH
+    gilt für die neuen Werte.
+  - Auditierte Identitätslöschung erhält geprüfte Identität; fehlgeschlagene Updates rollen Daten und
+    Prüfflags gemeinsam zurück. Konkurrierende Teilupdates verlieren keine Bestätigung.
+  required: true
+  verification:
+    kind: manual
+    instructions: Pyright vor Service-, Modellfassaden-, Validierungs-, Import- und PostgreSQL-Nebenläufigkeitstests
+      ausführen.
+    timeout_seconds: 900
+  assessment:
+    status: verified
+    evidence:
+    - kind: test
+      reference: '2026-10-19: pytest tests/services/test_sensitive_meta_verification.py tests/services/test_sensitive_meta_update.py
+        tests/views/anonymization/test_validate_view.py tests/views/anonymization/test_sensitive_metadata_view.py
+        tests/services/test_anonymization_quality_evaluation.py tests/import_files/test_sensitive_metadata_concurrency_postgresql.py
+        -q --tb=short --show-capture=no: 102 passed, 133 warnings, exit 0. Echte PostgreSQL-Nebenläufigkeit,
+        fehlender Zustand, Widerruf, unveränderte/ungespeicherte Werte, Neubestätigung, Rollback und auditierte
+        Löschung geprüft.'
+    - kind: test
+      reference: '2026-10-19: RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false pytest tests/import_files/test_sensitive_meta_storage.py
+        tests/import_files/test_report_anonymization_contract.py tests/import_files/test_video_anonymization.py
+        -q --tb=short --show-capture=no --disable-warnings: 59 passed, 134 warnings, exit 0.'
+    - kind: command
+      reference: 'Gesamt-Pyright: 0 Fehler, 24 bestehende Warnungen. Fokussierter Pyright: 0 Fehler/0
+        Warnungen. Ruff, scoped git diff --check, 65 Strukturmanifeste und 37 Feature-Definitionen bestanden.
+        Pytest meldet bestehende Terminologie-/Plugin- und temporäre Aufräumwarnungen.'
+    note: Zentrale transaktionale Verifikation und Zustandserzeugung, Modellfassaden und atomarer Widerruf
+      bei gespeicherten Identitätsänderungen. Explizite Neubestätigung und auditierte Löschung bleiben
+      unterstützt. Medienstatus und Datenbankschema unverändert.
+    assessed_by: codex-anon-status-20261019
+    assessed_at: '2026-10-19T08:36:30.270523Z'

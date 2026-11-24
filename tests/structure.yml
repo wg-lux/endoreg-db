@@ -1,0 +1,169 @@
+version: 1
+tier: domain
+path: tests
+parent: ../structure.yml
+summary: Pytest suites for contracts, services, HTTP APIs and clinical workflows.
+responsibilities:
+- Verify behavior, invalid inputs, integration contracts and concurrency.
+- Use repository runtime isolation and intentional foreground test commands.
+boundaries:
+- Do not run expensive background suites through editor coverage commands.
+- Declare default Django database access during collection; no_db opts pure tests out.
+files:
+- file: services/test_electrosurgical_alignment.py
+  role: Electrosurgical import idempotence, contract rejection, PTS-not-FPS windows, gaps, ranges, generation binding and API errors.
+- file: views/video/test_study_label_presentation.py
+  role: Optional study label catalog, reload, authorization, whitelist and historical box preservation regressions.
+- file: scripts/test_devenv_quality_tasks.py
+  role: Dependency synchronization, fast commit scope and shared CI gates; shell reload cannot recreate or resynchronize the active environment.
+- file: management/commands/test_profile_segment_updates.py
+  role: Explicit synthetic presentation coordinates at integer and fractional rates, terminal bounds and rollback of all generated profiling rows.
+- file: services/test_hub_video_provenance.py
+  role: Recording-bound ancestry, electrical anchors, early writer rejection and hash-verified sender timestamp reuse with receiver decoding.
+- file: import_files/test_video_anonymization.py
+  role: Anonymization staging, source integrity and proposal retry/query budgets without frame-coordinate changes.
+- file: rust_backend/test_hub_transfer_state.py
+  role: Native hub vocabulary, absorbing completion, failure admission and missing-capability regressions.
+- file: services/test_hub_transfer_cleanup.py
+  role: Complete local video file reclamation, retained receipts, interruption recovery and unsafe deletion rejection.
+- file: app/test_lx_dtypes_import_boundary.py
+  role: Declared-version and installed-distribution identity checks plus URL import isolation from sibling checkouts.
+- file: services/test_video_timeline.py
+  role: Central exact tick conversion, decoder-second identity, display/terminal bounds and read-only source evidence.
+- file: rust_backend/test_timeline_index.py
+  role: Native/scalar timeline parity for irregular coordinates, origins, missing boundaries and exclusive terminal invariants.
+- file: services/test_video_owned_deletion.py
+  role: Full video deletion removes owned assets synchronously, retains ownership on failure and rejects shared or aliased paths.
+- file: services/test_video_timestamp_backfill.py
+  role: Canonical timestamp backfill, identity preservation, owned read-lease cleanup, playback preservation and concurrent writer/cleanup admission.
+- file: management/commands/test_backfill_video_timelines.py
+  role: Timeline backfill command dry-run, apply, idempotence, blocked-media reporting and hash-mismatch rejection.
+- file: helpers/pdf.py
+  role: Independent single-page synthetic PDF fixture/reference shared by report tests and native-renderer parity; no clinical renderer fallback.
+- file: services/test_shared_video_helpers.py
+  role: Shared half-open interval and processing-history task-ID contracts through existing caller aliases.
+- file: services/test_report_pdf_artifact.py
+  role: Complete structured report rendering with embedded images, strict defaults and renderer-failure no-artifact regression tests.
+- file: utils/test_operation_log.py
+  role: Audit failure propagation, real transaction rollback and audit preflight before import startup.
+- file: test_logger_conf.py
+  role: Logger configuration preserves wrapper auditing, path redaction and visible directory failures.
+- file: administration/center/test_center_shift.py
+  role: Presence-fraction model/database bounds, atomic migration rejection and explicit scheduling refusal.
+- file: helpers/video_timeline.py
+  role: Explicit typed constant-frame-rate timeline contracts for synthetic segment and inference fixtures.
+- file: import_files/test_storage_state_management.py
+  role: Import failure propagation, explicit staging cleanup and preservation of concurrent attempt files.
+- file: services/test_frame_annotation_export_jobs.py
+  role: Export configuration, authorization, dispatch, claim fencing and process-lock regression tests.
+- file: views/media/test_frame_annotation_export_jobs_api.py
+  role: Dataset export HTTP validation, admission and scoped status regression tests.
+- file: services/test_frame_annotation_export_downloads.py
+  role: Completed export run access, supersession, symbolic-link, path and ZIP archive regression tests.
+- file: views/media/test_frame_annotation_export_downloads_api.py
+  role: Export run file listing, streaming, archive and center-scope HTTP regression tests.
+- file: import_files/test_import_processing_stack.py
+  role: Native stack persistence, stable restart references, automatic recovery, priority ordering and missing-capability rejection.
+- file: helpers/seed_fixtures.py
+  role: Shared minimal gender, center and processor fixtures using canonical data loaders.
+- file: helpers/legacy_encryption.py
+  role: Version-one LXENC fixture writer proving legacy media stays readable; production writers emit version two.
+- file: utils/test_encryption_format_v2.py
+  role: LXENC version two terminal-chunk, key-identifier and file-binding guarantees across Python and native readers.
+- file: scripts/test_export_frame_annotations_script.py
+  role: Shared YAML export contract validation, CLI overrides and delegation without duplicated workflow logic.
+- file: services/test_export_file_names.py
+  role: Conservative export-name fallback, patient-name detection and persisted decisions after identity purge.
+- file: services/test_recording_time.py
+  role: Typed acquisition-time extraction before anonymization removes container metadata.
+- file: services/test_reference_catalog_receipt_reuse.py
+  role: Receipt-digest reuse, fallback on missing rows or changed content, --verify drift detection and reconcile startup.
+- file: import_files/test_import_checkpoints.py
+  role: Encrypted video/report checkpoint reuse, integrity and ownership rejection, cleanup, rollback and scoped retry.
+- file: import_files/test_import_checkpoint_duplicate_execution.py
+  role: Checkpointed preparation, receipt writes, resume admission and native lifecycle reject duplicate execution.
+- file: import_files/conftest.py
+  role: Narrow per-test seed fixtures (gender, center, processor) replacing the full base_db_data catalogue for import tests.
+- file: administration/center/test_center.py
+  role: Center key uniqueness, canonical graph leaf and model/migration-state agreement.
+- file: services/test_report_concept_embeddings.py
+  role: Source isolation, provisioned model path validation and integrity, embedding versioning and similarity exports.
+- file: services/test_patient_uuid_generation.py
+  role: Fixed UUIDv8 vectors, center/key separation, historical identity stability, and concurrent hash-based patient creation.
+- file: services/test_clinical_lifecycle_state_machine.py
+  role: Total clinical lifecycle matrix, final validation, purge-before-export and invariant rejection without database access.
+- file: services/test_clinical_lifecycle_legacy_exemption.py
+  role: Legacy identity exemption eligibility, idempotent ledger writes, payload privacy and purge still required.
+- file: services/test_clinical_lifecycle_facts.py
+  role: Video and report fact projection, generation-bound export approval, dataset membership and audit command.
+- file: services/test_patient_matching_inputs.py
+  role: Authorized real record binding, retained generations and stale/missing input rejection.
+- file: services/test_patient_matching_acceptance.py
+  role: Signed receipt validation, query budgets and single-use UUID relationship acceptance.
+- file: services/test_patient_matching_backend.py
+  role: Aggregate parser tests and opt-in real MP-SPDZ two-process TLS execution with separate private inputs.
+- file: services/test_patient_matching_workflow.py
+  role: ORM workflow integration, role isolation, source countersigning and incomplete/stale execution handling.
+- file: scripts/test_evaluate_patient_hmac.py
+  role: Complete synthetic date-domain search, source-key/context isolation and invalid repetition counts.
+- file: services/test_patient_uuid_migration.py
+  role: Distinct UUID backfill with stable primary keys and preserved patient examination links.
+- file: services/test_identity_response_boundary.py
+  role: Browser response denial, validated JSON downloads, request lifecycle, hash-bearing exports and non-consuming stream guards.
+- file: services/test_transfer_identity_boundary.py
+  role: Reject identity fields before transfer persistence; preserve file-integrity checksums.
+- file: services/test_hub_pseudonyms.py
+  role: Hub pseudonym boundaries, all-key demographic attacks, random-mapping comparison, case linkage and mapping-compromise counterexamples.
+- file: services/test_source_patient_matching.py
+  role: Real source identity hashes rejected at the hub without salt resolution, including repeats and distinct examinations.
+- file: scripts/test_benchmark_sha256.py
+  role: Known-key digest vectors, bounded candidate recovery, CLI and invalid-input regressions without database access.
+- file: utils/test_encryption_streaming.py
+  role: Legacy plaintext retirement, encrypted storage mode and shared transcode profile regressions.
+- file: serializers/test_patient_examination_identity.py
+  role: Authorized current and historical patient resolution without serializer validation writes.
+- file: services/test_patient_examination_hash_resolution.py
+  role: Center-scoped examination resolution, patient alias reuse, idempotency and conflict rejection.
+- file: environment/test_database_fixture_contract.py
+  role: Isolated default database creation, per-test rollback and explicit no-database access rejection.
+- file: environment/test_node_marker_matching.py
+  role: Whole-word ai/inference auto-marking in conftest; substrings such as claim or failed stay in the fast lane.
+- file: services/test_migrate_legacy_hashes.py
+  role: PostgreSQL atomic identity migration, preflight rejection, idempotency, aliases and writer fencing.
+- file: services/test_patient_hash_aliases.py
+  role: Historical patient hash retention, center isolation, conflicts and rollback.
+- file: services/test_historical_identity_resolution.py
+  role: Returning patient recognition across retained salts with erased metadata and fail-closed identity evidence.
+- file: utils/test_sensitive_meta_hash_security.py
+  role: Synthetic legacy encoding ambiguity, current model HMAC separation and bounded candidate recovery without database access.
+- file: utils/test_image_content_hash.py
+  role: Deterministic single-pixel generations, exact-copy controls and PNG metadata hash experiment.
+- file: services/test_report_completion.py
+  role: Canonical attempt task/API completion, explicit legacy reuse, and refusal without mutation or retry.
+
+- file: test_model_worker_prefork.py
+  role: Real billiard prefork recycling, task deadlines and detached OCR descendant cleanup.
+- file: test_celery_worker.py
+  role: Media worker startup pool compatibility and preflight regression tests.
+- file: utils/video/test_executable_discovery.py
+  role: FFmpeg and ffprobe executable startup preflight regression tests.
+- file: services/test_annotation_comparisons.py
+  role: Annotation weighting, attribution, report eligibility and access regression tests.
+- file: services/test_video_provenance_recovery.py
+  role: Audited unresolved provenance, original timestamps, encrypted media and center access tests
+- file: services/test_frame_coordinates.py
+  role: Canonical and received generation-bound coordinate selection, ambiguity rejection, timestamp windows and durations.
+- file: conftest.py
+  role: Shared Django and clinical fixtures; explicit full-video mode uses real media operations while fast lanes retain bounded media mocks.
+- file: plugins/runtime_paths.py
+  role: Process-owned runtime path isolation
+- file: scripts/test_lint_structure.py
+  role: Agent map schema and graph regression tests
+- file: services/test_service_structure.py
+  role: Service ownership map and legacy import compatibility tests
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests
+  fast_lane_command: devenv tasks run test:fast

@@ -1,19 +1,15 @@
 from __future__ import annotations
 
-import logging
-
 from django.http import HttpRequest
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.operation_log import OperationLog
 
-logger = logging.getLogger(__name__)
-
-
 # -----------------------------
 # Operation actions
 # -----------------------------
 
+ACTION_ANONYMIZATION_START_REQUESTED = "anonymization.start_requested"
 ACTION_ANONYMIZATION_START = "anonymization.start"
 ACTION_ANONYMIZATION_VALIDATED = "anonymization.validated"
 
@@ -43,34 +39,25 @@ def record_operation(
     meta: JsonObject | None = None,
 ) -> None:
     """
-    Create an OperationLog entry from a view.
+    Persist required audit evidence; callers own the clinical transaction.
     """
     user = getattr(request, "user", None)
 
-    try:
-        log = OperationLog(
-            actor_user=user if getattr(user, "is_authenticated", False) else None,
-            actor_username=getattr(user, "username", "") if user else "",
-            actor_email=getattr(user, "email", "") if user else "",
-            actor_keycloak_id="",  # fill later if you add it to your user model
-            action=action,
-            http_method=getattr(request, "method", ""),
-            path=getattr(request, "path", ""),
-            resource_type=resource_type,
-            resource_id=resource_id,
-            status_before=status_before or "",
-            status_after=status_after or "",
-            meta=meta or None,
-        )
-        log.save()
-    except Exception:
-        # Never kill the main request flow because of logging
-        logger.exception(
-            "Failed to record operation %s for %s(%s)",
-            action,
-            resource_type,
-            resource_id,
-        )
+    log = OperationLog(
+        actor_user=user if getattr(user, "is_authenticated", False) else None,
+        actor_username=getattr(user, "username", "") if user else "",
+        actor_email=getattr(user, "email", "") if user else "",
+        actor_keycloak_id="",  # fill later if you add it to your user model
+        action=action,
+        http_method=getattr(request, "method", ""),
+        path=getattr(request, "path", ""),
+        resource_type=resource_type,
+        resource_id=resource_id,
+        status_before=status_before or "",
+        status_after=status_after or "",
+        meta=meta or None,
+    )
+    log.save()
 
 
 # TODO: will make the name more generic later based on the requirement,after merge

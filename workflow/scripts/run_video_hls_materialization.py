@@ -66,7 +66,7 @@ with stage_lifecycle(
     configure_django(snakemake.params.django_settings_module)
 
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.hls_media import materialize_video_hls
+    from endoreg_db.services.streaming.hls_media import materialize_video_hls
 
     reference = resolve_video_reference(job, list(snakemake.input))
     video_id = reference.video_id

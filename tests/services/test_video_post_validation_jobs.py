@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from importlib import import_module
+
 import types
 import uuid
 from collections.abc import Callable, Sequence
@@ -21,14 +23,16 @@ from endoreg_db.models import (
     VideoFile,
     VideoProcessingHistory,
 )
-from endoreg_db.services import video_temporal_inference as temporal_jobs
+from endoreg_db.utils.frame_stream import FrameSample
+
+temporal_jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from endoreg_db.services.jobs import video_post_validation_jobs as jobs
-from endoreg_db.services.media_operation_gate import (
+from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     create_video_stream_lease,
 )
-import endoreg_db.services.video_segment_blackening as blackening
-from endoreg_db.services.video_segment_validation_workflow import (
+import endoreg_db.services.video_files.segment_blackening as blackening
+from endoreg_db.services.annotations.segment_validation_workflow import (
     resolve_segment_annotation_status,
 )
 
@@ -49,6 +53,35 @@ def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
     video.processed_file.name = f"anonym_videos/{video.raw_video_hash}.mp4"
     video.save(update_fields=["processed_file"])
     return video
+
+
+def _existing_extracted_frame(video: VideoFile) -> Frame:
+    frame_dir = video.get_frame_dir_path()
+    assert frame_dir is not None
+    frame_dir.mkdir(parents=True, exist_ok=True)
+    (frame_dir / "frame_0000000.jpg").write_bytes(b"existing-frame")
+    frame = Frame.objects.create(
+        video=video,
+        frame_number=0,
+        relative_path="frame_0000000.jpg",
+        is_extracted=True,
+    )
+    state = video.get_or_create_state()
+    state.frames_initialized = True
+    state.frame_count = 1
+    state.frames_extracted = True
+    state.save(update_fields=["frames_initialized", "frame_count", "frames_extracted"])
+    return frame
+
+
+def _assert_existing_frame_preserved(video: VideoFile, frame: Frame) -> None:
+    frame.refresh_from_db()
+    assert frame.is_extracted
+    assert frame.file_path.read_bytes() == b"existing-frame"
+    state = video.get_or_create_state()
+    state.refresh_from_db()
+    assert state.frames_initialized and state.frames_extracted
+    assert state.frame_count == 1
 
 
 class _FakeFuture:
@@ -491,32 +524,12 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_history(
 
 
 @pytest.mark.django_db(transaction=True)
-def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_and_rolls_back_frames(
+def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_preserving_frames(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    frame_dir.mkdir(parents=True, exist_ok=True)
-    (frame_dir / "frame_0000000.jpg").write_bytes(b"partial")
-    Frame.objects.create(
-        video=video,
-        frame_number=0,
-        relative_path="frame_0000000.jpg",
-        is_extracted=True,
-    )
-    state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
-    )
+    frame = _existing_extracted_frame(video)
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "thread")
     running_history = VideoProcessingHistory.objects.create(
         video=video,
@@ -546,54 +559,20 @@ def test_dispatch_video_post_validation_rebuild_expires_stale_running_history_an
     assert running_history.status == VideoProcessingHistory.STATUS_FAILURE
     assert result.status == "queued"
     assert result.history_id != running_history.pk
-    assert not frame_dir.exists()
-    state.refresh_from_db()
-    assert state.frames_extracted is False
-    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
+    _assert_existing_frame_preserved(video, frame)
 
 
 @pytest.mark.django_db(transaction=True)
-def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_returns_false(
+def test_run_video_post_validation_rebuild_preserves_frames_when_rebuild_returns_false(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
-    frame_dir = video.get_frame_dir_path()
-    assert frame_dir is not None
-    frame_dir.mkdir(parents=True, exist_ok=True)
-
-    def fake_create_video_without_outside_frames(
-        video_obj: VideoFile,
-        *,
-        only_validated: bool = False,
-        outside_intervals: Sequence[tuple[int, int]] | None = None,
-    ) -> bool:
-        assert only_validated is False
-        assert outside_intervals is None
-        (frame_dir / "frame_0000000.jpg").write_bytes(b"blackened")
-        Frame.objects.create(
-            video=video_obj,
-            frame_number=0,
-            relative_path="frame_0000000.jpg",
-            is_extracted=True,
-        )
-        state = video_obj.get_or_create_state()
-        state.frames_initialized = True
-        state.frame_count = 1
-        state.frames_extracted = True
-        state.save(
-            update_fields=[
-                "frames_initialized",
-                "frame_count",
-                "frames_extracted",
-            ]
-        )
-        return False
-
+    frame = _existing_extracted_frame(video)
     monkeypatch.setattr(
         jobs,
         "rebuild_processed_video_without_outside_frames",
-        fake_create_video_without_outside_frames,
+        Mock(return_value=False),
     )
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -609,11 +588,7 @@ def test_run_video_post_validation_rebuild_rolls_back_frames_when_rebuild_return
 
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_FAILURE
-    assert not frame_dir.exists()
-    state = video.get_or_create_state()
-    state.refresh_from_db()
-    assert state.frames_extracted is False
-    assert not Frame.objects.filter(video=video, is_extracted=True).exists()
+    _assert_existing_frame_preserved(video, frame)
 
 
 @pytest.mark.django_db
@@ -639,6 +614,61 @@ def test_run_video_post_validation_rebuild_defers_when_stream_lease_active(
     history.refresh_from_db()
     assert history.status == VideoProcessingHistory.STATUS_PENDING
     assert "media operation leases are active" in history.details
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("status", ["pending", "running"])
+def test_replacement_refusal_preserves_existing_frames_and_annotations(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    status: str,
+) -> None:
+    rebuild_service = import_module(
+        "endoreg_db.services.video_files.post_validation_blackening"
+    )
+    video = _create_video_for_post_validation(tmp_path)
+    frame = _existing_extracted_frame(video)
+    label, _ = Label.objects.get_or_create(name="outside")
+    source, _ = InformationSource.objects.get_or_create(name="manual_annotation")
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frame,
+        label=label,
+        information_source=source,
+        value=True,
+    )
+    history = VideoProcessingHistory.objects.create(
+        video=video,
+        operation=VideoProcessingHistory.OPERATION_REPROCESSING,
+        status=status,
+        config=blackening.blackening_history_config(only_validated=False),
+    )
+    original_name = video.processed_file.name
+    original_hash = video.processed_video_hash
+    refusal = Mock(side_effect=RuntimeError("replacement_not_committed"))
+    encoder = Mock(side_effect=AssertionError("Encoding must not start after refusal"))
+    monkeypatch.setattr(
+        jobs, "_merge_outside_frame_intervals", Mock(return_value=[(0, 1)])
+    )
+    monkeypatch.setattr(
+        rebuild_service, "reconcile_previous_processed_cleanup", refusal
+    )
+    monkeypatch.setattr(rebuild_service, "blacken_video_frame_intervals", encoder)
+
+    with pytest.raises(RuntimeError, match="Outside-frame rebuild failed") as raised:
+        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
+
+    assert str(raised.value.__cause__) == "replacement_not_committed"
+    refusal.assert_called_once()
+    encoder.assert_not_called()
+    _assert_existing_frame_preserved(video, frame)
+    annotation.refresh_from_db()
+    assert annotation.frame == frame
+    video.refresh_from_db()
+    assert video.processed_file.name == original_name
+    assert video.processed_video_hash == original_hash
+    history.refresh_from_db()
+    assert history.status == VideoProcessingHistory.STATUS_FAILURE
+    assert not video.get_or_create_state().outside_segments_removed
 
 
 @pytest.mark.django_db
@@ -673,6 +703,7 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
         *,
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
+        raise_on_error: bool = False,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals == [(0, 1)]
@@ -720,8 +751,12 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
         extracted_state.save(update_fields=["frame_count", "frames_extracted"])
         return True
 
-    def fake_capture_frame(_path: Path, _frame_number: int) -> object:
-        return __import__("numpy").zeros((4, 4, 3), dtype="uint8")
+    def fake_capture_frame(_video: VideoFile, frame_number: int) -> FrameSample:
+        return FrameSample(
+            frame_number,
+            float(frame_number),
+            __import__("numpy").zeros((4, 4, 3), dtype="uint8"),
+        )
 
     monkeypatch.setattr(
         jobs,
@@ -800,6 +835,7 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         *,
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
+        raise_on_error: bool = False,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals == [(0, 1)]
@@ -826,9 +862,13 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
     )
     sampled_frame_numbers: list[int] = []
 
-    def fake_capture_frame(_path: Path, frame_number: int):
+    def fake_capture_frame(_video: VideoFile, frame_number: int) -> FrameSample:
         sampled_frame_numbers.append(frame_number)
-        return __import__("numpy").full((4, 4, 3), sample_value, dtype="uint8")
+        return FrameSample(
+            frame_number,
+            float(frame_number),
+            __import__("numpy").full((4, 4, 3), sample_value, dtype="uint8"),
+        )
 
     monkeypatch.setattr(jobs, "_capture_frame", fake_capture_frame)
 
@@ -919,6 +959,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         *,
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
+        raise_on_error: bool = False,
     ) -> bool:
         create_calls.append((only_validated, outside_intervals))
         return True
@@ -1013,6 +1054,7 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
         *,
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
+        raise_on_error: bool = False,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals is None
@@ -1108,6 +1150,7 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
         *,
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
+        raise_on_error: bool = False,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals is None
@@ -1168,6 +1211,7 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
         *,
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
+        raise_on_error: bool = False,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals is None

@@ -9,7 +9,7 @@ import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile, VideoProcessingHistory, VideoState
-from endoreg_db.services.video_import import VideoImportService
+from endoreg_db.services.video_files.direct_import import VideoImportService
 
 pytestmark = pytest.mark.django_db
 
@@ -28,6 +28,7 @@ def _make_source_record(center: Center) -> VideoFile:
     )
     return VideoFile.objects.create(
         center=center,
+        frame_count=1,
         state=state,
         raw_video_hash=f"reimport-view-{token}",
         original_file_name=f"reimport-view-{token}.mp4",

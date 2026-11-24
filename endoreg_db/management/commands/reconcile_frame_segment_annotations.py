@@ -10,7 +10,7 @@ from endoreg_db.management.commands._profiling import (
     command_profiling_config_from_options,
     run_with_optional_profile,
 )
-from endoreg_db.services.frame_segment_reconciliation import (
+from endoreg_db.services.frames.frame_segment_reconciliation import (
     FrameSegmentReconciliationSpec,
     VALID_FRAME_SEGMENT_TRACKS,
     reconcile_frame_segment_annotations,

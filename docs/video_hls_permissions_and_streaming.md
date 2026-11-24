@@ -149,14 +149,54 @@ replacement.
 Playlist, key, and segment requests renew a media-operation lease. Publication,
 regeneration, and cleanup must defer while the relevant lease is active.
 
+## Runtime cost and lookup boundaries
+
+[`hls_stream.py`](../endoreg_db/views/video/hls_stream.py) authorizes source access
+before pre-lock verification and repeats the authoritative lookup under the video
+row lock. This lets the locked check reuse a verified digest without holding the
+row lock through a full source read. Key and segment lookups validate generation
+identity and root paths; they do not rescan every segment in the generation.
+
+[`source_hash.py`](../endoreg_db/services/video_files/source_hash.py) caches at most
+128 encrypted-filesystem generations per process. Reuse is bound to storage,
+path, device, inode, size, mode and modification/change timestamps. It rechecks
+metadata after hashing and resets on fork. Other storage implementations hash
+each time. Repeated filenames alone never authorize reuse.
+
+[`hls_media.py`](../endoreg_db/services/streaming/hls_media.py) owns reservation,
+encoding, source/timeline validation and atomic publication. Python profiles show
+caller time including waits for FFmpeg; they do not profile the encoder internally.
+
 ## Artifact Materialization
 
 The durable artifact states are:
 
 ```text
-queued -> materializing -> ready
-                       \-> failed
+queued -> materializing -> validated -> ready -> superseded
+   \            \               \          \
+    `------------`---------------`----------`-> failed
 ```
+
+Every status change goes through `set_hls_artifact_status` in
+`endoreg_db/services/streaming/hls_artifact_state.py`, the only writer of
+`VideoHlsArtifact.status`. It asks the native table
+`decide_hls_artifact_transition` (capability `hls_artifact_transition_v1`),
+which has three outcomes:
+
+| Current | Applied targets | Ignored (no write) |
+| --- | --- | --- |
+| new row | `queued`, `materializing` | |
+| `queued` | `materializing`, `failed` | `queued` |
+| `materializing` | `materializing` (same-attempt reclaim), `validated`, `failed` | |
+| `validated` | `ready`, `failed` | `validated` |
+| `ready` | `superseded`, `failed` | `ready` |
+| `superseded` | | `superseded`, `failed` |
+| `failed` | | `failed` |
+
+Every other pair raises `ValueError`: `ready` is reachable only from
+`validated`, and final artifacts are never revived. Callers hold the artifact
+row lock and save only when the writer returns `True`. Writer ownership across
+the project is described in [state_mutation_ownership.md](state_mutation_ownership.md).
 
 `queued` as a dispatch result means only that the broker accepted a task. It
 does not mean that a ready artifact exists. Stale materialization is reconciled
@@ -177,25 +217,16 @@ production convergence.
 
 ## Current Production-Readiness Limits
 
-The implementation is not yet a complete production-readiness proof. The
-feature tracker currently records these material limits:
+Import finalization now checks terminal HLS results through `hls_result_is_ready`:
+only `materialized` and `already_ready` qualify. Regular raw imports require both
+raw and processed derivatives; verified received-generation reuse requires only
+processed HLS. `queued` is never import-completion evidence.
 
-- import and correction callers do not consistently enforce the real typed
-  terminal HLS result, so a caller can report false success or reject a
-  successful publication;
-- backfill admission and accounting can select a populated file field whose
-  physical source is absent, and its outcome counts are not yet reliable per
-  distinct video;
-- persisted and emitted HLS errors can still include source-path context, and
-  health reporting and recovery do not yet use one stale-work policy;
-- failure-injection evidence is missing for broker loss, hard worker loss,
-  multi-process concurrency, and the packaged lx-annotate production runtime;
-- source-generation and publication integrity are implemented in part, but
-  formal production rollout and corpus-convergence evidence remain outstanding.
-
-Do not describe imports as fully stream-ready merely because HLS work was
-dispatched. Do not enable destructive cleanup based on HLS state until the
-tracker's required gates are verified.
+This describes the checked source, not a deployment or whole-corpus acceptance.
+Use [VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml)
+for current failure-injection, packaged-runtime, rollout and cleanup evidence.
+Do not enable destructive cleanup without its required gates. Avoid copying a
+snapshot of open tracker items into this runbook: those lists become stale.
 
 ## Frontend Lifecycle and Diagnosis
 
@@ -226,12 +257,12 @@ fallback.
 | Concern | Source |
 | --- | --- |
 | OIDC user, role, and center synchronization | `endoreg_db/authz/backends.py`, `endoreg_db/authz/auth.py` |
-| Center-group validation and plural membership | `endoreg_db/services/center_access.py` |
+| Center-group validation and plural membership | `endoreg_db/services/centers/access.py` |
 | Route policy and compatibility roles | `endoreg_db/authz/policy.py`, `endoreg_db/authz/permissions.py` |
 | Object and hub center checks | `endoreg_db/views/access_control.py` |
 | HLS playlist, key, and segment views | `endoreg_db/views/video/hls_stream.py` |
 | Compatibility redirect | `endoreg_db/views/video/video_stream.py` |
-| Artifact lifecycle and transcoding | `endoreg_db/services/hls_media.py`, `VideoHlsArtifact` |
+| Artifact lifecycle and transcoding | `endoreg_db/services/streaming/hls_media.py`, `VideoHlsArtifact` |
 | Browser playback | lx-annotate `useAuthenticatedVideoStream.ts` |
 
 Changes to one layer require verification with all remaining layers enabled.

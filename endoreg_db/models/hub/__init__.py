@@ -1,5 +1,10 @@
 from __future__ import annotations
 from .network_node import NetworkNode
+from .patient_matching import (
+    PatientMatchingBudget,
+    PatientMatchingRelationship,
+    PatientMatchingSession,
+)
 from .quarantine_item import QuarantineItem
 from .storage_balancing import (
     StorageBalanceCancellationReceipt,
@@ -33,8 +38,12 @@ from .storage_placement import (
 from .storage_transfer import StoragePlacementCommitReceipt, StorageTransferEvidence
 from .transfer_job import TransferJob
 from .upload_job import UploadJob
+from .upload_job_file import UploadJobFile
 
 __all__ = [
+    "PatientMatchingBudget",
+    "PatientMatchingRelationship",
+    "PatientMatchingSession",
     "NetworkNode",
     "QuarantineItem",
     "StorageBalanceCancellationReceipt",
@@ -66,4 +75,5 @@ __all__ = [
     "StoragePlacementCommitReceipt",
     "TransferJob",
     "UploadJob",
+    "UploadJobFile",
 ]

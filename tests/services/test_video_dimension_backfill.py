@@ -1,3 +1,4 @@
+from importlib import import_module
 from contextlib import contextmanager
 from collections.abc import Generator
 from types import SimpleNamespace
@@ -6,7 +7,7 @@ from typing import BinaryIO, cast
 
 import pytest
 
-from endoreg_db.services import video_dimension_backfill as service
+service = import_module("endoreg_db.services.video_storage.dimension_backfill")
 from endoreg_db.models.media.video.video_file import VideoFile
 from lx_dtypes.models.contracts.video_file import VideoFilePayload
 from lx_dtypes.models.contracts.endoscopy_processor import (

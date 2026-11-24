@@ -2,31 +2,35 @@ from __future__ import annotations
 
 import json
 import subprocess
-from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 
-from endoreg_db.models import Center, Frame, VideoFile
+from endoreg_db.models import (
+    Center,
+    Frame,
+    VideoFile,
+    LabelVideoSegment,
+    Label,
+    ImageClassificationAnnotation,
+)
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
-    HlsSegmentBoundary,
     MeasuredAverageFrameRate,
     NominalFrameRate,
-    PresentationTimestampBoundary,
-    PresentationTimestampTimeline,
     VideoArtifactProbe,
-    VideoFpsResamplingEvidence,
     VideoSourceTimelineEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services import video_storage_normalization as normalization
+from endoreg_db.services.video_storage import workflow as normalization
 from endoreg_db.services.video_storage import contracts as storage_contracts
 from endoreg_db.services.video_storage.validation import (
     assert_normalization_source_supported,
 )
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
+from endoreg_db.services.video_storage import canonical_timelines
+from tests.helpers.canonical_timestamps import decoded_test_timestamps
 
 
 def _timeline(
@@ -74,7 +78,6 @@ def _probe(
     [
         (_probe(width=4097), "Source dimensions"),
         (_probe(height=2161), "Source dimensions"),
-        (_probe(timeline=_timeline(fps_num=121)), "Source FPS"),
         (_probe(timeline=_timeline(variable_frame_rate=True)), "time-base metadata"),
     ],
 )
@@ -223,7 +226,7 @@ def test_annotation_fps_profile_downsamples_without_spatial_resampling() -> None
 
 
 @pytest.mark.unit
-def test_storage_profile_rejects_output_above_resolution_or_fps_caps() -> None:
+def test_storage_profile_rejects_output_above_resolution_cap() -> None:
     profile = normalization.VideoStorageProfile(
         name="test",
         max_bit_rate_bps=12_000_000,
@@ -243,14 +246,39 @@ def test_storage_profile_rejects_output_above_resolution_or_fps_caps() -> None:
             profile=profile,
         )
 
-    with pytest.raises(
-        normalization.VideoStorageNormalizationError,
-        match="Output FPS exceeds profile",
-    ):
-        normalization.assert_storage_compliance(
-            _probe(timeline=_timeline(fps_num=61, frame_count=610)),
-            profile=profile,
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("fps_num", "fps_den"), [(1, 2), (299, 5), (240, 1), (1000, 1)]
+)
+def test_native_normalization_preserves_any_positive_fps(
+    fps_num: int, fps_den: int
+) -> None:
+    # A legacy configured cap below the annotation target must be inert too.
+    profile = normalization.VideoStorageProfile(
+        name="legacy-config",
+        max_bit_rate_bps=12_000_000,
+        max_bytes_per_second=1_600_000,
+        fixed_overhead_bytes=1024,
+        max_source_fps=1.0,
+    )
+    probe = _probe(
+        timeline=_timeline(
+            fps_num=fps_num,
+            fps_den=fps_den,
+            frame_count=10 * fps_num // fps_den,
         )
+    )
+    assert_normalization_source_supported(source=probe, profile=profile)
+    normalization.assert_storage_compliance(probe, profile=profile)
+    evidence = normalization.validate_normalized_output(
+        source=probe, output=probe, profile=profile
+    )
+    assert evidence.source.timeline == probe.timeline
+    assert evidence.output.timeline == probe.timeline
+    args = profile.ffmpeg_output_args()
+    assert "-fpsmax" not in args
+    assert "fps=" not in args[args.index("-vf") + 1]
 
 
 @pytest.mark.unit
@@ -558,181 +586,6 @@ def test_temporal_gate_rejects_changed_frame_identity() -> None:
         )
 
 
-def _gc10_timeline(
-    *,
-    average_numerator: int,
-    average_denominator: int,
-    frame_count: int = 500,
-    duration_seconds: float = 10.0,
-    time_base_denominator: int = 12_800,
-) -> VideoTimelineContract:
-    return VideoTimelineContract(
-        fps_num=average_numerator,
-        fps_den=average_denominator,
-        duration_seconds=duration_seconds,
-        frame_count=frame_count,
-        variable_frame_rate=average_numerator != 50 * average_denominator,
-        time_base_num=1,
-        time_base_den=time_base_denominator,
-        nominal_frame_rate=NominalFrameRate(numerator=50, denominator=1),
-        measured_average_frame_rate=MeasuredAverageFrameRate(
-            numerator=average_numerator,
-            denominator=average_denominator,
-        ),
-    )
-
-
-def _pts_summary(
-    *,
-    boundary: PresentationTimestampBoundary,
-    maximum_cadence_seconds: float = 0.02,
-) -> PresentationTimestampTimeline:
-    return PresentationTimestampTimeline(
-        frame_count=500,
-        first_timestamp_seconds=0.0,
-        last_timestamp_seconds=9.98,
-        minimum_cadence_seconds=0.02,
-        maximum_cadence_seconds=maximum_cadence_seconds,
-        boundaries=[boundary],
-    )
-
-
-@pytest.mark.unit
-def test_proven_50_fps_hls_accepts_measured_average_rate_difference() -> None:
-    profile = normalization.VideoStorageProfile(
-        name="test",
-        max_bit_rate_bps=12_000_000,
-        max_bytes_per_second=1_600_000,
-        fixed_overhead_bytes=1024,
-    )
-    source = _probe(
-        timeline=_gc10_timeline(
-            average_numerator=498549,
-            average_denominator=10000,
-        )
-    )
-    output = _probe(
-        timeline=_gc10_timeline(
-            average_numerator=50,
-            average_denominator=1,
-            time_base_denominator=90_000,
-        )
-    )
-    persisted_boundary = PresentationTimestampBoundary(
-        coordinate_kind="segment_start",
-        reference_id=7,
-        frame_number=100,
-        timestamp_seconds=2.0,
-    )
-    provenance = VideoFpsResamplingEvidence(
-        normalized_at=datetime.now(UTC),
-        max_fps=50.0,
-        source=_probe(timeline=_timeline(fps_num=60, frame_count=600)),
-        output=source,
-    )
-    context = normalization.ProvenResampledHlsContext(
-        provenance=provenance,
-        source_generation_verified=True,
-        boundaries=(persisted_boundary,),
-    )
-
-    with pytest.raises(normalization.MeasuredAverageFrameRateDriftError):
-        normalization.assert_temporal_equivalence(
-            source.timeline,
-            output.timeline,
-            profile=profile,
-        )
-    normalization.validate_proven_resampled_hls_equivalence(
-        source=source,
-        output=output,
-        source_pts=_pts_summary(boundary=persisted_boundary),
-        output_pts=_pts_summary(boundary=persisted_boundary),
-        context=context,
-        profile=profile,
-    )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("provenance_mode", "generation_verified", "maximum_cadence", "message"),
-    [
-        ("missing", True, 0.02, "requires FPS resampling provenance"),
-        ("mismatched", True, 0.02, "frame count does not match"),
-        ("valid", False, 0.02, "source generation does not match"),
-        ("valid", True, 0.04, "cadence is not constant"),
-    ],
-)
-def test_proven_50_fps_hls_fails_closed_without_complete_temporal_proof(
-    provenance_mode: str,
-    generation_verified: bool,
-    maximum_cadence: float,
-    message: str,
-) -> None:
-    profile = normalization.VideoStorageProfile(
-        name="test",
-        max_bit_rate_bps=12_000_000,
-        max_bytes_per_second=1_600_000,
-        fixed_overhead_bytes=1024,
-    )
-    source = _probe(
-        timeline=_gc10_timeline(
-            average_numerator=498549,
-            average_denominator=10000,
-        )
-    )
-    output = _probe(
-        timeline=_gc10_timeline(
-            average_numerator=50,
-            average_denominator=1,
-            time_base_denominator=90_000,
-        )
-    )
-    boundary = PresentationTimestampBoundary(
-        coordinate_kind="segment_start",
-        reference_id=7,
-        frame_number=100,
-        timestamp_seconds=2.0,
-    )
-    provenance = None
-    if provenance_mode != "missing":
-        provenance_output = (
-            source.model_copy(
-                update={
-                    "timeline": source.timeline.model_copy(update={"frame_count": 499})
-                }
-            )
-            if provenance_mode == "mismatched"
-            else source
-        )
-        provenance = VideoFpsResamplingEvidence(
-            normalized_at=datetime.now(UTC),
-            max_fps=50.0,
-            source=_probe(timeline=_timeline(fps_num=60, frame_count=600)),
-            output=provenance_output,
-        )
-    context = normalization.ProvenResampledHlsContext(
-        provenance=provenance,
-        source_generation_verified=generation_verified,
-        boundaries=(boundary,),
-    )
-
-    with pytest.raises(
-        normalization.VideoStorageNormalizationError,
-        match=message,
-    ):
-        normalization.validate_proven_resampled_hls_equivalence(
-            source=source,
-            output=output,
-            source_pts=_pts_summary(
-                boundary=boundary,
-                maximum_cadence_seconds=maximum_cadence,
-            ),
-            output_pts=_pts_summary(boundary=boundary),
-            context=context,
-            profile=profile,
-        )
-
-
 @pytest.mark.unit
 def test_storage_normalization_rejects_spatial_upsampling() -> None:
     profile = normalization.VideoStorageProfile(
@@ -985,13 +838,15 @@ def test_probe_video_frame_timestamps_preserves_ffprobe_command_contract(
     assert observed_commands == [
         [
             "/usr/bin/ffprobe",
+            "-threads",
+            "4",
             "-v",
             "error",
             "-select_streams",
             "v:0",
             "-show_frames",
             "-show_entries",
-            "frame=best_effort_timestamp,best_effort_timestamp_time",
+            "frame=pts,pts_time,best_effort_timestamp,best_effort_timestamp_time",
             "-of",
             "json",
             "video.mp4",
@@ -1197,7 +1052,28 @@ def test_probe_video_frame_timestamps_rejects_empty_frame_list(
 
 
 @pytest.mark.django_db
-def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
+@pytest.mark.parametrize(
+    "existing_frames,has_segments,protected",
+    [
+        (0, False, ""),
+        (0, True, ""),
+        (3, False, ""),
+        (4, False, ""),
+        (2, False, ""),
+        (2, True, ""),
+        (2, False, "timestamp"),
+        (2, False, "extracted"),
+        (2, False, "published"),
+        (2, False, "gap"),
+        (2, False, "annotation"),
+    ],
+)
+@pytest.mark.parametrize("variable_frame_rate", [False, True])
+def test_persist_video_source_timeline_uses_decoded_frame_count(
+    existing_frames: int,
+    has_segments: bool,
+    protected: str,
+    variable_frame_rate: bool,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
@@ -1207,20 +1083,39 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         raw_video_hash="pts-video",
         fps=25.0,
         duration=0.2,
-        frame_count=3,
+        frame_count=4,
     )
     Frame.objects.bulk_create(
         [
-            Frame(video=video, frame_number=0, relative_path="0.jpg"),
-            Frame(video=video, frame_number=1, relative_path="1.jpg"),
-            Frame(video=video, frame_number=2, relative_path="2.jpg"),
+            Frame(video=video, frame_number=index, relative_path=f"{index}.jpg")
+            for index in range(existing_frames)
         ]
     )
+    if has_segments:
+        LabelVideoSegment.objects.create(
+            video_file=video, start_frame_number=0, end_frame_number=1
+        )
+    if protected == "timestamp":
+        video.frames.update(timestamp=0.0)
+    elif protected == "extracted":
+        video.frames.update(is_extracted=True)
+    elif protected == "published":
+        video.processed_file.name = "processed.mp4"
+        video.save(update_fields=["processed_file"])
+    elif protected == "gap":
+        video.frames.filter(frame_number=1).update(frame_number=2)
+    elif protected == "annotation":
+        ImageClassificationAnnotation.objects.create(
+            frame=video.frames.get(frame_number=0),
+            label=Label.objects.create(name="protected-frame"),
+            value=True,
+        )
+    original_rows = list(video.frames.values_list("pk", "frame_number", "timestamp"))
     source_probe = _probe(
         timeline=_timeline(
             duration_seconds=0.2,
-            frame_count=3,
-            variable_frame_rate=True,
+            frame_count=4,
+            variable_frame_rate=variable_frame_rate,
             time_base_num=1,
             time_base_den=90_000,
         )
@@ -1266,6 +1161,23 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         fake_probe_video_frame_timestamps,
     )
 
+    if has_segments or existing_frames == 4 or protected:
+        with pytest.raises(normalization.VideoStorageNormalizationError):
+            normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
+        video.refresh_from_db()
+        assert video.frame_count == 4
+        assert video.frames.count() == existing_frames
+        assert (
+            list(video.frames.values_list("pk", "frame_number", "timestamp"))
+            == original_rows
+        )
+        if protected == "annotation":
+            assert (
+                ImageClassificationAnnotation.objects.filter(frame__video=video).count()
+                == 1
+            )
+        return
+
     normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
 
     timestamps = list(
@@ -1274,6 +1186,10 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
         .values_list("timestamp", flat=True)
     )
     video.refresh_from_db()
+    assert video.frame_count == 3
+    assert list(video.frames.values_list("pk", "frame_number"))[:existing_frames] == [
+        (pk, number) for pk, number, _ in original_rows
+    ]
     assert timestamps == [0.0, 0.033, 0.091]
     assert list(
         Frame.objects.filter(video=video)
@@ -1283,6 +1199,7 @@ def test_persist_video_source_timeline_uses_probed_pts_for_vfr(
     meta = video.meta
     assert isinstance(meta, dict)
     evidence = VideoSourceTimelineEvidence.model_validate(meta["source_timeline"])
+    assert evidence.source.timeline.frame_count == 3
     assert evidence.timeline_version == "pts_v1"
     assert evidence.timestamp_mapping == "ffprobe_pts"
 
@@ -1347,9 +1264,18 @@ def test_normalize_video_file_replaces_only_after_all_gates_pass(
     input_path = tmp_path / "anonymized.mp4"
     reference_path.write_bytes(b"raw")
     input_path.write_bytes(b"unbounded")
-    reference_probe = _probe(size_bytes=2_000_000)
+    reference_probe = _probe(
+        size_bytes=2_000_000, timeline=_timeline(time_base_num=1, time_base_den=1000)
+    )
     unbounded_probe = _probe(size_bytes=20_000_000, bit_rate_bps=20_000_000)
-    bounded_probe = _probe(size_bytes=1_000_000, bit_rate_bps=800_000)
+    bounded_probe = _probe(
+        size_bytes=1_000_000,
+        bit_rate_bps=800_000,
+        timeline=_timeline(time_base_num=1, time_base_den=1000),
+    )
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
 
     def fake_probe(path: Path) -> VideoArtifactProbe:
         if path == reference_path:
@@ -1402,7 +1328,10 @@ def test_ensure_video_file_profile_copies_compliant_input_without_transcoding(
     input_path = tmp_path / "incoming.mp4"
     output_path = tmp_path / "canonical.mp4"
     input_path.write_bytes(b"already-compliant")
-    compliant_probe = _probe()
+    compliant_probe = _probe(timeline=_timeline(time_base_num=1, time_base_den=1000))
+    monkeypatch.setattr(
+        canonical_timelines, "probe_video_frame_timestamps", decoded_test_timestamps
+    )
     probed_paths: list[Path] = []
 
     def fake_probe(path: Path) -> VideoArtifactProbe:
@@ -1438,130 +1367,3 @@ def test_ensure_video_file_profile_copies_compliant_input_without_transcoding(
     assert evidence.storage_compliant is True
     assert probed_paths[0:2] == [input_path, input_path]
     assert probed_paths[-1] != output_path
-
-
-def _frame_timestamps(values: list[float]) -> list[FramePresentationTimestamp]:
-    return [
-        FramePresentationTimestamp(
-            presentation_timestamp=round(value * 1000),
-            presentation_time_seconds=value,
-        )
-        for value in values
-    ]
-
-
-@pytest.mark.unit
-def test_hls_pts_and_segment_gate_accepts_equivalent_timeline() -> None:
-    profile = normalization.VideoStorageProfile(
-        name="test",
-        max_bit_rate_bps=12_000_000,
-        max_bytes_per_second=1_600_000,
-        fixed_overhead_bytes=1024,
-    )
-    timeline = _timeline(
-        fps_num=2,
-        duration_seconds=3.0,
-        frame_count=6,
-        time_base_num=1,
-        time_base_den=1000,
-    )
-    normalization.validate_hls_segment_and_pts_equivalence(
-        source_timeline=timeline,
-        output_timeline=timeline,
-        source_timestamps=_frame_timestamps([0.0, 0.5, 1.0, 1.5, 2.0, 2.5]),
-        output_timestamps=_frame_timestamps([1.4, 1.9, 2.4, 2.9, 3.4, 3.9]),
-        segments=[
-            HlsSegmentBoundary(
-                segment_index=0,
-                start_timestamp_seconds=0.0,
-                duration_seconds=1.5,
-                end_timestamp_seconds=1.5,
-            ),
-            HlsSegmentBoundary(
-                segment_index=1,
-                start_timestamp_seconds=1.5,
-                duration_seconds=1.5,
-                end_timestamp_seconds=3.0,
-            ),
-        ],
-        profile=profile,
-    )
-
-
-@pytest.mark.unit
-def test_hls_pts_gate_rejects_real_frame_timeline_drift() -> None:
-    profile = normalization.VideoStorageProfile(
-        name="test",
-        max_bit_rate_bps=12_000_000,
-        max_bytes_per_second=1_600_000,
-        fixed_overhead_bytes=1024,
-    )
-    timeline = _timeline(
-        fps_num=2,
-        duration_seconds=3.0,
-        frame_count=6,
-        time_base_num=1,
-        time_base_den=1000,
-    )
-    with pytest.raises(
-        normalization.VideoStorageNormalizationError,
-        match="presentation timestamp drifted at frame 3",
-    ):
-        normalization.validate_hls_segment_and_pts_equivalence(
-            source_timeline=timeline,
-            output_timeline=timeline,
-            source_timestamps=_frame_timestamps([0.0, 0.5, 1.0, 1.5, 2.0, 2.5]),
-            output_timestamps=_frame_timestamps([1.4, 1.9, 2.4, 2.95, 3.4, 3.9]),
-            segments=[
-                HlsSegmentBoundary(
-                    segment_index=0,
-                    start_timestamp_seconds=0.0,
-                    duration_seconds=3.0,
-                    end_timestamp_seconds=3.0,
-                )
-            ],
-            profile=profile,
-        )
-
-
-@pytest.mark.unit
-def test_hls_segment_gate_rejects_boundary_without_nearby_pts() -> None:
-    profile = normalization.VideoStorageProfile(
-        name="test",
-        max_bit_rate_bps=12_000_000,
-        max_bytes_per_second=1_600_000,
-        fixed_overhead_bytes=1024,
-    )
-    timeline = _timeline(
-        fps_num=25,
-        duration_seconds=4.0,
-        frame_count=4,
-        time_base_num=1,
-        time_base_den=1000,
-    )
-    timestamps = _frame_timestamps([0.0, 1.0, 2.0, 3.0])
-    with pytest.raises(
-        normalization.VideoStorageNormalizationError,
-        match="segment boundary does not map",
-    ):
-        normalization.validate_hls_segment_and_pts_equivalence(
-            source_timeline=timeline,
-            output_timeline=timeline,
-            source_timestamps=timestamps,
-            output_timestamps=timestamps,
-            segments=[
-                HlsSegmentBoundary(
-                    segment_index=0,
-                    start_timestamp_seconds=0.0,
-                    duration_seconds=1.5,
-                    end_timestamp_seconds=1.5,
-                ),
-                HlsSegmentBoundary(
-                    segment_index=1,
-                    start_timestamp_seconds=1.5,
-                    duration_seconds=2.5,
-                    end_timestamp_seconds=4.0,
-                ),
-            ],
-            profile=profile,
-        )

@@ -28,6 +28,10 @@ class Shift(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     is_active: models.BooleanField[Any, Any] = models.BooleanField(default=True)
 

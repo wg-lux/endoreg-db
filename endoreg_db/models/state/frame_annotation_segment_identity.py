@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from hashlib import sha256
+from endoreg_db.utils.hashs import get_bytes_hash
+
 from typing import Protocol, cast
 
 from django.db.models import Q
@@ -58,7 +59,7 @@ def segment_derived_external_annotation_id(
         str(model_meta_id or ""),
         str(annotator or ""),
     ]
-    digest = sha256("|".join(normalized_parts).encode("utf-8")).hexdigest()[:24]
+    digest = get_bytes_hash("|".join(normalized_parts).encode("utf-8"))[:24]
     return (
         f"{SEGMENT_DERIVED_EXTERNAL_ANNOTATION_PREFIX}:"
         f"{segment_id or 'none'}:{frame_id or 'none'}:{digest}"

@@ -9,8 +9,48 @@ class BatchProcessor:
     worker_count: int
     def __new__(cls, worker_count: int): ...
     def stable_file_identities(
-        self, paths, chunk_size=...
+        self, paths, chunk_size=..., master_keys=...
     ) -> list[tuple[int, int, str]]: ...
+
+class TimelineIndex:
+    r"""
+    Generation-bound frame/time resolver loaded once per video and request.
+
+    It never mutates coordinates; it only answers boundary lookups using the
+    same rules as `endoreg_db.services.video_files.timeline`.
+    """
+
+    content_hash: typing.Optional[str]
+    persisted_count: int
+    def __new__(
+        cls,
+        frame_numbers,
+        timestamps,
+        *,
+        fps,
+        frame_count,
+        duration_seconds,
+        requires_persisted_pts,
+        first_timestamp_seconds,
+        content_hash,
+    ): ...
+    def frame_number_to_seconds(self, frame_number: int) -> float: ...
+    def seconds_to_frame_number(self, timestamp_seconds: float) -> int: ...
+    def frame_numbers_to_seconds(
+        self, frame_numbers: typing.Sequence[int]
+    ) -> list[float]: ...
+    def seconds_to_frame_numbers(
+        self, timestamps: typing.Sequence[float]
+    ) -> list[int]: ...
+
+def anonymization_status_phase(status: str) -> str: ...
+def anonymization_status_rules(
+    report: bool,
+) -> list[tuple[str, list[tuple[str, bool]]]]:
+    r"""
+    Ordered rules shared by native state derivation and SQL aggregation.
+    """
+    ...
 
 def build_expected_frame_records(
     frame_count: int, ext: str = ...
@@ -18,9 +58,19 @@ def build_expected_frame_records(
 def build_frame_records(
     paths: list[str], *, relative_to: str | None = ..., zero_based: bool = ...
 ) -> list[tuple[int, str]]: ...
+def compose_frame_ancestry(
+    source_frame_counts: list[int], source_frame_indices: list[list[int]]
+) -> list[int]:
+    r"""
+    Map each final output frame to its original-recording frame index.
+    """
+    ...
+
 def copy_file_descriptor_to_path(
     source_fd: int, target_path: pathlib.Path, chunk_size: int = ...
 ) -> int: ...
+def decide_hls_artifact_transition(current_status: str, target_status: str) -> bool: ...
+def decide_status_transition(machine: str, current: str, target: str) -> bool: ...
 def decrypt_encrypted_file_range(
     path: pathlib.Path, master_key: bytes, start: int, end: int
 ) -> bytes: ...
@@ -62,16 +112,79 @@ def derive_segment_annotation_status(
     segment_annotations_validated: bool,
     outside_segments_removed: bool,
 ) -> str: ...
+def encrypted_chunk_context(
+    data: bytes, counter: int, ciphertext_length: int, final: bool
+) -> tuple[bytes, bytes]:
+    r"""
+    Validate chunk geometry and return the shared nonce and associated data.
+    """
+    ...
+
 def encryption_status(path: pathlib.Path) -> str: ...
+def hub_failure_is_retryable(failure_class: str) -> bool:
+    r"""
+    Native retry classification; unknown failure categories raise.
+    """
+    ...
+
 def is_lx_encrypted_file(path: pathlib.Path) -> bool: ...
 def native_capabilities() -> list[tuple[str, str, str]]: ...
+def native_state_vocabularies() -> list[tuple[str, list[str]]]:
+    r"""
+    Every native state, event and action vocabulary; Python mirrors are verified against it.
+    """
+    ...
+
+def new_import_processing_stack(reference: str, media_type: str) -> str:
+    r"""
+    Create a durable import processing stack.
+    """
+    ...
+
 def normalize_frame_sampling_strategy_token(value: str) -> str: ...
 def normalize_frame_task_mode_token(value: str) -> str: ...
+def parse_encrypted_header(data: bytes) -> tuple[int, str, int, bytes, bytes, bytes]:
+    r"""
+    Validate the shared encrypted header contract.
+    """
+    ...
+
+def parse_encrypted_header_metadata(
+    data: bytes,
+) -> tuple[int, str, int, bytes, bytes, bytes, bytes | None, bytes | None]:
+    r"""
+    Validate the shared encrypted header contract including versioned identifiers.
+    """
+    ...
+
 def parse_extracted_frame_numbers(paths: list[str]) -> list[int]: ...
+def reduce_hub_transfer_event(
+    current_state: str,
+    current_failure_class: str | None,
+    event: str,
+    remote_status: str | None = None,
+    failure_class: str | None = None,
+) -> tuple[str, str | None, bool]:
+    r"""
+    Native hub transfer transition; callers hold the row lock and write only when applied.
+    """
+    ...
+
 def render_single_page_pdf(text: str) -> bytes: ...
 def stable_file_identity(
-    path: pathlib.Path, chunk_size: int = ...
+    path: pathlib.Path, chunk_size: int = ..., master_keys: list[bytes] = ...
 ) -> tuple[int, int, str]: ...
 def storage_profile_policy_rows() -> list[tuple[str, str, str]]: ...
+def transition_import_processing_stack(
+    payload: str,
+    event: str,
+    media_id: int | None = None,
+    source_sha256: str | None = None,
+) -> str:
+    r"""
+    Validate and advance a durable import processing stack.
+    """
+    ...
+
 def transition_operation_lifecycle(current_state: str, event: str) -> str: ...
 def transition_service_lifecycle(current_state: str, event: str) -> str: ...

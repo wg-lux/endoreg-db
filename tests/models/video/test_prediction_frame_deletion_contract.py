@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any, Callable, Protocol, cast
+from typing import Any, Protocol, cast
+from collections.abc import Callable
 
 import pytest
 from pytest import MonkeyPatch

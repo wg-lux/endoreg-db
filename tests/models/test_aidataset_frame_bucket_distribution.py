@@ -11,7 +11,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.services.aidataset_frame_buckets import (
+from endoreg_db.services.datasets.frame_buckets import (
     build_frame_bucket_distribution,
 )
 

@@ -1,11 +1,14 @@
-# Setup and Workflow Pages
+# Wiki workflow guides
 
-## Purpose
-This folder contains setup and workflow pages that may be selected for a future
-generated GitHub Wiki. Repository Markdown remains the source of truth. Feature
-status and readiness evidence live in [`feature-tracking/`](../../feature-tracking/).
+These pages cover setup, data loading, annotation, and hub workflows. For the
+full catalog and a guided introduction, use the
+[documentation index](../README.md#contributor-roadmap).
+
+The [publication guide](../documentation_governance.md#publication-boundary)
+explains how repository pages may be selected for a generated Wiki.
 
 ## Pages
+
 - [New setup overview](new_setup_overview.md)
 - [General purpose and operating model](new_setup_general_purpose.md)
 - [Dataloader YAML authoring](dataloader_yaml_authoring.md)
@@ -15,9 +18,18 @@ status and readiness evidence live in [`feature-tracking/`](../../feature-tracki
 - [Video frame extraction contract](../video_frame_extraction_contract.md)
 - [Current hub ingest behavior](hub_ingest_current_state.md)
 
+## Canonical companion guides
+
+Related guides:
+
+- [Configuration and environment](../../setup/CONFIGURATION_GUIDE.md)
+- [Data privacy](../../setup/HOW_WE_KEEP_DATA_PRIVATE.md)
+- [AI model setup](../../setup/AI_MODEL_SETUP.md)
+- [Video storage normalization](../video_storage_normalization.md)
+- [Hub ingest operations](../hub_ingest_operations.md)
+
 ## Historical Planning Context
 
-[Hub ingest gap closure](hub_ingest_gap_closure.md) retains design context. Its
-implementation status is owned by
-[`feature-tracking/done/HubIngest.yml`](../../feature-tracking/done/HubIngest.yml),
-not by checkboxes or verdicts in the Markdown document.
+[Hub ingest gap closure](hub_ingest_gap_closure.md) explains earlier design
+choices. See [HubIngest.yml](../../feature-tracking/done/HubIngest.yml) for its
+acceptance criteria and evidence.

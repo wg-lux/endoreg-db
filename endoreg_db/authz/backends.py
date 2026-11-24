@@ -36,7 +36,7 @@ from django.db import transaction
 from django.db.models.query import QuerySet
 from lx_dtypes.models.contracts import KeycloakClaimsPayload, validate_keycloak_claims
 from lx_dtypes.models.contracts.json_types import JsonValue
-from endoreg_db.services.center_access import (
+from endoreg_db.services.centers.access import (
     CenterAccessConfigurationError,
     synchronize_user_center_groups,
     validated_center_group_paths,

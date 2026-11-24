@@ -1,71 +1,12 @@
-from __future__ import annotations
+"""Compatibility entry point for the versioned lx-dtypes catalogue."""
+
+from endoreg_db.management.reference_catalog_command import ReferenceCatalogCommand
+from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 
 
-from django.core.management.base import BaseCommand, CommandParser
-from lx_dtypes.models.contracts.management_command import (
-    VerboseManagementCommandOptionsPayload,
-)
-
-from endoreg_db.models.medical.disease import (
-    Disease,
-    DiseaseClassification,
-    DiseaseClassificationChoice,
-)
-
-from ...data import (
-    DISEASE_CLASSIFICATION_CHOICE_DATA_DIR,
-    DISEASE_CLASSIFICATION_DATA_DIR,
-    DISEASE_DATA_DIR,
-)
-from ...utils import load_model_data_from_yaml
-from endoreg_db.helpers.typing import LoadModelDataMetadata
-
-
-IMPORT_MODELS: list[str] = [  # string as model key, serves as key in IMPORT_METADATA
-    Disease.__name__,
-    DiseaseClassification.__name__,
-    DiseaseClassificationChoice.__name__,
-]
-
-IMPORT_METADATA: dict[str, LoadModelDataMetadata] = {
-    Disease.__name__: {
-        "dir": DISEASE_DATA_DIR,  # e.g. "interventions"
-        "model": Disease,
-        "foreign_keys": [],  # e.g. ["intervention_types"]
-        "foreign_key_models": [],  # e.g. [InterventionType]
-    },
-    DiseaseClassification.__name__: {
-        "dir": DISEASE_CLASSIFICATION_DATA_DIR,  # e.g. "interventions"
-        "model": DiseaseClassification,
-        "foreign_keys": ["disease"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [Disease],  # e.g. [InterventionType]
-    },
-    DiseaseClassificationChoice.__name__: {
-        "dir": DISEASE_CLASSIFICATION_CHOICE_DATA_DIR,  # e.g. "interventions"
-        "model": DiseaseClassificationChoice,
-        "foreign_keys": ["disease_classification"],  # e.g. ["intervention_types"]
-        "foreign_key_models": [DiseaseClassification],  # e.g. [InterventionType]
-    },
-}
-
-
-class Command(BaseCommand):
-    help = """Load all .yaml files in the data/intervention directory
-    into the Intervention and InterventionType model"""
-
-    def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument(
-            "--verbose",
-            action="store_true",
-            help="Display verbose output",
-        )
-
-    def handle(
-        self,
-        *args: str,
-        **options: object,
-    ) -> None:
-        verbose = VerboseManagementCommandOptionsPayload.model_validate(options).verbose
-        for model_name in IMPORT_MODELS:
-            metadata = IMPORT_METADATA[model_name]
-            load_model_data_from_yaml(self, model_name, metadata, verbose)
+class Command(ReferenceCatalogCommand):
+    record_types = (
+        ReferenceKind.DISEASE,
+        ReferenceKind.DISEASE_CLASSIFICATION,
+        ReferenceKind.DISEASE_CLASSIFICATION_CHOICE,
+    )

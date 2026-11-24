@@ -2,7 +2,6 @@ from __future__ import annotations
 
 # pyright: reportMissingTypeStubs=false, reportPrivateUsage=false
 
-from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
 
@@ -13,12 +12,13 @@ from numpy.typing import NDArray
 
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.media.video.video_file import VideoFile
-import endoreg_db.services.video_files._ai as video_ai_module
 from endoreg_db.services.video_files._ai import (
     _extract_text_from_video_frames,
     _extract_video_metadata_from_frame,
     _video_metadata_ocr_rois,
 )
+from endoreg_db.utils import frame_stream
+from endoreg_db.services.video_files import frame_coordinates
 
 
 class _Processor:
@@ -48,15 +48,20 @@ class _Processor:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "timestamps,cap,selected",
+    [
+        ((2.0, 2.11, 2.16), 3, [0, 1, 2]),
+        ((2.0, 2.04, 2.11, 2.16, 2.24, 2.5, 2.9, 3.0), 3, [0, 2, 4]),
+    ],
+)
 def test_sampled_video_metadata_uses_one_lx_anonymizer_ocr_instance(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    timestamps: tuple[float, ...],
+    cap: int,
+    selected: list[int],
 ) -> None:
     import lx_anonymizer.ocr.ocr_frame as lx_ocr_frame
-
-    frame_paths = tuple(tmp_path / f"frame-{index}.png" for index in range(3))
-    for frame_path in frame_paths:
-        frame_path.write_bytes(b"frame")
 
     class _FakeFrameOCR:
         instances = 0
@@ -87,9 +92,15 @@ def test_sampled_video_metadata_uses_one_lx_anonymizer_ocr_instance(
             }
             return values_by_x[x], 0.9, {}
 
-    def fake_imread(filename: str, _flags: int) -> NDArray[np.uint8]:
-        frame_index = int(Path(filename).stem.rsplit("-", maxsplit=1)[1])
-        return np.full((4, 4), frame_index, dtype=np.uint8)
+    def fake_read(
+        video: VideoFile, *, frame_number: int, file_type: str = "raw"
+    ) -> frame_stream.FrameSample:
+        assert file_type == "raw"
+        return frame_stream.FrameSample(
+            frame_number,
+            timestamps[frame_number],
+            np.full((4, 4, 3), frame_number, dtype=np.uint8),
+        )
 
     monkeypatch.setattr(
         lx_ocr_frame,
@@ -97,18 +108,23 @@ def test_sampled_video_metadata_uses_one_lx_anonymizer_ocr_instance(
         _FakeFrameOCR,
         raising=True,
     )
-    monkeypatch.setattr(video_ai_module.cv2, "imread", fake_imread, raising=True)
+    monkeypatch.setattr(frame_stream, "read_video_file_frame_sample", fake_read)
+
+    def canonical_timestamps(*args: object, **kwargs: object) -> tuple[float, ...]:
+        return timestamps
+
+    monkeypatch.setattr(
+        frame_coordinates, "artifact_frame_timestamps", canonical_timestamps
+    )
     video = cast(
         VideoFile,
         SimpleNamespace(
             raw_video_hash="video-hash",
             processor=_Processor(),
-            get_or_create_state=lambda: SimpleNamespace(frames_extracted=True),
-            get_frame_paths=lambda: list(frame_paths),
         ),
     )
 
-    result = _extract_text_from_video_frames(video, frame_fraction=1.0, cap=3)
+    result = _extract_text_from_video_frames(video, frame_fraction=1.0, cap=cap)
 
     assert result == {
         "examination_date": "2026-07-27",
@@ -120,6 +136,7 @@ def test_sampled_video_metadata_uses_one_lx_anonymizer_ocr_instance(
     }
     assert _FakeFrameOCR.instances == 1
     assert len(_FakeFrameOCR.calls) == 18
+    assert sorted({number for number, _region in _FakeFrameOCR.calls}) == selected
 
 
 @pytest.mark.unit
@@ -137,10 +154,7 @@ def test_unconfigured_optional_region_is_not_sent_to_lx_ocr() -> None:
 
 
 @pytest.mark.unit
-def test_unreadable_frame_fails_before_lx_ocr(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
+def test_invalid_frame_fails_before_lx_ocr() -> None:
     class _ForbiddenFrameOCR:
         def extract_text_from_frame(
             self,
@@ -150,19 +164,45 @@ def test_unreadable_frame_fails_before_lx_ocr(
         ) -> tuple[str, float, dict[str, object]]:
             raise AssertionError("OCR must not run for an unreadable frame")
 
-    def unreadable_imread(_filename: str, _flags: int) -> None:
-        return None
-
-    monkeypatch.setattr(
-        video_ai_module.cv2,
-        "imread",
-        unreadable_imread,
-        raising=True,
-    )
-
-    with pytest.raises(ValueError, match="frame is unreadable"):
+    with pytest.raises(ValueError, match="unsigned-byte RGB frame"):
         _extract_video_metadata_from_frame(
-            tmp_path / "unreadable.png",
+            np.zeros((4, 4), dtype=np.uint8),
             {"patient_first_name": {"x": 0, "y": 0, "width": 5, "height": 5}},
             _ForbiddenFrameOCR(),
         )
+
+
+@pytest.mark.parametrize("frame_fraction,cap", [(0.0, 3), (float("nan"), 3), (1.0, 0)])
+def test_metadata_sampling_rejects_invalid_limits(
+    frame_fraction: float, cap: int
+) -> None:
+    with pytest.raises(ValueError, match="Frame fraction"):
+        _extract_text_from_video_frames(cast(VideoFile, object()), frame_fraction, cap)
+
+
+@pytest.mark.parametrize("failure", ["decode", "changed_timestamp"])
+def test_metadata_sampling_never_swallows_coordinate_failures(
+    monkeypatch: pytest.MonkeyPatch, failure: str
+) -> None:
+    timestamps = (2.0,)
+
+    def canonical_timestamps(*args: object, **kwargs: object) -> tuple[float, ...]:
+        return timestamps
+
+    monkeypatch.setattr(
+        frame_coordinates, "artifact_frame_timestamps", canonical_timestamps
+    )
+
+    def read_sample(*args: object, **kwargs: object) -> frame_stream.FrameSample:
+        if failure == "decode":
+            raise RuntimeError("authenticated decoder failed")
+        return frame_stream.FrameSample(0, 2.1, np.zeros((4, 4, 3), dtype=np.uint8))
+
+    monkeypatch.setattr(frame_stream, "read_video_file_frame_sample", read_sample)
+    video = cast(
+        VideoFile, SimpleNamespace(raw_video_hash="video", processor=_Processor())
+    )
+    with pytest.raises(
+        (ValueError, RuntimeError), match="canonical timeline|decoder failed"
+    ):
+        _extract_text_from_video_frames(video, 1.0, 1)

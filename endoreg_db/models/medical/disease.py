@@ -38,6 +38,10 @@ class Disease(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
     subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
     numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 
@@ -79,7 +83,7 @@ class Disease(models.Model):
         Retrieves all classification systems associated with this disease.
 
         Returns:
-            List[DiseaseClassification]: A list of related disease classification objects.
+            list[DiseaseClassification]: A list of related disease classification objects.
         """
         classifications = [item for item in self.disease_classifications.all()]
         return classifications
@@ -107,6 +111,10 @@ class DiseaseClassification(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     disease: models.ForeignKey[Any] = models.ForeignKey(
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
@@ -134,7 +142,7 @@ class DiseaseClassification(models.Model):
         Retrieves all choices within this classification system.
 
         Returns:
-            List[DiseaseClassificationChoice]: A list of related disease classification choices.
+            list[DiseaseClassificationChoice]: A list of related disease classification choices.
         """
         choices = [item for item in self.disease_classification_choices.all()]
         return choices
@@ -164,6 +172,10 @@ class DiseaseClassificationChoice(models.Model):
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
     disease_classification: models.ForeignKey["DiseaseClassification | None"] = (
         models.ForeignKey(

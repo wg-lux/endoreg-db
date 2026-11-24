@@ -21,18 +21,25 @@ from types import SimpleNamespace
 from typing import Any, NoReturn, Protocol
 
 import pytest
+from endoreg_db.services.imports.execution import ImportExecutionFence
+
+
+def _test_fence() -> ImportExecutionFence:
+    return ImportExecutionFence("a" * 32, lambda: None, nullcontext)
+
+
 from django.test import TestCase
 from django.test.utils import override_settings
 
 from endoreg_db.exceptions import InsufficientStorageError
 from endoreg_db.import_files.context import ImportContext
-from endoreg_db.models import VideoFile
+from endoreg_db.models import Center, VideoFile
 from endoreg_db.schemas.video_storage import (
     VideoArtifactProbe,
     VideoStorageNormalizationEvidence,
     VideoTimelineContract,
 )
-from endoreg_db.services.video_import import (
+from endoreg_db.import_files.video_import_service import (
     VideoImportService,
 )
 from endoreg_db.import_files.video_import_service import local_raw_source_context
@@ -41,13 +48,18 @@ from endoreg_db.utils.file_operations import get_file_hash
 
 from ..helpers.default_objects import get_default_center, get_default_processor
 from ..media.video.helper import get_random_video_path_by_examination_alias
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 # Environment-based test control
 SKIP_EXPENSIVE_TESTS = os.environ.get("SKIP_EXPENSIVE_TESTS", "true").lower() == "true"
 
 logger = logging.getLogger(__name__)
 vis = VideoImportService()
-import_and_anonymize = vis.import_and_anonymize
+from functools import partial
+
+import_and_anonymize = partial(
+    vis.import_and_anonymize_fenced, execution_fence=_test_fence()
+)
 
 
 class _VideoImportResultLike(Protocol):
@@ -98,6 +110,42 @@ def _normalization_evidence() -> VideoStorageNormalizationEvidence:
     )
 
 
+@pytest.fixture
+def normalized_dummy_video(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Model the encoder boundary only for orchestration tests using fake bytes."""
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    def normalize(
+        *, input_path: Path, reference_path: Path, **_kwargs: object
+    ) -> VideoStorageNormalizationEvidence:
+        return normalization_evidence_fixture(reference_path, input_path)
+
+    monkeypatch.setattr(vis_module, "normalize_video_file", normalize)
+
+
+@pytest.fixture
+def unit_import_checkpoints(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bypass persisted checkpoints for orchestration tests using duck-typed videos."""
+    import endoreg_db.import_files.video_import_service as vis_module
+
+    def prepare_unit(
+        ctx: ImportContext, prepare: Callable[[ImportContext], ImportContext]
+    ) -> nullcontext[ImportContext]:
+        return nullcontext(prepare(ctx))
+
+    def clear_unit(_ctx: ImportContext) -> None:
+        pass
+
+    def no_pending_checkpoint(_instance: object) -> bool:
+        return False
+
+    monkeypatch.setattr(vis_module, "prepared_import_artifact", prepare_unit)
+    monkeypatch.setattr(vis_module, "clear_import_checkpoint", clear_unit)
+    monkeypatch.setattr(
+        vis_module, "has_pending_import_checkpoint", no_pending_checkpoint
+    )
+
+
 def _no_existing_completed_video(
     self: VideoImportService,
     ctx: ImportContext,
@@ -142,11 +190,6 @@ def _fail_reanonymize_finalize_failure(ctx: ImportContext) -> NoReturn:
 
 def _get_dummy_video_state(video: _VideoImportVideoLike) -> _VideoImportStateLike:
     return video.state
-
-
-class _NoopAnonymizer:
-    def anonymize_video(self, ctx: ImportContext) -> ImportContext:
-        return ctx
 
 
 def _allow_staging_cleanup_roots(
@@ -290,10 +333,11 @@ class TestVideoImportService(TestCase):
         filepath = get_random_video_path_by_examination_alias()
 
         vis_instance = VideoImportService()
-        video_file = vis_instance.import_and_anonymize(
+        video_file = vis_instance.import_and_anonymize_fenced(
             file_path=filepath,
             center_name=self.center.name,
             processor_name=self.processor.name,
+            execution_fence=_test_fence(),
         )
 
         assert isinstance(video_file, VideoFile)
@@ -321,6 +365,8 @@ class TestVideoImportService(TestCase):
 def test_import_and_anonymize_locks_original_before_sensitive_copy(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -352,6 +398,8 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
         return sensitive_path
 
     class DummyVideo:
+        processed_file = None
+
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
@@ -425,10 +473,11 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
     service = VideoImportService()
     service.anonymizer = DummyAnonymizer()
 
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -443,6 +492,7 @@ def test_import_and_anonymize_locks_original_before_sensitive_copy(
 def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -480,6 +530,8 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
         return sensitive_path
 
     class DummyVideo:
+        processed_file = None
+
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
@@ -560,10 +612,11 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
     service = VideoImportService(anonymizer=DummyAnonymizer())
 
     with pytest.raises(ValueError, match="anonymizer failed"):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
 
     assert ("anonymize_video", source_path) in events
@@ -575,6 +628,7 @@ def test_import_and_anonymize_anonymizer_failure_finalizes_failure(
 def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -612,6 +666,8 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
         return sensitive_path
 
     class DummyVideo:
+        processed_file = None
+
         def __init__(self):
             self.pk = 1
             self.state = SimpleNamespace(anonymization_validated=False)
@@ -697,10 +753,11 @@ def test_import_and_anonymize_metadata_persistence_failure_finalizes_failure(
     with pytest.raises(
         RuntimeError, match="failed to persist extracted sensitive metadata"
     ):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
 
     assert ("anonymize_video", source_path) in events
@@ -777,6 +834,8 @@ def test_video_import_service_does_not_construct_anonymizer_in_init(
 def test_import_and_anonymize_uses_verified_local_raw_source(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -789,6 +848,7 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     events: list[tuple[object, ...]] = []
 
     class DummyVideo:
+        processed_file = None
         raw_video_hash = "dummy-video-hash"
         width = 640
         height = 480
@@ -892,10 +952,11 @@ def test_import_and_anonymize_uses_verified_local_raw_source(
     )
 
     service = VideoImportService(anonymizer=DummyAnonymizer())
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         source_path,
         center_name="center",
         processor_name="processor",
+        execution_fence=_test_fence(),
     )
 
     assert result is dummy_video
@@ -1084,7 +1145,11 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     canonical_path = tmp_path / "video-hash.mp4"
     canonical_path.write_bytes(b"previous-processed-video")
     staged_path = tmp_path / "video-hash.part.mp4"
-    video = VideoFile(id=73, raw_video_hash="video-hash")
+    video = VideoFile(
+        id=73,
+        raw_video_hash="video-hash",
+        center=Center(name="center", center_key="reimport-center"),
+    )
     failure_paths: list[Path] = []
 
     class DummyAnonymizer:
@@ -1160,7 +1225,9 @@ def test_reanonymize_transcode_failure_preserves_previous_canonical_video(
     service = VideoImportService(anonymizer=DummyAnonymizer())
 
     with pytest.raises(RuntimeError, match="failed to normalize"):
-        service.reanonymize_existing_video(video, source_path=source_path)
+        service.reanonymize_existing_video_fenced(
+            video, source_path=source_path, execution_fence=_test_fence()
+        )
 
     assert failure_paths == [staged_path]
     assert canonical_path.read_bytes() == b"previous-processed-video"
@@ -1175,15 +1242,32 @@ def test_reanonymize_existing_video_skips_import_staging(
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
+    def prepare_unit(
+        ctx: ImportContext, prepare: Callable[[ImportContext], ImportContext]
+    ) -> nullcontext[ImportContext]:
+        return nullcontext(prepare(ctx))
+
+    def clear_unit(_ctx: ImportContext) -> None:
+        pass
+
+    monkeypatch.setattr(vis_module, "prepared_import_artifact", prepare_unit)
+    monkeypatch.setattr(vis_module, "clear_import_checkpoint", clear_unit)
+
     source_path = tmp_path / "raw.mp4"
     source_path.write_bytes(b"raw-video")
     events: list[tuple[object, ...]] = []
 
-    video = VideoFile(raw_video_hash="video-hash")
+    video = VideoFile(
+        raw_video_hash="video-hash",
+        center=Center(
+            name="university_hospital_wuerzburg", center_key="reimport-center"
+        ),
+    )
     monkeypatch.setattr(video, "resolved_import_context", False, raising=False)
 
     class DummyAnonymizer:
         def anonymize_video(self, ctx: ImportContext) -> ImportContext:
+            assert ctx.center_key == "reimport-center"
             events.append(
                 (
                     "anonymize",
@@ -1265,7 +1349,9 @@ def test_reanonymize_existing_video_skips_import_staging(
 
     service = VideoImportService(anonymizer=DummyAnonymizer())
 
-    result = service.reanonymize_existing_video(video, source_path=source_path)
+    result = service.reanonymize_existing_video_fenced(
+        video, source_path=source_path, execution_fence=_test_fence()
+    )
 
     assert result is video
     assert getattr(video, "resolved_import_context") is True
@@ -1288,6 +1374,7 @@ def test_reanonymize_existing_video_skips_import_staging(
 def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -1357,10 +1444,11 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
 
     service = VideoImportService()
 
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1374,8 +1462,10 @@ def test_import_and_anonymize_short_circuit_cleans_duplicate_staging(
 def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
+    from endoreg_db.utils.file_operations import atomic_write_file
 
     monkeypatch.setattr(vis_module, "get_or_create_video_state", _get_dummy_video_state)
 
@@ -1385,6 +1475,9 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
 
     events: list[tuple[object, ...]] = []
     sensitive_path = tmp_path / "managed" / "sensitive_videos" / source_path.name
+    canonical_raw = tmp_path / "canonical" / "video-hash.mp4"
+    atomic_write_file(destination=canonical_raw, content=[b"canonical"])
+    _allow_staging_cleanup_roots(monkeypatch, sensitive_path.parent)
 
     monkeypatch.setattr(
         vis_module, "validate_directories", _noop_validate_directories, raising=True
@@ -1406,8 +1499,7 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
         ctx: ImportContext,
     ) -> Path:
         events.append(("create_sensitive_copy", Path(src)))
-        sensitive_path.parent.mkdir(parents=True, exist_ok=True)
-        sensitive_path.write_bytes(src.read_bytes())
+        atomic_write_file(destination=sensitive_path, content=[src.read_bytes()])
         return sensitive_path
 
     class DummyVideo:
@@ -1421,11 +1513,11 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
             return self.state
 
         def get_raw_file_path(self) -> Path:
-            return sensitive_path
+            return canonical_raw
 
         @property
         def raw_file(self) -> Path:
-            return sensitive_path
+            return canonical_raw
 
     def fake_create_or_retrieve(ctx: ImportContext) -> tuple[DummyVideo, bool, bool]:
         events.append(("create_or_retrieve", ctx.file_hash))
@@ -1445,10 +1537,11 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
 
     service = VideoImportService()
 
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1457,6 +1550,10 @@ def test_import_and_anonymize_acquires_content_hash_lock_before_staging(
     assert events[1][0] == "hash_lock_enter"
     assert events[2] == ("create_sensitive_copy", source_path)
     assert events[3][0] == "create_or_retrieve"
+
+    assert canonical_raw.read_bytes() == b"canonical"
+    assert source_path.exists()
+    assert not sensitive_path.exists()
 
 
 @pytest.mark.unit
@@ -1489,10 +1586,11 @@ def test_import_and_anonymize_checks_pipeline_storage_budget(
     service = VideoImportService()
 
     with pytest.raises(InsufficientStorageError):
-        service.import_and_anonymize(
+        service.import_and_anonymize_fenced(
             file_path=source_path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
 
     assert ("file_lock_enter", source_path) in events
@@ -1591,8 +1689,15 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
 
     hls_ready_calls: list[int] = []
 
-    def ensure_hls_ready(video: VideoFile, *, force: bool = False) -> None:
+    def ensure_hls_ready(
+        video: VideoFile,
+        *,
+        force: bool = False,
+        execution_guard: Callable[[], None] | None = None,
+    ) -> None:
         assert force is False
+        assert execution_guard is not None
+        execution_guard()
         hls_ready_calls.append(int(video.pk))
 
     monkeypatch.setattr(
@@ -1603,10 +1708,11 @@ def test_import_and_anonymize_duplicate_success_skips_storage_preflight_and_stag
     )
 
     service = VideoImportService()
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1701,10 +1807,11 @@ def test_import_and_anonymize_completed_duplicate_removes_import_source(
     )
 
     service = VideoImportService()
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1797,10 +1904,11 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
     )
 
     service = VideoImportService()
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is not None
@@ -1812,6 +1920,8 @@ def test_import_and_anonymize_completed_duplicate_keeps_external_source(
 def test_import_and_anonymize_success_history_unusable_processed_file_self_heals(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
     from endoreg_db.services.hub.media_integrity import (
@@ -1837,6 +1947,7 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
         anonymization_validated = False
 
     class DummyVideo:
+        processed_file = None
         pk = 1
         state = DummyState()
         raw_video_hash = "video-hash"
@@ -1972,10 +2083,11 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
     )
 
     service = VideoImportService(anonymizer=DummyAnonymizer())
-    result = service.import_and_anonymize(
+    result = service.import_and_anonymize_fenced(
         file_path=source_path,
         center_name="university_hospital_wuerzburg",
         processor_name="olympus_cv_1500",
+        execution_fence=_test_fence(),
     )
 
     assert result is dummy_video
@@ -1991,6 +2103,8 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
 def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    normalized_dummy_video: None,
+    unit_import_checkpoints: None,
 ) -> None:
     import endoreg_db.import_files.video_import_service as vis_module
 
@@ -2042,6 +2156,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
         anonymization_validated = False
 
     class DummyVideo:
+        processed_file = None
         pk = 1
         raw_video_hash = "video-hash"
         sensitive_meta = object()
@@ -2147,10 +2262,11 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
     service.anonymizer = DummyAnonymizer()
 
     def run_import(name: str, path: Path) -> None:
-        result = service.import_and_anonymize(
+        result = service.import_and_anonymize_fenced(
             file_path=path,
             center_name="university_hospital_wuerzburg",
             processor_name="olympus_cv_1500",
+            execution_fence=_test_fence(),
         )
         assert result is not None
         results[name] = result

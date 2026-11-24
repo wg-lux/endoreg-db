@@ -9,7 +9,7 @@ import pytest
 from pytest import MonkeyPatch
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
-from endoreg_db.services.reconciliation import ReconciliationService
+from endoreg_db.services.runtime.reconciliation import ReconciliationService
 from endoreg_db.utils.file_operations import atomic_copy_file
 from endoreg_db.utils.paths import get_runtime_paths
 
@@ -43,7 +43,7 @@ def test_atomic_copy_file_removes_partial_temp_artifact_on_enospc(
 def test_reconciliation_cleans_stale_streamable_temp_artifacts(
     monkeypatch: MonkeyPatch, tmp_path: Path
 ) -> None:
-    import endoreg_db.services.reconciliation as reconciliation_module
+    import endoreg_db.services.runtime.reconciliation as reconciliation_module
 
     sensitive_dir = tmp_path / "sensitive_videos"
     anonym_dir = tmp_path / "processed_videos_final"

@@ -3,7 +3,8 @@ from __future__ import annotations
 
 from pathlib import Path
 from datetime import datetime
-from typing import Iterable, Protocol, TypedDict, cast
+from typing import Literal, Protocol, TypedDict, cast
+from collections.abc import Iterable
 
 from rest_framework import serializers
 
@@ -17,22 +18,69 @@ from lx_dtypes.models.contracts.anonymization_overview import (
 from lx_dtypes.models.contracts.json_types import JsonObject
 
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
+from endoreg_db.services.raw_pdf_files.integrity import has_completed_report_record
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
-from endoreg_db.services.hls_media import hls_artifact_matches_current_source_metadata
+from endoreg_db.services.streaming.hls_media import (
+    hls_artifact_matches_current_source_metadata,
+)
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.services.hub.import_monitoring import safe_import_error_detail
 from endoreg_db.services.hub.import_monitoring import (
     STORAGE_RETRY_MAX_RETRIES,
     is_retryable_storage_failure,
+    video_import_monitoring_status,
 )
 from endoreg_db.models.hub.upload_job import UploadJob
-from endoreg_db.services.video_segment_validation_workflow import (
+from endoreg_db.services.annotations.segment_validation_workflow import (
     SegmentAnnotationStatus,
     resolve_segment_annotation_status,
 )
+from endoreg_db.models.state.frame_annotation import (
+    FrameAnnotationStatus,
+    resolve_frame_annotation_status,
+)
 
 DOCUMENT_TYPE_VALUES = {document_type.value for document_type in DocumentTypeContract}
+
+
+def overview_upload_job_is_superseded(
+    upload_job: UploadJob | _FileOverviewUploadJobLike, instance: VideoFile | RawPdfFile
+) -> bool:
+    """A failed duplicate attempt does not replace published media state."""
+    state = getattr(instance, "state", None)
+    return (
+        upload_job.status in {"error", "lost"}
+        and getattr(upload_job, "source_center_id", None) == instance.center_id
+        and getattr(upload_job, "content_hash", "")
+        == (
+            instance.raw_video_hash
+            if isinstance(instance, VideoFile)
+            else instance.pdf_hash
+        )
+        and getattr(state, "anonymization_status", None)
+        in {
+            AnonymizationState.DONE_PROCESSING_ANONYMIZATION,
+            AnonymizationState.VALIDATED,
+        }
+        and (
+            has_completed_report_record(instance)
+            if isinstance(instance, RawPdfFile)
+            else bool(instance.processed_file and instance.processed_video_hash)
+        )
+    )
+
+
+def overview_upload_job_media_type(
+    content_type: str,
+) -> Literal["pdf", "video", "unknown"]:
+    """Map supported report formats to the overview's report workflow identity."""
+    normalized = content_type.split(";", maxsplit=1)[0].strip().lower()
+    if normalized in {"application/pdf", "text/plain", "export/txt", "text/csv"}:
+        return "pdf"
+    if normalized.startswith("video/"):
+        return "video"
+    return "unknown"
 
 
 def safe_upload_job_original_filename(upload_job: _FileOverviewUploadJobLike) -> str:
@@ -126,14 +174,13 @@ class _FileOverviewPayload(TypedDict):
     media_type: str
     anonymization_status: AnonymizationState
     annotation_status: str
+    ai_prediction_status: FrameAnnotationStatus | None
     created_at: datetime
     sensitive_meta_id: int | None
     file_size: int
     upload_job: OverviewUploadJobMonitoringData | None
     hls_materializations: list[OverviewHlsMaterializationData]
     document_type: str | None
-    patient_hash_display: str | None
-    examination_hash_display: str | None
     pseudo_patient_id: int | None
     pseudo_examination_id: int | None
 
@@ -198,6 +245,20 @@ def current_overview_hls_artifacts(
             current.pk,
         ):
             current_by_kind[artifact.artifact_kind] = artifact
+    # A failed raw derivative is historical after clinical acceptance when the
+    # current anonymized generation is published. Keep active raw work visible,
+    # and never hide a missing or failed processed generation.
+    processed = current_by_kind.get("processed")
+    raw = current_by_kind.get("raw")
+    state = getattr(video, "state", None)
+    if (
+        getattr(state, "anonymization_validated", False)
+        and processed is not None
+        and processed.status == VideoHlsArtifact.Status.READY.value
+        and raw is not None
+        and raw.status == VideoHlsArtifact.Status.FAILED.value
+    ):
+        del current_by_kind["raw"]
     return [current_by_kind[kind] for kind in sorted(current_by_kind)]
 
 
@@ -213,18 +274,16 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
     media_type = serializers.CharField(read_only=True)
     anonymization_status = serializers.CharField(read_only=True)
     annotation_status = serializers.CharField(read_only=True)
+    ai_prediction_status = serializers.CharField(read_only=True, allow_null=True)
     created_at = serializers.DateTimeField(read_only=True)
     sensitive_meta_id = serializers.IntegerField(read_only=True, allow_null=True)
     file_size = serializers.IntegerField(read_only=True, required=False)
     upload_job = serializers.DictField(read_only=True, allow_null=True, required=False)
+    import_checkpoint = serializers.DictField(
+        read_only=True, allow_null=True, required=False
+    )
     hls_materializations = serializers.ListField(read_only=True, required=False)
     document_type = serializers.CharField(
-        read_only=True, allow_null=True, required=False
-    )
-    patient_hash_display = serializers.CharField(
-        read_only=True, allow_null=True, required=False
-    )
-    examination_hash_display = serializers.CharField(
         read_only=True, allow_null=True, required=False
     )
     pseudo_patient_id = serializers.IntegerField(
@@ -234,9 +293,6 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         read_only=True, allow_null=True, required=False
     )
 
-    def _safe_original_filename(self, upload_job: _FileOverviewUploadJobLike) -> str:
-        return safe_upload_job_original_filename(upload_job)
-
     def _overview_upload_job(
         self, instance: object
     ) -> _FileOverviewUploadJobLike | None:
@@ -245,19 +301,18 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             getattr(instance, "_overview_upload_job", None),
         )
 
-    def _display_filename(self, instance: object, fallback: str) -> str:
-        upload_job = self._overview_upload_job(instance)
-        if upload_job is not None:
-            original_filename = self._safe_original_filename(upload_job)
-            if original_filename:
-                return original_filename
-        return fallback
+    def _display_filename(self, instance: object) -> str:
+        media_type = "video" if isinstance(instance, VideoFile) else "report"
+        return f"{media_type}-{getattr(instance, 'pk')}"
 
     def _upload_job_summary(
         self, instance: object
     ) -> OverviewUploadJobMonitoringData | None:
         upload_job = self._overview_upload_job(instance)
-        if upload_job is None:
+        if upload_job is None or (
+            isinstance(instance, (VideoFile, RawPdfFile))
+            and overview_upload_job_is_superseded(upload_job, instance)
+        ):
             return None
         return overview_upload_job_summary(upload_job)
 
@@ -288,9 +343,6 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             for artifact in artifacts
         ]
 
-    def _hash_display(self, value: str | None) -> str | None:
-        return f"...{value[-8:]}" if value else None
-
     def _pdf_document_type(self, instance: RawPdfFile) -> str | None:
         report = getattr(instance, "anonym_examination_report", None)
         report_type = getattr(report, "type", None) if report is not None else None
@@ -319,11 +371,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         # 1. Extract Type-Specific Data
         if isinstance(instance, VideoFile):
             media_type = "video"
-            raw_file_name = getattr(instance.raw_file, "name", "") or ""
-            fallback_filename = instance.original_file_name or (
-                raw_file_name.split("/")[-1] if raw_file_name else "unknown_video"
-            )
-            filename = self._display_filename(instance, fallback_filename)
+            filename = self._display_filename(instance)
             created_at = instance.uploaded_at
             # Use the state relation optimized in the View
             state_obj = cast(object | None, instance.state)
@@ -334,6 +382,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             annotation_status = SegmentAnnotationStatus(
                 resolve_segment_annotation_status(instance)
             ).value
+            ai_prediction_status = resolve_frame_annotation_status(instance).value
             try:
                 file_size = instance.raw_file.size if instance.raw_file else 0
             except Exception:
@@ -341,13 +390,7 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
 
         elif isinstance(instance, RawPdfFile):
             media_type = "pdf"
-            report_file_name = getattr(instance.file, "name", "") or ""
-            fallback_filename = (
-                report_file_name.split("/")[-1]
-                if report_file_name
-                else "unknown_report"
-            )
-            filename = self._display_filename(instance, fallback_filename)
+            filename = self._display_filename(instance)
             created_at = instance.date_created
             state_obj = cast(object | None, instance.state)
             sensitive_meta = cast(
@@ -355,6 +398,8 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             )
             document_type = self._pdf_document_type(instance)
             annotation_status = SegmentAnnotationStatus.NOT_STARTED.value
+            # Segment and frame AI predictions exist only for videos.
+            ai_prediction_status = None
             try:
                 file_size = instance.file.size if instance.file else 0
             except Exception:
@@ -363,11 +408,39 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
         else:
             raise TypeError(f"Unexpected object type: {type(instance)}")
 
-        # 2. Determine Status (Single Source of Truth: The State Model)
-        # This uses the @property .anonymization_status from VideoState/RawPdfState
+        # Keep stale media progress from hiding a fenced upload interruption.
         raw_status = getattr(
             state_obj, "anonymization_status", AnonymizationState.NOT_STARTED
         )
+        if isinstance(instance, VideoFile):
+            raw_status = video_import_monitoring_status(
+                instance,
+                upload_job=cast(UploadJob | None, self._overview_upload_job(instance)),
+            )
+
+        from endoreg_db.services.imports.checkpoints import (
+            media_import_checkpoint,
+            checkpoint_retry_media,
+            has_pending_import_checkpoint,
+        )
+
+        checkpoint = media_import_checkpoint(instance)
+        upload_job = self._overview_upload_job(instance)
+        checkpoint_summary = None
+        if checkpoint is not None and has_pending_import_checkpoint(instance):
+            checkpoint_summary = {
+                "stage": checkpoint.stage,
+                "completed_at": checkpoint.completed_at.isoformat(),
+                "can_resume": isinstance(upload_job, UploadJob)
+                and checkpoint_retry_media(upload_job) is not None,
+                "can_prioritize": isinstance(upload_job, UploadJob)
+                and checkpoint_retry_media(upload_job, include_queued=True) is not None,
+                "prioritized": bool(
+                    isinstance(upload_job, UploadJob)
+                    and upload_job.processing_stack is not None
+                    and upload_job.processing_stack.get("priority") == 1
+                ),
+            }
 
         return {
             "id": instance.pk,
@@ -375,22 +448,14 @@ class FileOverviewSerializer(serializers.Serializer[_FileOverviewPayload]):
             "media_type": media_type,
             "anonymization_status": raw_status,
             "annotation_status": annotation_status,
+            "ai_prediction_status": ai_prediction_status,
             "created_at": created_at,
             "sensitive_meta_id": sensitive_meta.pk if sensitive_meta else None,
             "file_size": file_size,
             "upload_job": self._upload_job_summary(instance),
+            "import_checkpoint": checkpoint_summary,
             "hls_materializations": self._hls_materializations(instance),
             "document_type": document_type,
-            "patient_hash_display": (
-                self._hash_display(sensitive_meta.patient_hash)
-                if sensitive_meta
-                else None
-            ),
-            "examination_hash_display": (
-                self._hash_display(sensitive_meta.examination_hash)
-                if sensitive_meta
-                else None
-            ),
             "pseudo_patient_id": (
                 getattr(sensitive_meta, "pseudo_patient_id", None)
                 if sensitive_meta
@@ -423,14 +488,13 @@ class CrossCenterProcessedOverviewSerializer(serializers.Serializer[VideoFile]):
             "annotation_status": SegmentAnnotationStatus(
                 resolve_segment_annotation_status(instance)
             ).value,
+            "ai_prediction_status": resolve_frame_annotation_status(instance).value,
             "created_at": instance.uploaded_at,
             "sensitive_meta_id": None,
             "file_size": 0,
             "upload_job": None,
             "hls_materializations": [],
             "document_type": None,
-            "patient_hash_display": None,
-            "examination_hash_display": None,
             "pseudo_patient_id": None,
             "pseudo_examination_id": None,
             "center_key": getattr(center, "center_key", None),

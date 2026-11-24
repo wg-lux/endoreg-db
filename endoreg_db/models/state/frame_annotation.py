@@ -8,13 +8,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import (
     TYPE_CHECKING,
-    Iterable,
-    Iterator,
     Protocol,
     TypeAlias,
     TypedDict,
     cast,
 )
+from collections.abc import Iterable, Iterator
 
 from django.db.models import Q, QuerySet
 
@@ -291,32 +290,23 @@ class FrameAnnotationSourceName(Protocol):
     name: str
 
 
-FrameAnnotationSourceInput: TypeAlias = "str | FrameAnnotationSourceName | None"
-
-
-class PredictionSegmentLike(Protocol):
-    @property
-    def source(self) -> FrameAnnotationSource: ...
-
-    @property
-    def prediction_meta_id(self) -> int | None: ...
-
-
 class FrameAnnotationStatus(str, Enum):
+    """Mirror of the native ``frame_annotation_status`` vocabulary."""
+
     NOT_STARTED = "not_started"
     FRAMES_UNAVAILABLE = "frames_unavailable"
     PREDICTION_PENDING = "prediction_pending"
     PREDICTION_READY = "prediction_ready"
     ANNOTATION_READY = "annotation_ready"
-    ANNOTATION_IN_PROGRESS = "annotation_in_progress"
     ANNOTATION_COMPLETE = "annotation_complete"
-    STALE = "stale"
 
     def __str__(self) -> str:
         return self.value
 
 
 class FrameTaskMode(str, Enum):
+    """Mirror of the native ``frame_task_mode`` vocabulary."""
+
     RANDOM = "random"
     FILTERED = "filtered"
 
@@ -325,6 +315,8 @@ class FrameTaskMode(str, Enum):
 
 
 class FrameSamplingStrategy(str, Enum):
+    """Mirror of the native ``frame_sampling_strategy`` vocabulary."""
+
     BALANCED = "balanced"
     SEGMENTS = "segments"
     ANNOTATIONS = "annotations"
@@ -341,24 +333,19 @@ SUPPORTED_FRAME_SAMPLING_STRATEGIES = {
 
 
 def normalize_frame_task_mode(value: object) -> FrameTaskMode:
-    parsed = str(value or FrameTaskMode.RANDOM.value).strip().lower()
-    rust_value = normalize_frame_task_mode_token(parsed)
-    if rust_value is not None:
-        return FrameTaskMode(rust_value)
-    if parsed == FrameTaskMode.FILTERED.value:
-        return FrameTaskMode.FILTERED
-    return FrameTaskMode.RANDOM
+    """Absent values select random; unknown task modes raise ValueError in Rust."""
+    return FrameTaskMode(
+        normalize_frame_task_mode_token(str(value or FrameTaskMode.RANDOM.value))
+    )
 
 
 def normalize_frame_sampling_strategy(value: object) -> FrameSamplingStrategy:
-    parsed = str(value or FrameSamplingStrategy.BALANCED.value).strip().lower()
-    rust_value = normalize_frame_sampling_strategy_token(parsed)
-    if rust_value is not None:
-        return FrameSamplingStrategy(rust_value)
-    for strategy in FrameSamplingStrategy:
-        if parsed == strategy.value:
-            return strategy
-    return FrameSamplingStrategy.BALANCED
+    """Absent values select balanced; unknown strategies raise ValueError in Rust."""
+    return FrameSamplingStrategy(
+        normalize_frame_sampling_strategy_token(
+            str(value or FrameSamplingStrategy.BALANCED.value)
+        )
+    )
 
 
 def normalize_frame_annotator(annotator: str | None) -> str | None:
@@ -472,50 +459,22 @@ def mark_frame_annotations_generated(video: VideoFile) -> None:
     state.save(update_fields=["frame_annotations_generated", "date_modified"])
 
 
-def mark_frame_annotations_stale(video: VideoFile) -> None:
-    state = get_or_create_video_state(video)
-    state.frame_annotations_generated = False
-    state.save(update_fields=["frame_annotations_generated", "date_modified"])
-
-
-def resolve_frame_annotation_status(video: VideoFile) -> str:
+def resolve_frame_annotation_status(video: VideoFile) -> FrameAnnotationStatus:
+    """AI prediction and frame annotation lifecycle, owned by the Rust state engine."""
     state = getattr(video, "state", None)
-    if state is None:
-        rust_status = derive_frame_annotation_status(
-            has_state=False,
-            frames_extracted=False,
-            initial_prediction_completed=False,
-            lvs_created=False,
-            frame_annotations_generated=False,
+    return FrameAnnotationStatus(
+        derive_frame_annotation_status(
+            has_state=state is not None,
+            frames_extracted=bool(getattr(state, "frames_extracted", False)),
+            initial_prediction_completed=bool(
+                getattr(state, "initial_prediction_completed", False)
+            ),
+            lvs_created=bool(getattr(state, "lvs_created", False)),
+            frame_annotations_generated=bool(
+                getattr(state, "frame_annotations_generated", False)
+            ),
         )
-        return rust_status or FrameAnnotationStatus.NOT_STARTED.value
-
-    frames_extracted = bool(getattr(state, "frames_extracted", False))
-    initial_prediction_completed = bool(
-        getattr(state, "initial_prediction_completed", False)
     )
-    lvs_created = bool(getattr(state, "lvs_created", False))
-    frame_annotations_generated = bool(
-        getattr(state, "frame_annotations_generated", False)
-    )
-    rust_status = derive_frame_annotation_status(
-        has_state=True,
-        frames_extracted=frames_extracted,
-        initial_prediction_completed=initial_prediction_completed,
-        lvs_created=lvs_created,
-        frame_annotations_generated=frame_annotations_generated,
-    )
-    if rust_status is not None:
-        return rust_status
-    if not frames_extracted:
-        return FrameAnnotationStatus.FRAMES_UNAVAILABLE.value
-    if not initial_prediction_completed:
-        return FrameAnnotationStatus.PREDICTION_PENDING.value
-    if initial_prediction_completed and not lvs_created:
-        return FrameAnnotationStatus.PREDICTION_READY.value
-    if frame_annotations_generated:
-        return FrameAnnotationStatus.ANNOTATION_COMPLETE.value
-    return FrameAnnotationStatus.ANNOTATION_READY.value
 
 
 def validated_annotators_for_video(video: VideoFile) -> list[str]:
@@ -672,7 +631,7 @@ def _build_dataset_target_buckets(
     target_label: Label | None,
     require_extracted_frames: bool,
 ) -> dict[str, set[int]]:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_dataset_target_buckets,
     )
 
@@ -688,7 +647,7 @@ def _build_dataset_label_distribution(
     dataset: AIDataSet | None,
     label_set: LabelSet | None,
 ) -> dict[int, dict[str, int]]:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_dataset_label_distribution,
     )
 
@@ -742,7 +701,7 @@ def _build_segment_frame_buckets(
     only_prediction_segments: bool,
     require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
-    from endoreg_db.services.frame_annotation_buckets import build_segment_frame_buckets
+    from endoreg_db.services.annotations.buckets import build_segment_frame_buckets
 
     return build_segment_frame_buckets(
         dataset=dataset,
@@ -758,7 +717,7 @@ def _build_annotation_frame_buckets(
     label_set: LabelSet | None,
     require_extracted_frames: bool,
 ) -> dict[int, set[int]]:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_annotation_frame_buckets,
     )
 
@@ -776,7 +735,7 @@ def _build_dataset_candidate_frame_ids(
     only_prediction_segments: bool,
     require_extracted_frames: bool,
 ) -> set[int] | None:
-    from endoreg_db.services.frame_annotation_buckets import (
+    from endoreg_db.services.annotations.buckets import (
         build_dataset_candidate_frame_ids,
     )
 

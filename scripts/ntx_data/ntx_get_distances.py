@@ -6,7 +6,8 @@ import math
 import os
 import time
 from statistics import mean, median
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Optional
+from collections.abc import Iterable, Sequence
 
 import googlemaps  # type: ignore[import-untyped]
 import pandas as pd
@@ -91,7 +92,7 @@ def _normalize_post_code(value: object) -> Optional[str]:
     return digits_only
 
 
-def _load_cache() -> Dict[str, Dict[str, Optional[float]]]:
+def _load_cache() -> dict[str, dict[str, Optional[float]]]:
     if cache_path.exists():
         try:
             with open(cache_path, "r", encoding="utf-8") as cache_file:
@@ -99,7 +100,7 @@ def _load_cache() -> Dict[str, Dict[str, Optional[float]]]:
         except json.JSONDecodeError:
             ic("Cache file is corrupted; rebuilding cache.")
         else:
-            cleaned: Dict[str, Dict[str, Optional[float]]] = {}
+            cleaned: dict[str, dict[str, Optional[float]]] = {}
             for key, value in raw_cache.items():
                 normalized_key = _normalize_post_code(key)
                 if not normalized_key:
@@ -109,14 +110,14 @@ def _load_cache() -> Dict[str, Dict[str, Optional[float]]]:
     return {}
 
 
-def _store_cache(cache: Dict[str, Dict[str, Optional[float]]]) -> None:
+def _store_cache(cache: dict[str, dict[str, Optional[float]]]) -> None:
     atomic_write_file(
         destination=cache_path,
         content=[json.dumps(cache, indent=2).encode("utf-8")],
     )
 
 
-def _get_reference_location(client: Any) -> Tuple[float, float]:
+def _get_reference_location(client: Any) -> tuple[float, float]:
     geocode = client.geocode(reference_address)
     if not geocode:
         raise RuntimeError("Unable to geocode reference address.")
@@ -125,7 +126,7 @@ def _get_reference_location(client: Any) -> Tuple[float, float]:
 
 
 def _haversine_km(
-    origin: Tuple[float, float], destination: Tuple[float, float]
+    origin: tuple[float, float], destination: tuple[float, float]
 ) -> float:
     lat1, lon1 = origin
     lat2, lon2 = destination
@@ -149,11 +150,11 @@ def _round_or_none(value: Optional[float]) -> Optional[float]:
 
 
 def _compute_distances(
-    client: Any, origin_coords: Tuple[float, float], post_code: str
-) -> Dict[str, Optional[float]]:
+    client: Any, origin_coords: tuple[float, float], post_code: str
+) -> dict[str, Optional[float]]:
     destination_query = f"{post_code}, Germany"
-    distances_km: List[float] = []
-    destination_coords: Optional[Tuple[float, float]] = None
+    distances_km: list[float] = []
+    destination_coords: Optional[tuple[float, float]] = None
 
     try:
         directions = client.directions(
@@ -189,7 +190,7 @@ def _compute_distances(
                 destination_coords = (location.get("lat"), location.get("lng"))
 
     distances_km.sort()
-    driving_values: List[Optional[float]] = [None, None, None]
+    driving_values: list[Optional[float]] = [None, None, None]
     for idx, distance in enumerate(distances_km[:3]):
         driving_values[idx] = distance
 
@@ -212,7 +213,7 @@ def _compute_distances(
     }
 
 
-def _select_post_codes(candidates: Sequence[str], limit: Optional[int]) -> List[str]:
+def _select_post_codes(candidates: Sequence[str], limit: Optional[int]) -> list[str]:
     if limit is None:
         return list(candidates)
     return list(candidates)[:limit]
@@ -250,8 +251,8 @@ def _parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def _normalize_inputs(values: Iterable[str]) -> List[str]:
-    normalized: List[str] = []
+def _normalize_inputs(values: Iterable[str]) -> list[str]:
+    normalized: list[str] = []
     for raw in values:
         value = _normalize_post_code(raw)
         if value:
@@ -289,7 +290,7 @@ def main() -> None:
         unique_post_codes = _select_post_codes(unique_post_codes, args.limit)
 
     cache = {} if args.skip_cache else _load_cache()
-    results: List[Dict[str, object]] = []
+    results: list[dict[str, object]] = []
 
     for index, post_code in enumerate(unique_post_codes, start=1):
         cached_entry = cache.get(post_code)

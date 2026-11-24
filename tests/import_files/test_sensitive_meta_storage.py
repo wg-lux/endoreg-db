@@ -57,9 +57,7 @@ def test_locked_carrier_locks_only_the_media_row(
 
 
 @pytest.mark.django_db
-def test_empty_candidate_does_not_replace_known_identifiers(
-    base_db_data: bool,
-) -> None:
+def test_empty_candidate_does_not_replace_known_identifiers() -> None:
     center = Center.objects.create(
         name=f"sensitive-meta-center-{uuid.uuid4().hex}",
         display_name="Sensitive metadata center",
@@ -85,9 +83,7 @@ def test_empty_candidate_does_not_replace_known_identifiers(
 
 
 @pytest.mark.django_db
-def test_candidate_updates_only_explicit_meaningful_fields(
-    base_db_data: bool,
-) -> None:
+def test_candidate_updates_only_explicit_meaningful_fields() -> None:
     center = Center.objects.create(
         name=f"explicit-meta-center-{uuid.uuid4().hex}",
         display_name="Explicit metadata center",
@@ -114,9 +110,7 @@ def test_candidate_updates_only_explicit_meaningful_fields(
 
 
 @pytest.mark.django_db
-def test_candidate_cannot_change_trusted_center_or_persist_source_path(
-    base_db_data: bool,
-) -> None:
+def test_candidate_cannot_change_trusted_center_or_persist_source_path() -> None:
     center = Center.objects.create(
         name=f"trusted-meta-center-{uuid.uuid4().hex}",
         display_name="Trusted metadata center",
@@ -144,7 +138,7 @@ def test_candidate_cannot_change_trusted_center_or_persist_source_path(
 
 
 @pytest.mark.django_db
-def test_mismatched_existing_center_fails_closed(base_db_data: bool) -> None:
+def test_mismatched_existing_center_fails_closed() -> None:
     center = Center.objects.create(
         name=f"owner-meta-center-{uuid.uuid4().hex}",
         display_name="Owner metadata center",

@@ -108,6 +108,12 @@ def test_case_examination_keeps_multiple_text_pdf_and_video_documents(
     assert {document["patient_examination_id"] for document in documents} == {
         _pk(patient_examination)
     }
+    assert {
+        document["file_name"] for document in documents if "file_name" in document
+    } == {
+        *(f"report-{pdf.pk}.pdf" for pdf in pdfs),
+        *(f"video-{video.pk}" for video in videos),
+    }
     assert list(
         patient_examination.video_files.order_by("id").values_list("id", flat=True)
     ) == [_pk(video) for video in videos]
@@ -169,7 +175,7 @@ def test_case_document_attachment_is_idempotent_and_strict(
             "uuid": str(pdf.uuid),
             "patient_examination_id": _pk(patient_examination),
             "occurrence_at": second_response.data["documents"][0]["occurrence_at"],
-            "file_name": pdf.file.name,
+            "file_name": f"report-{pdf.pk}.pdf",
         }
     ]
     pdf.refresh_from_db()

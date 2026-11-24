@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import hashlib
 import threading
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from datetime import timedelta
 from collections.abc import Callable
@@ -38,6 +39,168 @@ from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityResult,
     MediaIntegrityStatus,
 )
+from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.utils.file_operations import atomic_write_file
+from endoreg_db.models.hub.upload_job_file import UploadJobFile
+from endoreg_db.services.hub.upload_job_files import (
+    register_upload_job_file,
+    register_upload_job_sources,
+)
+
+
+@pytest.mark.django_db
+def test_registered_working_files_and_sidecars_need_no_hash_evidence(
+    video_source_with_copy: tuple[UploadJob, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job, original = video_source_with_copy
+    register_upload_job_sources(job)
+    sidecar = get_runtime_paths().upload_watcher / f"{job.pk}.json"
+    working = get_runtime_paths().transcoding / f"{job.pk}.txt"
+    for path, role in (
+        (sidecar, UploadJobFile.Role.SIDECAR),
+        (working, UploadJobFile.Role.WORKING),
+    ):
+        atomic_write_file(destination=path, content=[b"different per-file content"])
+        register_upload_job_file(job.pk, path, role=role)
+
+    def no_hash(_source: object) -> str:
+        raise AssertionError("Registered ownership must not require another hash")
+
+    monkeypatch.setattr(cleanup_service, "get_file_hash", no_hash)
+    result = apply_upload_job_source_cleanup(job.pk)
+    assert result.applied
+    assert not sidecar.exists() and not working.exists() and not original.exists()
+    assert not UploadJobFile.objects.filter(
+        upload_job=job, removed_at__isnull=True
+    ).exists()
+
+
+@pytest.mark.django_db
+def test_registered_retained_artifact_is_not_a_source_cleanup_candidate(
+    video_source_with_copy: tuple[UploadJob, Path],
+) -> None:
+    job, original = video_source_with_copy
+    register_upload_job_sources(job)
+    retained = get_runtime_paths().transcoding / f"{job.pk}-retained.pdf"
+    atomic_write_file(destination=retained, content=[b"retained media"])
+    register_upload_job_file(job.pk, retained, role=UploadJobFile.Role.RETAINED)
+    try:
+        assert apply_upload_job_source_cleanup(job.pk).applied
+        assert retained.exists() and not original.exists()
+    finally:
+        retained.unlink()
+
+
+@pytest.fixture
+def video_source_with_copy(monkeypatch: pytest.MonkeyPatch) -> tuple[UploadJob, Path]:
+    def allowed(
+        _job: UploadJob, *, database_now: datetime
+    ) -> UploadSourceCleanupBlocker:
+        assert database_now.tzinfo is not None
+        return UploadSourceCleanupBlocker.NONE
+
+    monkeypatch.setattr(
+        cleanup_service,
+        "_video_target_blocker",
+        allowed,
+    )
+    job = _eligible_video_job()
+    path = get_runtime_paths().import_video / f"{job.pk}.mp4"
+    atomic_write_file(destination=path, content=[b"video-source"])
+    job.processing_provenance = {"watched_path": str(path)}
+    job.save()
+    return job, path
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "location",
+    [
+        "import_video",
+        "import_preanonymized",
+        "import_anonymized_video",
+        "migration_staging",
+        "upload_watcher",
+    ],
+)
+def test_additional_source_locations_are_counted_and_cleaned(
+    video_source_with_copy: tuple[UploadJob, Path],
+    location: str,
+) -> None:
+    job, original = video_source_with_copy
+    path = getattr(get_runtime_paths(), location) / f"{job.pk}-copy.mp4"
+    atomic_write_file(destination=path, content=[b"video-source"])
+    job.processing_provenance = {
+        "watched_path": str(original),
+        "legacy_source_path": str(path),
+    }
+    job.save()
+    result = inspect_upload_job_source(job)
+    assert result.reclaimable_bytes == len(b"video-source") * 3
+    assert path.exists() and original.exists()
+    applied = apply_upload_job_source_cleanup(job.pk)
+    assert applied.applied and applied.freed_bytes == result.reclaimable_bytes
+    assert not path.exists() and not original.exists()
+    assert not apply_upload_job_source_cleanup(job.pk).applied
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "blocker",
+    ["changed", "symlink", "quarantine", "shared", "shared_relative", "retention"],
+)
+def test_automatic_copy_cleanup_preserves_blocked_sources(
+    video_source_with_copy: tuple[UploadJob, Path],
+    blocker: str,
+) -> None:
+    job, path = video_source_with_copy
+    if blocker == "changed":
+        atomic_write_file(destination=path, content=[b"changed"])
+    elif blocker == "symlink":
+        link = path.with_suffix(".link.mp4")
+        link.symlink_to(path)
+        job.processing_provenance = {"watched_path": str(link)}
+    elif blocker == "quarantine":
+        job.processing_provenance = {
+            "legacy_source_path": str(get_runtime_paths().quarantine / "source.mp4")
+        }
+    elif blocker == "shared":
+        _eligible_video_job(processing_provenance={"watched_path": str(path)})
+    elif blocker == "shared_relative":
+        path = get_runtime_paths().ingest_uploads / f"copy-{job.pk}.mp4"
+        atomic_write_file(destination=path, content=[b"video-source"])
+        job.processing_provenance = {"watched_path": str(path)}
+        _eligible_video_job(
+            processing_provenance={
+                "watched_path": path.relative_to(get_runtime_paths().storage).as_posix()
+            }
+        )
+    else:
+        job.retention_policy = UploadJob.RetentionPolicy.PRESERVE_SOURCE
+    job.save()
+    result = apply_upload_job_source_cleanup(job.pk)
+    assert result.decision == UploadSourceCleanupDecision.BLOCKED
+    assert path.exists() and job.file.storage.exists(_stored_name(job))
+
+
+@pytest.mark.django_db
+def test_copy_failure_keeps_primary_and_recovers(
+    video_source_with_copy: tuple[UploadJob, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    job, path = video_source_with_copy
+    real_unlink = cleanup_service.safe_unlink_file
+
+    def interrupted(source: Path, *, missing_ok: bool = True) -> None:
+        real_unlink(source, missing_ok=missing_ok)
+        raise OSError("interrupted after copy deletion")
+
+    monkeypatch.setattr(cleanup_service, "safe_unlink_file", interrupted)
+    assert not apply_upload_job_source_cleanup(job.pk).applied
+    assert not path.exists() and job.file.storage.exists(_stored_name(job))
+    monkeypatch.setattr(cleanup_service, "safe_unlink_file", real_unlink)
+    assert apply_upload_job_source_cleanup(job.pk).applied
 
 
 def _eligible_report_job(**overrides: object) -> UploadJob:
@@ -172,7 +335,9 @@ def test_failed_import_requires_matching_successful_repeat(change: str) -> None:
         updates["source_center"] = Center.objects.create(name="different-cleanup")
     elif change in {"processing", "error"}:
         updates["status"] = change
-        updates["error_code"] = UploadJob.ErrorCode.PROCESSING_FAILED
+        updates["error_code"] = (
+            UploadJob.ErrorCode.PROCESSING_FAILED if change == "error" else ""
+        )
     else:
         updates[change] = "different"
     if updates:
@@ -352,7 +517,7 @@ def test_failed_video_repeat_requires_ready_target(
 
 
 @pytest.fixture(autouse=True)
-def _verified_target(  # pyright: ignore[reportUnusedFunction] -- discovered by pytest
+def _verified_target(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def verified_target(upload_job: UploadJob) -> MediaIntegrityResult:
@@ -376,6 +541,22 @@ def _verified_target(  # pyright: ignore[reportUnusedFunction] -- discovered by 
         "_report_target_blocker",
         verified_report_target,
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("location", ["import_report", "import_anonymized_report"])
+def test_report_cleanup_removes_verified_original_copy(location: str) -> None:
+    job = _eligible_report_job()
+    source = Path(job.file.path)
+    original = getattr(get_runtime_paths(), location) / f"{job.pk}.pdf"
+    atomic_write_file(destination=original, content=[source.read_bytes()])
+    job.processing_provenance = {"watched_path": str(original)}
+    job.save()
+    result = run_upload_job_source_reaper(apply=True, upload_job_id=job.pk)
+    assert result.cleaned == 1
+    assert not original.exists() and not source.exists()
+    job.refresh_from_db()
+    assert job.cleanup_status == UploadJob.CleanupStatus.COMPLETED
 
 
 @pytest.mark.django_db

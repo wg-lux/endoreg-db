@@ -1,3 +1,4 @@
+from tests.helpers.pdf import render_single_page_pdf
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -21,9 +22,12 @@ from endoreg_db.import_files.file_storage.state_management import (
 )
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
 from endoreg_db.services.video_files import _imports as video_create_module
+from endoreg_db.services.video_files import imports as video_imports_module
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.file_operations import get_file_hash
+from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
+from tests.helpers.canonical_timestamps import normalization_evidence_fixture
 
 
 pytestmark = pytest.mark.django_db
@@ -37,37 +41,22 @@ def _runtime_paths() -> paths_module.EndoregPathsModel:
     return paths_module.EndoregPathsModel.from_environment()
 
 
-def _default_center_name() -> str:
-    center = Center.objects.first()
-    assert center is not None
-    return center.name
-
-
-def _default_processor_name() -> str:
-    processor = EndoscopyProcessor.objects.first()
-    assert processor is not None
-    return processor.name
-
-
 def _write_minimal_pdf(path: Path, marker: bytes) -> bytes:
-    payload = (
-        b"%PDF-1.4\n1 0 obj\n<< /Marker ("
-        + marker
-        + b") >>\nendobj\ntrailer\n<<>>\n%%EOF\n"
-    )
+    payload = render_single_page_pdf(marker.decode("ascii"))
     path.write_bytes(payload)
     return payload
 
 
 def test_report_import_persists_raw_pdf_as_encrypted_bytes(
     tmp_path: Path,
-    base_db_data: object,
+    default_center: Center,
 ) -> None:
     source = tmp_path / "raw-report.pdf"
     plaintext = _write_minimal_pdf(source, b"report-import-encryption")
-    center_name = _default_center_name()
 
-    ctx = ImportContext(file_path=source, center_name=center_name, file_type="report")
+    ctx = ImportContext(
+        file_path=source, center_name=default_center.name, file_type="report"
+    )
 
     report, processed, needs_processing = create_or_retrieve_report_file(ctx)
 
@@ -88,7 +77,8 @@ def test_report_import_persists_raw_pdf_as_encrypted_bytes(
 def test_video_import_persists_raw_video_as_encrypted_bytes(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
-    base_db_data: object,
+    default_center: Center,
+    default_processor: EndoscopyProcessor,
 ) -> None:
     def fake_initialize(self: VideoFile) -> VideoFile:
         return self
@@ -98,9 +88,9 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
         input_path: Path,
         output_path: Path,
         **_kwargs: object,
-    ) -> object:
+    ) -> VideoStorageNormalizationEvidence:
         output_path.write_bytes(input_path.read_bytes())
-        return object()
+        return normalization_evidence_fixture(input_path, output_path)
 
     def fake_get_stream_info(_path: Path) -> dict[str, list[dict[str, str]]]:
         return {
@@ -114,7 +104,19 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
             ]
         }
 
+    def fake_initialize_video_file(
+        video: VideoFile, *, local_raw_path: Path | None = None
+    ) -> VideoFile:
+        return video
+
     monkeypatch.setattr(VideoFile, "initialize", fake_initialize, raising=True)
+    # create_from_file_initialized calls the service directly, not the model method.
+    monkeypatch.setattr(
+        video_imports_module,
+        "initialize_video_file",
+        fake_initialize_video_file,
+        raising=True,
+    )
     monkeypatch.setattr(
         video_create_module,
         "ensure_video_file_profile",
@@ -131,13 +133,11 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
     source = tmp_path / "raw-video.mp4"
     plaintext = b"\x00\x00\x00\x20ftypmp42" + b"video-import-encryption"
     source.write_bytes(plaintext)
-    center_name = _default_center_name()
-    processor_name = _default_processor_name()
 
     ctx = ImportContext(
         file_path=source,
-        center_name=center_name,
-        processor_name=processor_name,
+        center_name=default_center.name,
+        processor_name=default_processor.name,
         file_type="video",
     )
 
@@ -171,12 +171,13 @@ def test_video_import_persists_raw_video_as_encrypted_bytes(
 
 def test_report_finalize_persists_processed_pdf_as_encrypted_bytes(
     tmp_path: Path,
-    base_db_data: object,
+    default_center: Center,
 ) -> None:
     source = tmp_path / "raw-report.pdf"
     _write_minimal_pdf(source, b"report-processed-encryption-raw")
-    center_name = _default_center_name()
-    ctx = ImportContext(file_path=source, center_name=center_name, file_type="report")
+    ctx = ImportContext(
+        file_path=source, center_name=default_center.name, file_type="report"
+    )
     report, _, _ = create_or_retrieve_report_file(ctx)
 
     processed_plaintext = _write_minimal_pdf(

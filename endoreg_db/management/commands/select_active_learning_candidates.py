@@ -16,7 +16,7 @@ from lx_dtypes.models.contracts.ai_dataset import (
 )
 from pydantic import TypeAdapter
 
-from endoreg_db.services.aidataset_active_learning_shortlist import (
+from endoreg_db.services.datasets.active_learning_shortlist import (
     build_active_learning_review_shortlist,
     write_active_learning_review_shortlist,
 )

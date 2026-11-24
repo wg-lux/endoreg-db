@@ -5,7 +5,331 @@ This document is the operational and architecture runbook for the
 feature. The feature definition in YAML Ain't Markup Language (YAML) format is
 the only authoritative source for implementation and approval status.
 
+## Bounded media delivery under ASGI
+
+The shared protected-media response keeps synchronous storage readers incremental
+under the Asynchronous Server Gateway Interface (ASGI). It advances one block
+per consumer request on Django's thread-sensitive executor instead of letting
+Django collect the complete stream into a list. Web Server Gateway Interface
+(WSGI) iteration, byte ranges, encrypted-reader authentication, and download
+leases retain their existing behavior. Remote report materializations use the
+same response and close their context after consumption.
+
+Disconnect cancellation waits for the single in-flight read before closing its
+iterator; repeated cancellation cannot close a generator while it is executing.
+A blocked kernel read still needs to return before cleanup can finish. Reader
+errors propagate. No plaintext cache, key change or relaxed integrity check is
+introduced. Regression evidence belongs to `browser_video_annotation_downloads`
+in the feature definition linked above. Deploy a backend wheel containing this
+response before claiming that LX-Annotate's installed runtime has this fix.
+
+## Recover missing frame timestamps
+
+`backfill_video_timelines --apply` decodes missing presentation timestamps from
+the current processed video, or retained raw media when no processed video is
+published. It does not probe an original merely to recover processed coordinates.
+Identity is inherited from import, without rehashing media or comparing legacy
+frame counts during this timestamp-only recovery. The decoded sequence determines
+the current frame count; unannotated, unextracted rows are reconciled atomically,
+preserving existing primary keys in the retained range. Saved annotations or
+extracted images require explicit timestamp remapping if frame numbers would change.
+Authenticated decryption, existing coordinates and publication locking remain
+enforced. Processed timestamps are recorded as processed evidence;
+they do not establish original frame ancestry or original timestamp history.
+
+Recovery also fills missing seconds or integer presentation timestamps and restores
+missing source evidence when every existing coordinate agrees with decoded media.
+Conflicts roll back the entire recovery. Missing annotated-frame ordinals may be
+added only when an existing complete canonical generation receipt proves their
+positions; existing frame identities and annotation boundaries remain unchanged.
+Training reads use the same recovery service before checking exact coordinates.
+
+Synchronous recovery uses a distinct read lease during capture and holds the
+publication row lock until commit. It releases only its own lease; failures roll
+back its creation. Existing playback leases are neither renewed nor removed.
+Exclusive writers and pending storage-cleanup authorization still block recovery.
+
+For a legacy video whose saved frame and annotation ordinals are independently
+confirmed to belong to its current processed generation, an operator may preview
+bounded recovery with `backfill_video_timelines --video-id ID
+--confirm-processed-ordinals --operator NAME`. Repeat `--video-id` for each reviewed
+video; add `--apply` only after reviewing the preview. This opt-in path verifies
+the processed content hash, decodes its presentation timestamps, requires the
+stored frame count to match, and checks every existing frame coordinate and saved
+segment boundary. It adds absent frame ordinals and fills null coordinates without
+deleting or renumbering frames or changing annotations. Preview rolls back its
+temporary database lease and publishes no timeline. Apply records captured current
+generation evidence and an operator audit event; it does not invent prior history,
+original recording ancestry, or provenance approval. The ordinary migration and
+automatic backfill behavior remains unchanged and rejects ambiguous annotation
+reconciliation. Missing media, mismatched counts, conflicting coordinates and
+out-of-range annotations require separate investigation, not frame-rate estimates.
+
+Single and bulk segment validation clamp a submitted end beyond the canonical
+terminal boundary to the last persisted frame presentation timestamp. Valid ends,
+including the terminal exclusive boundary, remain unchanged. Starts are never
+clamped; empty or reversed ranges fail. This does not bulk-edit stored segments,
+repair missing media, or infer coordinates from nominal frame rate.
+
+Video discovery returns `segments: null`, `timeline_error` and `status: failed`
+when a video's clinical timeline cannot be resolved, keeping other videos
+available. A healthy row has `timeline_error: null`. Missing canonical media
+must be restored at its published generation before timestamps can be recovered;
+retained raw media cannot replace a missing published processed generation.
+Discovery does not mark persistent integrity state or change annotations. Run
+the documented integrity reconciliation to assess missing media separately.
+
+## Recover usable media with unresolved frame mapping
+
+Sender provenance always starts at the recording's `raw_video_hash`. A history
+containing only a later processed transformation cannot redefine that identity;
+the resolver composes the complete recorded ancestry or refuses the export.
+Electrical synchronization anchors use that same original recording identity.
+Exclusive writers and invalid ancestry are checked before hashing media. After
+clinical approval and current content-hash verification, the sender reuses the
+typed timestamp proof bound to those exact bytes instead of decoding them again.
+The receiver still decodes the received processed generation and compares its
+complete presentation timestamps before acceptance. This change does not invent
+missing ancestry or release abandoned writer barriers. Scope and evidence belong
+to `recording_bound_export_preflight` in `feature-tracking/HubTransfer.yml`.
+
+Use **Frame-Herkunft reparieren** in Hub Export or **Video für Transfer reparieren**
+on the video examination page. Every authenticated user assigned to the video's
+center can preview this single-record operation; administrator privileges are not
+required. Stop playback if an active media lease blocks the operation.
+
+1. Enter recording start and end only when acquisition records establish them.
+   The browser sends timezone-qualified timestamps. Leave unknown times empty;
+   file creation dates and average frame rate are not acquisition evidence.
+2. Choose **Reparatur prüfen**. The backend authenticates encrypted media, verifies
+   its current content hash and captures its actual presentation timestamps (PTS).
+   It preserves original PTS and their rational time base from existing canonical
+   history or from a retained original whose hash matches the recording identity.
+3. Choose **Ungeklärte Frame-Zuordnung speichern** to explicitly replace the active
+   missing/unresolved mapping status for this media generation. This writes an
+   audited `video_provenance_recovery` receipt into endoreg-db's `VideoFile.meta`.
+   It does not fabricate frame indices, delete immutable transformation receipts,
+   alter the video, mark reviews complete or queue a transfer.
+4. Complete the normal anonymization, segment-cleanup, integrity and export gates,
+   then retry the existing transfer. Missing historical frame mapping alone no
+   longer blocks transfer after acknowledgment. Outside-frame rebuild failures
+   still need a successful rebuild; saving this receipt does not blacken frames.
+
+The receipt stores `mapping_status=unresolved`, `electrical_matching_eligible=false`,
+the recording identity, current processed content hash, complete processed PTS,
+optional original PTS, and optional recording start/end timestamps. The first and
+last PTS are frame presentation boundaries, not substitutes for wall-clock recording
+start/end or proof of which original frame produced an output frame. Missing
+original evidence remains null. A verified current mapping cannot be overwritten.
+Content mismatch, lost integrity and concurrent processing block recovery.
+
+Recovery returns HTTP 409 with a stable `code` and an explanatory `error`:
+`active_media_operation` means an operation lease prevents mutation,
+`active_processing` means a pending or running processing job must finish, and
+`recovery_precondition_failed` requires resolving the reported integrity or
+provenance condition. The video page pauses its own playback before an explicit
+recovery request; other viewers and background work can still block it. Recovery
+never clears leases or automatically retries.
+
+Recording times use the shared `RecordingTimeRange` contract from `lx-dtypes`
+0.5.3 or newer and are checked before media reads, including combinations with
+previously recorded times. Identical acknowledgments revalidate the media but
+leave the existing audit receipt and modification timestamp unchanged; changed
+evidence creates a new audit entry. Publish the shared dependency before the
+backend release and regenerate dependency locks through normal resolution.
+
+A rebuild that refuses publication must preserve preexisting frame files, rows
+and extraction state: blackening owns its staged video, not those frame caches.
+An uncommitted cleanup receipt can be retired without deleting media only when
+the current master matches its source identity and authenticated hash, and the
+recorded replacement is absent and unreferenced. Unknown or surviving replacement
+artifacts remain blockers; a dry run retains the receipt. Do not clear a live
+receipt merely because a job failed or a retry interval elapsed.
+
+The sender carries this explicit receipt instead of a verified frame-lineage bundle.
+The hub validates its media identities and checks the received file's actual
+processed timeline before accepting it. Electrical-data matching rejects an
+unresolved receipt even when start/end times are known: independent clocks also
+need acquisition anchors and an established frame mapping. Later verified evidence
+can supersede the recovery receipt through the verified-provenance path.
+
+Deploy matching lx-dtypes, endoreg-db and LX-Annotate packages on sender and hub
+before enabling this workflow. Older strict receivers reject the new receipt;
+there is no silent compatibility fallback. No database migration is needed: the
+existing JSON metadata boundary validates the new shared typed receipt.
+
 ## Canonical runtime paths and filenames
+
+Outside-frame blackening retries an output-bitrate validation failure at most
+twice before failing and cleaning its staged output. Each retry reads the same
+scoped, decrypted original and reapplies the reviewed blackening intervals;
+rejected lossy output is never used as the next input. The measured overshoot
+reduces the encoder's target and maximum bitrate with safety headroom, while the
+storage profile's acceptance limits stay unchanged. Every candidate still passes
+the full storage, timeline, hash and publication checks. Other validation failures
+do not trigger this retry. Exhaustion preserves the existing encrypted master and
+removes scoped plaintext. Structured `outside_blackening_bitrate_retry` events
+record the video identifier, attempt number, measured bitrate and next cap.
+
+Blackening uses timestamp passthrough without a fixed frame-rate cap. Native
+variable presentation timestamps remain authoritative; bitrate adaptation does
+not request cadence conversion. Complete canonical
+source/output timestamp sequences continue to be retained in provenance. HLS
+playlist boundaries are anchored to the source container origin and checked in
+relative time, allowing container offsets without masking frame timeline drift.
+The separate explicit resampling proof derives its constant cadence from
+`profile.annotation_max_fps`; it does not impose uniform cadence on native media.
+
+Telemetry alignment requires a shared clock origin and an explicit maximum join
+distance before nearest-timestamp matching can be enabled. A frame-count tolerance
+alone cannot identify where a frame was dropped or safely relocate an annotation.
+
+### Out-of-band frame provenance and independent recording clocks
+
+The authoritative scope and evidence remain in
+[`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml)
+and [`HubTransfer.yml`](../feature-tracking/HubTransfer.yml). Out-of-band means the
+frame mapping is stored separately from encoded pixels, in the database.
+
+`VideoFrameProvenance` retains immutable, typed transformation receipts. Each
+receipt contains the complete source/output presentation timestamp sequences,
+rational time bases, plaintext content hashes, and a source-frame-index array
+whose position is the output presentation-frame index. The shared contract lives
+in `lx_dtypes.models.contracts.video_provenance`. Apply migration
+`0092_video_frame_provenance` before running updated encoding workers. Site and Hub
+must deploy the matching shared contract and application changes together.
+
+Dependency versions come from `pyproject.toml` and `uv.lock`; the current source
+requires `lx-dtypes>=0.5.3` and pins `lx-anonymizer[gpu]==1.1.1`. Synchronize the
+project environment before verification and check the installed execution-hook
+interface. A sibling checkout used by static analysis does not establish that
+the installed worker package provides those hooks. Use the coordinated release
+procedure below for deployment.
+
+Before each FFmpeg transcode attempt, ffprobe captures source coordinates. FFmpeg
+`stats_enc_pre` records the actual decoder frame index carried to the encoder,
+including frame drops and repetitions introduced by resampling. After encoding,
+every row is checked against decoded output coordinates and source coordinates.
+Packet order is not presentation order: encoder input statistics avoid confusion
+from bidirectionally predicted frames. Explicit decoder/container clock-origin
+offsets are retained as rational values and must be constant across the complete
+sequence. They never select a source frame. Unsupported or incomplete encoder
+provenance fails the operation; there is no nearest-timestamp ancestry fallback.
+
+The shared transcode runner covers normalization, masking, blackening, storage
+transcoding, and compatibility MP4 output. HLS records a derivative receipt bound
+to its canonical source and playlist content identity, after existing segment and
+timeline validation. HLS remains a derivative, not a canonical generation. The
+OpenCV detector compatibility path records the frame indices actually read and
+written and rejects incomplete decoding. Temporary encoder statistics use an
+owned private directory inside the protected runtime storage boundary and are
+removed after success or failure. Receipts are evidence of encoding ancestry,
+not evidence of clinical approval or current publication.
+
+The host's `create_frame_cleaner` factory returns the ordinary `lx-anonymizer`
+`FrameCleaner`, configured with attempt-local `VideoExecutionHooks`. Initial import,
+processor-region correction, detector masking, and frame removal execute the
+library's existing implementations. The hooks route encoding through the host
+runner and observe actual decoder indices immediately after each frame is written.
+The host validates complete input/output sequences before persisting a receipt;
+decoder or finalization failure never commits a receipt. The compute library does
+not gain database or publication ownership. With provenance hooks, empty
+frame-removal requests fail explicitly and full-image masks encode an identity
+filter instead of taking an unobserved stream-copy path. Deploy the matching
+`lx-anonymizer` hook interface with this host factory; an older package cannot
+provide this integration.
+
+Hub exports carry either the strict `video_frame_provenance` bundle or the
+explicit `video_provenance_recovery` receipt in transfer provenance. They require approved processed media and verified content identity;
+arbitrary video metadata, filenames, keys, and raw media are not included.
+Transformations compose from the recording hash to the transferred processed
+hash. A missing or ambiguous historical chain requires explicit unresolved-provenance
+recovery before export; old source indices are never reconstructed from similar
+timestamps. Without that operator acknowledgment export remains blocked. The receiver preserves the bundle
+in validated database metadata, binds both endpoint hashes, and checks its final
+timeline against the received processed media before accepting processing success.
+Existing transfers without a bundle remain readable but cannot provide electrical
+alignment. Native transport authentication and encryption requirements still apply.
+
+Ledger `PVideoSegment` exports and dataset segment exports use the same exact
+coordinate contract as hub transfers. Each exported segment carries the processed
+content hash, rational time base, and integer presentation timestamps for its
+first and last included frames; the stored end frame remains exclusive. Verified
+ancestry also supplies the original recording's frame indices and timestamps.
+An acknowledged unresolved receipt exports an explicit unresolved status with no
+original-frame coordinates. Missing, stale, ambiguous, or out-of-range provenance
+fails the export rather than omitting segments. Dataset exports retain only their
+selected segments and continue to exclude sensitive metadata. Ancestry is resolved
+and composed once per video's segment batch; metadata export does not read or
+export raw media. Deploy the matching `lx-dtypes` ledger contract before using
+these exporters, as part of the coordinated wire-contract rollout.
+
+An independent electrical device needs synchronization evidence **during
+recording**. Video presentation timestamps alone do not identify its clock offset.
+The recording integration must retain:
+
+| Evidence | Purpose |
+| --- | --- |
+| Opaque recording-session and clock-epoch identifiers | Prevent joining different sessions or a clock that reset |
+| Native integer timestamps and rational time bases | Preserve units and precision without average-frame-rate conversion |
+| At least two paired observations of shared events | Establish clock offset and relative rate; repeated events bound changing drift |
+| A conservative measured uncertainty bound | Cover event measurement and drift between synchronization anchors |
+
+A shared hardware event or measured clock correlation supplies paired anchors.
+After finalizing the recording content hash, its acquisition integration calls
+`record_video_synchronization`; this service validates and stores the supplied
+anchors, but does not acquire them from hardware. Device-specific recording hooks
+are required before a real electrical recording can be aligned. No anchor,
+shared clock, or uncertainty bound is invented from a video file.
+
+On the Hub, `map_video_to_electrical_samples` accepts an `ElectricalTimestampSeries`
+with explicit device units and identity, plus a rational maximum error in seconds.
+It follows actual frame ancestry, interpolates only between recorded anchors,
+and returns electrical sample indices in output-video frame order. It rejects
+clock/session/unit mismatches, clock resets, extrapolation, ties, uncertainty that
+could change the chosen sample, and matches exceeding the error budget. It does
+not change clinical annotation coordinates or interpolate measurement values.
+
+Size reduction, default transcoding, ROI masking and compatibility derivatives use
+the same native-timestamp arguments: `-copyts`, `-fps_mode passthrough` and
+`-enc_time_base demux`. These retain the container origin and encoder timestamp
+precision. HLS also uses the demuxer time base; its container origin is checked
+through the relative-timeline gate described above. Automatic timestamp repair is
+disabled when `-copyts` is requested, so invalid timestamps fail instead of being
+regenerated. Existing storage limits still apply.
+
+Before canonical publication, complete decoded source/output PTS sequences prove
+exact frame counts. Raw normalization retains the strict half-output-tick rounding
+limit. Processed publication allows origin changes and bounded timestamp corrections:
+relative drift cannot exceed one local source frame interval or the profile duration
+tolerance, plus half an output tick. Container FPS metadata alone does not reject
+a processed candidate with valid decoded proof; codec, bitrate and storage limits
+still apply. Native encoding never requests a new frame cadence.
+
+Processed publication atomically maps segment boundaries to the nearest processed
+PTS (ties choose the earlier boundary), updates active frame timestamps, and binds
+`source_timeline` to the processed content hash. Frame identities and image
+annotations remain intact. Both frame-based and seconds-based segment mappings
+are recorded with their previous and new coordinates in canonical history.
+Terminal boundaries use container origin plus duration. Raw PTS history remains
+available independently for external telemetry alignment; missing legacy history
+is not reconstructed from nominal FPS. No additional human review is required.
+Dropped/added frames, collapsed segments, excessive drift, concurrent coordinate
+changes, or mappings extending outside-frame blackening coverage fail processing
+and retain the existing master and coordinates.
+Explicit pre-annotation FPS resampling alone opts out of this
+equivalence check and retains its existing coordinate-reset preconditions.
+
+Directory transcoding now preserves timestamps by default (`target_fps: null` in
+its JSON summary), rather than deriving a rate cap from `VIDEO_DEFAULT_FPS`.
+Intake accepts every valid positive source frame rate; the annotation target is
+not a source-admission or native-output compliance ceiling. The mover must not
+quarantine media based on FPS. Codec, integrity and timestamp-equivalence checks
+remain mandatory.
+Its Python API still accepts an explicit `target_fps` for intentional rate changes;
+that mode must not be used to replace annotated media. Ordinary storage-pressure
+transcoding probes the actual source timeline and complete decoded PTS instead of
+reconstructing temporal equivalence from stored average FPS metadata.
 
 `LX_RUNTIME_ROOT` is the single runtime root. Application code resolves the
 topology at use time through `endoreg_db.utils.paths.get_runtime_paths()`.
@@ -16,7 +340,13 @@ storage adapter and local streaming resolvers use that same boundary.
 The central filename policy is `canonical_media_name()` in
 `endoreg_db/utils/storage/files.py`. Videos and Portable Document Format (PDF)
 reports use `<media_hash>.<extension>`, with a lowercase extension. A published
-video generation can use `<media_hash>.<generation>.<extension>`; generation
+video generation can use `<media_hash>.<generation>.<extension>`. Processed report
+imports also publish immutable `<source_hash>.<generation>.pdf` files: the stored
+reference, plaintext digest, state, and success history commit together after
+parser and stored-content validation. Previous PDF files and candidates whose
+commit outcome is uncertain remain available for reference-aware reconciliation;
+import does not delete them. Staging cleanup runs only after the outer database
+commit and its failure does not revoke committed success. Video generation
 publication, leases, and previous-master retention remain unchanged. Raw videos,
 processed videos, raw reports, and processed reports retain distinct directories:
 `sensitive_videos`, `processed_videos_final`, `sensitive_reports`, and
@@ -31,12 +361,86 @@ matches. Existing immutable generation paths remain valid references. Sources
 are preserved unless the existing explicit deletion policy permits their removal.
 Ordinary report reads do not search import folders or guess replacement files.
 
-LuxNix retains `lx-annotate-video-streamable-migration.service` as the operational
-alias for the shared video/PDF `migrate_media_storage --apply` command. The unit
-is manually started, uses the encrypted runtime root, and does not bypass the
-feature-tracker migration gates. No deployed migration is implied by a code change.
-
 ## Import reservation and delivery recovery
+
+### Media worker startup
+
+Workers consuming the configured pipeline, FFmpeg media, or report large language
+model (LLM) inference queues require `--pool=prefork --max-tasks-per-child=1`.
+Concurrency remains configurable. Celery retains each job's soft and hard time
+limits and replaces the task process after each job. Do not substitute solo or
+threads: those pools do not preserve these execution and recycling guarantees.
+The Devenv tasks select these options; external worker definitions must also do so.
+
+The installed `lx-anonymizer` must expose model process isolation contract version
+2. Startup rejects older dependencies before consuming deliveries. Optical
+character recognition (OCR) model execution uses a subprocess supervisor rather
+than Python multiprocessing inside the daemon task process. The supervisor observes
+parent liveness independently of model output and kills and reaps its descendants,
+including children that start separate sessions. The caller enforces model-block
+deadlines through bounded supervisor disposal.
+Celery's whole-task deadlines still cover processing and finalization; model-block
+deadlines do not replace them. Late acknowledgements, worker-loss redelivery and
+import lease fencing remain unchanged.
+
+The service manager must retain control-group containment (`KillMode=control-group`
+or an equivalent reviewed policy) as the outer boundary when the supervisor itself
+is killed. Do not configure descendant escape from that service boundary. Verify
+this in the evaluated target service, together with encrypted staging, before
+activating a candidate. A package capability check is not proof of host storage
+protection or a completed clinical import.
+
+For pipeline and FFmpeg consumers, the same startup hook requires both bare
+`ffmpeg` and `ffprobe` to resolve on the inherited `PATH` and execute `-version`
+within ten seconds each. Nix-store discovery or application-specific overrides
+alone do not satisfy this contract: anonymizer consumers also use bare tool names.
+Before deployment or media backfill, run
+`python manage.py check --deploy --tag media` in the actual service environment.
+An interactive shell's successful check does not establish worker availability.
+Provision both tools in the worker service and restart through the deployment
+workflow. These checks do not retry failed imports or mutate media.
+
+### Coordinated worker releases
+
+The intended release order is `lx-anonymizer 1.0.8`, `endoreg-db 1.5.5`, then
+`lx-annotate 1.5.4`. Publish and validate the dependency releases before selecting
+application version `1.5.4` through the ordinary LuxNix package configuration.
+Application and backend metadata pin their compatible dependencies; do not inject
+local wheels into the NixOS generation or force-install dependency overrides.
+
+Nix supplies native tools and libraries: `ffmpeg-headless` provides both `ffmpeg`
+and `ffprobe`, while the configured Tesseract package supplies OCR binaries and
+language data. The application services and wheel wrapper use the same native
+closure and inherited executable `PATH`. Python package dependency resolution
+remains separate from this system-tool provisioning.
+
+Local wheel hashes and isolated test evidence are retained in
+[`media_worker_release.yml`](../feature-tracking/reports/media_worker_release.yml).
+That record includes an earlier repaired-Decord experiment and injected candidate
+build; those are verification artifacts, not the selected deployment recipe.
+Decord's original wheel advertises a Python-independent ABI in its filename but
+has inconsistent internal wheel tags. Both `pip check` and `uv pip check` reject
+the original wheel on Python 3.12, although decoding succeeds. A corrected
+dependency release remains required; do not substitute a patched dependency in
+production. The pinned Nixpkgs has no existing Decord package.
+Validate the normal release dependency graph before promotion, and verify protected
+plaintext staging separately before activating clinical processing.
+
+Source and content-hash import locks use the existing process-owned operating
+system advisory-lock wrapper. Lock files are persistent and must not be unlinked
+or reclaimed by age: waiters and owners must use the same file identity. Process
+termination releases ownership. Deployment must stop all legacy import workers
+before starting workers with this lock implementation; legacy existence-based
+locks and advisory locks must not run concurrently. Database leases and fencing
+remain authoritative for durable workflow mutations.
+
+TXT report conversion snapshots the input before reading, retains the original
+TXT even on failure, paginates the complete escaped text, and checks extracted
+text and word boundaries against the source after normalizing whitespace. Content
+that cannot be preserved fails explicitly. This conversion no longer uses the
+legacy single-page renderer. Scope and verification evidence are recorded in
+[`ImportPipelineRobustness.yml`](../feature-tracking/ImportPipelineRobustness.yml),
+criterion `lossless_report_and_owned_import_locks`.
 
 Queued imports reserve a database lease with owner `queued-task:<Celery task ID>`.
 The first delivery atomically claims that reservation as `execution-<UUID>`, using
@@ -100,11 +504,45 @@ runtime requires deployment of a compatible release; retries do not repair the
 schema, downgrade it, or manufacture encoding-profile defaults. These changes
 must be present in the deployed worker to protect its deliveries.
 
+## Plaintext materialization boundary
+
+Materialization creates a complete, temporary decrypted working file on entry to
+`ensure_local_file()` or `materialized_plaintext_field_file()`. The former reuses
+an existing protected plaintext source when appropriate; it does not delete that
+source on exit. Copies are created only when needed by a path-based consumer.
+Callers include report processing and integrity validation, video correction,
+reimport, post-validation blackening, transcoding, dimension backfill, explicit
+frame exports, and model-weight loading. Normal byte-range playback and the
+single-frame decoder do not need a complete plaintext copy. Video serialization
+returns persisted duration, including an unknown value, without decrypting media.
+
+Temporary copies stay under the protected transcoding root and are created
+exclusively with private permissions. Each writer owns an independent temporary
+name; creation failure does not authorize deletion of an existing file. Context
+exit removes owned copies on success or exception, and deletion failures propagate.
+Required path-based processing still needs plaintext access during execution.
+SAP ZIP imports also extract into an owned private directory under this boundary,
+reject unsafe archive paths and symbolic links, and remove the workspace on exit.
+
+`safe_unlink_file()` removes only the named directory entry, without opening or
+overwriting linked targets. It does not promise physical erasure: solid-state
+drives, copy-on-write filesystems, snapshots, and backups can retain prior bytes.
+The backing storage and its copies must remain encrypted. Likewise, abrupt process
+termination can prevent context-manager cleanup; unknown leftovers require the
+ownership-based reconciliation described below, not indiscriminate deletion by
+filename or age.
+
+Sources: [Python temporary-file lifecycle](https://docs.python.org/3/library/tempfile.html),
+[OWASP temporary-file creation](https://community.owasp.org/vulnerabilities/Insecure_Temporary_File),
+[GNU erasure limitations](https://www.gnu.org/s/coreutils/manual/html_node/shred-invocation.html).
+Security requirements and verification evidence belong to
+[`StorageSecurity.yml`](../feature-tracking/StorageSecurity.yml).
+
 ## Terms and Abbreviations
 
 Online encryption-key and identity-salt rotation is governed by
 `feature-tracking/Anonymization.yml`, criterion `online_secret_rotation`.
-The operational procedure is in `docs/secret_rotation.yml`. Rotation preserves
+The operational procedure is in [Online secret rotation](secret_rotation.md). Rotation preserves
 the plaintext video bytes and timeline; it is not a storage-normalization or
 frame-rate conversion. Compatible readers must be deployed before key activation.
 Active media leases defer ciphertext replacement. HTTP Live Streaming generations
@@ -117,6 +555,16 @@ use the existing validated generation-publication workflow with fresh content ke
 
 - **Joint Photographic Experts Group (JPEG):** the encoded image format used
   for in-memory annotation responses and explicit frame exports.
+- **Portable Network Graphics (PNG):** the lossless image format used in memory
+  when decoded pixels must be preserved for frame validation or text recognition.
+- **Red, green and blue (RGB):** the decoded pixel channel order exposed by the
+  shared lossless frame reader; it is distinct from OpenCV's default channel order.
+- **Container start time:** the earliest presentation time across all streams
+  of a media container, as reported by ffprobe `format=start_time`. FFmpeg
+  offsets every input seek by this value; it is not the video stream origin.
+- **MP4 track timescale:** the number of ticks per second stored for an MP4
+  track. It must equal the source time-base denominator for recorded
+  presentation timestamps to survive transcoding unchanged.
 - **MPEG-4 Part 14 (MP4):** the Moving Picture Experts Group container format
   used for canonical and compatibility video files.
 - **HTTP Live Streaming (HLS):** the playlist-and-segment streaming format used
@@ -159,16 +607,33 @@ described where they are introduced.
 
 ## Artifact Contract
 
-| Role | Creation | Retention | Deletion condition |
-|---|---|---|---|
-| Canonical unprocessed MP4 | Import or reimport | Until human anonymization validation and complete approval of every gate | Only when the normalized master, matching processed HLS, `pts_v1`, segment references, and clinical profile approval are complete, and a blackened video exists |
-| Canonical anonymized MP4 | Import, reimport, or reanonymization | Permanent; exactly one published generation | The previous generation may be deleted only after atomic publication and integrity verification of the new generation and when no media lease is active |
-| Raw HLS | Successful import or reimport | Reproducible cache until raw-media release | Together with the raw master, subject to the same cleanup gates and only when no media lease is active |
-| Processed HLS | Successful import, reimport, or reanonymization | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease |
-| Legacy streamable MP4 | Historical compatibility output; no new copies are created | Retained until verified retirement | Through a recorded cleanup receipt after canonical processed HLS is ready and references and leases permit deletion |
-| Extracted frame | Explicit export requiring image files | Export-scoped; annotation, inference, and local training decode in memory | Only through the responsible frame or case lifecycle, never as a side effect of this migration command |
-| Temporary transcode artifact | Normalization inside the protected transcoding directory | Only for the duration of one attempt | Through the `finally` path after success or failure; it is never marked as a valid master |
-| Quarantine artifact | Explicit fail-closed exception process | Until documented review | Only after separate quarantine approval; never through an automatic production fallback |
+Only canonical raw and canonical processed videos are **generations**. HTTP Live
+Streaming (HLS) exists solely for optimized streaming of a canonical source
+generation. Existing HLS fields or older text using “generation” identify the
+source binding or an atomic derivative build, never an independent canonical
+video generation. Rebuilding HLS does not create a canonical generation.
+
+Canonical transformations retain both complete decoded presentation timestamp
+sequences in `VideoFile.meta.canonical_timeline_history`, with exact integer
+ticks, rational time bases, and plaintext content hashes. Each entry identifies
+the published role (`raw` or `processed`). Sequence positions are zero-based
+frame indices within that specific source or output; resampling can change their
+counts and does not imply a one-to-one correspondence. History survives later
+canonical replacements and source-file cleanup. Existing clinical frame and
+segment coordinates remain governed by `pts_v1`. Legacy entries without this
+evidence remain explicitly incomplete; original timestamps cannot be reconstructed
+from nominal frame rates. HLS rebuilds do not append canonical timestamp history.
+
+| Role                         | Creation                                                   | Retention                                                                        | Deletion condition                                                                                                                                              |
+| ---------------------------- | ---------------------------------------------------------- | -------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Canonical unprocessed MP4    | Import or reimport                                         | Until human anonymization validation and complete approval of every gate         | Only when the normalized master, matching processed HLS, `pts_v1`, segment references, and clinical profile approval are complete, and a blackened video exists |
+| Canonical anonymized MP4     | Import, reimport, or reanonymization                       | Permanent; exactly one published generation                                      | The previous generation may be deleted only after atomic publication and integrity verification of the new generation and when no media lease is active         |
+| Raw HLS                      | Successful import or reimport                              | Reproducible cache until raw-media release                                       | Together with the raw master, subject to the same cleanup gates and only when no media lease is active                                                          |
+| Processed HLS                | Successful import, reimport, or reanonymization            | Reproducible cache; only the current, actively referenced generation is retained | A superseded generation may be deleted after atomic publication of the new generation, reference reconciliation, and expiry of every lease                      |
+| Legacy streamable MP4        | Historical compatibility output; no new copies are created | Retained until verified retirement                                               | Through a recorded cleanup receipt after canonical processed HLS is ready and references and leases permit deletion                                             |
+| Extracted frame              | Explicit export requiring image files                      | Export-scoped; annotation, inference, and local training decode in memory        | Only through the responsible frame or case lifecycle, never as a side effect of this migration command                                                          |
+| Temporary transcode artifact | Normalization inside the protected transcoding directory   | Only for the duration of one attempt                                             | Through the `finally` path after success or failure; it is never marked as a valid master                                                                       |
+| Quarantine artifact          | Explicit fail-closed exception process                     | Until documented review                                                          | Only after separate quarantine approval; never through an automatic production fallback                                                                         |
 
 HLS eviction is generation- and reference-based, not time-based. An old
 generation may be removed only after the new generation has been published
@@ -191,23 +656,27 @@ Faststart, and frames-per-second passthrough. Its default limits are:
 - maximum total size budget: 1,600,000 bytes per video second plus 4 MiB fixed
   container overhead;
 - maximum source and output resolution: 4096 × 2160 pixels;
-- maximum source FPS: 120; the separate annotation profile normalizes videos
-  above 50 FPS to exactly 50 FPS;
+- no source or native-output FPS ceiling; the separate explicit annotation
+  workflow can resample videos above 50 FPS to exactly 50 FPS;
 - no resolution reduction until a clinically approved frame-quality benchmark
   exists;
-- identical rational FPS and identical frame count;
+- identical frame count; raw normalization checks rational FPS, while processed
+  publication uses complete decoded timestamp proof as described below;
 - maximum duration drift: 100 ms or one source frame when that frame is longer.
 
 The limits are configurable through
 `ENDOREG_VIDEO_STORAGE_MAX_BIT_RATE_BPS`,
 `ENDOREG_VIDEO_STORAGE_MAX_BYTES_PER_SECOND`,
 `ENDOREG_VIDEO_STORAGE_FIXED_OVERHEAD_BYTES`,
-`ENDOREG_VIDEO_STORAGE_MAX_WIDTH`, `ENDOREG_VIDEO_STORAGE_MAX_HEIGHT`,
-`ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS`, and
+`ENDOREG_VIDEO_STORAGE_MAX_WIDTH`, `ENDOREG_VIDEO_STORAGE_MAX_HEIGHT`, and
 `ENDOREG_VIDEO_STORAGE_ANNOTATION_MAX_FPS`. Invalid or non-positive values fail
 loudly instead of falling back. Media outside the profile is rejected. Release
 then requires either a new versioned profile or an explicit quarantine review.
 Stream copy, upsampling, and unbounded source-quality encoding are prohibited.
+
+`ENDOREG_VIDEO_STORAGE_MAX_SOURCE_FPS` and the serialized `max_source_fps`
+profile field are deprecated compatibility settings. They remain readable but
+do not restrict source or native-output frame rates.
 
 HLS encoding has a separate versioned encoder-profile selector,
 `ENDOREG_HLS_ENCODING_PROFILE`. The default
@@ -301,23 +770,19 @@ production evidence that the full corpus has converged, and the tracker records
 open backfill admission and accounting defects; therefore automatic dispatch
 must not be described as completed production backfill.
 
-An operator who explicitly confirms that existing legacy media is unchanged may
-repair its missing provenance with `adopt_legacy_hls`. This is a database repair,
-not a runtime exemption and not an automatic inference from duration or visual
-similarity. Supply an exact `--artifact-id` allowlist, `--created-before` cutoff,
-`--approved-by`, `--reason`, and `--accept-unchanged-source`; preview is the
-default and `--apply` commits each artifact independently. The command reads the
-current source through authenticated encrypted storage, verifies complete HLS
-paths and the wrapped content key, and retains the original HLS files and keys.
-A changed filename additionally requires identical authenticated source bytes.
-Only blank-hash READY rows qualify. Active encoding/publication and playback
-leases defer repair. Matching queued replacements become failed stale attempts,
-so delayed deliveries cannot replace the adopted generation. Protected typed
-before/after receipts under `hls-legacy-adoption` retain the old metadata and
-operator attestation. If only a prepared receipt exists after an interruption,
-compare its before/after identities with the database before retrying or rolling
-back. A nonempty hash is never overwritten by this command. Normal playback
-checks and future source-change invalidation remain unchanged.
+HLS provenance adoption is unsupported. Incompatible artifacts must be
+regenerated through `materialize_video_hls`; the previous published derivative
+is retained until its validated replacement is published and leases permit
+cleanup. Stale queued attempts are failed, never restored as READY artifacts.
+
+`VideoFile.hls_artifacts` is the typed relation for all source-bound derivatives
+and attempts. `get_ready_hls_artifact(video=video, artifact_kind=...)` resolves
+the current playable derivative; `key_id=...` resolves its exact playback key
+through the same service. Delete a kind through
+`delete_video_hls_artifacts(video, artifact_kind=...)`, which locks the video,
+checks media activity and removes owned files before deleting related rows.
+Direct relation deletion only deletes database rows and is not a media cleanup
+operation. No second pointer or independent HLS generation is persisted.
 
 Playlist admission, materialization, and reconciliation check the playlist and
 every referenced segment. Subsequent key and segment requests check the current
@@ -327,6 +792,13 @@ segment request also resolves and checks its requested file inside the protected
 directory. Missing requested files fail closed immediately; missing sibling files
 are detected on their own request or the next complete readiness check. These
 checks do not use a readiness cache.
+
+Playlist, key, and segment lookups defer the video's potentially large timeline
+metadata instead of loading it repeatedly for playback. Cross-center access
+checks still load integrity metadata when required. Lease admission locks the
+same video row using only its primary key; all conflict checks and lease renewals
+remain mandatory. This keeps ordinary streaming requests independent of the size
+of stored timestamp arrays without caching authorization or readiness decisions.
 
 Repeated source-content checks reuse a fully computed plaintext Secure Hash
 Algorithm, 256-bit (SHA-256) digest within the current process only. The bounded
@@ -347,6 +819,16 @@ same source verification. Artifact generation, encoder profile, media leases,
 and output checks remain independent mandatory gates. The encrypted reader's
 layout cache also includes device, inode, and change time so a replaced source
 cannot inherit stale decryption metadata.
+
+Authorized playlist, key, and segment requests perform this source verification
+once before taking the video row lock, and only for a READY derivative with a
+persisted source identity on a storage backend that supports digest reuse.
+The locked lookup still rechecks the complete source identity and reuses that
+digest under the same file-generation checks. Concurrent playback requests for
+one video therefore do not wait on the row lock while a single request
+decrypts and hashes the full source. If the source changes between the two
+checks, the locked check verifies again. Pre-lock failures are logged and left
+to the locked lookup to report; they never authorize playback.
 
 The separate `annotation_fps_resample_v1` workflow is the only storage workflow
 that intentionally changes a video above 50 frames per second to exactly 50
@@ -374,6 +856,29 @@ directory topology or patient-derived filenames.
 
 ## Timeline and Frame-Quality Gate
 
+Clinical frame/time conversion requires a persisted
+`VideoFile.meta.source_timeline`. A stored, probed or default frame rate alone
+does not establish constant frame rate, timeline origin or generation identity.
+When all frame timestamps are absent, coordinate mapping automatically captures
+the active canonical video's decoded timestamps and persists them with
+its content hash and rational time base. The publication row lock serializes
+concurrent requests. Existing frame identities and segment boundaries are retained;
+partial coordinates, changed content and mismatched frame counts fail closed.
+This one-time recovery uses protected temporary materialization for the complete
+probe; subsequent reads use persisted coordinates. It does not reconstruct
+transformation ancestry or grant provenance/export approval.
+Retained raw media is captured first, and its original timeline is stored separately
+from the processed timeline used for annotation. If raw media is unavailable,
+processed coordinates remain usable without fabricating an original timeline.
+Shared probing prefers original timestamp fields and uses the decoder's validated
+best-effort timestamps when those fields are absent, including callers using the
+legacy `require_original_pts` keyword. Missing original fields alone never reject
+a video. The `video_original_timestamps_recovered` event records this fallback;
+invalid or wholly undecodable coordinates still fail validation.
+Missing source-timeline evidence with existing coordinates still blocks mapping; rational
+constant-frame-rate conversion remains available only through an explicit
+persisted timeline contract.
+
 During import, the source timeline is persisted in
 `VideoFile.meta.source_timeline` with presentation-timestamp timeline version
 `pts_v1`. For variable-frame-rate media, `Frame.timestamp` contains
@@ -385,8 +890,16 @@ persisted coordinates and stored with the source and output probes in
 `VideoFile.meta.storage_normalization`.
 
 Variable frame rate is allowed only when source and output time bases are
-available. Divergent frame rate, frame count, duration, or resolution prevents
-publication. Resolution remains unchanged so that high-quality frames can be
+available. Canonical output validation captures complete decoded coordinates
+before evaluating temporal equivalence, once for both raw and processed media.
+Raw normalization accepts differing nominal or average container rates only when
+the complete decoded presentation timestamps agree; frame counts, terminal
+duration, dimensions and storage limits remain mandatory. Metadata-only callers
+retain strict rate checks. Processed publication may accept differing container rate metadata only
+with complete decoded timestamp proof under the bounded correction gate in
+[Canonical runtime paths and filenames](#canonical-runtime-paths-and-filenames).
+Frame-count changes, excessive timeline drift, or resolution changes prevent
+ordinary canonical replacement. Resolution remains unchanged so that high-quality frames can be
 extracted at persisted segment timestamps. Any later resolution reduction first
 requires a versioned benchmark with representative clinical videos and reviewer
 approval.
@@ -415,6 +928,13 @@ inference option and frame-cache extraction/repair entry points fail explicitly;
 operators must select streaming or invoke an explicit export. Existing frame
 identities, timestamps, and legacy files are preserved.
 
+Canonical single-frame readers share exact integer presentation-timestamp
+selection for JPEG and lossless PNG output. Selected processed frame rows are
+validated against their generation's ordinal, integer timestamp and rational
+time base before decoding; rounded persisted seconds use the shared microsecond
+serialization tolerance. Post-validation and text recognition consume lossless
+RGB pixels. Clinical inference uses the central annotation-artifact selector
+and rechecks its generation under the publication lock before writing segments.
 
 Single-frame annotation requests must not materialize the complete encrypted
 video as a temporary plaintext file. The backend resolves the requested frame
@@ -444,6 +964,82 @@ Python GIL. Independent requests use separate file handles. A missing native
 extension at process start uses the byte-identical Python reference reader,
 while native key, authentication, geometry, or length failures stop the
 response instead of falling back.
+
+### Annotated Frame Export
+
+The lx-annotate export panel calls `POST media/videos/export-annotated/` with
+the `pts_dataset_v1` profile. Scope, contract, and readiness evidence are
+tracked in `feature-tracking/VideoStorageNormalization.yml`, criterion
+`frame_materialization_boundary`. Rows carry the persisted presentation
+timestamp, stream time base, and processed-artifact hash. Images are decoded
+from the processed generation and named by frame primary key.
+
+Browser-supplied `output_dir` and `output_path` must be relative and are
+resolved beneath `get_runtime_paths().frame_annotation_export`
+(`storage/frame_annotation_exports`). Absolute paths, `..` components, and
+symbolic links leaving that root are rejected with HTTP 400.
+
+Persisted presentation timestamps are absolute stream ticks, whereas FFmpeg
+interprets an input `-ss` relative to the container start time. Sparse
+extraction therefore probes the container start time, seeks to the keyframe
+before `timestamp × time_base − container_start` without an accurate-seek trim,
+and lets the exact `select=eq(pts,N)` filter choose the frame. An unavailable
+container start time fails the export instead of guessing.
+
+Each `pts_dataset_v1` export writes `export_manifest.json` beside the annotation
+file. Per video it records the exported file name, processed hash, stream time
+base, recording start and end, and `recording_timestamp_identity`:
+`identical_ticks` (exported ticks are the recorded ticks and can be matched to
+external clocks such as electrical measurements unchanged), `identical_instants`
+(equal rational times in the stated time base), `changed` (an earlier transcode
+re-timed frames; the ticks match the exported video but not the original
+recording clock) or `unverified` (no decoder ancestry). Re-timed media is
+reported, not rejected.
+Per segment it records the inclusive first and last frame with their persisted
+presentation timestamps, which are the same values as in the annotation rows;
+the export fails if a row lies outside its segment boundaries.
+
+Exported video files keep their import name unless it contains the patient's
+first or last name (compared ignoring case, accents, umlaut transliteration and
+separators). Such names are replaced at anonymization validation by the
+recording start (`YYYY-MM-DD_HH-MM-SS.mp4`); without a recording time the raw
+video hash is used. The decision is stored in `VideoFile.meta["export_file_name"]`.
+
+### Recording Time
+
+Masking removes all container metadata. Import therefore reads the raw
+container creation time once and stores it as `VideoFile.meta["recording_time"]`
+(start, end derived from the raw duration, and the recording hash). Missing
+times and unset device clocks before 1990 leave no record; malformed values are
+logged and never block import.
+
+### Presentation Timestamp Identity During Transcoding
+
+Every canonical transcode with timestamp passthrough (`-copyts` and
+`-fps_mode passthrough`) to MP4 pins the MP4 track timescale to the source time
+base. Without this, the MP4 muxer rescales time bases coarser than 1/10000
+(for example 1/1000 or QuickTime 1/600) and renumbers every tick. After
+encoding, each output frame is compared with the tick of the source frame it
+was decoded from under an identical time base.
+
+The comparison is a hard verification only when the source is a published
+processed generation whose timestamps are already stored as the video's frame
+coordinates (`processed_video_hash` and `meta.source_timeline.content_hash`
+both equal the source content hash). Such an attempt fails with
+`PresentationTimestampChangedError` and nothing is published. Import and
+anonymization transcode media whose processed timestamps are not stored yet:
+a change, or a time base that cannot be expressed as an MP4 timescale, never
+fails the import. It is logged as `transcode_presentation_timestamps_changed`
+or `transcode_track_timescale_unrepresentable`, recorded in the provenance
+receipt, and the frame rows are remapped to the new generation as before. The
+explicit `annotation_fps_resample_v1` workflow (`-fpsmax`) is outside this
+guarantee.
+
+The pinned `lx-anonymizer` 1.1.1 frame-drop filters preserve decoded video and
+audio timestamps without a host filter rewrite. Retained frames keep their
+recorded timestamps and removed spans remain as time gaps of unchanged total
+duration. The host execution hook still enforces the timestamp arguments and
+records decoder ancestry; real encoding-path tests verify the library boundary.
 
 ## Inventory and Migration
 
@@ -542,6 +1138,16 @@ missing; it logs the blockers and preserves every raw artifact.
 
 ## Abort and Recovery
 
+Model availability is distinct from media integrity. The compute contract in
+[`video_import_concurrency_contract.md`](video_import_concurrency_contract.md)
+permits a bounded OCR cascade and, on complete OCR failure, a configured-mask,
+silent unpublished candidate for reprocessing. The `model_execution` summary
+records actual model use, failures, configured masking and the need to
+reprocess; metadata coverage must not claim complete recognition. Such a
+candidate does not establish clinical quality, authorize replacing the previous
+master, or relax any storage, timeline, lease, publication or cleanup gate.
+Deploy the host summary handling together with the matching compute package.
+
 The import success boundary is identical across this runbook, the hub ingest
 runbook, and the feature tracker: a video is successful only after the
 canonical master, required HLS generations (both raw and processed for regular
@@ -596,7 +1202,31 @@ to migration only under a versioned, reviewed profile or after the source has
 been corrected. Quarantine files are reviewed through the existing quarantine
 workflow and are not deleted by `normalize_video_storage`.
 
-### Duplicate Sources and Received Hub Generations
+### Explicit local reclamation after hub transfer
+
+The Hub Export action **Lokale Dateien löschen** is separate from the retention
+choice made when submitting a transfer. For a completed video, including one
+originally retained locally, an authorized operator may remove all recorded local
+video files after confirming the scope. The source authenticates a fresh
+`status/?verify_media=true` request: the hub must still hold the received master
+with the receipt's exact plaintext digest and size. Older hubs without this proof,
+unavailable hubs and changed generations block reclamation.
+
+The action removes owned raw and processed files, playback derivatives, frame
+files and recorded import copies. It keeps clinical rows, annotation coordinates,
+content identities and the transfer receipt. Active media leases, processing,
+other pending transfers and shared ownership block deletion. It never deletes
+the hub copy or exports raw media. The processed-only scheduled reaper retains
+its existing scope.
+
+Durable `local_files_cleanup_started_at` and `local_files_cleanup_completed_at`
+fields distinguish a recoverable interrupted deletion from a completed operation.
+Retry the same action after resolving a reported blocker; do not delete files or
+transfer records manually. Deploy backend migration `0118` and the matching hub
+verification endpoint before the sender/button release. Readiness is tracked in
+[`HubTransfer.yml`](../feature-tracking/HubTransfer.yml).
+
+### Received-generation duplicate reuse
 
 Source identity and legacy duplicate reconciliation are governed by
 [`source_identity_deduplication_and_legacy_reconciliation`](../feature-tracking/ImportPipelineRobustness.yml).
@@ -639,6 +1269,16 @@ prohibited. The master hash, `pts_v1`, segment boundaries, processed-HLS
 generation, and inventory reconciliation must then be verified again.
 
 ### Disk Full and Process Termination
+
+`storage_management` reports capacity on the canonical runtime storage
+filesystem. Its legacy cleanup flags and direct cleanup helpers fail closed.
+Neither `--force` nor `--dry-run` enables those cleanup paths; high disk usage
+never authorizes master, frame, upload, log or temporary-file deletion through
+this command.
+Use `normalize_video_storage` for read-only inventory. Retire recorded replaced
+generations through `reap_processed_video_generations`, first without `--apply`
+to inspect the receipt-based cleanup gates, then with `--apply` only when those
+gates permit deletion.
 
 No further apply run starts after a disk-full condition. Temporary `.part.mp4`
 artifacts are removed inside the protected transcoding directory through the
@@ -695,6 +1335,68 @@ This command does not discover historical files without receipts. Scope and
 verification evidence belong to
 [`VideoStorageNormalization.yml`](../feature-tracking/VideoStorageNormalization.yml),
 criterion `derived_artifact_lifecycle`.
+
+The recurring `endoreg_db.cleanup_media_sources` task runs every 15 minutes on
+the maintenance queue. It visits up to 25 videos per run, atomically persisting a
+typed primary-key cursor under the runtime manifest directory so worker recycling
+and blocked videos do not starve later candidates. A process-owned advisory lock
+serializes runs; cursor loss only restarts discovery and never authorizes deletion.
+Invalid cursor data fails loudly. Per video and source kind,
+up to 100 failed or superseded HTTP Live Streaming attempts are considered before
+master receipts. Their exact video/key-owned output and temporary directories
+can be removed without historical source hashes only when the current canonical
+source is content-verified and its matching published streaming derivative is
+available. Active leases, shared paths and symbolic links block removal. Database
+rows remain until all owned files have been removed; failed attempts without a
+valid current replacement remain available for diagnosis and retry suppression.
+Canonical master retirement still requires its original receipt and validation
+gates. Unreferenced files, missing-owner streaming directories and uncertain
+historical masters are inventory findings, not automatic deletion candidates.
+
+LuxNix enables this task's apply gate on every enabled host through
+`runtime.automaticMediaCleanup = true`, rendered as
+`UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=true`. Set the typed option to false for
+automatic dry-run inspection. This requires deployment of the shared module and
+the matching backend release; editing configuration does not activate hosts.
+The worker emits per-video `periodic_hls_cleanup` and
+`periodic_generation_cleanup` results and separate derivative/master counters.
+Track implementation and deployment evidence under `periodic_generation_cleanup`
+in the feature YAML linked above.
+
+### Abandoned temporary artifacts
+
+A temporary transcode artifact lives for one attempt and is removed by that
+attempt's `finally` path. A killed worker leaves it behind in the protected
+transcoding root (`storage/temp`). The periodic `endoreg_db.cleanup_media_sources`
+task classifies every entry there by its owner
+(`endoreg_db/services/runtime/transient_artifact_cleanup.py`):
+
+| Owner kind | Layout | Owner is still active when |
+| --- | --- | --- |
+| UploadJob inventory | Any path registered in the UploadJob file inventory | The job is processing, retrying, retryable or holds an unexpired lease; shared or non-disposable roles are an owner conflict |
+| HTTP Live Streaming (HLS) build | `hls_key_material`, `hls_output`, `hls_plaintext_source` / `<video id>/<key id>` | Its artifact row is queued, materializing or validated, or the video holds an active media-operation lease |
+| Video raw hash | Names starting with the raw video hash, including `anonymizing_<hash>` | The import content-hash lock is held, an UploadJob with that content hash is active, or the video has an active lease or pending/running processing history |
+| Processed transcode | `processed_storage_pressure/<video uuid>` | The video has an active lease or pending/running processing history |
+
+An entry is deleted only if its owner is identified and not active, and nothing
+inside it changed for the grace period. Raw-hash entries are revalidated and
+deleted while the cleanup holds the content-hash lock, so an import cannot start
+during deletion. The anonymization lifecycle phase is not used: a crashed import
+stays in an in-progress phase, so the phase does not prove a running worker.
+These entries are never deleted, only reported:
+
+- HLS build directories without an artifact row
+- process-scoped scratch (`endoreg-fieldfile-`, `upload-source-`, `report-`,
+  random-name materializations and similar)
+- unknown layouts
+- anything containing a symbolic link
+
+Masters, published streaming derivatives and frames live outside this root.
+The pass follows the task's single apply gate, enabled by default;
+`UPLOAD_JOB_SOURCE_REAPER_APPLY_ENABLED=false` makes it a dry run. The
+transcoding root is no longer scanned by startup reconciliation, so this pass
+is its only cleaner.
+Track evidence under `abandoned_transient_artifact_reclamation`.
 
 ## Release Gates
 

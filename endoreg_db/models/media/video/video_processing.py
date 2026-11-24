@@ -13,7 +13,7 @@ from typing import Any, ClassVar, Unpack
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from django.db import models
+from django.db import models, transaction
 from django.utils import timezone
 from pydantic import ValidationError as PydanticValidationError
 from lx_dtypes.models.contracts.json_types import JsonObject
@@ -158,11 +158,19 @@ class VideoProcessingHistory(models.Model):
         self.clean()
         super().save(*args, **kwargs)
 
+    def _transition(self, target: VideoProcessingHistoryStatus) -> bool:
+        """Lock and apply ``target`` through the native status table."""
+        from endoreg_db.services.runtime.status_writers import (
+            set_video_processing_history_status,
+        )
+
+        return set_video_processing_history_status(self, target)
+
     def mark_running(self, save: bool = True) -> None:
         """Mark operation as running."""
-        self.status = self.STATUS_RUNNING
-        if save:
-            self.save(update_fields=["status"])
+        with transaction.atomic():
+            if self._transition(self.STATUS_RUNNING) and save:
+                self.save(update_fields=["status"])
 
     @staticmethod
     def _normalize_output_path(path: str | Path | None) -> str:
@@ -193,23 +201,36 @@ class VideoProcessingHistory(models.Model):
         save: bool = True,
     ) -> None:
         """Mark operation as successful."""
-        self.status = self.STATUS_SUCCESS
-        self.completed_at = timezone.now()
-        if output_file:
-            self.output_file = self._normalize_output_path(output_file)
-        if details:
-            self.details = details
-        if save:
-            self.save(
-                update_fields=["status", "completed_at", "output_file", "details"]
-            )
+        with transaction.atomic():
+            if not self._transition(self.STATUS_SUCCESS):
+                return
+            self.completed_at = timezone.now()
+            if output_file:
+                self.output_file = self._normalize_output_path(output_file)
+            if details:
+                self.details = details
+            if save:
+                self.save(
+                    update_fields=["status", "completed_at", "output_file", "details"]
+                )
 
     def mark_failure(self, error_message: str, save: bool = True) -> None:
         """Mark operation as failed."""
-        self.status = self.STATUS_FAILURE
-        self.completed_at = timezone.now()
-        self.details = error_message
-        if save:
+        with transaction.atomic():
+            if not self._transition(self.STATUS_FAILURE):
+                return
+            self.completed_at = timezone.now()
+            self.details = error_message
+            if save:
+                self.save(update_fields=["status", "completed_at", "details"])
+
+    def mark_cancelled(self, reason: str) -> None:
+        """Mark operation as cancelled."""
+        with transaction.atomic():
+            if not self._transition(self.STATUS_CANCELLED):
+                return
+            self.completed_at = timezone.now()
+            self.details = reason
             self.save(update_fields=["status", "completed_at", "details"])
 
     @property

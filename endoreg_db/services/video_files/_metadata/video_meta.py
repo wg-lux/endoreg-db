@@ -33,8 +33,8 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
     """
     Resolve center and processor names from the VideoFile model graph.
 
-    Center is required for import bookkeeping. Processor needs a defined value
-    so fallback is applied.
+    Center is required for import bookkeeping. Processor must come from a
+    persisted relation or the explicitly configured application default.
     """
     center = getattr(video, "center", None)
     if center is None or not getattr(center, "name", None):
@@ -42,13 +42,13 @@ def _get_import_context_names(video: "VideoFile") -> tuple[str, str]:
 
     processor = _get_import_processor(video)
     processor_name = processor.name if processor is not None else None
-    if processor_name is None:
-        from endoreg_db.services.video_files.processor_resolution import (
-            resolve_processor_name_for_import,
-        )
+    from endoreg_db.services.video_files.processor_resolution import (
+        resolve_processor_name_for_import,
+    )
 
-        processor_name = resolve_processor_name_for_import(processor_name)
-    return str(getattr(center, "name")), str(processor_name or "Unknown")
+    return str(getattr(center, "name")), resolve_processor_name_for_import(
+        processor_name
+    )
 
 
 def _populate_video_fields_from_meta(video: "VideoFile") -> list[str]:
@@ -169,7 +169,7 @@ def _update_video_meta(
                     )
 
     except Exception as e:
-        logger.error(
+        logger.exception(
             "Failed to update/create VideoMeta for video %s: %s",
             video.raw_video_hash,
             e,

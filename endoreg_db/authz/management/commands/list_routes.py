@@ -21,7 +21,7 @@ def iter_patterns(patterns: Iterable[UrlPatternNode]) -> Iterator[URLPattern]:
 
 
 class Command(BaseCommand):
-    help = "List all URL names (useful to fill policy.py)"
+    help = "list all URL names (useful to fill policy.py)"
 
     def handle(self, *args: str, **options: str) -> None:
         resolver = get_resolver()

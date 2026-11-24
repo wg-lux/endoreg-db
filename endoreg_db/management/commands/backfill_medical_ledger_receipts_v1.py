@@ -5,7 +5,7 @@ import json
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from endoreg_db.services.medical_ledger import (
+from endoreg_db.services.interoperability.medical_ledger import (
     MedicalLedgerReceiptBackfillError,
     backfill_medical_ledger_receipts_v1,
 )

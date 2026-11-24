@@ -1,14 +1,27 @@
 from __future__ import annotations
 
+from tests.helpers.pdf import render_single_page_pdf
+
 import uuid
 from pathlib import Path
 
 import pytest
 from pytest import MonkeyPatch
+from lx_dtypes.models.contracts.report_anonymization import (
+    ReportExtractionEvidence,
+    ReportExtractionReceipt,
+)
 
-from endoreg_db.import_files.report_import_service import ReportImportService
+from endoreg_db.services.reports.import_lifecycle import ReportImportLifecycle
+from endoreg_db.services.reports.import_fencing import (
+    acquire_report_import_fence,
+    report_import_finalization_guard,
+)
+
 from endoreg_db.models import Center, RawPdfFile, UploadJob
 from endoreg_db.services.hub.ingest import process_watcher_file
+from endoreg_db.services.hub.upload_job_files import current_upload_job_id
+from endoreg_db.services.imports.processing import record_published_import
 from endoreg_db.utils import paths as paths_module
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
@@ -21,6 +34,7 @@ from endoreg_db.utils.storage import save_local_file
 def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_content(
     monkeypatch: MonkeyPatch,
 ) -> None:
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
     unique_suffix = uuid.uuid4().hex[:8]
 
     paths = paths_module.get_runtime_paths()
@@ -31,11 +45,10 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     )
     first_drop = paths.import_report / "case-a.pdf"
     second_drop = paths.import_report / "case-b.pdf"
-    payload = ReportImportService._render_single_page_pdf(  # pyright: ignore[reportPrivateUsage]
-        "topology ingest"
-    )
+    payload = render_single_page_pdf("topology ingest")
     atomic_write_file(destination=first_drop, content=(payload,))
     atomic_write_file(destination=second_drop, content=(payload,))
+    content_hash = get_file_hash(first_drop)
 
     assert first_drop.is_relative_to(paths.import_dir)
     assert second_drop.is_relative_to(paths.import_dir)
@@ -43,6 +56,9 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     assert paths_module.resolve_existing_protected_media_path(first_drop) is None
 
     class _StubReportImportService:
+        def __init__(self, *, lifecycle: ReportImportLifecycle) -> None:
+            self.lifecycle = lifecycle
+
         def import_and_anonymize(
             self,
             *,
@@ -59,6 +75,7 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
             assert center_name == center.name
             assert retry is True
             file_hash = get_file_hash(normalized_file_path)
+            fence = acquire_report_import_fence(file_hash)
             report = RawPdfFile(pdf_hash=file_hash, center=center)
             save_local_file(
                 report.file,
@@ -72,8 +89,30 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
                 name=f"{file_hash}.processed.pdf",
                 save=False,
             )
+            report.raw_meta = {
+                "report_extraction_receipt": ReportExtractionReceipt(
+                    attempt_id=fence.owner_id.hex,
+                    source_sha256=file_hash,
+                    staged_artifact_sha256=file_hash,
+                    extraction_evidence=ReportExtractionEvidence(
+                        outcome="empty",
+                        backend="configured_llm",
+                        finding_count=0,
+                        provider_attempted=True,
+                    ),
+                ).model_dump(mode="json")
+            }
             report.save()
             report.get_or_create_state().mark_anonymization_validated()
+            # The stub publishes without preparation, so adopt it like any
+            # independently verified artifact before the lifecycle completes.
+            upload_job_id = current_upload_job_id()
+            assert upload_job_id is not None
+            record_published_import(
+                upload_job_id, media_id=int(report.pk), source_sha256=file_hash
+            )
+            with report_import_finalization_guard(fence):
+                self.lifecycle.succeeded(report)
             return report
 
     monkeypatch.setattr(
@@ -82,10 +121,14 @@ def test_watcher_ingest_uses_protected_runtime_topology_and_reuses_duplicate_con
     )
 
     def _verified_processed_report_hash(*_args: object, **_kwargs: object) -> str:
-        return get_file_hash(first_drop)
+        return content_hash
 
     monkeypatch.setattr(
         "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        _verified_processed_report_hash,
+    )
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.completion.require_usable_completed_report",
         _verified_processed_report_hash,
     )
 

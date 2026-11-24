@@ -8,9 +8,11 @@ from django.utils import timezone
 from lx_dtypes.models.contracts.patient_examination_report import ReportJsonObject
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
+from endoreg_db.schemas.persisted_json import validate_dtypes_p_examination_payload
 from endoreg_db.schemas.report_persistence import (
     validate_persisted_report_json_object,
     validate_report_editor_payload,
+    validate_report_runtime_snapshot,
 )
 
 if TYPE_CHECKING:
@@ -74,6 +76,13 @@ class PatientExaminationReport(models.Model):
         models.JSONField(default=dict, blank=True)
     )
     rendered_text: models.TextField[Any, Any] = models.TextField(blank=True, default="")
+    # Null means no historical snapshot exists; never substitute the live examination.
+    dtypes_record: models.JSONField[ReportJsonObject | None, Any] = models.JSONField(
+        null=True, blank=True, default=None
+    )
+    dtypes_record_updated_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+        null=True, blank=True
+    )
 
     version: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField(
         default=1
@@ -127,6 +136,13 @@ class PatientExaminationReport(models.Model):
     def clean(self) -> None:
         super().clean()
         errors: dict[str, str] = {}
+        if self.dtypes_record is not None:
+            try:
+                self.dtypes_record = validate_dtypes_p_examination_payload(
+                    self.dtypes_record
+                )
+            except ValueError as exc:
+                errors["dtypes_record"] = str(exc)
         if not str(self.template_name).strip():
             errors["template_name"] = "template_name must not be blank"
         if self.status not in self.Status.values:
@@ -146,7 +162,6 @@ class PatientExaminationReport(models.Model):
         for field_name in (
             "patient_context_snapshot",
             "history_context_snapshot",
-            "runtime_validation_snapshot",
         ):
             try:
                 value = validate_persisted_report_json_object(
@@ -157,6 +172,20 @@ class PatientExaminationReport(models.Model):
                 errors[field_name] = str(exc)
             else:
                 setattr(self, field_name, value)
+        try:
+            self.runtime_validation_snapshot = validate_report_runtime_snapshot(
+                self.runtime_validation_snapshot
+            )
+            if (
+                self.runtime_validation_snapshot
+                and self.runtime_validation_snapshot["template_name"]
+                != self.template_name
+            ):
+                errors["runtime_validation_snapshot"] = (
+                    "Runtime validation template must match the report template"
+                )
+        except ValueError as exc:
+            errors["runtime_validation_snapshot"] = str(exc)
         try:
             self.editor_payload = validate_report_editor_payload(self.editor_payload)
         except ValueError as exc:

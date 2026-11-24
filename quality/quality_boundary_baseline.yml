@@ -7,8 +7,8 @@ scan:
     - migrations
     - __pycache__
 broad_exception:
-  count: 406
-  fingerprint: f45f2d00b78f2db3ff896939149ec62993b92332e72218598f90107ccc4c63fb
+  count: 343
+  fingerprint: 920e3d31a7a73362c98757d1c0a4e81d93dc3dcb17aca628c50b7dc074f85e76
   owner: endoreg_db maintainers
   reason: >-
     Reviewed inventory after the exception-reduction cohort, the extraction of
@@ -36,10 +36,62 @@ broad_exception:
     and translate fail-closed into the existing non-disclosing HTTP 404 contract.
     The materialization lifetime itself uses ExitStack and requires neither broad
     cleanup handlers nor manual __exit__ calls.
-  review_after: 2026-10-17
+    Review 2026-09-23 gegen den Quellstand 4c84c423: 24 neue oder verschobene
+    Handler-Signaturen und 34 entfernte Signaturen geprüft. Die verbleibenden
+    Grenzen betreffen Import-Finalisierung, Transcode-/Storage-Cleanup, Lease-
+    Heartbeats, HTTP-Adapter und Fehlertelemetrie. Fehler werden weitergereicht,
+    als fehlgeschlagene Ergebnisse gemeldet oder an die besitzende Ausführung
+    übertragen; Post-Commit-Cleanup behält seinen Wiederholungsbeleg.
+    Zwei Report-HTTP-Handler wurden lediglich verschoben. Der Bestand bleibt
+    technische Schuld; insbesondere ältere best-effort Löschpfade und HLS-
+    Fehlertexte erhalten hierdurch keine Produktions- oder Sicherheitsfreigabe.
+    Review 2026-10-23 against source state 2a3a195b (last baseline edit, actual
+    count 387 there rather than the recorded 389): 63 added and 96 removed
+    handler signatures. Most are relocations of services into subpackages
+    (streaming, video_storage, video_files, media, privacy, annotations,
+    frames, runtime, reports, datasets, audit) with unchanged handler bodies.
+    Individually reviewed new boundaries: apply_deployment translates registry
+    activation failure into DeploymentActivationError without implying a
+    database rollback; VideoImportService._import_owned and
+    ReportImportService._run_owned_import re-raise database recovery and lease
+    ownership errors, record the failure and re-raise; the report import fence
+    handlers mark the outcome or fence as failed and re-raise;
+    run_with_optional_profile re-raises work failures and only logs profile
+    write failures after failed work; _run_report_job re-raises once a content
+    attempt exists. _run_prediction_refresh reports a post-commit dispatch
+    failure as an explicit failed payload; its exception text in that payload
+    remains technical debt. Removed handlers include the unused
+    frame_anonymization_utils helpers, setup_config, load_master_key and
+    secure_unlink_file. The total decreases; no handler is approved for inner
+    domain logic.
+    The reviewed Celery job-boundary handler in hub ingest is unchanged; its
+    function was renamed from _run_video_upload_import_job to the public
+    run_video_upload_import_job because endoreg_db.tasks imports it.
+    Review 2026-11-02 against source state 854a8063 (last baseline edit; the
+    scanner found 353 handlers there, not the recorded 354) plus the working
+    tree: nine handlers removed (frame retention now catches OSError only,
+    frame extraction jobs, outside-segment lookup, transcoding-directory
+    cleanup, fenced reanonymization, report PDF persistence and operation-log
+    recording) and one signature renamed with an unchanged body
+    (annotation_exporter_client -> AnnotationExporterClient.run_export). One
+    new handler was reviewed individually: prepared_import_artifact wraps the
+    checkpoint artifact and receipt write, re-reads the persisted checkpoint
+    before deleting the uniquely named artifact copy, and always re-raises, so
+    an uncertain database commit never loses its referenced artifact.
+    Review 2026-11-18 by codex-report-validation-20261118 against fbe6cd9b:
+    _extract_text_from_video_frames no longer catches frame-path lookup errors;
+    timeline_backfill._apply_backfill adds per-video batch failure isolation,
+    logs only the exception type and returns an explicit FAILED result. The
+    signature difference contains exactly this removal and addition (344 total).
+    This inventory review does not approve clinical backfill readiness.
+    Review 2026-11-18 by codex-opt-20261118-dead: removed only the
+    _predict_video_entry handler with its unreferenced private facade;
+    repository, package exports and lx-annotate consumers use ai.predict_video.
+    All other handler signatures and type suppressions remain unchanged.
+  review_after: 2026-11-20
 type_suppression:
-  count: 140
-  fingerprint: dddceaafd234083599b4a8e417eeb4825850cd1f8b298701f067deb255cf2774
+  count: 74
+  fingerprint: 0352719a04b753ec7defb872c6e2d5f83f0ed73567b320f3d8cd7979ced35f37
   owner: endoreg_db maintainers
   reason: >-
     Reviewed legacy inventory after removing four type suppressions from the
@@ -49,4 +101,28 @@ type_suppression:
     remaining inventory is not a general exemption.
     A local, narrow gender_guesser stub replaces the former missing third-party
     type suppression and keeps the adapter fully typed.
-  review_after: 2026-10-17
+    Review 2026-09-23: Die 109 aktuellen Unterdrückungen stimmen bereits mit
+    dem tatsächlichen Quellbestand von 4c84c423 überein; der damalige Zähler
+    140 war veraltet. Die Berichtsauswahl fügt keine Unterdrückung hinzu.
+    Review 2026-10-23 against 2a3a195b: two suppressions moved with their
+    modules (privacy/metrics, video_files/temporal_inference). Four were
+    removed (missing stubs in video anonymization, video correction jobs and
+    the correction view; an unused-function marker in streamable_media). Two
+    were added and reviewed: a missing lx_anonymizer stub at the lazy report
+    reader import, and the DRF field declaration `label` in
+    VideoMaskProfileSerializer that intentionally shadows Serializer.label.
+    The two new
+    suppressions from the clinical lifecycle commit were replaced by explicit
+    casts after the existing isinstance checks in clinical_lifecycle/facts.py
+    and audit_clinical_lifecycle.py, so the total decreases from 109 to 107.
+    Review 2026-11-02: the suppression set is identical between source state
+    854a8063 and the current working tree (73 findings, same fingerprint). The
+    recorded 107 was already stale when it was written; no suppression was
+    added, so only the snapshot is corrected.
+    Review 2026-11-18 by codex-report-validation-20261118 against 854a8063:
+    exactly one addition, export_ready._publish_committed_approval suppresses
+    reportUnknownMemberType only on Django Signal.send. The event is a typed
+    VideoReadyForExportCommitted dataclass dispatched by transaction.on_commit;
+    callback errors are not swallowed. No other suppression changed. Retire this
+    exception when the Django signal boundary has a fully typed send contract.
+  review_after: 2026-11-20

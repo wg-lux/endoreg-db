@@ -1,0 +1,82 @@
+[
+  {
+    "kind": "patient",
+    "payload": "[\"patient-identity-v1\",\"Zoë\",\"O\\\"Neil\\\\\",\"1974-02-03\",\"centre-a\"]",
+    "digest": "a699d48ad6223210639b27af81f9ed293c2563dbd2de7a0381ab075b85adeca4"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "a699d48ad6223210639b27af81f9ed293c2563dbd2de7a0381ab075b85adeca4",
+    "exam": "",
+    "centre": "centre-a",
+    "digest": "44ea272c8aba8d3176addc2f12144502d10b171b5dd06ae5bc3c7a1186857991"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "a699d48ad6223210639b27af81f9ed293c2563dbd2de7a0381ab075b85adeca4",
+    "exam": "2025-01-01",
+    "centre": "centre-a",
+    "digest": "83793b6c3da5894f8b9547f0fbd8d617be43caae1e2edfeae65015a9dc6a4627"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "a699d48ad6223210639b27af81f9ed293c2563dbd2de7a0381ab075b85adeca4",
+    "exam": "2025-01-01T12:30:05.123456+02:00",
+    "centre": "centre-a",
+    "digest": "8ce00e19533f3ca6975ee1a72de3507473dcf7b27d0324b93110e3afd55b64ca"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "a699d48ad6223210639b27af81f9ed293c2563dbd2de7a0381ab075b85adeca4",
+    "exam": "2025-01-01T00:00:00",
+    "centre": "centre-a",
+    "digest": "224f4e5d4d274329061e193760eeba91942880b3f16cea4a70a7edd00b95eca9"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "a699d48ad6223210639b27af81f9ed293c2563dbd2de7a0381ab075b85adeca4",
+    "exam": "",
+    "centre": "centre-a",
+    "digest": "44ea272c8aba8d3176addc2f12144502d10b171b5dd06ae5bc3c7a1186857991"
+  },
+  {
+    "kind": "patient",
+    "payload": "[\"patient-identity-v1\",\"Zoë\",\"Weiß\",\"2001-03-04\",\"centre-b\"]",
+    "digest": "bc410a78367478c68997b91383ddce461e115a035738c501cdf5c3d55ef75a30"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "bc410a78367478c68997b91383ddce461e115a035738c501cdf5c3d55ef75a30",
+    "exam": "",
+    "centre": "centre-b",
+    "digest": "063fefebea33e45df726ff586d37c5133c6661f491b414fc67d9d87e662257b4"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "bc410a78367478c68997b91383ddce461e115a035738c501cdf5c3d55ef75a30",
+    "exam": "2025-01-01",
+    "centre": "centre-b",
+    "digest": "e9738c797f4083490d633201281e5c7f42bd14bf8201d7784431a9e3fdc7bcdc"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "bc410a78367478c68997b91383ddce461e115a035738c501cdf5c3d55ef75a30",
+    "exam": "2025-01-01T12:30:05.123456+02:00",
+    "centre": "centre-b",
+    "digest": "d4a374dc2a643071b27aaee43e2e137e2d7e3d63035ed76cf0abcd9316d6be69"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "bc410a78367478c68997b91383ddce461e115a035738c501cdf5c3d55ef75a30",
+    "exam": "2025-01-01T00:00:00",
+    "centre": "centre-b",
+    "digest": "f1f585da9d1f4dc150444d41a845d5e276ac1ad575e3ab72af792d73be26ee03"
+  },
+  {
+    "kind": "examination",
+    "patient_fp": "bc410a78367478c68997b91383ddce461e115a035738c501cdf5c3d55ef75a30",
+    "exam": "",
+    "centre": "centre-b",
+    "digest": "063fefebea33e45df726ff586d37c5133c6661f491b414fc67d9d87e662257b4"
+  }
+]

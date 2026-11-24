@@ -1,0 +1,135 @@
+schema_version: 1
+feature: import_pipeline_robustness
+purpose: Betriebsbefund und Implementierungsnachweis; keine eigenständige Freigabebewertung.
+assessor: codex-gc10-imports-20261014
+observed_on: '2026-10-15'
+timezone: Europe/Berlin
+host: gc-10
+profile: site-client
+system_generation: /nix/store/l35kmpa1irrk58yz88d8y8b98ip9az9l-nixos-system-gc-10-26.05.20261006.b253099
+scope:
+  journal_since: '2026-10-14T15:00:00+02:00'
+  inspection_started: '2026-10-15T09:06:50+02:00'
+  sources:
+  - systemctl show und Prozessübersicht des Dienstbenutzers
+  - journalctl über alle Namespaces für move-my-files.service
+  - lx-annotate-Journal für Pipeline-, FFmpeg- und Frame-Extraction-Worker
+  - PostgreSQL SELECT innerhalb BEGIN READ ONLY für UploadJob-Zustände und Lease-Zeitpunkte
+findings:
+  intake_retry_loop:
+    service: move-my-files.service
+    trigger: move-my-files.path
+    matching_failures: 21
+    distinct_source_values_in_failure_reports: 1
+    first_failure: '2026-10-14T15:52:46.348554+02:00'
+    last_failure: '2026-10-15T09:07:28.613294+02:00'
+    error: 'Transcoded output is not system-standard video: fps_exceeds_max:59.79790910321002>50'
+    behavior: Wiederholte ungefähr 51-minütige Verarbeitung; erneuter Start Sekunden nach dem Fehler.
+    last_automatic_restart: '2026-10-15T09:07:47.668999+02:00'
+    process_observation:
+      probe_pid: 633765
+      probe_parent_pid: 627090
+      elapsed_seconds: 840
+      cpu_percent: 99.6
+      interpretation: Aktiver Probe-Prozess, kein bewiesener Deadlock; endete vor dem Eingriff selbst mit dem Transcode-Fehler.
+      restarted_service_pid: 637334
+  stale_upload_jobs:
+    processing_with_expired_lease: 2
+    entries:
+    - job_id: be510717-849e-484a-9d30-84e2c79b4102
+      status: processing
+      heartbeat: '2026-10-14T17:07:44.280380+02:00'
+      lease_expired: '2026-10-14T17:12:44.280380+02:00'
+    - job_id: f62b2c64-0e7a-45ca-ae60-6204bf228dc0
+      status: processing
+      heartbeat: '2026-10-14T02:44:35.891859+02:00'
+      lease_expired: '2026-10-14T02:49:35.891859+02:00'
+    cancellation:
+      job_id: 3d73f5e5-0d95-439f-bf1e-1509d8f651fb
+      status: cancel_requested
+      lease_expired: '2026-10-08T10:55:27.492819+02:00'
+    interpretation: Verwaiste Zustände sind belegt; Broker-Reservierungen und ihre ursprünglichen Besitzer wurden nicht vollständig rekonstruiert.
+  completed_work:
+    latest_observed_video_reimport: '2026-10-14T15:26:05+02:00'
+    duration_seconds: 1430.390157640999
+    result: succeeded_true
+    overnight_worker_logs: Keine neuen received/succeeded/raised-Importmeldungen seit 18 Uhr; nur Worker-Registrierung und Synchronisation.
+    caution: Kein belastbarer globaler Import-Erfolgsprozentsatz aus diesem Ausschnitt ableitbar.
+  capacity:
+    root_usage_percent: 94
+    root_available_gib_approx: 54
+    interpretation: Kapazitätsdruck vorhanden; kein belegter Auslöser des wiederholten Bildratenfehlers.
+intervention:
+  authorized_by: Expliziter Benutzerauftrag zum Beenden festhängender Prozesse auf gc-10.
+  command: sudo systemctl stop move-my-files.path move-my-files.service
+  exit_status: 0
+  service_exit_time: '2026-10-15T09:08:25+02:00'
+  termination_scope: systemd control-group; kein pauschales killall und kein SIGKILL nötig.
+  verified_after:
+    path: inactive_dead
+    service_main_pid: 0
+    service_result: signal
+    remaining_mover_or_probe_descendants: 0
+    web: active_running
+    pipeline_worker: active_running
+    ffmpeg_worker: active_running
+  preserved:
+  - Keine Datenbankmutation zur künstlichen Erfolgs- oder Fehlerkennzeichnung.
+  - Keine Medien- oder Quarantänedateien gelöscht oder verschoben.
+  - Keine Deployment-, Paket-, Schlüssel- oder Mount-Änderung.
+  operational_effect: Automatischer Datei-Eingang über move-my-files ist vorläufig angehalten; andere aktive Dienste bleiben verfügbar.
+  persistence: Nur gestoppt, nicht deaktiviert oder maskiert; Boot oder erneute Aktivierung kann die Unit wieder starten.
+implementation_evidence:
+  relevant_code:
+  - endoreg_db/services/video_storage/transcoding.py
+  - endoreg_db/services/hub/ingest.py
+  - endoreg_db/services/hub/upload_job_import_lease.py
+  observations:
+  - Der gelesene Deployment-Code prüft den Systemstandard nach dem teuren Transcode.
+  - Bei target_fps=null werden vollständige Quellzeitstempel erfasst und Timeline-Erhaltung verlangt.
+  - Ein Output oberhalb 50 Bildern pro Sekunde scheitert anschließend an der Standardprüfung.
+  - Das genaue aufgerufene target_fps und die ursprüngliche Quellmetadatenanalyse sind nicht abschließend rekonstruiert.
+  required_regressions:
+  - Deterministische Profilablehnung führt nicht zu unbeschränkter erneuter Verarbeitung desselben unveränderten Eingangs.
+  - Bekannte unzulässige Quellen werden früh abgelehnt oder in einen expliziten Quarantäneprozess geleitet; andere Eingänge bleiben verarbeitbar.
+  - Bildratenänderung verwendet ausschließlich den freigegebenen Resampling-Workflow vor persistierten Frame-/Segmentkoordinaten; kein stilles Herabsetzen des Limits oder ungeprüftes Resampling.
+  - Abgelaufene Import-Leases werden mit Fencing und Besitzerprüfung reconciliert; verspätete Worker dürfen nicht publizieren.
+  - cancel_requested mit verlorenem Besitzer erhält einen nachgewiesenen Abschluss statt unbegrenztem Zwischenzustand.
+  communicated_to: codex-endoreg-durable-01a1398f
+  tracker_message: b12335a902b0481fb04d7b99ceb7595b
+local_remediation:
+  owner: codex-endoreg-durable-01a1398f
+  implemented_on: '2026-10-15'
+  user_clarification: Jede gültige positive Quellbildrate muss angenommen werden; keine Ablehnung oder Quarantäne allein aufgrund von FPS.
+  code:
+  - path: endoreg_db/services/video_storage/transcoding.py
+    change: Quell-FPS-Grenze entfernen und native Zeitstempel erhalten; auch die nachgelagerte Formatprüfung darf keine FPS-Obergrenze für den Eingang erzwingen.
+  - path: endoreg_db/services/video_storage/validation.py
+    change: Auch nachgelagerte Quell- und Ausgabegrenzen entfernen; max_source_fps bleibt nur als wirkungslose Kompatibilitätseinstellung erhalten.
+  - path: ../luxnix/modules/nixos/services/file_mover/default.nix
+    change: Keine FPS-Quarantäne; Quellen nach Erfolg atomar beanspruchen, spätere Eingänge und vorhandene Ausgaben erhalten; andere Eingänge weiterverarbeiten und echte Fehler verzögert wiederholen.
+  - path: endoreg_db/services/hub/upload_job_import_lease.py
+    change: Abgelaufene Rohvideo-Besitzer unter Zeilensperre erneut prüfen, ausfencen und als import_interrupted beenden; keine Medienlöschung oder unbelegte Erfolgsmeldung.
+  - path: endoreg_db/services/hub/import_monitoring.py
+    change: Begrenzte Reconciliation im vorhandenen periodischen Retry-Dispatcher ausführen.
+  - path: endoreg_db/services/hub/upload_job_state_machine.py
+    change: Gesperrten aktuellen Unterbrechungsmarker gegen veraltete Übergänge, Broker-Redelivery und generische Retry-Pfade schützen.
+  migration: endoreg_db/migrations/0101_upload_job_import_interrupted.py
+  verification:
+    transcoding: 34 Tests bestanden, keiner übersprungen; echte FFmpeg-Transcodes mit 59.7979, 60, 120 und 240 FPS erhalten vollständige PTS-Folgen und Zeitbasen. Frühere Ablehnungsprüfungen sind überholt.
+    normalization: 91 Tests bestanden; native Annahme mit 0.5, 59.8, 240 und 1000 FPS auch bei alter max_source_fps-Einstellung von 1.0. Explizites Annotation-Resampling und Integritätsschutz weiterhin geprüft.
+    lease_and_import: 80 ausgewählte Fälle geprüft; 79 im kombinierten PostgreSQL-Lauf, ein korrigierter bestehender Mock-Test im gezielten Wiederholungslauf bestanden. Neue Prozess- und Sperrkonkurrenztests bestanden.
+    mover: 36 Tests bestanden, einschließlich echter 59.8- und 120-FPS-Dateien; alte FPS-Ablehnungsberichte erhalten die Quelle zur Wiederholung. Nix-Parse, Struktur, Dokumentation und Tracker bestanden.
+    typing: Vollständiger Backend-Pyright-Lauf nach FPS-Korrektur mit 0 Fehlern und 19 Warnungen; fokussierte Prüfungen ohne Fehler oder Warnungen bestanden.
+    migration: Django meldet keine fehlenden Migrationen; isolierte PostgreSQL-Testdatenbank wendet 0101 erfolgreich an.
+    structure: 65 Backend- und 23 LuxNix-Manifeste gültig; Feature-Tracker gültig.
+    documentation: LuxNix docs:check bestanden; Backend-Governance meldet weiterhin den bereits vorhandenen deutschen Bericht docs/implementation_standards_review.md gegen die englische Canonical-Docs-Regel. Keine Richtlinie abgeschwächt.
+  preserved:
+  - Keine automatische Bildratenänderung; 50 FPS ist keine Eingangsgrenze.
+  - Abgelaufene Cancellation ohne Cleanup-Nachweis ist ein expliziter Fehler, nicht erfolgreich cancelled.
+  - Auch alte FPS-Ablehnungsberichte führen nicht zur Quarantäne.
+  limitations:
+  - Kein Deployment und keine Änderung der aufgeführten Live-UploadJobs durchgeführt.
+  - Generische Retry- und Reimport-Aktionen entsperren import_interrupted nicht; Wiederaufnahme erfordert gesondert geprüfte Artefakt-, Prozess- und Quellnachweise.
+  - Producer müssen weiterhin den Vertrag abgeschlossener Dateieingänge einhalten; Pfadübernahme beweist nicht das Ende bereits offener Schreibdeskriptoren.
+  - Nachweis verschlüsselter temporärer Speicherung bleibt vom Quellcodefix unabhängig.

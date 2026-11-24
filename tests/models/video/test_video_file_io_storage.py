@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import uuid
 from pathlib import Path
-from typing import Any, Generator, Protocol, cast
+from typing import Any, Protocol, cast
+from collections.abc import Generator
 from unittest.mock import patch
 
 import pytest

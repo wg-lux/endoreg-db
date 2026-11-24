@@ -13,7 +13,7 @@ from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.serializers import case as case_serializer_module
 from endoreg_db.serializers.case import CaseSerializer
-from endoreg_db.services.cases import persist_case_graph
+from endoreg_db.services.cases.lifecycle import persist_case_graph
 
 
 def _patient() -> Patient:

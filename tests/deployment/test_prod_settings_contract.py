@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import subprocess
 import sys
 from pathlib import Path
@@ -15,13 +16,26 @@ pytestmark = pytest.mark.no_db
 
 
 @pytest.fixture(autouse=True)
-def identity_salt_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    path = atomic_write_file(
+def private_identity_salt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Give every subprocess its own valid salt, independent of host keyrings."""
+    for name in (
+        "LX_ANNOTATE_MASTER_KEY",
+        "LX_ANNOTATE_MASTER_KEY_FILE",
+        "LX_ANNOTATE_MASTER_KEYRING_FILE",
+        "DJANGO_SALT",
+        "DJANGO_IDENTITY_SALT_KEYRING_FILE",
+        "DJANGO_IDENTITY_CENTER_ID",
+        "DJANGO_IDENTITY_SALT_GENERATION",
+        "DJANGO_SIGNING_KEYRING_FILE",
+        "DJANGO_SECRET_KEY_FILE",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    salt_file = atomic_write_file(
         destination=tmp_path / "identity-salt",
-        content=(b"production-probe-test-salt",),
+        content=[secrets.token_hex(32).encode()],
         file_mode=0o600,
     )
-    monkeypatch.setenv("DJANGO_SALT_FILE", str(path))
+    monkeypatch.setenv("DJANGO_SALT_FILE", str(salt_file))
 
 
 def _run_prod_settings_probe(
@@ -87,9 +101,9 @@ def test_prod_settings_accept_service_style_env_contract() -> None:
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -135,7 +149,7 @@ def test_prod_settings_accept_central_hub_role() -> None:
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
             "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -166,7 +180,7 @@ def test_prod_settings_accept_enabled_central_hub_transfers() -> None:
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
             "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -196,9 +210,9 @@ def test_prod_settings_accept_proxy_https_header_contract() -> None:
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -222,9 +236,9 @@ def test_prod_settings_refuse_required_proxy_https_header_when_missing() -> None
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -245,9 +259,9 @@ def test_prod_settings_refuse_unsafe_proxy_https_header_value() -> None:
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -266,9 +280,9 @@ def test_prod_settings_refuse_watcher_inline_fallback() -> None:
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -288,9 +302,9 @@ def test_prod_settings_accept_site_node_role() -> None:
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -335,9 +349,9 @@ def test_prod_settings_refuse_transfer_api_outside_central_hub_role() -> None:
             "DJANGO_DEBUG": "false",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -361,7 +375,7 @@ def test_prod_settings_refuse_central_hub_without_mtls_requirement() -> None:
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
             "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -387,7 +401,7 @@ def test_prod_settings_refuse_central_hub_without_proxy_https_header() -> None:
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org,api.example.org",
             "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -411,9 +425,9 @@ def test_prod_settings_refuse_debug_mode_even_if_other_env_is_present() -> None:
             "DJANGO_DEBUG": "true",
             "DJANGO_SECRET_KEY": "x" * 64,
             "DJANGO_ALLOWED_HOSTS": "annotate.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
+            "DB_ENGINE": "django.db.backends.postgresql",
             "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
+                REPO_ROOT / "data" / "tests" / "deployment_contract.postgresql"
             ),
             "OIDC_RP_CLIENT_ID": "endoregdb-api",
             "OIDC_RP_CLIENT_SECRET": "test-secret",
@@ -422,51 +436,3 @@ def test_prod_settings_refuse_debug_mode_even_if_other_env_is_present() -> None:
 
     assert result.returncode != 0
     assert "DJANGO_DEBUG must be false in production" in result.stderr
-
-
-def test_prod_settings_refuse_sqlite_when_central_hub_role_is_enabled() -> None:
-    result = _run_prod_settings_probe(
-        {
-            "DJANGO_DEBUG": "false",
-            "DJANGO_SECRET_KEY": "x" * 64,
-            "DJANGO_ALLOWED_HOSTS": "annotate.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
-            "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
-            ),
-            "OIDC_RP_CLIENT_ID": "endoregdb-api",
-            "OIDC_RP_CLIENT_SECRET": "test-secret",
-            "ENDOREG_DEPLOYMENT_ROLE": "central_hub",
-        }
-    )
-
-    assert result.returncode != 0
-    assert (
-        "ENDOREG_DEPLOYMENT_ROLE=central_hub requires a non-SQLite production database"
-        in result.stderr
-    )
-
-
-def test_prod_settings_refuse_sqlite_when_local_study_server_role_is_enabled() -> None:
-    protected_root = "/tmp/endoreg-local-study-server-contract/protected"
-    result = _run_prod_settings_probe(
-        {
-            "DJANGO_DEBUG": "false",
-            "DJANGO_SECRET_KEY": "x" * 64,
-            "DJANGO_ALLOWED_HOSTS": "study.example.org",
-            "DB_ENGINE": "django.db.backends.sqlite3",
-            "DB_NAME": str(
-                REPO_ROOT / "data" / "tests" / "deployment_contract.sqlite3"
-            ),
-            "OIDC_RP_CLIENT_ID": "endoregdb-api",
-            "OIDC_RP_CLIENT_SECRET": "test-secret",
-            "ENDOREG_DEPLOYMENT_ROLE": "local_study_server",
-            "PROTECTED_MEDIA_ROOT": f"{protected_root}/storage",
-        }
-    )
-
-    assert result.returncode != 0
-    assert (
-        "ENDOREG_DEPLOYMENT_ROLE=local_study_server requires a non-SQLite production database"
-        in result.stderr
-    )

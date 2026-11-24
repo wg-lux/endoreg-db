@@ -14,7 +14,7 @@ from endoreg_db import tasks
 from endoreg_db.exceptions import (
     MediaOperationDeferred as CentralMediaOperationDeferred,
 )
-from endoreg_db.services.media_operation_gate import MediaOperationDeferred
+from endoreg_db.services.media.operation_gate import MediaOperationDeferred
 
 
 class _TaskLike(Protocol):
@@ -34,7 +34,6 @@ def _current_task(task: object) -> _TaskLike:
 
 def test_job_tasks_are_configured_for_worker_loss_redelivery() -> None:
     celery_tasks = [
-        tasks.run_frame_extraction_request_task,
         tasks.run_video_post_validation_rebuild_task,
         tasks.video_hls_materialization,
         tasks.run_video_temporal_inference_task,
@@ -58,6 +57,7 @@ def test_celery_defaults_bound_worker_memory_pressure() -> None:
     assert settings.CELERY_TASK_SOFT_TIME_LIMIT < settings.CELERY_TASK_TIME_LIMIT
 
 
+@pytest.mark.no_db
 def test_hls_materialization_routes_to_single_ffmpeg_media_lane() -> None:
     queue = settings.CELERY_FFMPEG_MEDIA_QUEUE
     assert settings.CELERY_TASK_ROUTES[
@@ -68,11 +68,15 @@ def test_hls_materialization_routes_to_single_ffmpeg_media_lane() -> None:
     }
 
     devenv_source = Path("devenv.nix").read_text(encoding="utf-8")
-    assert re.search(
-        r'"celery:worker:ffmpeg".*CELERY_FFMPEG_MEDIA_CONCURRENCY:-1',
-        devenv_source,
-        flags=re.DOTALL,
-    )
+    for worker in ("pipeline", "ffmpeg", "inference"):
+        worker_task = re.search(
+            rf'"celery:worker:{worker}" = \{{(.*?)\n    \}};',
+            devenv_source,
+            flags=re.DOTALL,
+        )
+        assert worker_task is not None
+        assert "--pool=prefork" in worker_task.group(1)
+        assert "--max-tasks-per-child=1" in worker_task.group(1)
 
 
 def test_task_module_defers_service_imports_until_execution() -> None:
@@ -91,21 +95,9 @@ def test_task_module_defers_service_imports_until_execution() -> None:
     assert not any(module.startswith("services.") for module in imported_modules)
 
 
-def test_frame_extraction_task_delegates_with_normalized_ids() -> None:
-    with patch(
-        "endoreg_db.services.jobs.frame_extraction_jobs.run_frame_extraction_request",
-        return_value=True,
-    ) as runner:
-        result = cast(Any, tasks.run_frame_extraction_request_task).run(
-            "11", "22", "33"
-        )
-
-    assert result is True
-    runner.assert_called_once_with(
-        request_id=11,
-        video_id=22,
-        frame_number=33,
-    )
+def test_retired_frame_extraction_task_is_not_registered() -> None:
+    # Frame files are export-only; no worker may consume a frame extraction queue.
+    assert not hasattr(tasks, "run_frame_extraction_request_task")
 
 
 def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> None:
@@ -152,7 +144,7 @@ def test_video_post_validation_rebuild_task_delegates_with_normalized_args() -> 
         ),
         (
             tasks.video_hls_materialization,
-            "endoreg_db.services.hls_media.materialize_video_hls",
+            "endoreg_db.services.streaming.hls_media.materialize_video_hls",
             ("42",),
             {
                 "artifact_kind": "processed",
@@ -228,7 +220,7 @@ def test_video_hls_materialization_task_delegates_with_normalized_args() -> None
             return {"video_id": 42, "status": "materialized"}
 
     with patch(
-        "endoreg_db.services.hls_media.materialize_video_hls",
+        "endoreg_db.services.streaming.hls_media.materialize_video_hls",
         return_value=_Result(),
     ) as runner:
         result = cast(Any, tasks.video_hls_materialization).run(
@@ -262,9 +254,9 @@ def test_database_outage_retries_import_and_hls_delivery(hls: bool) -> None:
         tasks.video_hls_materialization if hls else tasks.run_video_upload_import_task
     )
     service = (
-        "endoreg_db.services.hls_media.materialize_video_hls"
+        "endoreg_db.services.streaming.hls_media.materialize_video_hls"
         if hls
-        else "endoreg_db.services.hub.ingest._run_video_upload_import_job"
+        else "endoreg_db.services.hub.ingest.run_video_upload_import_job"
     )
     with (
         patch(service, side_effect=OperationalError("private database details")),
@@ -296,7 +288,7 @@ def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
     retry_error = RuntimeError("retry scheduled")
     with (
         patch(
-            "endoreg_db.services.hls_media.materialize_video_hls",
+            "endoreg_db.services.streaming.hls_media.materialize_video_hls",
             return_value=_Result(),
         ),
         patch.object(current_task, "retry", side_effect=retry_error) as retry,
@@ -314,7 +306,7 @@ def test_video_hls_materialization_redelivery_retries_active_attempt() -> None:
 
 
 def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
-    from endoreg_db.services.video_storage_normalization import (
+    from endoreg_db.services.video_storage.workflow import (
         VideoStorageNormalizationError,
     )
 
@@ -325,7 +317,7 @@ def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
     current_task = _current_task(tasks.video_hls_materialization)
     with (
         patch(
-            "endoreg_db.services.hls_media.materialize_video_hls",
+            "endoreg_db.services.streaming.hls_media.materialize_video_hls",
             side_effect=[
                 VideoStorageNormalizationError("deterministic timeline drift"),
                 _Result(),
@@ -356,7 +348,7 @@ def test_hls_validation_failure_is_terminal_and_next_task_continues() -> None:
 
 def test_video_temporal_inference_task_delegates_with_bounded_defaults() -> None:
     with patch(
-        "endoreg_db.services.video_temporal_inference._run_video_temporal_inference",
+        "endoreg_db.services.video_files.temporal_inference.run_video_temporal_inference",
         return_value=True,
     ) as runner:
         result = cast(Any, tasks.run_video_temporal_inference_task).run(
@@ -413,7 +405,7 @@ def test_refresh_audit_ledger_integrity_task_delegates_to_locked_refresh() -> No
     payload = {"status": "verified"}
 
     with patch(
-        "endoreg_db.services.audit_integrity."
+        "endoreg_db.services.audit.integrity."
         "refresh_audit_ledger_integrity_status_once",
         return_value=payload,
     ) as refresh:

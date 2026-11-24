@@ -12,7 +12,7 @@ from django.core.files.base import ContentFile
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.paths import get_runtime_paths
 
-import endoreg_db.services.media_integrity as media_integrity
+import endoreg_db.services.media.integrity as media_integrity
 from endoreg_db.models import (
     AIDataSet,
     AIModelTrainingRun,
@@ -22,12 +22,13 @@ from endoreg_db.models import (
     UploadJob,
     VideoFile,
 )
-from endoreg_db.services.media_integrity import (
+from endoreg_db.services.media.integrity import (
     MediaIntegrityOptions,
     reconcile_media_integrity,
     reconcile_upload_job_integrity,
     reconcile_video_integrity,
 )
+from endoreg_db.services.streaming.streamable_media import STREAMABLE_FILE_MODE
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
 )
@@ -254,6 +255,49 @@ def test_video_integrity_loss_propagates_to_dependent_training_ledger() -> None:
     assert "training input video artifact was lost" in run.error
 
 
+def test_integrity_loss_keeps_a_training_run_retried_after_selection(
+    monkeypatch: MonkeyPatch,
+) -> None:
+    # Arrange
+    video = _video_with_successful_lifecycle_state()
+    segment = LabelVideoSegment.objects.create(
+        video_file=video,
+        start_frame_number=0,
+        end_frame_number=1,
+    )
+    dataset = AIDataSet.objects.create(name="integrity-concurrent-retry")
+    dataset.video_annotations.add(segment)
+    run = AIModelTrainingRun.objects.create(
+        dataset=dataset,
+        backbone_name="test-backbone",
+        feature_mode="test-features",
+        status=AIModelTrainingRun.STATUS_COMPLETED,
+    )
+    manager = AIModelTrainingRun.objects
+    original_filter = manager.filter
+
+    def filter_after_concurrent_retry(*args: object, **kwargs: object) -> object:
+        if "run_id__in" in kwargs:
+            # Another worker retries the run between selection and the write.
+            original_filter(run_id=run.run_id).update(
+                status=AIModelTrainingRun.STATUS_RETRY_WAIT
+            )
+        return original_filter(*args, **kwargs)
+
+    monkeypatch.setattr(manager, "filter", filter_after_concurrent_retry)
+
+    # Act
+    media_integrity.mark_video_integrity_lost(
+        video,
+        "Canonical processed video is missing.",
+    )
+
+    # Assert
+    run.refresh_from_db()
+    assert run.status == AIModelTrainingRun.STATUS_RETRY_WAIT
+    assert "training input video artifact was lost" not in run.error
+
+
 def _video_with_initialized_frames(
     tmp_path: Path,
     *,
@@ -297,7 +341,7 @@ def _write_test_file(
     return atomic_write_file(destination=path, content=[payload], file_mode=file_mode)
 
 
-def test_reconcile_frames_treats_missing_cache_as_cache_miss_not_corruption(
+def test_reconcile_does_not_touch_frame_rows_without_frame_files(
     tmp_path: Path,
 ):
     video = _video_with_initialized_frames(tmp_path, frame_count=3)
@@ -305,23 +349,17 @@ def test_reconcile_frames_treats_missing_cache_as_cache_miss_not_corruption(
     assert frame_dir is not None
     assert not frame_dir.exists()
 
-    summary = reconcile_media_integrity(
-        dry_run=True,
-        video_ids=[video.pk],
-        check_frames=True,
-        repair_frames=False,
-    )
+    summary = reconcile_media_integrity(dry_run=True, video_ids=[video.pk])
 
     video.refresh_from_db()
     state = video.get_or_create_state()
     state.refresh_from_db()
 
-    # Missing frame directories are expected cache misses under the current
-    # storage policy. Reconciliation must not downgrade canonical DB state.
+    # Frame files are export-only; missing frame directories are never a
+    # reconciliation finding and canonical frame rows stay unchanged.
     assert summary.checked_videos == 1
-    assert summary.frame_cache_missing == 1
-    assert summary.frame_cache_corrupt == 0
     assert summary.lost_records == 0
+    assert "frame_cache" not in summary.as_dict()
     assert state.frames_extracted is True
     assert Frame.objects.filter(video=video, is_extracted=True).count() == 3
 
@@ -414,7 +452,7 @@ def test_legacy_streamable_probe_reports_removal_only_in_dry_run(
     _write_test_file(
         streamable_path,
         b"corrupt-streamable",
-        file_mode=media_integrity.STREAMABLE_FILE_MODE,
+        file_mode=STREAMABLE_FILE_MODE,
     )
     video.processed_streamable_relative_path = "streamable/processed/fallback.mp4"
     video.save(update_fields=["processed_streamable_relative_path"])

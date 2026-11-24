@@ -183,6 +183,23 @@ def test_transfer_job_rejects_invalid_persisted_json_shapes(
     assert field_name in exc_info.value.message_dict
 
 
+def _unresolved_timeline_coordinates(
+    start: int, end_exclusive: int
+) -> dict[str, object]:
+    return {
+        "generation": {
+            "content_hash": "b" * 64,
+            "time_base_num": 1,
+            "time_base_den": 1000,
+            "first_frame_number": start,
+            "last_frame_number": end_exclusive - 1,
+            "first_presentation_timestamp": start * 40,
+            "last_presentation_timestamp": (end_exclusive - 1) * 40,
+        },
+        "recording_mapping_status": "unresolved",
+    }
+
+
 def test_transfer_job_resource_rows_validate_video_segments() -> None:
     job = TransferJob(
         resource_kind=TransferJob.ResourceKind.VIDEO,
@@ -202,6 +219,7 @@ def test_transfer_job_resource_rows_validate_video_segments() -> None:
                     "anonymous_provenance": {
                         "information_source_name": "manual_annotation"
                     },
+                    "timeline_coordinates": _unresolved_timeline_coordinates(4, 12),
                 }
             ],
         },
@@ -233,6 +251,7 @@ def test_transfer_job_resource_rows_reject_segment_outside_video() -> None:
                     "anonymous_provenance": {
                         "information_source_name": "manual_annotation"
                     },
+                    "timeline_coordinates": _unresolved_timeline_coordinates(4, 11),
                 }
             ],
         },
@@ -416,3 +435,30 @@ def test_quarantine_item_validates_metadata_boundary() -> None:
     with pytest.raises(DjangoValidationError) as exc_info:
         item.clean()
     assert "metadata" in exc_info.value.message_dict
+
+
+def test_transfer_job_resource_rows_require_segment_timeline_coordinates() -> None:
+    segment: dict[str, object] = {
+        "source_node_key": "site-a",
+        "source_segment_id": 7,
+        "raw_video_hash": "abc123",
+        "start_frame_number": 4,
+        "end_frame_number_exclusive": 12,
+        "label_name": "lesion_visible",
+        "source_kind": "manual_annotation",
+        "validation_state": "validated",
+        "export_segment": True,
+        "anonymous_provenance": {"information_source_name": "manual_annotation"},
+    }
+    job = TransferJob(
+        resource_kind=TransferJob.ResourceKind.VIDEO,
+        resource_rows={
+            "video_file": {"raw_video_hash": "abc123", "frame_count": 20},
+            "video_segments": [segment],
+        },
+        processing_snapshot={},
+        provenance={},
+    )
+
+    with pytest.raises(DjangoValidationError, match="timeline_coordinates"):
+        job.clean()

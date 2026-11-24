@@ -28,11 +28,17 @@ class _FakeVideoUploadJob:
     file = _FakeUploadFile()
     source_center = object()
     processing_provenance: dict[str, object] = {}
+    processing_fencing_token = 0
     error_detail = ""
+    error_code = ""
 
     def __init__(self) -> None:
         self.saved_update_fields: list[str] | None = None
         self.mark_processing_called = False
+        self.refresh_called = False
+
+    def refresh_from_db(self) -> None:
+        self.refresh_called = True
 
     def mark_processing(self) -> None:
         self.mark_processing_called = True
@@ -187,10 +193,17 @@ class UploadJobDispatchTests(TestCase):
         with (
             patch("endoreg_db.services.hub.ingest.UploadJob", fake_upload_job_model),
             patch(
+                "endoreg_db.services.imports.processing.update_import_processing_stack"
+            ),
+            patch(
+                "endoreg_db.services.hub.upload_job_state_machine.UploadJob.objects.select_for_update"
+            ) as transition_lock,
+            patch(
                 "endoreg_db.services.hub.ingest.acquire_upload_job_import_lease",
                 return_value=lease,
             ),
         ):
+            transition_lock.return_value.get.return_value = job
             reserved_job, reserved_lease, should_dispatch = (
                 _reserve_video_upload_import_handoff(
                     upload_job_id="upload-job-id",
@@ -209,6 +222,7 @@ class UploadJobDispatchTests(TestCase):
         )
         assert upload_job_manager.get_id == "upload-job-id"
         assert job.mark_processing_called is True
+        assert job.refresh_called is True
 
     def test_create_or_reuse_upload_job_normalizes_provenance_contract(self):
         with patch("endoreg_db.services.hub.audit.logger.info") as audit_log:

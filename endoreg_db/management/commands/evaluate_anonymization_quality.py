@@ -7,13 +7,15 @@ from typing import Literal, TypeAlias
 
 from django.core.management.base import BaseCommand, CommandError, CommandParser
 
-from endoreg_db.services.anonymization_quality_evaluation import (
+from endoreg_db.services.privacy.quality_evaluation import (
     AnonymizationQualityPayload,
     SensitiveMetaHandlingPolicy,
     evaluate_anonymization_quality,
     parse_quality_datetime,
 )
-from endoreg_db.services.evaluation_manifest import write_quality_evaluation_manifest
+from endoreg_db.services.privacy.evaluation_manifest import (
+    write_quality_evaluation_manifest,
+)
 from endoreg_db.utils.file_operations import atomic_write_file
 
 

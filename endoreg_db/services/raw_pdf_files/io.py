@@ -6,7 +6,8 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from django.db import models
+from django.db import models, transaction
+from django.db.models import Q
 from django.urls import reverse
 
 from endoreg_db.utils.file_operations import get_file_hash
@@ -173,11 +174,55 @@ def delete_raw_pdf_owned_files(
     return raw_deleted, processed_deleted
 
 
+@transaction.atomic
 def delete_raw_pdf_with_owned_files(
     report: "RawPdfFile",
     using: str | None = None,
     keep_parents: bool = False,
 ) -> tuple[int, dict[str, int]]:
+    from endoreg_db.models.hub.upload_job import UploadJob
+    from endoreg_db.models.hub.storage_placement import StorageArtifactPlacement
+    from endoreg_db.services.media.source_deletion import (
+        check_original,
+        recorded_upload_sources,
+        complete_source_deletion,
+    )
+    from endoreg_db.utils.file_operations import safe_unlink_file
+
+    type(report).objects.select_for_update().get(pk=report.pk)
+    report.refresh_from_db()
+    jobs = list(
+        UploadJob.objects.select_for_update()
+        .filter(
+            content_hash=report.pdf_hash,
+            source_center_id=report.center_id,
+            content_type__in=["application/pdf", "text/plain", "export/txt"],
+        )
+        .order_by("pk")
+    )
+    others = type(report).objects.exclude(pk=report.pk)
+    if others.filter(pdf_hash=report.pdf_hash).exists():
+        raise ValueError("Original report source is shared")
+    for name in (report.file.name, report.processed_file.name):
+        if name and (
+            others.filter(Q(file=name) | Q(processed_file=name)).exists()
+            or UploadJob.objects.filter(file=name).exists()
+        ):
+            raise ValueError("Canonical report file is shared")
+    if StorageArtifactPlacement.objects.filter(
+        sha256__in=[
+            report.pdf_hash,
+            report.state.processed_file_sha256 if report.state else "",
+        ]
+    ).exists():
+        raise ValueError("Report content still has a storage placement")
+    originals = recorded_upload_sources(
+        jobs, digest=report.pdf_hash, report_id=int(report.pk)
+    )
+    for source in originals:
+        check_original(source, report.pdf_hash)
+        safe_unlink_file(source, missing_ok=True)
+
     raw_name = report.file.name if report.file and report.file.name else None
     processed_name = (
         report.processed_file.name
@@ -191,6 +236,7 @@ def delete_raw_pdf_with_owned_files(
     if processed_deleted:
         logger.info("Anonymized file removed from storage: %s", processed_name)
 
+    complete_source_deletion(jobs)
     return models.Model.delete(report, using=using, keep_parents=keep_parents)
 
 

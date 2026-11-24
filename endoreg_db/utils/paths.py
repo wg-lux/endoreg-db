@@ -24,6 +24,7 @@ from endoreg_db.config.env import (
     DEFAULT_DJANGO_SETTINGS_MODULE,
     DJANGO_SETTINGS_MODULE_ENV,
     RUNTIME_ROOT_ENV,
+    env_str,
     get_runtime_root,
 )
 
@@ -53,6 +54,22 @@ LOG_DIR_NAME = "logs"
 QUARANTINE_DIR_NAME = "quarantine"
 MIGRATION_STAGING_DIR_NAME = "migration_staging"
 MANIFEST_DIR_NAME = "manifests"
+FRAME_ANNOTATION_EXPORT_DIR_NAME = "frame_annotation_exports"
+
+
+def get_report_embedding_model_path() -> Path:
+    """Public model asset provisioned by deployment, outside mutable clinical storage."""
+    configured = env_str("ENDOREG_REPORT_EMBEDDING_MODEL_PATH").strip()
+    if not configured:
+        raise RuntimeError(
+            "ENDOREG_REPORT_EMBEDDING_MODEL_PATH must name the provisioned model directory"
+        )
+    path = Path(configured)
+    if not path.is_absolute() or not path.is_dir():
+        raise RuntimeError(
+            "ENDOREG_REPORT_EMBEDDING_MODEL_PATH must be an existing absolute directory"
+        )
+    return path
 
 
 def _dedupe_paths(paths: Iterable[Path]) -> list[Path]:
@@ -75,6 +92,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     runtime_root: Path
     storage: Path
     terminology: Path
+    table_mappings: Path
 
     import_dir: Path
     export_dir: Path
@@ -102,6 +120,7 @@ class EndoregPathsModel(FilesAndDirsModel):
     weights_export: Path
     import_frame: Path
     frame_export: Path
+    frame_annotation_export: Path
 
     logs: Path
     quarantine: Path
@@ -165,6 +184,7 @@ class EndoregPathsModel(FilesAndDirsModel):
             "runtime_root": root,
             "storage": storage,
             "terminology": terminology,
+            "table_mappings": storage / "study_table_mappings",
             "import_dir": import_dir,
             "export_dir": export_dir,
             "import_video": import_dir / IMPORT_VIDEO_DIR_NAME,
@@ -220,6 +240,9 @@ class EndoregPathsModel(FilesAndDirsModel):
                 "dir": root,
                 "dirs": _dedupe_paths(path_values.values()),
                 **path_values,
+                # Created on demand by the export workflow; deliberately not part
+                # of the startup directory contract that deployments pre-create.
+                "frame_annotation_export": storage / FRAME_ANNOTATION_EXPORT_DIR_NAME,
             }
         )
 

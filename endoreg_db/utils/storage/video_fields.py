@@ -15,7 +15,7 @@ from django.db.models.fields.files import FieldFile
 def video_field_mutation(field_file: FieldFile) -> Generator[None]:
     """Generic storage callers guard persisted video owners; other models retain their policy."""
     from endoreg_db.models.media.video.video_file import VideoFile
-    from endoreg_db.services.media_operation_gate import video_artifact_mutation
+    from endoreg_db.services.media.operation_gate import video_artifact_mutation
 
     instance: object | None = getattr(field_file, "instance", None)
     if not isinstance(instance, VideoFile):

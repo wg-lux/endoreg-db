@@ -28,7 +28,7 @@ from endoreg_db.models.label.annotation.image_classification import (
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.services.hub import deployment_profile_payload
-from endoreg_db.services.video_dimension_backfill import (
+from endoreg_db.services.video_storage.dimension_backfill import (
     VideoDimensionBackfillResult,
     backfill_anonymized_video_dimensions,
 )

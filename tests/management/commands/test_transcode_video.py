@@ -11,7 +11,13 @@ from pytest import MonkeyPatch
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
-from endoreg_db.services import video_transcoding
+from endoreg_db.services.video_storage import transcoding as video_transcoding
+from tests.services.test_video_transcoding import (
+    directory_timestamps as directory_timestamps,
+)
+
+
+pytestmark = pytest.mark.no_db
 
 
 def _compliant_video_format(path: Path) -> SimpleNamespace:
@@ -36,6 +42,7 @@ def _json_payload(stdout: StringIO) -> dict[str, Any]:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("directory_timestamps")
 def test_transcode_video_command_transcodes_input_dir(
     monkeypatch: MonkeyPatch,
     tmp_path: Path,
@@ -87,7 +94,7 @@ def test_transcode_video_command_transcodes_input_dir(
     assert payload["scanned_files"] == 1
     assert payload["transcoded_files"] == 1
     assert payload["failed_files"] == 0
-    assert payload["target_fps"] == 50.0
+    assert payload["target_fps"] is None
     assert (output_dir / "clip.mp4").read_bytes() == b"standardized-video"
 
 
