@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.contrib.auth.models import User
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 
-from endoreg_db.models import Center, RawPdfFile, VideoFile, VideoState
+from endoreg_db.models import Center, Examination, RawPdfFile, VideoFile, VideoState
 from endoreg_db.services.media.state import update_media_state
 from tests.helpers.media_states import create_media_state
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
@@ -241,9 +241,14 @@ def annotation_documents() -> tuple[PatientExamination, RawPdfFile, RawPdfFile]:
     meta = _sensitive_meta(center, verified=True)
     examination = meta.pseudo_examination
     assert examination and examination.patient
+    examination.examination, _ = Examination.objects.get_or_create(name="colonoscopy")
+    examination.knowledge_base_module = "star_upper_gi"
+    examination.knowledge_base_version = "0.1.2"
     examination.dtypes_record = {
         "patient": str(examination.patient.pk),
         "examination": "colonoscopy",
+        "knowledge_base_module": examination.knowledge_base_module,
+        "knowledge_base_version": examination.knowledge_base_version,
     }
     examination.save()
     docs: list[RawPdfFile] = []
@@ -433,6 +438,7 @@ def test_report_api_rejects_workflow_conflicts_atomically(
     for _ in range(2):
         response = client.post(save_url, edit, content_type="application/json")
         assert response.status_code == 409, response.content
+        assert "Source document workflow conflict" in response.json()["detail"]
         report.refresh_from_db()
         assert (report.title, report.version) == ("Initial draft", original_version)
         assert (
@@ -475,6 +481,7 @@ def test_report_api_rejects_workflow_conflicts_atomically(
             content_type="application/json",
         )
         assert generation.status_code == 409, generation.content
+        assert "Source document workflow conflict" in generation.json()["detail"]
         publish.assert_not_called()
         report.refresh_from_db()
         assert (report.status, report.version) == ("draft", original_version)
