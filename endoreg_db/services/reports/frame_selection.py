@@ -264,11 +264,15 @@ def _save_selections(
     user: User | None,
 ) -> None:
     payload = report_json_safe_dict(report.editor_payload)
-    payload[SEGMENT_FRAME_SELECTIONS_KEY] = report_json_safe(selections)
+    if report.updated_by_id is not None and report.updated_by != user:
+        raise ValueError("Frame selection belongs to another report author.")
+    selected = report_json_safe(selections)
+    if payload.get(SEGMENT_FRAME_SELECTIONS_KEY, {}) == selected:
+        return
+    payload[SEGMENT_FRAME_SELECTIONS_KEY] = selected
     report.editor_payload = payload
-    if user is not None:
-        report.updated_by = user
-    report.save(update_fields=["editor_payload", "updated_by", "updated_at"])
+    report.version += 1
+    report.save(update_fields=["editor_payload", "version", "updated_at"])
 
 
 def persist_segment_selection(

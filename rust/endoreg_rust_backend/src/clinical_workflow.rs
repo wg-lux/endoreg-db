@@ -232,16 +232,23 @@ pub(crate) fn reduce_clinical_workflow(
 }
 
 #[pyfunction]
+#[pyo3(signature = (event, identity_verified, report=false))]
 pub(crate) fn clinical_evidence_rejection(
     event: &str,
     identity_verified: bool,
+    report: bool,
 ) -> PyResult<Option<&'static str>> {
-    Ok(match parse(event)? {
-        Event::AnonymizationValidated if !identity_verified => {
-            Some(Rejection::IdentityNotVerified.as_str())
+    Ok(reject_evidence(parse(event)?, identity_verified, report).map(|reason| reason.as_str()))
+}
+
+fn reject_evidence(event: Event, identity_verified: bool, report: bool) -> Option<Rejection> {
+    match event {
+        Event::ExportApproved | Event::Exported | Event::DatasetIngested if report => {
+            Some(Rejection::EventNotPermittedInState)
         }
+        Event::AnonymizationValidated if !identity_verified => Some(Rejection::IdentityNotVerified),
         _ => None,
-    })
+    }
 }
 
 #[derive(FromPyObject)]
@@ -433,6 +440,29 @@ pub(crate) fn clinical_workflow_tables() -> TrackTables {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn completed_report_annotation_is_independent_of_release_evidence() {
+        for event in [
+            Event::ExportApproved,
+            Event::Exported,
+            Event::DatasetIngested,
+        ] {
+            assert_eq!(
+                reject_evidence(event, true, true),
+                Some(Rejection::EventNotPermittedInState)
+            );
+            assert_eq!(reject_evidence(event, true, false), None);
+        }
+        assert_eq!(
+            reject_evidence(Event::AnnotationCompleted, true, true),
+            None
+        );
+        assert_eq!(
+            reject_evidence(Event::AnonymizationValidated, false, true),
+            Some(Rejection::IdentityNotVerified)
+        );
+    }
 
     #[test]
     fn every_event_has_an_edge_and_withdrawal_is_absorbing() {

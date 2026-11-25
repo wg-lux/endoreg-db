@@ -20,7 +20,9 @@ from endoreg_db.utils.rust_backend import stable_file_identity
 
 logger = logging.getLogger(__name__)
 
-type HubRecordKind = Literal["patient", "examination"]
+type HubRecordKind = Literal[
+    "patient", "examination", "authored_report", "source_document"
+]
 
 
 def get_bytes_hash(payload: bytes) -> str:

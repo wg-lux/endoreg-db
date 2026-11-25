@@ -32,7 +32,7 @@ def hub_identity_payload(
 def hub_scoped_study_exchange(
     bundle: StudyExchangeBundle, *, hub_node_key: str
 ) -> StudyExchangeBundle:
-    """Replace every local patient/examination UUID with the target hub's pseudonym.
+    """Pseudonymize patient, examination and report source references for one hub.
 
     Uses the same derivation as media transfers, so hub-side study import finds
     the pseudonymous rows those transfers created.
@@ -52,6 +52,23 @@ def hub_scoped_study_exchange(
         record = item.record.model_copy(
             update={"patient": str(patients[UUID(item.record.patient)])}
         )
+        source = item.report_source
+        if source is not None:
+            source = source.model_copy(
+                update={
+                    "report_uuid": get_hub_record_pseudonym(
+                        source.report_uuid,
+                        kind="authored_report",
+                        hub_node_key=hub_node_key,
+                    ),
+                    "source_document_uuids": [
+                        get_hub_record_pseudonym(
+                            document, kind="source_document", hub_node_key=hub_node_key
+                        )
+                        for document in source.source_document_uuids
+                    ],
+                }
+            )
         collections.append(
             item.model_copy(
                 update={
@@ -59,6 +76,7 @@ def hub_scoped_study_exchange(
                         item.patient_examination_uuid
                     ],
                     "record": record,
+                    "report_source": source,
                 }
             )
         )

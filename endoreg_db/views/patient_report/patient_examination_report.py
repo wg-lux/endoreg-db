@@ -64,6 +64,15 @@ from endoreg_db.serializers.report.patient_examination_report import (
     SegmentFrameSelectorItemDisplayData,
     SegmentFrameSelectorResponseSchema,
 )
+from endoreg_db.services.clinical_lifecycle.persistence import (
+    WorkflowConcurrencyError,
+    WorkflowStateDriftError,
+    journal_report_annotation_changes,
+)
+from endoreg_db.services.clinical_lifecycle.state_machine import (
+    ClinicalLifecycleInvariantError,
+    ClinicalLifecycleTransitionError,
+)
 from endoreg_db.services.runtime.status_writers import (
     set_patient_examination_report_status,
 )
@@ -72,6 +81,7 @@ from endoreg_db.services.reports.persistence import (
     ReportKnowledgeBaseRegistryUnavailableError,
     ReportPersistenceValidationError,
     delete_report_draft,
+    eligible_report_documents,
     persist_report_pdf_artifact,
     save_report_submission,
 )
@@ -252,18 +262,6 @@ def _serialized_report_data(report: PatientExaminationReport) -> ReportJsonObjec
     )
 
 
-def _assign_report_user_fields(
-    report: PatientExaminationReport,
-    *,
-    finalized_by: User | None = None,
-    updated_by: User | None = None,
-) -> None:
-    if finalized_by is not None or finalized_by is None:
-        cast(Any, report).finalized_by = finalized_by
-    if updated_by is not None or updated_by is None:
-        cast(Any, report).updated_by = updated_by
-
-
 def _request_json_object(request: HttpRequest) -> ReportJsonObject:
     try:
         decoded: object = json.loads(request.body.decode("utf-8"))
@@ -348,12 +346,14 @@ class PatientExaminationReportApi:
         broad_list: bool = False,
     ) -> QuerySet[PatientExaminationReport]:
         queryset = self._apply_center_scope(
-            PatientExaminationReport.objects.all().select_related(
+            PatientExaminationReport.objects.all()
+            .select_related(
                 "patient_examination",
                 "created_by",
                 "updated_by",
                 "finalized_by",
             )
+            .prefetch_related("source_documents")
         )
 
         if patient_examination_id is not None:
@@ -751,6 +751,7 @@ class PatientExaminationReportApi:
         report_id: int | None,
         template_name: str | None = None,
     ) -> tuple[PatientExaminationReport, bool]:
+        user = _authenticated_user_from_request(self.request)
         if report_id is not None:
             report = (
                 self._apply_center_scope(
@@ -763,6 +764,10 @@ class PatientExaminationReportApi:
             )
             if report is None:
                 raise HttpError(403, "Report not found for this patient examination.")
+            if report.updated_by_id is not None and report.updated_by != user:
+                raise HttpError(
+                    403, "Select your own examination report for frame annotation."
+                )
             return report, False
 
         existing = (
@@ -771,14 +776,15 @@ class PatientExaminationReportApi:
                     "patient_examination__patient"
                 )
             )
-            .filter(patient_examination=patient_examination, is_active=True)
+            .filter(
+                patient_examination=patient_examination, is_active=True, updated_by=user
+            )
             .order_by("-updated_at", "-id")
             .first()
         )
         if existing is not None:
             return existing, False
 
-        user = _authenticated_user_from_request(self.request)
         report = PatientExaminationReport.objects.create(
             patient_examination=patient_examination,
             template_name=template_name or "segment_frame_selection",
@@ -1045,9 +1051,10 @@ def list_reports(
     status: str | None = _ninja_query(default=None),
     template_name: str | None = _ninja_query(default=None),
     is_active: bool | None = _ninja_query(default=None),
+    only_mine: bool = False,
 ) -> QuerySet[PatientExaminationReport]:
     api = PatientExaminationReportApi(request)
-    return api.get_queryset(
+    reports = api.get_queryset(
         patient_examination_id=patient_examination_id,
         patient_id=patient_id,
         status=status,
@@ -1055,6 +1062,26 @@ def list_reports(
         is_active=is_active,
         broad_list=True,
     )
+    if only_mine:
+        user = _authenticated_user_from_request(request)
+        return reports.filter(updated_by=user) if user is not None else reports.none()
+    return reports
+
+
+@router.get("/source-documents", response=list[int])
+def source_documents(request: HttpRequest, patient_examination_id: int) -> list[int]:
+    examination = PatientExaminationReportApi(request)._get_scoped_patient_examination(
+        patient_examination_id
+    )
+    return list(eligible_report_documents(examination).values_list("pk", flat=True))
+
+
+_SOURCE_WORKFLOW_CONFLICTS = (
+    WorkflowStateDriftError,
+    WorkflowConcurrencyError,
+    ClinicalLifecycleInvariantError,
+    ClinicalLifecycleTransitionError,
+)
 
 
 @router.post(
@@ -1092,11 +1119,16 @@ def save_submission(
             patient_data=data.get("patient_data"),
             indications=data.get("indications"),
             findings=data.get("findings"),
+            source_document_ids=data.get("source_document_ids"),
             title=data.get("title", ""),
             template_version=data.get("template_version", ""),
             template_hash=data.get("template_hash", ""),
             history_limit=data.get("history_limit", 5),
         )
+    except _SOURCE_WORKFLOW_CONFLICTS as exc:
+        raise HttpError(
+            409, "Source document workflow conflict. Reload before retrying."
+        ) from exc
     except ReportRuntimeValidationError as exc:
         raise HttpError(422, json.dumps(exc.result)) from exc
     except ReportPersistenceValidationError as exc:
@@ -1168,37 +1200,53 @@ def make_report(
     )
     if report is None:
         return 404, {"detail": "No report found for this patient examination."}
-    submitted_identity = (
-        data["knowledge_base_module"],
-        data["knowledge_base_version"],
-    )
-    examination_identity = (
-        patient_examination.knowledge_base_module,
-        patient_examination.knowledge_base_version,
-    )
-    report_identity = (
-        report.knowledge_base_module,
-        report.knowledge_base_version,
-    )
-    if (
-        submitted_identity != examination_identity
-        or submitted_identity != report_identity
-    ):
-        raise HttpError(
-            409,
-            "The submitted knowledge-base identity does not match the persisted "
-            "PatientExamination and report identity.",
-        )
-
-    try:
-        runtime_validation = validate_final_report_submission(
-            patient_examination,
-            template_name=_report_template_name(report),
-        )
-    except ReportRuntimeValidationError as exc:
-        raise HttpError(422, json.dumps(exc.result)) from exc
     try:
         with transaction.atomic(), ExitStack() as frame_scope:
+            patient_examination = PatientExamination.objects.select_for_update().get(
+                pk=patient_examination.pk
+            )
+            locked_report = (
+                PatientExaminationReport.objects.select_for_update()
+                .filter(pk=report.pk, patient_examination=patient_examination)
+                .first()
+            )
+            if (
+                locked_report is None
+                or locked_report.version != report.version
+                or locked_report.is_active != report.is_active
+            ):
+                raise HttpError(
+                    409, "Report changed before generation; reload and retry."
+                )
+            report = locked_report
+            submitted_identity = (
+                data["knowledge_base_module"],
+                data["knowledge_base_version"],
+            )
+            examination_identity = (
+                patient_examination.knowledge_base_module,
+                patient_examination.knowledge_base_version,
+            )
+            report_identity = (
+                report.knowledge_base_module,
+                report.knowledge_base_version,
+            )
+            if (
+                submitted_identity != examination_identity
+                or submitted_identity != report_identity
+            ):
+                raise HttpError(
+                    409,
+                    "The submitted knowledge-base identity does not match the persisted "
+                    "PatientExamination and report identity.",
+                )
+
+            runtime_validation = validate_final_report_submission(
+                patient_examination,
+                template_name=_report_template_name(report),
+            )
+            user = _authenticated_user_from_request(request)
+
             frame_paths, frame_captions, frame_details, frame_warnings = (
                 api._collect_report_export_frames(
                     patient_examination=patient_examination,
@@ -1212,29 +1260,30 @@ def make_report(
             section_blocks = api._build_report_export_blocks(
                 report=report, frame_details=frame_details
             )
-            report.runtime_validation_snapshot = runtime_validation
-            user = _authenticated_user_from_request(request)
-            if set_patient_examination_report_status(
-                report, PatientExaminationReport.Status.FINAL.value
+            with journal_report_annotation_changes(
+                list(report.source_documents.values_list("pk", flat=True)), user
             ):
-                report.finalized_at = timezone.now()
-                _assign_report_user_fields(
-                    report,
-                    finalized_by=user,
-                    updated_by=user,
-                )
-                report.save(
-                    update_fields=[
-                        "status",
-                        "finalized_at",
-                        "finalized_by",
-                        "updated_by",
-                        "updated_at",
-                        "runtime_validation_snapshot",
-                    ]
-                )
-            else:
-                report.save(update_fields=["runtime_validation_snapshot", "updated_at"])
+                report.runtime_validation_snapshot = runtime_validation
+                if set_patient_examination_report_status(
+                    report, PatientExaminationReport.Status.FINAL.value
+                ):
+                    report.version += 1
+                    report.finalized_at = timezone.now()
+                    report.finalized_by = user
+                    report.save(
+                        update_fields=[
+                            "status",
+                            "version",
+                            "finalized_at",
+                            "finalized_by",
+                            "updated_at",
+                            "runtime_validation_snapshot",
+                        ]
+                    )
+                else:
+                    report.save(
+                        update_fields=["runtime_validation_snapshot", "updated_at"]
+                    )
 
             (
                 persisted_report_artifact_id,
@@ -1249,6 +1298,12 @@ def make_report(
                 patient_identity=dict(data["patient"]),
                 strict_renderer=True,
             )
+    except _SOURCE_WORKFLOW_CONFLICTS as exc:
+        raise HttpError(
+            409, "Source document workflow conflict. Reload before retrying."
+        ) from exc
+    except ReportRuntimeValidationError as exc:
+        raise HttpError(422, json.dumps(exc.result)) from exc
     except HttpError:
         raise
     except Exception as exc:
@@ -1511,6 +1566,7 @@ def delete_draft(
             patient_examination_id=_patient_examination_pk(report.patient_examination),
             report_id=report_id,
             expected_version=expected_version,
+            user=_authenticated_user_from_request(request),
         )
     except ReportPersistenceValidationError as exc:
         raise HttpError(409, json.dumps(exc.detail)) from exc

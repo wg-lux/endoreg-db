@@ -321,11 +321,14 @@ def test_validation_requires_verified_identity() -> None:
     ).privacy is (P.VALIDATED)
 
 
-def test_reports_cannot_be_released_without_an_annotation_axis() -> None:
-    report = _facts(kind=ClinicalRecordKind.REPORT, **_PURGED)
+@pytest.mark.parametrize("complete", [False, True])
+def test_annotating_reports_does_not_authorize_release(complete: bool) -> None:
+    report = _facts(
+        kind=ClinicalRecordKind.REPORT, medical_annotation_complete=complete, **_PURGED
+    )
     with pytest.raises(ClinicalLifecycleTransitionError) as exc_info:
         require_clinical_transition(report, Event.EXPORT_APPROVED)
-    assert exc_info.value.reason is Rejection.ANNOTATION_TRACK_INCOMPLETE
+    assert exc_info.value.reason is Rejection.EVENT_NOT_PERMITTED_IN_STATE
 
 
 _LEGACY_VALIDATED = {

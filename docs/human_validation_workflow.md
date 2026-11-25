@@ -145,8 +145,10 @@ Current enforcement and gaps:
 * Hub transfer readiness uses the native processed-artifact integrity decision.
   The sending worker requests byte verification; listing endpoints can inspect
   persisted metadata without reading the media. Report transfers use their
-  validated report contract. Reports have no persisted clinical annotation or
-  dataset track.
+  validated report contract. An active, finalized structured report by an identified
+  author completes the annotation track for each linked, accepted PDF of the same
+  examination. Removing the last qualifying link reopens the track. Reports have
+  no dataset or export-approval track in this state machine.
 
 ## Failure Matrix
 

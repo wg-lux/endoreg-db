@@ -1,9 +1,8 @@
 """Build typed clinical lifecycle facts from persisted videos and reports.
 
 This is the single ORM boundary of the clinical lifecycle. It only reads; it
-never mutates state. Reports have no persisted medical-annotation, export
-approval or dataset axis yet, so a report's annotation track never completes
-and it can never be released. That is intentional and fails closed.
+never mutates state. Report annotations come from authored, finalized examination reports linked to
+validated source documents. Report release and dataset membership are separate.
 """
 
 from __future__ import annotations
@@ -124,6 +123,25 @@ def report_record_facts(report: RawPdfFile) -> ClinicalRecordFacts:
     identity_verified, erased = _identity_facts(_sensitive_meta(report.sensitive_meta))
     processed_present = bool(report.processed_file and report.processed_file.name)
     raw_present = bool(report.file and report.file.name)
+    from endoreg_db.services.reports.persistence import (
+        authored_final_reports,
+        eligible_report_documents,
+    )
+
+    examination = report.examination
+    annotation_complete = bool(
+        examination is not None
+        and state
+        and state.anonymization_validated
+        and eligible_report_documents(examination)
+        .filter(
+            pk=report.pk,
+            annotated_reports__in=authored_final_reports().filter(
+                patient_examination=examination
+            ),
+        )
+        .exists()
+    )
     return ClinicalRecordFacts(
         kind=ClinicalRecordKind.REPORT,
         record_id=int(report.pk),
@@ -140,8 +158,7 @@ def report_record_facts(report: RawPdfFile) -> ClinicalRecordFacts:
         legacy_identity_exemption=False,
         raw_source_present=raw_present,
         direct_identifiers_erased=erased,
-        # No persisted report annotation, approval or dataset axis exists yet.
-        medical_annotation_complete=False,
+        medical_annotation_complete=annotation_complete,
         export_approval=ExportApproval.NONE,
         dataset_member=False,
     )

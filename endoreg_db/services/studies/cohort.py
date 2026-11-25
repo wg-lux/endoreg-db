@@ -1,12 +1,24 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date
-from typing import Any, TypedDict, cast
+from typing import Any, NotRequired, TypedDict, cast
 
-from django.db.models import Exists, F, Max, OuterRef, Q, QuerySet, Subquery
+from django.db.models import (
+    Exists,
+    F,
+    Func,
+    JSONField,
+    Max,
+    OuterRef,
+    Q,
+    QuerySet,
+    Subquery,
+    Value,
+)
 from django.utils.dateparse import parse_date
+from lx_dtypes.models.contracts.application_settings import AnnotationProfession
 from lx_dtypes.models.contracts.patient_examination_report import (
     PatientFindingHistoryData,
 )
@@ -18,6 +30,8 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.medical.patient.patient_finding import PatientFinding
+from endoreg_db.models.medical.finding.finding import Finding
+from endoreg_db.services.studies.collections import with_study_record
 from endoreg_db.services.reports.history import get_patient_finding_summaries
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
@@ -42,6 +56,7 @@ class StudyReportRow(StudyMediaRow):
 
 
 class StudyExaminationRow(TypedDict):
+    study_finding_names: NotRequired[list[str]]
     patient_examination_id: int
     examination_name: str
     examination_date: str | None
@@ -115,6 +130,7 @@ class StudyCohortFilters:
     has_report: bool | None = None
     has_video: bool | None = None
     limit: int = DEFAULT_COHORT_PREVIEW_ROWS
+    preferred_report_profession: AnnotationProfession | None = None
 
 
 @dataclass(slots=True)
@@ -139,7 +155,7 @@ class _PreviewMedia:
 @dataclass(slots=True)
 class _ScopeOptions:
     examinations: list[object]
-    findings: list[object]
+    findings: Sequence[object]
     annotation_labels: list[object]
 
 
@@ -186,6 +202,8 @@ def _parse_limit(query_params: Mapping[str, Any]) -> int:
 
 def parse_study_cohort_filters(
     query_params: Mapping[str, Any],
+    *,
+    preferred_report_profession: AnnotationProfession | None = None,
 ) -> StudyCohortFilters:
     date_from = _parse_optional_date(query_params, "date_from")
     date_to = _parse_optional_date(query_params, "date_to")
@@ -193,6 +211,7 @@ def parse_study_cohort_filters(
         raise ValueError("date_to must be greater than or equal to date_from.")
 
     return StudyCohortFilters(
+        preferred_report_profession=preferred_report_profession,
         date_from=date_from,
         date_to=date_to,
         center_key=_query_text(query_params, "center_key"),
@@ -286,7 +305,17 @@ def _apply_filters(
         queryset = queryset.filter(date_start__lte=filters.date_to)
     if filters.examination_name:
         queryset = queryset.filter(examination__name__iexact=filters.examination_name)
-    if filters.finding:
+    if filters.finding and filters.preferred_report_profession is not None:
+        queryset = with_study_record(queryset, filters.preferred_report_profession)
+        findings = Q(pk__in=[])
+        for name in Finding.objects.filter(name__iexact=filters.finding).values_list(
+            "name", flat=True
+        ):
+            findings |= Q(
+                study_source_record__contains={"patient_findings": [{"finding": name}]}
+            )
+        queryset = queryset.filter(findings)
+    elif filters.finding:
         queryset = queryset.filter(
             patient_findings__is_active=True,
             patient_findings__finding__name__iexact=filters.finding,
@@ -724,16 +753,21 @@ def _build_case_rows(
 
 def _query_scope_options(
     filtered_cases: QuerySet[PatientExamination],
+    study_findings: set[str] | None = None,
 ) -> _ScopeOptions:
     scope_case_ids = cast(Any, Subquery(filtered_cases.values("pk")))
-    findings = list(
-        PatientFinding.objects.filter(
-            patient_examination_id__in=scope_case_ids,
-            is_active=True,
+    findings = (
+        sorted(study_findings)
+        if study_findings is not None
+        else list(
+            PatientFinding.objects.filter(
+                patient_examination_id__in=scope_case_ids,
+                is_active=True,
+            )
+            .order_by("finding__name")
+            .values_list("finding__name", flat=True)
+            .distinct()
         )
-        .order_by("finding__name")
-        .values_list("finding__name", flat=True)
-        .distinct()
     )
     examinations = list(
         filtered_cases.exclude(examination__name__isnull=True)
@@ -827,7 +861,41 @@ def build_study_cohort_payload(
         annotations_by_video=annotations_by_video,
         include_without_media=include_without_media,
     )
-    scope_options = _query_scope_options(scope.filtered_cases)
+    study_findings: set[str] | None = None
+    if filters.preferred_report_profession is not None:
+        # Preview and its dropdown use the same study finding names as the SQL filter.
+        selected = with_study_record(
+            scope.filtered_cases, filters.preferred_report_profession
+        ).annotate(
+            selected_names=Func(
+                F("study_source_record"),
+                Value("$.patient_findings[*].finding"),
+                function="jsonb_path_query_array",
+                output_field=JSONField(),
+            )
+        )
+        preview_ids = set(preview_case_ids)
+        names_by_case: dict[int, list[str]] = {}
+        study_findings = set()
+        for pk, names in selected.values_list("pk", "selected_names").iterator(
+            chunk_size=200
+        ):
+            study_findings.update(names)
+            if pk in preview_ids:
+                names_by_case[pk] = names
+        for case in cases:
+            case["findings"] = sorted(
+                {
+                    name
+                    for pk in case["patient_examination_ids"]
+                    for name in names_by_case[pk]
+                }
+            )
+            for examination_row in case["examinations"]:
+                examination_row["study_finding_names"] = names_by_case[
+                    examination_row["patient_examination_id"]
+                ]
+    scope_options = _query_scope_options(scope.filtered_cases, study_findings)
     # Include taxonomy values from the complete filtered scope, not only the preview page.
     _extend_scope_taxonomy(
         media,

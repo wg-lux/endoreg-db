@@ -10,7 +10,11 @@ from lx_dtypes.language import DEFAULT_LANGUAGE
 from lx_dtypes.models.contracts.cohort_definition import CohortDefinitionFields
 from lx_dtypes.models.contracts.package_snapshot import PackageSnapshot
 from lx_dtypes.models.contracts.study import StudyDefinition
-from lx_dtypes.models.contracts.study_collection import StudyCollectionRecord
+from lx_dtypes.models.contracts.study_collection import (
+    StudyCollectionRecord,
+    StudyReportSource,
+)
+from lx_dtypes.models.contracts.study_metadata import StudyMetadata
 from lx_dtypes.models.contracts.study_exchange import (
     StudyExchangeBundle,
     StudyExchangeCohort,
@@ -253,12 +257,14 @@ def capture_study_examinations(
     resolved membership. Missing ledgers or installed packages fail atomically.
     This is an authoring action; exports never invoke it implicitly.
     """
-    import json
 
     from lx_dtypes.models.contracts.dtypes_record_persistence import (
         DtypesRecordPersistencePayload,
     )
-    from endoreg_db.services.studies.collections import collect_study_examination
+    from endoreg_db.services.studies.collections import (
+        collect_study_examination,
+        study_record_sources,
+    )
 
     if not owner.is_active:
         raise PermissionDenied("An active local owner is required")
@@ -295,6 +301,7 @@ def capture_study_examinations(
             DtypesRecordPersistencePayload,
             ClinicalReferenceImport,
             str,
+            StudyReportSource | None,
         ]
     ] = []
     # Authorized cohort queries may be DISTINCT; lock base rows rather than
@@ -302,22 +309,26 @@ def capture_study_examinations(
     examination_scope = PatientExamination.objects.filter(
         pk__in=examination_scope.values("pk")
     )
-    for examination in examination_scope.select_for_update(of=("self",)).order_by("pk"):
-        if not examination.dtypes_record:
+    metadata = (
+        StudyMetadata.model_validate(cohort.study_metadata)
+        if cohort
+        else StudyMetadata()
+    )
+    for examination, record, source in study_record_sources(
+        examination_scope.select_for_update(of=("self",)), metadata
+    ):
+        if record is None:
             raise ValueError(
                 "Every selected examination requires a saved structured ledger before capture"
             )
-        record = DtypesRecordPersistencePayload.model_validate_json(
-            json.dumps(examination.dtypes_record)
-        )
         if not record.knowledge_base_module or not record.knowledge_base_version:
             raise ValueError("Study capture requires an exact ledger package identity")
         receipt, snapshot = require_clinical_package(
             record.knowledge_base_module, record.knowledge_base_version
         )
-        prepared.append((examination, record, receipt, snapshot.snapshot_id))
+        prepared.append((examination, record, receipt, snapshot.snapshot_id, source))
     result: list[StudyCollectionEntry] = []
-    for examination, record, receipt, snapshot_id in prepared:
+    for examination, record, receipt, snapshot_id, source in prepared:
         replay = None
         for entry in (
             StudyCollectionEntry.objects.filter(
@@ -344,6 +355,7 @@ def capture_study_examinations(
             )
             if (
                 prior.record == record
+                and prior.report_source == source
                 and prior.study_definition == _study_definition(study)
                 and prior.package_snapshot_id == snapshot_id
                 and prior.report_template_name is None
@@ -362,6 +374,7 @@ def capture_study_examinations(
                 patient_examination_id=examination.pk,
                 package_import=receipt,
                 record=record,
+                report_source=source,
                 cohort=cohort,
                 cohort_examination_scope=cohort_examination_scope,
             )

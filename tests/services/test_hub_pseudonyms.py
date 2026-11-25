@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 from django.contrib.auth.models import User
 from lx_dtypes.models.contracts.hub_transfer import HubTransferSensitiveMetaPayload
+from lx_dtypes.models.contracts.study_collection import StudyReportSource
 from pydantic import ValidationError
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
@@ -200,6 +201,15 @@ def test_study_bundle_uses_media_pseudonyms_and_keeps_evaluation(
         study=study,
         examination_scope=PatientExamination.objects.filter(pk=examination.pk),
     )
+    source = StudyReportSource(
+        report_uuid=uuid4(),
+        report_version=2,
+        author_profession=None,
+        source_document_uuids=[uuid4(), uuid4()],
+    )
+    local.collections[0] = local.collections[0].model_copy(
+        update={"report_source": source}
+    )
     scoped = hub_scoped_study_exchange(local, hub_node_key="hub-a")
     identity = hub_identity_payload(
         patient_uuid=examination.patient.uuid,
@@ -218,6 +228,24 @@ def test_study_bundle_uses_media_pseudonyms_and_keeps_evaluation(
     serialized = scoped.model_dump_json()
     assert str(examination.uuid) not in serialized
     assert str(examination.patient.uuid) not in serialized
-    assert hub_scoped_study_exchange(local, hub_node_key="hub-b").patients != (
-        scoped.patients
+    assert local.collections[0].report_source == source
+    transformed = item.report_source
+    assert transformed is not None
+    assert transformed.report_uuid == get_hub_record_pseudonym(
+        source.report_uuid, kind="authored_report", hub_node_key="hub-a"
+    )
+    assert transformed.source_document_uuids == sorted(
+        get_hub_record_pseudonym(doc, kind="source_document", hub_node_key="hub-a")
+        for doc in source.source_document_uuids
+    )
+    for source_uuid in [source.report_uuid, *source.source_document_uuids]:
+        assert str(source_uuid) not in serialized
+    other = hub_scoped_study_exchange(local, hub_node_key="hub-b")
+    assert other.patients != scoped.patients
+    other_source = other.collections[0].report_source
+    assert (
+        other_source is not None and other_source.report_uuid != transformed.report_uuid
+    )
+    assert set(other_source.source_document_uuids).isdisjoint(
+        transformed.source_document_uuids
     )

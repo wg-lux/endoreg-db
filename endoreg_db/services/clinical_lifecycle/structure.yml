@@ -39,6 +39,9 @@ entrypoints:
 - name: advance_workflow_if_journaled
   file: persistence.py
   purpose: Lock the media row, admit a fact mutation and advance any existing workflow journal atomically.
+- name: journal_report_annotation_changes
+  file: persistence.py
+  purpose: Check every linked source journal before a report edit and commit annotation transitions with authorship evidence.
 - name: guarded_clinical_transition
   file: state_machine.py
   purpose: Pure guard (fact invariants, evidence, reducer) from a given state. require_clinical_transition (from the
@@ -62,7 +65,7 @@ files:
 - file: state_machine.py
   role: Typed Python adapter for native projection, evidence validation and transition decisions.
 - file: facts.py
-  role: Typed fact adapters for VideoFile and RawPdfFile.
+  role: Typed fact adapters for VideoFile and RawPdfFile, including finalized document-linked examination reports.
 - file: audit.py
   role: Stage counts, legacy exemption count, invariant violations and stored-state drift rows, resolved like the API.
 - file: legacy_exemption.py
@@ -79,6 +82,7 @@ dependencies:
   - endoreg_db/models
   - endoreg_db/services/privacy
   - endoreg_db/services/annotations
+  - endoreg_db/services/reports
   external:
   - django
   - lx_dtypes

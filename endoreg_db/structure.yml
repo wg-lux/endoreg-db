@@ -8,6 +8,10 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0126_report_source_documents.py
+  role: Stable report UUIDs, examination-scoped document links and saved author profession.
+- file: migrations/0125_annotator_profile.py
+  role: Per-account self-declared annotation profession with a database constraint.
 - file: migrations/0124_reconcile_study_import_receipts.py
   role: Retire ambiguous historical receipt links while preserving clinical data.
 - file: migrations/0123_guarded_state_managers.py

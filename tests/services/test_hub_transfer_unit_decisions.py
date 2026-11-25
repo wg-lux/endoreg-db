@@ -20,6 +20,44 @@ from endoreg_db.services.patient_identity.hash_aliases import record_patient_has
 
 
 @pytest.mark.django_db
+def test_report_metadata_replay_preserves_local_authorship_and_reuses_placeholder() -> (
+    None
+):
+    from django.contrib.auth.models import User
+    from endoreg_db.models import PatientExaminationReport
+
+    patient = Patient.objects.create(patient_hash="hub-report-replay")
+    examination = PatientExamination.objects.create(patient=patient)
+    author = User.objects.create_user(username="local-report-author")
+    authored = PatientExaminationReport.objects.create(
+        patient_examination=examination,
+        template_name="example",
+        updated_by=author,
+        is_active=False,
+        version=3,
+    )
+    row: JsonObject = {"template_name": "example", "version": 3}
+    transfers._upsert_patient_examination_report(
+        patient_examination=examination, row=row
+    )
+    placeholder = PatientExaminationReport.objects.exclude(pk=authored.pk).get(
+        patient_examination=examination
+    )
+    assert placeholder.status == PatientExaminationReport.Status.FINAL
+    transfers._upsert_patient_examination_report(
+        patient_examination=examination, row=row
+    )
+    placeholder.refresh_from_db()
+    authored.refresh_from_db()
+    assert (
+        PatientExaminationReport.objects.filter(patient_examination=examination).count()
+        == 2
+    )
+    assert authored.updated_by_id == author.pk and not authored.is_active
+    assert authored.status == PatientExaminationReport.Status.DRAFT
+
+
+@pytest.mark.django_db
 def test_hub_reimport_rejects_even_known_historical_patient_alias() -> None:
     center = Center.objects.create(name="hub-alias")
     patient = Patient.objects.create(

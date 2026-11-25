@@ -58,7 +58,9 @@ def build_expected_frame_records(
 def build_frame_records(
     paths: list[str], *, relative_to: str | None = ..., zero_based: bool = ...
 ) -> list[tuple[int, str]]: ...
-def clinical_evidence_rejection(event: str, identity_verified: bool) -> str | None:
+def clinical_evidence_rejection(
+    event: str, identity_verified: bool, report: bool = False
+) -> str | None:
     r"""
     Return the rejection token for missing event evidence.
     """

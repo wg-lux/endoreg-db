@@ -139,6 +139,35 @@ definition_of_done:
       der studienspezifischen Regeln und gemeinsame Auslieferung bleiben gesondert zu prüfen.'
     assessed_by: codex-report-concepts-20261012
     assessed_at: '2026-10-12T12:53:41.462905Z'
+- id: study_report_authorship
+  category: data_integrity
+  title: Reusable source documents and study selection from self-declared annotator profiles
+  acceptance:
+  - The authenticated user can select a profession and multiple academic qualifications in German.
+    Personal settings do not change access permissions or another user's profile.
+  - Reports record their author and profile when saved and accept multiple validated source documents
+    of the same examination. A source document can support reports by different authors.
+  - A study can prefer a profession when comparing report observations. Subsequent changes to a user's
+    profile do not rewrite captured evidence. Academic qualifications do not grant physician precedence.
+  - Examination revisions retain the selected report version and source document generations and reject
+    a conflicting report version or a mismatched video identity.
+  required: true
+  verification:
+    kind: manual
+    instructions: Exercise two users and studies against the coordinated package versions. Verify the
+      profile, report submission, validated source document selection, revision capture and exported observations.
+    timeout_seconds: 1200
+  assessment:
+    status: in_progress
+    assessed_by: codex-report-shell-7b32
+    assessed_at: '2026-11-25T09:34:11.371269+00:00'
+    evidence:
+    - kind: test
+      reference: tests/services/test_examination_revisions.py
+    - kind: test
+      reference: tests/views/misc/test_application_settings_endpoints.py
+    - kind: test
+      reference: tests/services/test_study_exchange.py
 - id: independent_report_persistence
   category: data_integrity
   title: Mehrere Berichte pro Patient bleiben unabhängig persistiert

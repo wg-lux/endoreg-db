@@ -2,9 +2,13 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from uuid import uuid4
+from unittest.mock import Mock
 
 import pytest
+from django.test import Client
 from django.utils import timezone
+from django.contrib.auth.models import User
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 
 from endoreg_db.models import Center, RawPdfFile, VideoFile, VideoState
 from endoreg_db.services.media.state import update_media_state
@@ -16,7 +20,10 @@ from endoreg_db.schemas.sensitive_meta_verification import (
     SensitiveMetaVerificationCommand,
 )
 from endoreg_db.models.aidataset.aidataset import AIDataSet
-from endoreg_db.models.state.clinical_workflow import ClinicalWorkflowRecord
+from endoreg_db.models.state.clinical_workflow import (
+    ClinicalWorkflowRecord,
+    ClinicalWorkflowTransition,
+)
 from endoreg_db.services.clinical_lifecycle import (
     ClinicalRecordKind,
     AnnotationStage,
@@ -220,6 +227,261 @@ def test_validated_report_cannot_be_released() -> None:
     )
     with pytest.raises(ClinicalLifecycleTransitionError):
         require_clinical_transition(facts, ClinicalLifecycleEvent.EXPORT_APPROVED)
+
+
+@pytest.fixture
+def annotation_documents() -> tuple[PatientExamination, RawPdfFile, RawPdfFile]:
+    from django.core.files.base import ContentFile
+    from endoreg_db.services.raw_pdf_files.integrity import (
+        verify_and_persist_processed_report_sha256,
+    )
+    from tests.helpers.pdf import render_single_page_pdf
+
+    center = _center()
+    meta = _sensitive_meta(center, verified=True)
+    examination = meta.pseudo_examination
+    assert examination and examination.patient
+    examination.dtypes_record = {
+        "patient": str(examination.patient.pk),
+        "examination": "colonoscopy",
+    }
+    examination.save()
+    docs: list[RawPdfFile] = []
+    for index in range(2):
+        pdf = RawPdfFile.objects.create(
+            center=center,
+            patient=examination.patient,
+            examination=examination,
+            sensitive_meta=meta,
+            pdf_hash=uuid4().hex * 2,
+            state=create_media_state(
+                RawPdfState,
+                anonymized=True,
+                anonymization_validated=True,
+                sensitive_meta_processed=True,
+            ),
+        )
+        pdf.processed_file.save(
+            "source.pdf", ContentFile(render_single_page_pdf(f"Source {index}"))
+        )
+        verify_and_persist_processed_report_sha256(pdf)
+        docs.append(pdf)
+    return examination, docs[0], docs[1]
+
+
+def test_only_linked_final_reports_complete_document_annotation(
+    annotation_documents: tuple[PatientExamination, RawPdfFile, RawPdfFile],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.services.reports import persistence
+    from tests.helpers.report_validation import successful_runtime_validation
+
+    examination, first, second = annotation_documents
+    author = User.objects.create_user(username="clinical-record-author")
+    kind = ClinicalRecordKind.REPORT
+    projected = derive_clinical_record_state(report_record_facts(first))
+    row = ClinicalWorkflowRecord.objects.create(
+        kind=kind.value,
+        record_id=first.pk,
+        privacy=projected.privacy.value,
+        annotation=projected.annotation.value,
+        release=projected.release.value,
+    )
+    # Keep this state test independent of template evaluation and PDF rendering.
+    monkeypatch.setattr(
+        persistence, "validate_final_report_submission", successful_runtime_validation
+    )
+    monkeypatch.setattr(
+        persistence, "persist_report_pdf_artifact", Mock(return_value=(None, None))
+    )
+
+    def submit(
+        doc_ids: list[int],
+        status: str,
+        *,
+        report_id: int | None = None,
+        user: User = author,
+    ) -> int:
+        result = persistence.save_report_submission(
+            patient_examination_id=examination.pk,
+            template_name="example",
+            user=user,
+            source_document_ids=doc_ids,
+            status=status,
+            report_id=report_id,
+        )
+        return int(result.report.pk)
+
+    primary = submit([first.pk], "draft")
+    assert not report_record_facts(first).medical_annotation_complete
+    with pytest.raises(persistence.ReportPersistenceValidationError):
+        submit(
+            [first.pk],
+            "final",
+            report_id=primary,
+            user=User.objects.create_user(username="foreign-annotator"),
+        )
+    submit([first.pk], "final", report_id=primary)
+    row.refresh_from_db()
+    assert (row.annotation, row.release, row.version) == (
+        "validated",
+        "not_released",
+        1,
+    )
+    assert report_record_facts(first).medical_annotation_complete
+    assert not report_record_facts(second).medical_annotation_complete
+    sibling = submit([first.pk], "final")
+    submit([second.pk], "final", report_id=primary)
+    row.refresh_from_db()
+    assert row.version == 1
+    assert report_record_facts(second).medical_annotation_complete
+    submit([], "final", report_id=sibling)
+    row.refresh_from_db()
+    assert (row.annotation, row.release, row.version) == (
+        "in_progress",
+        "not_released",
+        2,
+    )
+    assert list(
+        ClinicalWorkflowTransition.objects.filter(record=row).values_list(
+            "event", "actor_id"
+        )
+    ) == [
+        ("annotation_completed", author.pk),
+        ("annotation_reopened", author.pk),
+    ]
+    assert not report_record_facts(first).medical_annotation_complete
+    submit([second.pk], "draft", report_id=primary)
+    assert not report_record_facts(second).medical_annotation_complete
+
+
+@pytest.mark.parametrize(
+    "withdrawn",
+    [False, True],
+    ids=["drift-on-unchanged-draft", "native-rejection-on-second-document"],
+)
+def test_report_api_rejects_workflow_conflicts_atomically(
+    withdrawn: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    annotation_documents: tuple[PatientExamination, RawPdfFile, RawPdfFile],
+    packaged_registry: object,
+    client: Client,
+) -> None:
+    from endoreg_db.models import PatientExaminationReport
+    from endoreg_db.models.state.audit_ledger import AuditLedger
+    from tests.helpers.report_validation import successful_runtime_validation
+
+    monkeypatch.setattr(
+        "endoreg_db.services.reports.persistence.validate_final_report_submission",
+        successful_runtime_validation,
+    )
+    exam, first, second = annotation_documents
+    user = User.objects.create_superuser(username="report-editor")
+    client.force_login(user)
+    original_sources = [first.pk, second.pk] if withdrawn else [first.pk]
+    save_url = "/api/patient-examination-reports/save-submission"
+    payload = {
+        "patient_examination_id": exam.pk,
+        "template_name": "star_upper_gi_main",
+        "knowledge_base_module": "star_upper_gi",
+        "knowledge_base_version": "0.1.2",
+        "source_document_ids": original_sources,
+        "status": "draft",
+        "title": "Initial draft",
+    }
+    response = client.post(save_url, payload, content_type="application/json")
+    assert response.status_code == 201, response.content
+    report = PatientExaminationReport.objects.get(pk=response.json()["report"]["id"])
+    original_version = report.version
+    projected = derive_clinical_record_state(report_record_facts(second))
+    first_row = ClinicalWorkflowRecord.objects.create(
+        kind=ClinicalRecordKind.REPORT.value,
+        record_id=first.pk,
+        privacy=projected.privacy.value,
+        annotation=projected.annotation.value,
+        release=projected.release.value,
+    )
+    other_row = ClinicalWorkflowRecord.objects.create(
+        kind=ClinicalRecordKind.REPORT.value,
+        record_id=second.pk,
+        privacy=PrivacyStage.WITHDRAWN.value if withdrawn else projected.privacy.value,
+        annotation=projected.annotation.value
+        if withdrawn
+        else AnnotationStage.VALIDATED.value,
+        release=projected.release.value,
+    )
+    workflow_url = f"/api/media/pdfs/{second.pk}/workflow/"
+    initial = client.get(workflow_url)
+    if withdrawn:
+        assert initial.status_code == 200 and initial.json()["privacy"] == "withdrawn"
+        assert "annotation_completed" not in initial.json()["allowed_events"]
+    else:
+        assert initial.status_code == 409 and initial.json()["violations"] == [
+            "stored_state_drift"
+        ]
+    edit = {
+        **payload,
+        "report_id": report.pk,
+        "expected_version": original_version,
+        "status": "final" if withdrawn else "draft",
+        "title": "Rejected edit",
+        "source_document_ids": [first.pk, second.pk],
+    }
+    audit_count = AuditLedger.objects.filter(
+        action="clinical_workflow_transition"
+    ).count()
+    for _ in range(2):
+        response = client.post(save_url, edit, content_type="application/json")
+        assert response.status_code == 409, response.content
+        report.refresh_from_db()
+        assert (report.title, report.version) == ("Initial draft", original_version)
+        assert (
+            sorted(report.source_documents.values_list("pk", flat=True))
+            == original_sources
+        )
+        assert report.status == "draft"
+        for row in (first_row, other_row):
+            row.refresh_from_db()
+            assert row.version == 0
+            assert not ClinicalWorkflowTransition.objects.filter(record=row).exists()
+        assert (
+            AuditLedger.objects.filter(action="clinical_workflow_transition").count()
+            == audit_count
+        )
+    if withdrawn:
+        from endoreg_db.views.patient_report import (
+            patient_examination_report as report_api,
+        )
+
+        monkeypatch.setattr(
+            report_api,
+            "validate_final_report_submission",
+            successful_runtime_validation,
+        )
+        publish = Mock()
+        monkeypatch.setattr(report_api, "persist_report_pdf_artifact", publish)
+        generation = client.post(
+            "/api/patient-examination-reports/make-report",
+            {
+                **payload,
+                "report_id": report.pk,
+                "selected_frames": [],
+                "patient": {
+                    "first_name": "Test",
+                    "last_name": "Person",
+                    "dob": "1990-01-01",
+                },
+            },
+            content_type="application/json",
+        )
+        assert generation.status_code == 409, generation.content
+        publish.assert_not_called()
+        report.refresh_from_db()
+        assert (report.status, report.version) == ("draft", original_version)
+        assert not ClinicalWorkflowTransition.objects.filter(
+            record__in=(first_row, other_row)
+        ).exists()
+    assert client.get(workflow_url).json() == initial.json()
 
 
 def test_audit_command_reports_violations_without_identifiers() -> None:

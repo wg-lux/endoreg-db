@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from datetime import date, datetime
+from datetime import datetime
 from typing import Protocol, TypeAlias, cast
 
 from django.db import transaction
@@ -10,6 +10,7 @@ from django.utils import timezone
 from lx_dtypes.models.contracts.json_types import JsonObject, JsonValue
 from rest_framework import status, viewsets
 from rest_framework.decorators import action
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 from endoreg_db.models.administration.person.patient.patient import Patient
@@ -29,7 +30,14 @@ from endoreg_db.serializers.patient_examination import (
 )
 from endoreg_db.serializers.examination import ExaminationDropdownSerializer
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
-from endoreg_db.views.access_control import assert_center_scope_allowed
+from endoreg_db.views.access_control import (
+    assert_center_scope_allowed,
+    filter_center_scoped_queryset,
+)
+from .patient_examination_list import scoped_examinations
+from endoreg_db.serializers.patient_examination.patient_examination import (
+    PatientExaminationDetailsSerializer,
+)
 from endoreg_db.views.interoperability_errors import interoperability_error_response
 
 RouteKwarg: TypeAlias = str | int | bool
@@ -76,29 +84,28 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
     queryset = PatientExamination.objects.all().select_related("patient", "examination")
     serializer_class = PatientExaminationSerializer
 
+    def get_permissions(self):
+        if self.action in {
+            "list",
+            "retrieve",
+            "update",
+            "partial_update",
+            "destroy",
+            "recent",
+            "details",
+            "patients_dropdown",
+        }:
+            return [IsAuthenticated(), PolicyPermission()]
+        return super().get_permissions()
+
     def get_queryset(self) -> QuerySet[PatientExamination]:
-        """Optimierte Abfrage mit besserer Performance"""
-        return (
-            PatientExamination.objects.select_related("patient", "examination")
-            .prefetch_related("patient_findings", "indications")
-            .order_by("-date_start", "-id")
-        )
+        return scoped_examinations(self.request)
 
     def get_patient_examination_ids(self) -> list[int]:
-        """Hilfsmethode zum Abrufen meherer PatientExamination IDs"""
-        return list(PatientExamination.objects.values_list("id", flat=True))
+        return list(self.get_queryset().values_list("pk", flat=True))
 
-    def get_patient_examination_by_id(
-        self,
-        pk: int | str,
-    ) -> PatientExamination | None:
-        """Hilfsmethode zum Abrufen einer PatientExamination nach ID"""
-        if not PatientExamination.objects.filter(pk=pk).exists():
-            return None
-        else:
-            return PatientExamination.objects.select_related(
-                "patient", "examination"
-            ).get(pk=pk)
+    def get_patient_examination_by_id(self, pk: int | str) -> PatientExamination | None:
+        return self.get_queryset().filter(pk=pk).first()
 
     @action(detail=False, methods=["get"])
     def patients_dropdown(self, request: Request) -> Response:
@@ -106,7 +113,9 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
         Endpoint für Patient-Dropdown-Daten
         GET /api/patient-examinations/patients_dropdown/
         """
-        patients = Patient.objects.all().order_by("first_name", "last_name")
+        patients = filter_center_scoped_queryset(
+            queryset=Patient.objects.all(), user=request.user
+        ).order_by("first_name", "last_name")
         serializer = PatientDropdownSerializer(patients, many=True)
         return Response(_serializer_data(serializer))
 
@@ -131,25 +140,13 @@ class PatientExaminationViewSet(viewsets.ModelViewSet[PatientExamination]):
         serializer = self.get_serializer(recent_examinations, many=True)
         return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
 
-    @action(detail=True, methods=["get"])
+    @action(
+        detail=True,
+        methods=["get"],
+        serializer_class=PatientExaminationDetailsSerializer,
+    )
     def details(self, request: Request, pk: str = "") -> Response:
-        """
-        Detaillierte Informationen über eine PatientExamination
-        GET /api/patient-examinations/{id}/details/
-        """
-        examination = self.get_object()
-        date_start = cast(date | None, getattr(examination, "date_start"))
-        data: dict[str, JsonValue] = {
-            "examination": _serializer_data(
-                cast(_SerializerDataLike, PatientExaminationSerializer(examination))
-            ),
-            "findings": examination.get_findings().count(),
-            "indications": examination.get_indications().count(),
-            "patient_age_at_examination": examination.get_patient_age_at_examination()
-            if date_start is not None
-            else None,
-        }
-        return Response(data)
+        return Response(self.get_serializer(self.get_object()).data)
 
     @action(
         detail=True,

@@ -77,7 +77,9 @@ _IMPORT_FEED = frozenset({PrivacyStage.IMPORT_PENDING, PrivacyStage.IMPORTING})
 
 
 def _accumulate(
-    totals: dict[WorklistStage, list[int]], state: ClinicalRecordState
+    totals: dict[WorklistStage, list[int]],
+    state: ClinicalRecordState,
+    kind: ClinicalRecordKind,
 ) -> None:
     # count = waits on a person; transient = a system step feeds the stage.
     privacy, annotation, release = state.privacy, state.annotation, state.release
@@ -89,7 +91,11 @@ def _accumulate(
             totals[WorklistStage.ANNOTATE][1] += 1
     if annotation is AnnotationStage.IN_PROGRESS and privacy not in PRIVACY_INACTIVE:
         totals[WorklistStage.ANNOTATE][0] += 1
-    if annotation is AnnotationStage.VALIDATED and release is ReleaseStage.NOT_RELEASED:
+    if (
+        kind is ClinicalRecordKind.VIDEO
+        and annotation is AnnotationStage.VALIDATED
+        and release is ReleaseStage.NOT_RELEASED
+    ):
         if privacy is PrivacyStage.RAW_PURGED:
             totals[WorklistStage.APPROVE_EXPORT][0] += 1
         elif privacy is PrivacyStage.VALIDATED:
@@ -140,7 +146,7 @@ def stage_counts(
                     ",".join(violation.value for violation in exc.violations),
                 )
                 continue
-            _accumulate(totals, snapshot.state)
+            _accumulate(totals, snapshot.state, kind)
     stages = StageCounts(
         stages=tuple(
             StageCount(stage=stage, count=totals[stage][0], transient=totals[stage][1])

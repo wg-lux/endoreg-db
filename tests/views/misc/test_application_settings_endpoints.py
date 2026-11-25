@@ -69,6 +69,58 @@ def _writer_from_kwargs(kwargs: Mapping[str, object], key: str) -> _TextWriter:
     return cast(_TextWriter, writer)
 
 
+class PersonalAnnotationProfileTests(TestCase):
+    def test_profile_is_personal_self_reported_and_clearable(self) -> None:
+        from rest_framework.test import APIClient
+
+        client = APIClient()
+        url = "/api/settings/application/my-annotation-profile/"
+        users = cast(_UserManager, get_user_model().objects)
+        first = users.create_user(username="annotator-one")
+        second = users.create_user(username="annotator-two")
+        assert client.get(url).status_code in {401, 403}
+        client.force_authenticate(first)
+        assert client.get(url).json() == {"profession": None, "academic_titles": []}
+        for role in (
+            "physician",
+            "medical_student",
+            "nurse",
+            "medical_assistant",
+            "medical_informatics",
+            "non_medical",
+        ):
+            response = client.put(
+                url,
+                {"profession": role, "academic_titles": ["msc", "bsc"]},
+                format="json",
+            )
+            assert response.status_code == 200, response.content
+            assert (
+                response.json()
+                == client.get(url).json()
+                == {"profession": role, "academic_titles": ["bsc", "msc"]}
+            )
+        client.force_authenticate(second)
+        assert client.get(url).json() == {"profession": None, "academic_titles": []}
+        for invalid in (
+            {"profession": "verified_doctor"},
+            {"user_id": first.pk},
+            {"verified": True},
+            {"academic_titles": ["physician"]},
+            {"academic_titles": ["bsc", "bsc"]},
+        ):
+            data = {"profession": "physician", "academic_titles": [], **invalid}
+            assert client.put(url, data, format="json").status_code == 400
+        client.force_authenticate(first)
+        assert client.get(url).json() == {
+            "profession": "non_medical",
+            "academic_titles": ["bsc", "msc"],
+        }
+        clear = {"profession": None, "academic_titles": []}
+        assert client.put(url, clear, format="json").status_code == 200
+        assert client.get(url).json() == clear
+
+
 class ApplicationSettingsEndpointTests(TestCase):
     def setUp(self):
         suffix = uuid4().hex[:8]

@@ -1069,6 +1069,9 @@ def test_segment_frame_selector_patch_random_step_set_and_clear(
     segment_id = selector_context.segment.pk
     patient_examination_id = selector_context.patient_examination.pk
 
+    # A frame edit must not adopt an imported report with unknown clinical authorship.
+    PatientExaminationReport.objects.filter(pk=report_id).update(updated_by=None)
+    original = PatientExaminationReport.objects.get(pk=report_id)
     resp_random = logged_in_client.patch(
         _selector_url(patient_examination_id, report_id=report_id),
         data=_json_body(
@@ -1168,6 +1171,8 @@ def test_segment_frame_selector_patch_random_step_set_and_clear(
         payload_after_clear.get("report_segment_frame_selections", {}),
     )
 
+    assert report.updated_by_id == original.updated_by_id
+    assert report.version == original.version + 4
     assert str(segment_id) not in stored_after_clear
 
 
@@ -1317,6 +1322,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
         _successful_runtime_validation,
     )
 
+    original_version = export_context.report.version
     resp = logged_in_client.post(
         f"{API_PREFIX}/make-report",
         data=_json_body(
@@ -1341,6 +1347,7 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
 
     export_context.report.refresh_from_db()
 
+    assert export_context.report.version == original_version + 1
     assert export_context.report.status == PatientExaminationReport.Status.FINAL
     assert data["included_frame_count"] == len(selected_frames)
     assert data["persisted_pdf_artifact_id"]

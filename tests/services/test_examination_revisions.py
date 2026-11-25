@@ -4,6 +4,7 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from openpyxl import load_workbook
 from rest_framework.test import APIClient
@@ -16,6 +17,7 @@ from lx_dtypes.models.contracts.examination_revision import (
     ExaminationRevisionSnapshot,
     ExaminationRevisionUpdate,
     ExaminationEvidenceSelection,
+    ExaminationReportDocument,
 )
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.ledger.medical.Write import PatientLabValueCreate
@@ -25,6 +27,7 @@ from endoreg_db.models import (
     Examination,
     Patient,
     PatientExamination,
+    RawPdfFile,
     LabValue,
     Unit,
     Center,
@@ -320,6 +323,91 @@ def test_optional_evidence_is_frozen_and_changed_media_cannot_finalize(
     final.patient_examination = other_exam
     with pytest.raises(ValidationError, match="immutable"):
         final.save()
+
+
+@pytest.mark.django_db
+def test_report_revision_pins_author_and_rejects_stale_selection() -> None:
+    examination, _ = examination_case()
+    author = User.objects.create_user(username="revision-author")
+    report = PatientExaminationReport.objects.create(
+        patient_examination=examination,
+        template_name="example",
+        dtypes_record=examination.dtypes_record,
+        updated_by=author,
+        author_profession="physician",
+        author_academic_titles=["doctorate", "professor"],
+        version=2,
+    )
+    selection = ExaminationEvidenceSelection(report_id=report.pk, report_version=1)
+    request = ExaminationRevisionCreate(
+        patient_examination_id=examination.pk,
+        title="Selected report",
+        selection=selection,
+    )
+    with pytest.raises(ValueError, match="selected report changed"):
+        capture_examination_revision(examination, request)
+    request.selection.report_version = 2
+    revision = capture_examination_revision(examination, request)
+    report.author_academic_titles = []
+    report.author_profession = "medical_assistant"
+    report.version += 1
+    report.save()
+    revision.refresh_from_db()
+    evidence = ExaminationRevisionSnapshot.model_validate(revision.snapshot).evidence
+    assert evidence.report_version == 2
+    assert evidence.report_author_id == author.pk
+    assert evidence.report_author_profession == "physician"
+    assert evidence.report_author_academic_titles == ["doctorate", "professor"]
+
+
+@pytest.mark.django_db
+def test_finalizing_rechecks_every_frozen_document_even_after_report_edit() -> None:
+    examination, _ = examination_case()
+    report = PatientExaminationReport.objects.create(
+        patient_examination=examination,
+        template_name="example",
+        dtypes_record=examination.dtypes_record,
+    )
+    documents = [
+        RawPdfFile.objects.create(pdf_hash=digest * 64, examination=examination)
+        for digest in ("a", "b")
+    ]
+    report.source_documents.set(documents)
+    original = [
+        ExaminationReportDocument(
+            document_id=document.pk,
+            document_uuid=document.uuid,
+            processed_sha256=digest * 64,
+        )
+        for document, digest in zip(documents, ("a", "b"), strict=True)
+    ]
+    generation_changed = [
+        original[0],
+        ExaminationReportDocument(
+            document_id=documents[1].pk,
+            document_uuid=documents[1].uuid,
+            processed_sha256="c" * 64,
+        ),
+    ]
+    with patch(
+        "endoreg_db.services.cases.examination_revisions._snapshot_documents",
+        side_effect=[original, generation_changed, original],
+    ) as verify:
+        record = capture_examination_revision(
+            examination,
+            ExaminationRevisionCreate(
+                patient_examination_id=examination.pk,
+                title="Multiple source documents",
+                selection=ExaminationEvidenceSelection(report_id=report.pk),
+            ),
+        )
+        report.source_documents.clear()
+        with pytest.raises(ValueError, match="Source document generation changed"):
+            finalize_examination_revision(record, 1)
+        record.refresh_from_db()
+        assert record.finalized_at is None
+        assert finalize_examination_revision(record, 1).finalized_at
+        assert verify.call_args.args == (examination, [doc.pk for doc in documents])
 
 
 def _workbook_payload() -> JsonObject:

@@ -16,7 +16,8 @@ event in the same transaction.
 from __future__ import annotations
 
 import logging
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Generator, Mapping
+from contextlib import contextmanager
 from dataclasses import dataclass
 from typing import cast
 from uuid import uuid4
@@ -173,6 +174,8 @@ def resolve_workflow_state(
     record_id: int,
     facts: ClinicalRecordFacts,
     row: ClinicalWorkflowRecord | None,
+    *,
+    proposed: bool = False,
 ) -> WorkflowSnapshot:
     """The one rule every reader uses: facts project, a stored row must agree.
 
@@ -187,8 +190,10 @@ def resolve_workflow_state(
     if not _agrees(stored, projected):
         emit_structured_event(
             logger,
-            "clinical_workflow.state_drift",
-            level=logging.ERROR,
+            "clinical_workflow.proposed_state_conflict"
+            if proposed
+            else "clinical_workflow.state_drift",
+            level=logging.WARNING if proposed else logging.ERROR,
             kind=kind.value,
             record_id=record_id,
             stored_privacy=stored.privacy.value,
@@ -206,13 +211,17 @@ def resolve_workflow_state(
 
 
 def read_workflow_state(
-    kind: ClinicalRecordKind, record_id: int, facts: ClinicalRecordFacts
+    kind: ClinicalRecordKind,
+    record_id: int,
+    facts: ClinicalRecordFacts,
+    *,
+    proposed: bool = False,
 ) -> WorkflowSnapshot:
     """Current state of one record; see :func:`resolve_workflow_state`."""
     row = ClinicalWorkflowRecord.objects.filter(
         kind=kind.value, record_id=record_id
     ).first()
-    return resolve_workflow_state(kind, record_id, facts, row)
+    return resolve_workflow_state(kind, record_id, facts, row, proposed=proposed)
 
 
 def require_workflow_transition(
@@ -246,6 +255,50 @@ def advance_workflow_if_journaled(
     target = guarded_clinical_transition(current, facts, event)
     if row is not None and target != current:
         _persist_transition(row, current, target, event, uuid4().hex, None)
+
+
+@contextmanager
+def journal_report_annotation_changes(
+    document_ids: Collection[int], actor: object | None
+) -> Generator[None]:
+    """Commit derived completion changes and their native transitions with the report write."""
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("A report annotation change requires an atomic transaction")
+    kind = ClinicalRecordKind.REPORT
+    documents = list(
+        RawPdfFile.objects.select_for_update(of=("self",))
+        .filter(pk__in=document_ids)
+        .select_related("state", "sensitive_meta", "examination__patient")
+        .order_by("pk")
+    )
+    rows = stored_workflow_rows(kind, document_ids)
+    before: dict[int, tuple[ClinicalRecordFacts, ClinicalRecordState]] = {}
+    for doc in documents:
+        facts = report_record_facts(doc)
+        current = resolve_workflow_state(kind, doc.pk, facts, rows.get(doc.pk)).state
+        before[doc.pk] = (facts, current)
+    yield
+    for document in documents:
+        previous, current = before[document.pk]
+        updated = report_record_facts(document)
+        if previous.medical_annotation_complete == updated.medical_annotation_complete:
+            continue
+        row = rows.get(document.pk)
+        event = (
+            ClinicalLifecycleEvent.ANNOTATION_COMPLETED
+            if updated.medical_annotation_complete
+            else ClinicalLifecycleEvent.ANNOTATION_REOPENED
+        )
+        target = guarded_clinical_transition(current, previous, event)
+        projected = derive_clinical_record_state(updated)
+        if not _agrees(target, projected):
+            raise WorkflowStateDriftError(
+                kind=kind, record_id=document.pk, stored=target, projected=projected
+            )
+        if row is not None:
+            _persist_transition(
+                row, current, target, event, uuid4().hex, _audit_actor(actor)
+            )
 
 
 def _replay(

@@ -193,7 +193,9 @@ def derive_clinical_record_state(facts: ClinicalRecordFacts) -> ClinicalRecordSt
 def evidence_rejection(
     facts: ClinicalRecordFacts, event: ClinicalLifecycleEvent
 ) -> TransitionRejection | None:
-    reason = native.clinical_evidence_rejection(event, facts.identity_verified)
+    reason = native.clinical_evidence_rejection(
+        event, facts.identity_verified, facts.kind is ClinicalRecordKind.REPORT
+    )
     return TransitionRejection(reason) if reason is not None else None
 
 

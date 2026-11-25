@@ -22,7 +22,7 @@ files:
 - file: exchange.py
   role: Explicit idempotent ledger capture, authorized study evidence export and transactional owner-bound import shared by Excel and hub.
 - file: collections.py
-  role: Authorized study collection capture using canonical KB and ledger evaluation.
+  role: Select the structured study observation from the examination or a finalized authored report for capture, membership filters and statistics; preserve portable report and document provenance.
 - file: __init__.py
   role: Studienvorgaben und Kohortenabfragen.
 - file: cohort.py

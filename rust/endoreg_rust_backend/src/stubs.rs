@@ -579,10 +579,11 @@ inventory::submit! {
         args: &[
             ArgInfo { name: "event", r#type: stub_type_str },
             ArgInfo { name: "identity_verified", r#type: stub_type_bool },
+            ArgInfo { name: "report", r#type: stub_type_bool },
         ],
         r#return: stub_type_optional_str,
         doc: "Return the rejection token for missing event evidence.",
-        signature: Some("event: str, identity_verified: bool"),
+        signature: Some("event: str, identity_verified: bool, report: bool = False"),
         module: None,
     }
 }

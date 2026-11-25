@@ -77,6 +77,13 @@ ROUTE_RESOURCE: RouteResourceMap = {
     # Patients
     "patient-list": "patient",  # /api/patients/
     "patient-detail": "patient",  # /api/patients/{id}/
+    "patient_examination_detail": "patient",
+    "patient_examination_list": "patient",
+    "patientexamination-list": "patient",
+    "patientexamination-detail": "patient",
+    "patientexamination-recent": "patient",
+    "patientexamination-details": "patient",
+    "patientexamination-patients-dropdown": "patient",
     "patient-medical-ledger": "patient",
     "patient-medical-terminology": "patient",
     "patient-create-medication": "patient",

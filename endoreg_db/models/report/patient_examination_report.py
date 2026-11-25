@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+from uuid import UUID, uuid4
 from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.utils import timezone
+from lx_dtypes.models.contracts.application_settings import (
+    AnnotationProfession,
+    validated_annotation_academic_titles,
+)
 from lx_dtypes.models.contracts.patient_examination_report import ReportJsonObject
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
@@ -17,9 +22,13 @@ from endoreg_db.schemas.report_persistence import (
 
 if TYPE_CHECKING:
     from django.contrib.auth.models import User
+    from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 
 
 class PatientExaminationReport(models.Model):
+    if TYPE_CHECKING:
+        updated_by_id: int | None
+
     class Status(models.TextChoices):
         DRAFT = "draft", "Draft"
         FINAL = "final", "Final"
@@ -27,6 +36,19 @@ class PatientExaminationReport(models.Model):
     class Language(models.TextChoices):
         GERMAN = "de", "Deutsch"
         ENGLISH = "en", "English"
+
+    uuid: models.UUIDField[UUID, UUID] = models.UUIDField(
+        default=uuid4, unique=True, editable=False
+    )
+    source_documents: models.ManyToManyField[RawPdfFile, Any] = models.ManyToManyField(
+        "RawPdfFile", related_name="annotated_reports", blank=True
+    )
+    author_academic_titles: models.JSONField[list[str], list[str]] = models.JSONField(
+        default=list, blank=True
+    )
+    author_profession: models.CharField[str, str] = models.CharField(
+        max_length=32, blank=True, default=""
+    )
 
     patient_examination: models.ForeignKey[Any] = models.ForeignKey(
         "PatientExamination",
@@ -136,6 +158,17 @@ class PatientExaminationReport(models.Model):
     def clean(self) -> None:
         super().clean()
         errors: dict[str, str] = {}
+        try:
+            self.author_academic_titles = validated_annotation_academic_titles(
+                self.author_academic_titles
+            )
+        except ValueError:
+            errors["author_academic_titles"] = "Invalid author academic titles."
+        if (
+            self.author_profession
+            and self.author_profession not in AnnotationProfession
+        ):
+            errors["author_profession"] = "Invalid author profession."
         if self.dtypes_record is not None:
             try:
                 self.dtypes_record = validate_dtypes_p_examination_payload(

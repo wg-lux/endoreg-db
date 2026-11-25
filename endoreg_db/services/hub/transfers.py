@@ -2183,6 +2183,7 @@ def _apply_patient_examination_report_rows(
         )
 
 
+@transaction.atomic
 def _upsert_patient_examination_report(
     *,
     patient_examination: PatientExamination,
@@ -2197,6 +2198,9 @@ def _upsert_patient_examination_report(
         default=1,
     )
 
+    PatientExamination.objects.select_for_update().get(pk=patient_examination.pk)
+    # A transfer row carries template/version metadata only. It cannot identify
+    # a local author's examination report, even if those fields happen to match.
     report = (
         PatientExaminationReport.objects.filter(
             patient_examination=patient_examination,
@@ -2204,10 +2208,20 @@ def _upsert_patient_examination_report(
             template_version=template_version,
             template_hash=template_hash,
             version=version,
+            status=PatientExaminationReport.Status.FINAL,
+            created_by__isnull=True,
+            updated_by__isnull=True,
+            finalized_by__isnull=True,
+            dtypes_record__isnull=True,
+            source_documents__isnull=True,
+            rendered_text="",
+            editor_payload={},
         )
         .order_by("-id")
         .first()
     )
+    if report is not None and report.is_active:
+        return
     if report is None:
         report = PatientExaminationReport(
             patient_examination=patient_examination,
@@ -2217,12 +2231,11 @@ def _upsert_patient_examination_report(
             version=version,
         )
 
-    with transaction.atomic():
-        set_patient_examination_report_status(
-            report, PatientExaminationReport.Status.FINAL.value
-        )
-        report.is_active = True
-        report.save()
+    set_patient_examination_report_status(
+        report, PatientExaminationReport.Status.FINAL.value
+    )
+    report.is_active = True
+    report.save()
 
 
 # Sender-declared columns mirrored verbatim; frame_count is then bound to the

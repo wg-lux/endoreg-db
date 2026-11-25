@@ -16,6 +16,7 @@ from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.models.other.study import Study
 from endoreg_db.models.other.study_cohort import StudyCohort
 from endoreg_db.models.other.study_collection_entry import StudyCollectionEntry
@@ -354,3 +355,90 @@ def test_capture_cohort_creates_owned_study_and_rejects_missing_ledgers(
     cohort.refresh_from_db()
     assert cohort.study_id == captured[0].study.pk
     assert captured[0].study.created_by_id == owner.pk
+
+
+def test_cohorts_choose_independent_report_sources_and_retain_prior_observations(
+    evidence: tuple[User, Study, PatientExamination],
+) -> None:
+    from lx_dtypes.study_exchange import (
+        study_exchange_from_xlsx,
+        study_exchange_to_xlsx,
+    )
+    from endoreg_db.services.studies.exchange import capture_study_examinations
+
+    owner, study, examination = evidence
+    original = StudyCollectionEntry.objects.get().validated_record().record
+    examination.dtypes_record = original.model_dump(mode="json")
+    examination.save()
+    scope = PatientExamination.objects.filter(pk=examination.pk)
+    cohorts = {
+        role: StudyCohort.objects.create(
+            study=study,
+            created_by=owner,
+            name=role,
+            hypothesis="Source selection",
+            study_metadata={"preferred_report_profession": role},
+        )
+        for role in ("physician", "medical_assistant")
+    }
+
+    def capture(role: str) -> StudyCollectionEntry:
+        return capture_study_examinations(
+            owner=owner,
+            cohort=cohorts[role],
+            examination_scope=scope,
+            cohort_examination_scope=scope,
+        )[0]
+
+    assert capture("physician").validated_record().report_source is None
+    reports: dict[str, PatientExaminationReport] = {}
+    for role in cohorts:
+        report_record = original.model_copy(update={"tags": [role]})
+        reports[role] = PatientExaminationReport.objects.create(
+            patient_examination=examination,
+            template_name="test",
+            updated_by=User.objects.create_user(username=role),
+            author_profession=role,
+            status="final",
+            dtypes_record=report_record.model_dump(mode="json"),
+        )
+    # A newer draft can never displace the physician's final structured record.
+    PatientExaminationReport.objects.create(
+        patient_examination=examination,
+        template_name="test",
+        status="draft",
+        author_profession="physician",
+        updated_by=owner,
+        dtypes_record=examination.dtypes_record,
+    )
+    for role, report in reports.items():
+        entry = capture(role)
+        saved = entry.validated_record()
+        assert saved.report_source is not None
+        assert saved.report_source.report_uuid == report.uuid
+        assert saved.report_source.author_profession == role
+        assert saved.record.tags == [role]
+        assert capture(role).pk == entry.pk
+
+    first = capture("physician")
+    physician = reports["physician"]
+    physician.version += 1
+    physician.save()
+    second = capture("physician")
+    assert second.pk != first.pk
+    restored = study_exchange_from_xlsx(
+        study_exchange_to_xlsx(
+            export_study_exchange(owner=owner, study=study, examination_scope=scope)
+        )
+    )
+    versions = {
+        row.report_source.report_version
+        for row in restored.collections
+        if row.report_source and row.report_source.report_uuid == physician.uuid
+    }
+    assert versions == {1, 2}
+    physician.is_active = False
+    physician.save()
+    fallback = capture("physician").validated_record().report_source
+    assert fallback is not None
+    assert fallback.report_uuid == reports["medical_assistant"].uuid
