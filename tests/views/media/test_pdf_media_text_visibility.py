@@ -26,7 +26,7 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 from endoreg_db.models import RawPdfFile
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.raw_pdf_files.types import PdfDocument
 from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.file_operations import atomic_write_file

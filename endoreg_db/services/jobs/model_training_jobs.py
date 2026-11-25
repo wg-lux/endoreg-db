@@ -32,10 +32,9 @@ from endoreg_db.services.jobs.heavy_jobs import (
 from endoreg_db.services.media.frame_intervals import (
     merge_half_open_frame_intervals as _merge_frame_intervals,
 )
-from endoreg_db.services.runtime.lifecycle_state_machine import (
-    OperationLifecycleEvent,
-    OperationLifecycleState,
-    reduce_operation_lifecycle,
+from endoreg_db.services.runtime.status_writers import (
+    StatusMachine,
+    validate_status_transition,
 )
 from endoreg_db.services.frames.training_images import validate_processed_training_frame
 from endoreg_db.schemas import (
@@ -103,105 +102,21 @@ def _update_model_training_run(run_uuid: UUID, **updates: Any) -> int:
     return AIModelTrainingRun.objects.filter(run_id=run_uuid).update(**normalized)
 
 
-_MODEL_TRAINING_STATES: dict[str, OperationLifecycleState] = {
-    AIModelTrainingRun.STATUS_QUEUED: OperationLifecycleState.QUEUED,
-    AIModelTrainingRun.STATUS_RUNNING: OperationLifecycleState.RUNNING,
-    AIModelTrainingRun.STATUS_RETRY_WAIT: OperationLifecycleState.RETRY_WAIT,
-    AIModelTrainingRun.STATUS_COMPLETED: OperationLifecycleState.SUCCEEDED,
-    AIModelTrainingRun.STATUS_FAILED: OperationLifecycleState.FAILED,
-    AIModelTrainingRun.STATUS_LOST: OperationLifecycleState.LOST,
-}
-
-_MODEL_TRAINING_EVENTS: dict[
-    tuple[OperationLifecycleState, OperationLifecycleState],
-    tuple[OperationLifecycleEvent, ...],
-] = {
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.RUNNING): (
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.RETRY_WAIT): (
-        OperationLifecycleEvent.RETRY_SCHEDULED,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.RUNNING): (
-        OperationLifecycleEvent.RETRY_READY,
-        OperationLifecycleEvent.CLAIM,
-        OperationLifecycleEvent.START,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.QUEUED): (
-        OperationLifecycleEvent.RETRY_READY,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.SUCCEEDED): (
-        OperationLifecycleEvent.SUCCEED,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.FAIL,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.OWNERSHIP_LOST,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.OWNERSHIP_LOST,
-    ),
-    (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.INTEGRITY_LOST,
-    ),
-    (OperationLifecycleState.LOST, OperationLifecycleState.RETRY_WAIT): (
-        OperationLifecycleEvent.RECONCILE_RETRY,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.FAIL,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.FAIL,
-    ),
-}
-
-_MODEL_TRAINING_IDEMPOTENT_EVENTS: dict[
-    OperationLifecycleState,
-    OperationLifecycleEvent,
-] = {
-    OperationLifecycleState.QUEUED: OperationLifecycleEvent.RETRY_READY,
-    OperationLifecycleState.FAILED: OperationLifecycleEvent.FAIL,
-    OperationLifecycleState.RETRY_WAIT: OperationLifecycleEvent.RETRY_SCHEDULED,
-    OperationLifecycleState.LOST: OperationLifecycleEvent.OWNERSHIP_LOST,
-}
-
-
 def _validate_model_training_status_transition(
     *,
     current_status: str,
     target_status: str,
 ) -> None:
-    try:
-        current_state = _MODEL_TRAINING_STATES[current_status]
-        target_state = _MODEL_TRAINING_STATES[target_status]
-    except KeyError as exc:
-        raise ValueError(f"unknown model-training status: {exc.args[0]}") from exc
-
-    if current_state is target_state:
-        try:
-            events = (_MODEL_TRAINING_IDEMPOTENT_EVENTS[current_state],)
-        except KeyError as exc:
-            raise ValueError(
-                "non-idempotent model-training status transition: "
-                f"{current_status} -> {target_status}"
-            ) from exc
-    else:
-        try:
-            events = _MODEL_TRAINING_EVENTS[(current_state, target_state)]
-        except KeyError as exc:
-            raise ValueError(
-                "invalid model-training status transition: "
-                f"{current_status} -> {target_status}"
-            ) from exc
-
-    reduced_state = reduce_operation_lifecycle(current_state, events)
-    if reduced_state is not target_state:
-        raise RuntimeError(
-            "native model-training lifecycle reduction produced unexpected state: "
-            f"{reduced_state.value}"
-        )
+    for status in (current_status, target_status):
+        if status not in dict(AIModelTrainingRun.STATUS_CHOICES):
+            raise ValueError(f"unknown model-training status: {status}")
+    kind = "non-idempotent" if current_status == target_status else "invalid"
+    validate_status_transition(
+        StatusMachine.MODEL_TRAINING_RUN,
+        current_status,
+        target_status,
+        error_message=f"{kind} model-training status transition: {current_status} -> {target_status}",
+    )
 
 
 @dataclass(frozen=True)

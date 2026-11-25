@@ -28,6 +28,7 @@ from endoreg_db.utils.encryption.encrypted import MAGIC
 from endoreg_db.utils.hashs import get_file_hash
 from tests.services.test_post_validation_generation_cleanup import video as video
 from tests.services.test_frame_provenance import timeline
+from endoreg_db.services.media.state import update_media_state
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -38,8 +39,7 @@ def prepared(
 ) -> tuple[VideoFile, User, list[Path]]:
     video.raw_video_hash = get_file_hash(video.raw_file)
     state = video.get_or_create_state()
-    state.anonymized = True
-    state.save()
+    update_media_state(state, changes={"anonymized": True})
     video.save()
     user = User.objects.create_user(username="ordinary-operator")
     PortalUserInfo.objects.create(user=user).centers.add(video.center)

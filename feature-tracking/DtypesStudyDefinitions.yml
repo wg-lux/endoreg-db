@@ -257,8 +257,8 @@ definition_of_done:
   category: functionality
   title: Manage imported datasets, study links, combination, splitting and explicit deletion
   acceptance:
-  - Each committed Excel or CSV import creates or reuses one named clinical dataset; studies reference
-    its examination membership.
+  - Each committed Excel or CSV import creates or reuses one named clinical dataset. Receipt links identify
+    exactly the rows supplied by that upload, even when another upload references the same examination.
   - Authenticated authorized users can create, read, rename and delete datasets and studies and assign
     or unassign dataset-study relations.
   - Combining creates a deduplicated union and splitting creates disjoint patient-based datasets; source
@@ -322,8 +322,9 @@ definition_of_done:
     boolean and text descriptors through the existing shared mapping contract and importer. Unknown terms,
     incompatible descriptor types and invalid values fail without silently dropping fields. Existing mappings
     and repeated imports retain their identities.
-  - Cohort terminology requirements select the mapping and inspection vocabulary; package mismatches fail
-    before writes. Eligibility counts reuse the statistics service and retain explicit findings.
+  - Multi-package cohorts require an explicit module and version matching the mapping. Package mismatches
+    and changed gender on replay fail atomically. Eligibility counts apply the same saved filters and
+    terminology criteria as the cohort preview, including for imported examinations without media.
   - Application bootstrap uses endoreg_reference 2.0.0 with pinned terminology dependencies; clinical
     copies and lint exceptions are prohibited, and genuine legacy clinical conflicts remain blocked.
   required: true

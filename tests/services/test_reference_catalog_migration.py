@@ -57,7 +57,7 @@ def test_current_reconciliation_is_idempotent_and_preserves_conflicting_rows(
     unit.save(update_fields=["description"])
     before = export_reference_catalog()
     with pytest.raises(CommandError, match="conflicts"):
-        call_command(command, stdout=StringIO())
+        call_command(command, verify=True, stdout=StringIO())
     assert export_reference_catalog() == before
 
 

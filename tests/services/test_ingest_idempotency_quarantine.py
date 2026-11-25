@@ -466,10 +466,6 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 side_effect=ValueError("Preanonymized processing error"),
             ),
             patch(
-                "endoreg_db.services.hub.ingest.get_file_hash",
-                return_value="dummy_hash_preanonymized",
-            ),
-            patch(
                 "endoreg_db.services.hub.ingest.File",
                 return_value=SimpleUploadedFile(
                     name=filename,

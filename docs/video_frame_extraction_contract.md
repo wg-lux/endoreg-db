@@ -25,7 +25,7 @@ distinguishes current consumers from legacy rate-based decoder helpers.
 
 `read_video_file_frame_jpeg` in `endoreg_db/utils/frame_stream.py` asks
 `video.frame_number_to_s` for the authoritative timestamp before decoding.
-`endoreg_db/services/video_files/timeline.py` prefers persisted timestamps and
+`endoreg_db/utils/video/timeline.py` prefers persisted timestamps and
 rejects missing timestamps for variable-frame-rate media. Constant-frame-rate
 fallback includes the timeline origin. Terminal segment boundaries use origin
 plus duration; a terminal boundary is not a decodable frame.

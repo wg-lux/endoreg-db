@@ -3,14 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from .video_segmentation_label import VideoSegmentationLabel
-
-
-class VideoSegmentationLabelSetManager(models.Manager["VideoSegmentationLabelSet"]):
-    def get_by_natural_key(self, name: str) -> "VideoSegmentationLabelSet":
-        return self.get(name=name)
 
 
 class VideoSegmentationLabelSet(models.Model):
@@ -26,7 +22,7 @@ class VideoSegmentationLabelSet(models.Model):
         models.ManyToManyField("VideoSegmentationLabel", related_name="labelsets")
     )
 
-    objects = VideoSegmentationLabelSetManager()
+    objects = NameNaturalKeyManager["VideoSegmentationLabelSet"]()
 
     if TYPE_CHECKING:
         pass

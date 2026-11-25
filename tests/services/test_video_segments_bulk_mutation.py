@@ -17,6 +17,7 @@ from endoreg_db.services.annotations.segments_bulk_mutation import (
 )
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from tests.helpers.video_timeline import constant_rate_video_metadata
+from endoreg_db.services.media.state import update_media_state
 
 
 class VideoSegmentsBulkMutationServiceTest(TestCase):
@@ -42,13 +43,12 @@ class VideoSegmentsBulkMutationServiceTest(TestCase):
         )
 
         state = self.video.get_or_create_state()
-        state.segment_annotations_created = True
-        state.segment_annotations_validated = True
-        state.save(
-            update_fields=[
-                "segment_annotations_created",
-                "segment_annotations_validated",
-            ]
+        update_media_state(
+            state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+            },
         )
 
     def test_export_flag_preserves_review_and_frame_annotations(self):

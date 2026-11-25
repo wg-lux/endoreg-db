@@ -20,6 +20,8 @@ from endoreg_db.models import (
 from endoreg_db.services.datasets.training_manifests import (
     build_frame_multilabel_training_manifest,
 )
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 class AIDataSetTrainingManifestTests(TestCase):
@@ -33,7 +35,8 @@ class AIDataSetTrainingManifestTests(TestCase):
             fps=25.0,
             frame_count=2,
             processed_file="processed/training_manifest.mp4",
-            state=VideoState.objects.create(
+            state=create_media_state(
+                VideoState,
                 anonymized=True,
                 anonymization_validated=True,
                 segment_annotations_validated=True,
@@ -105,13 +108,14 @@ class AIDataSetTrainingManifestTests(TestCase):
             with self.subTest(field_name=field_name):
                 original_value = getattr(state, field_name)
                 invalid_state = {field_name: invalid_value, "ready_for_export": False}
-                VideoState.objects.filter(pk=state.pk).update(**invalid_state)
+                update_media_state(state, changes=invalid_state)
                 with self.assertRaisesRegex(ValueError, "no extracted or validated"):
                     build_frame_multilabel_training_manifest(
                         self.dataset, label_set=self.label_set, check_frame_format=False
                     )
-                VideoState.objects.filter(pk=state.pk).update(
-                    **{field_name: original_value, "ready_for_export": True}
+                update_media_state(
+                    state,
+                    changes={field_name: original_value, "ready_for_export": True},
                 )
 
     def test_extracted_frames_require_processed_artifact_and_usable_integrity(self):
@@ -280,13 +284,16 @@ class AIDataSetTrainingManifestTests(TestCase):
         )
         self.dataset.video_annotations.add(segment)
         # Segment changes invalidate the media approval; model the explicit reapproval.
-        VideoState.objects.filter(pk=self.video.state.pk).update(
-            segment_annotations_validated=True,
-            outside_segments_removed=True,
-            ready_for_export=True,
-            ready_for_export_at=timezone.now(),
-            ready_for_export_by="test-suite",
-            processed_file_sha256="a" * 64,
+        update_media_state(
+            self.video.state,
+            changes={
+                "segment_annotations_validated": True,
+                "outside_segments_removed": True,
+                "ready_for_export": True,
+                "ready_for_export_at": timezone.now(),
+                "ready_for_export_by": "test-suite",
+                "processed_file_sha256": "a" * 64,
+            },
         )
         return segment
 
@@ -421,7 +428,7 @@ class AIDataSetTrainingManifestTests(TestCase):
 
     def test_confirmed_segment_cannot_bypass_media_approval(self):
         self._add_training_segment(source=self.manual_source, validated=True)
-        VideoState.objects.filter(pk=self.video.state.pk).update(ready_for_export=False)
+        update_media_state(self.video.state, changes={"ready_for_export": False})
         with self.assertRaisesRegex(ValueError, "no extracted or validated"):
             build_frame_multilabel_training_manifest(
                 self.dataset,

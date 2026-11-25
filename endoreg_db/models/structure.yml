@@ -11,6 +11,8 @@ files:
   role: Model re-exports retained for compatibility.
 - file: operation_log.py
   role: Structured operation-log persistence.
+- file: utils.py
+  role: Shared NameNaturalKeyManager for models whose fixture natural key is the unique name.
 dependencies:
   internal:
   - endoreg_db/schemas

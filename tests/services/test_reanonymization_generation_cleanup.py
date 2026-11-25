@@ -25,6 +25,7 @@ from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile
 from tests.services.test_video_processed_transcode_encryption import probe
 from endoreg_db.services.video_storage import canonical_timelines
 from tests.helpers.canonical_timestamps import decoded_test_timestamps
+from endoreg_db.services.media.state import update_media_state
 
 pytestmark = pytest.mark.django_db(transaction=True)
 
@@ -128,8 +129,7 @@ def test_repeated_reanonymization_retires_transcoded_and_previous_generations(
         assert history is not None and len(history) == attempt + 1
         assert video.raw_file.name == raw_name
         state = video.get_or_create_state()
-        state.anonymized = False
-        state.save(update_fields=["anonymized"])
+        update_media_state(state, changes={"anonymized": False})
 
 
 def test_hls_failure_preserves_old_and_new_and_blocks_more_generations(

@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Routes live under media; heavy streaming may be delegated to the configured proxy.
 files:
+- file: hub/transfers.py
+  role: Authenticated transfer endpoints with fixed rejection codes and phases for registration, media attachment, replay and verification conflicts.
 - file: frame_annotation_export_jobs.py
   role: Dataset export job list, start, validate and detail endpoints (media/videos/export-annotated/jobs/) with explicit response serializers.
 - file: frame_annotation_export_downloads.py
@@ -24,7 +26,7 @@ files:
 - file: sensitive_metadata.py
   role: Sensitive metadata and case-resolution API.
 - file: table_mappings.py
-  role: Study-table mapping inspection and prefill API helpers.
+  role: Study-table mapping options scoped to the selected cohort package, inspection and prefill.
 - file: hub/__init__.py
   role: Hub transfer and quarantine API.
 dependencies:

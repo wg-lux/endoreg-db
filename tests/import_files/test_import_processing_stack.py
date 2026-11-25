@@ -271,6 +271,31 @@ def test_published_adoption_cannot_replace_native_checkpoint_identity(
     ]
 
 
+def test_reimport_completion_is_atomic_with_the_native_stack(
+    tracked: tuple[ImportContext, UploadJob],
+) -> None:
+    ctx, job = tracked
+    saved = prepared_stack(ctx, job)
+    assert ctx.instance is not None
+    media_id = int(ctx.instance.pk)
+    with pytest.raises(ValueError):
+        upload_job_state_machine.transition_reimport_upload_jobs(
+            [job], status=UploadJob.Status.ANONYMIZED, published_media_id=media_id + 1
+        )
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.PROCESSING
+    assert job.processing_stack == saved.model_dump(mode="json")
+    for _ in range(2):
+        upload_job_state_machine.transition_reimport_upload_jobs(
+            [job], status=UploadJob.Status.ANONYMIZED, published_media_id=media_id
+        )
+        job.refresh_from_db()
+        assert job.status == UploadJob.Status.ANONYMIZED
+        completed = ImportProcessingStack.model_validate(job.processing_stack)
+        assert completed.checkpoint == saved.checkpoint
+        assert completed.remaining == []
+
+
 def test_priority_uses_the_persisted_normalized_report_identity(
     tracked: tuple[ImportContext, UploadJob],
 ) -> None:

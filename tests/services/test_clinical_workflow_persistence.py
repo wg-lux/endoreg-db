@@ -1,12 +1,16 @@
 from __future__ import annotations
 
 from datetime import date, datetime
+from collections.abc import Callable
 from uuid import uuid4
 
 import pytest
+from lx_dtypes.models.contracts.media_workflow_api import StateSource
+from django.db import transaction
 from django.utils import timezone
 
 from endoreg_db.models import Center, VideoFile, VideoState
+from tests.helpers.media_states import create_media_state
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.state.audit_ledger import AuditLedger
@@ -23,7 +27,7 @@ from endoreg_db.services.clinical_lifecycle.persistence import (
     AUDIT_ACTION,
     IdempotencyKeyReuseError,
     WorkflowConcurrencyError,
-    WorkflowStateSource,
+    WorkflowStateDriftError,
     apply_workflow_event,
     read_workflow_state,
 )
@@ -36,6 +40,10 @@ from endoreg_db.services.clinical_lifecycle.state_machine import (
     PrivacyStage,
     ReleaseStage,
     TransitionRejection,
+)
+from endoreg_db.services.media.state import (
+    mark_video_anonymization_validated,
+    mark_video_processing_started,
 )
 from endoreg_db.services.patient_identity.verification import (
     update_sensitive_meta_verification,
@@ -84,23 +92,37 @@ def _pending_video() -> VideoFile:
 
 def _awaiting_validation_video(*, verified: bool) -> VideoFile:
     return _video(
-        state=VideoState.objects.create(anonymized=True),
+        state=create_media_state(VideoState, anonymized=True),
         verified=verified,
         processed=True,
     )
 
 
+# Fact writers that realize an event; QUARANTINED has no persisted fact.
+_REALIZE: dict[ClinicalLifecycleEvent, Callable[[VideoState], None]] = {
+    ClinicalLifecycleEvent.IMPORT_STARTED: mark_video_processing_started,
+    ClinicalLifecycleEvent.ANONYMIZATION_VALIDATED: mark_video_anonymization_validated,
+}
+
+
 def _apply(video: VideoFile, event: ClinicalLifecycleEvent, key: str):
-    return apply_workflow_event(
-        kind=VIDEO, record_id=video.pk, event=event, idempotency_key=key
-    )
+    """Commit the event together with the fact change that realizes it."""
+    with transaction.atomic():
+        result = apply_workflow_event(
+            kind=VIDEO, record_id=video.pk, event=event, idempotency_key=key
+        )
+        realize = _REALIZE.get(event)
+        if realize is not None and not result.replayed:
+            realize(VideoState.objects.get(pk=video.state_id))
+    video.refresh_from_db()  # drop the cached state so callers read new facts
+    return result
 
 
 def test_unstored_record_is_reported_as_projection() -> None:
     video = _pending_video()
     snapshot = read_workflow_state(VIDEO, video.pk, video_record_facts(video))
 
-    assert snapshot.source is WorkflowStateSource.PROJECTED
+    assert snapshot.source is StateSource.PROJECTED
     assert snapshot.version == 0
     assert snapshot.state.privacy is PrivacyStage.IMPORT_PENDING
     assert not ClinicalWorkflowRecord.objects.exists()
@@ -126,7 +148,7 @@ def test_accepted_event_seeds_row_writes_transition_and_audit() -> None:
     assert entry.data["event"] == "import_started"
     assert (
         read_workflow_state(VIDEO, video.pk, video_record_facts(video)).source
-        is WorkflowStateSource.STORED
+        is StateSource.STORED
     )
 
 
@@ -232,3 +254,35 @@ def test_transitions_are_append_only() -> None:
         transition.save()
     with pytest.raises(ValueError, match="append-only"):
         transition.delete()
+
+
+def test_event_without_its_fact_change_fails_closed_on_every_reader() -> None:
+    video = _pending_video()
+    # The fact writer is skipped, so the stored row runs ahead of the facts.
+    apply_workflow_event(
+        kind=VIDEO,
+        record_id=video.pk,
+        event=E.IMPORT_STARTED,
+        idempotency_key="import-1",
+    )
+
+    with pytest.raises(WorkflowStateDriftError) as drift:
+        read_workflow_state(VIDEO, video.pk, video_record_facts(video))
+    assert drift.value.stored.privacy is PrivacyStage.IMPORTING
+    assert drift.value.projected.privacy is PrivacyStage.IMPORT_PENDING
+    with pytest.raises(WorkflowStateDriftError):
+        _apply(video, E.QUARANTINED, "quarantine-1")
+    assert ClinicalWorkflowTransition.objects.count() == 1
+
+
+def test_unprojectable_stage_is_carried_by_the_row_alone() -> None:
+    video = _pending_video()
+    _apply(video, E.IMPORT_STARTED, "import-1")
+
+    _apply(video, E.QUARANTINED, "quarantine-1")
+
+    snapshot = read_workflow_state(VIDEO, video.pk, video_record_facts(video))
+    assert (snapshot.source, snapshot.state.privacy) == (
+        StateSource.STORED,
+        PrivacyStage.QUARANTINED,
+    )

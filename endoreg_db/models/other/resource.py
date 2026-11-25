@@ -2,15 +2,13 @@ from __future__ import annotations
 from typing import ClassVar, Any
 
 from django.db import models
-
-
-class ResourceManager(models.Manager["Resource"]):
-    def get_by_natural_key(self, name: str) -> "Resource":
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class Resource(models.Model):
-    objects: ClassVar[ResourceManager] = ResourceManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: ClassVar[NameNaturalKeyManager["Resource"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        NameNaturalKeyManager["Resource"]()
+    )
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

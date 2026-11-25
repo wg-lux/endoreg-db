@@ -2,19 +2,19 @@ version: 1
 tier: domain
 path: endoreg_db/services
 parent: ../structure.yml
-summary: Service workflows grouped by domain, with lazy aliases preserving historical imports.
+summary: Service workflows grouped by domain; callers import owning domain modules directly.
 responsibilities:
-- Route workflows to domain packages and preserve canonical module identity for compatibility imports.
+- Route workflows to their owning domain packages through direct module imports.
 boundaries:
 - Keep package-root initialization free of database, network and media operations.
 - Feature readiness stays in feature-tracking YAML; this map describes current ownership.
 entrypoints:
 - name: endoreg_db.services
   file: __init__.py
-  purpose: Lazy compatibility aliases for relocated domain service modules.
+  purpose: Empty package root; callers import owning domain modules.
 files:
 - file: __init__.py
-  role: Canonical domain imports and historical module aliases.
+  role: Package docstring only; no re-exports or legacy aliases.
 dependencies:
   internal:
   - endoreg_db/models
@@ -145,8 +145,7 @@ rules:
 - Module nach fachlicher Aufgabe öffnen; konkrete Funktionen aus dem zuständigen Modul importieren.
 - Unterpakete initialisieren keine Datenbank-, Netzwerk- oder Medienoperationen.
 - Bestehende Modellfassaden und Import-Einstiegspunkte behalten ihr Verhalten.
-- Alle bisherigen direkten Service-Modulpfade bleiben über verzögert geladene Aliase in __init__.py verfügbar. Legacy-
-  und kanonischer Import verwenden dasselbe Modulobjekt.
+- Frühere direkte Service-Modulpfade sind entfernt; module_moves dokumentiert die kanonischen Zielmodule.
 - Das Paket cases reicht die bisherigen Lifecycle-Symbole weiter und erhält seine Untermodule.
 domains:
   electrical:
@@ -252,7 +251,7 @@ module_moves:
   endoreg_db/services/report_frame_export.py: endoreg_db/services/reports/frame_export.py
   endoreg_db/services/report_frame_selection.py: endoreg_db/services/reports/frame_selection.py
   endoreg_db/services/report_history.py: endoreg_db/services/reports/history.py
-  endoreg_db/services/report_import.py: endoreg_db/services/reports/import_service.py
+  endoreg_db/services/report_import.py: endoreg_db/import_files/report_import_service.py
   endoreg_db/services/report_import_fencing.py: endoreg_db/services/reports/import_fencing.py
   endoreg_db/services/report_import_lifecycle.py: endoreg_db/services/reports/import_lifecycle.py
   endoreg_db/services/report_import_state_machine.py: endoreg_db/services/reports/import_state_machine.py
@@ -291,7 +290,7 @@ module_moves:
   endoreg_db/services/video_reimport_orchestrator.py: endoreg_db/services/video_files/reimport_orchestrator.py
   endoreg_db/services/video_temporal_inference.py: endoreg_db/services/video_files/temporal_inference.py
   endoreg_db/services/lx_video_contracts.py: endoreg_db/services/video_files/clinical_contracts.py
-  endoreg_db/services/video_timeline.py: endoreg_db/services/video_files/timeline.py
+  endoreg_db/services/video_timeline.py: endoreg_db/utils/video/timeline.py
   endoreg_db/services/video_source_hash.py: endoreg_db/services/video_files/source_hash.py
   endoreg_db/services/video_post_validation_blackening.py: endoreg_db/services/video_files/post_validation_blackening.py
   endoreg_db/services/video_segment_blackening.py: endoreg_db/services/video_files/segment_blackening.py

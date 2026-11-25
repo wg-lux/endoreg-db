@@ -1,17 +1,24 @@
 from __future__ import annotations
 import os
-from typing import TYPE_CHECKING, Any
-
-
-if TYPE_CHECKING:
-    pass
-
 from logging import getLogger
+from typing import Any, TypeVar
+
+from django.db import models
 
 logger = getLogger(__name__)
 
 _TEST_RUN_ENV = os.environ.get("TEST_RUN", "False")
 TEST_RUN = _TEST_RUN_ENV.lower() == "true"
+
+
+_M = TypeVar("_M", bound=models.Model)
+
+
+class NameNaturalKeyManager(models.Manager[_M]):
+    """Manager resolving fixture natural keys by the unique ``name`` field."""
+
+    def get_by_natural_key(self, name: str) -> _M:
+        return self.get(name=name)
 
 
 def find_segments_in_prediction_array(prediction_array: Any, min_frame_len: int):
@@ -42,6 +49,7 @@ def find_segments_in_prediction_array(prediction_array: Any, min_frame_len: int)
 
 
 __all__ = [
+    "NameNaturalKeyManager",
     "find_segments_in_prediction_array",
     "TEST_RUN",
 ]

@@ -43,7 +43,9 @@ from endoreg_db.services.video_storage.canonical_timelines import (
 from endoreg_db.services.video_storage.probes import probe_video_artifact
 from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
 from endoreg_db.services.video_files.frame_coordinates import artifact_frame_timeline
-from endoreg_db.services.video_files.timeline import presentation_timestamp_seconds
+from endoreg_db.utils.video.timeline import presentation_timestamp_seconds
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 pytestmark = pytest.mark.django_db
 
@@ -128,7 +130,8 @@ def retained_video(
     video.processed_file.save("hub-processed.mp4", ContentFile(media), save=False)
     video.raw_video_hash = get_file_hash(video.raw_file)
     video.processed_video_hash = get_file_hash(video.processed_file)
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         anonymized=True,
         sensitive_meta_processed=True,
         anonymization_validated=True,
@@ -481,9 +484,7 @@ def test_virtual_training_frames_require_validation(
     video, dataset, label_set, _ = retained_video
     state = video.state
     assert state is not None
-    setattr(state, gate, False)
-    state.ready_for_export = False
-    state.save(update_fields=list({gate, "ready_for_export"}))
+    update_media_state(state, changes={gate: False, "ready_for_export": False})
     with pytest.raises(
         ValueError, match="no extracted or validated processed frame annotations"
     ):
@@ -653,7 +654,7 @@ def test_stream_provider_rejects_unselected_frames_and_rechecks_validation(
         assert stream.read(2) == b"\xff\xd8"
     state = video.state
     assert state is not None
-    VideoState.objects.filter(pk=state.pk).update(ready_for_export=False)
+    update_media_state(state, changes={"ready_for_export": False})
     with pytest.raises(ValueError, match="validated, export-ready"):
         with provider.open_frame(reference):
             pytest.fail("revoked processed video was streamed")

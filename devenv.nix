@@ -87,7 +87,7 @@ let
   TEST_PYTEST_ARGS = "-n auto --dist=loadscope --durations=30";
   FAST_TEST_PYTEST_ARGS = "-m '${FAST_TEST_MARKER}' ${TEST_PYTEST_ARGS}";
   HEAVY_TEST_MARKER = "expensive or video or pipeline or ai or slow or ffmpeg";
-  COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit_integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
+  COVERAGE_ARGS = "--cov=./endoreg_db/models --cov=./endoreg_db/data --cov=./endoreg_db/factories --cov=./endoreg_db/serializers --cov=./endoreg_db/utils --cov=./endoreg_db/views --cov=endoreg_db.services.audit.integrity --cov=endoreg_db.tasks --cov-report=term:skip-covered";
 
   _module.args.buildInputs = baseBuildInputs;
 

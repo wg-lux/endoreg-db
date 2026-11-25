@@ -3,11 +3,11 @@ from __future__ import annotations
 """
 Defines state tracking models related to video processing.
 """
-import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ClassVar
 
-from django.db import models, transaction
-from django.utils import timezone
+from django.db import models
+
+from endoreg_db.models.state.write_guard import GuardedStateModel
 
 from endoreg_db.models.state.anonymization import (
     AnonymizationState,
@@ -15,7 +15,6 @@ from endoreg_db.models.state.anonymization import (
     derive_video_anonymization_state,
 )
 
-logger = logging.getLogger(__name__)
 
 SHA256_HEX_LENGTH = 64
 SHA256_HEX_DIGITS = frozenset("0123456789abcdef")
@@ -24,7 +23,7 @@ if TYPE_CHECKING:
     from ..media import VideoFile
 
 
-class VideoState(models.Model):
+class VideoState(GuardedStateModel):
     """
     Tracks the processing state of a VideoFile instance.
     Uses BooleanFields for clear, distinct states.
@@ -143,7 +142,31 @@ class VideoState(models.Model):
         default=True, help_text="True if this state was created for the first time."
     )
 
-    objects: models.Manager[VideoState] = models.Manager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    guarded_state_fields: ClassVar[frozenset[str]] = frozenset(
+        [
+            "frames_extracted",
+            "frames_initialized",
+            "frame_count",
+            "video_meta_extracted",
+            "text_meta_extracted",
+            "initial_prediction_completed",
+            "lvs_created",
+            "frame_annotations_generated",
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "outside_segments_removed",
+            "ready_for_export",
+            "ready_for_export_at",
+            "ready_for_export_by",
+            "processed_file_sha256",
+            "processing_started",
+            "processing_error",
+            "segment_annotations_created",
+            "segment_annotations_validated",
+            "was_created",
+        ]
+    )
 
     @property
     def anonymization_status(self) -> AnonymizationState:
@@ -173,124 +196,24 @@ class VideoState(models.Model):
         )
 
     def mark_processing_not_started(self) -> None:
-        if self.processing_error:
-            logger.warning(
-                "Preserving failed/lost VideoState %s during reset request.",
-                self.pk,
-            )
-            return
-        with transaction.atomic():
-            self.processing_started = False
-            self.anonymized = False
-            self.was_created = False
-            self.sensitive_meta_processed = False
-            self.anonymization_validated = False
-            self.outside_segments_removed = False
-            self.ready_for_export = False
-            self.ready_for_export_at = None
-            self.ready_for_export_by = ""
-            self.processed_file_sha256 = ""
-            self.frames_extracted = False
-            self.save()
+        from endoreg_db.services.media.state import mark_video_processing_not_started
 
-    def _raise_if_processing_error(self, action: str) -> None:
-        if self.processing_error:
-            raise ValueError(f"Video state is marked failed/lost; cannot {action}.")
-
-    def _validate_ready_for_export_transition(
-        self,
-        *,
-        processed_file_sha256: str,
-        ready_for_export_by: str,
-    ) -> tuple[str, str]:
-        errors: list[str] = []
-        if self.processing_error:
-            errors.append("video is marked failed/lost")
-        if not self.anonymization_validated:
-            errors.append("anonymization has not been validated")
-        if not self.outside_segments_removed:
-            errors.append("outside segments have not been removed")
-        if not self.segment_annotations_validated:
-            errors.append("segment annotations have not been validated")
-
-        normalized_sha = str(processed_file_sha256 or "").strip().lower()
-        if len(normalized_sha) != SHA256_HEX_LENGTH or any(
-            character not in SHA256_HEX_DIGITS for character in normalized_sha
-        ):
-            errors.append("processed_file_sha256 must be a SHA-256 hex digest")
-
-        normalized_actor = str(ready_for_export_by or "").strip()
-        if not normalized_actor:
-            errors.append("ready_for_export_by is required")
-
-        if errors:
-            raise ValueError(f"Cannot mark ready for export: {'; '.join(errors)}.")
-
-        return normalized_sha, normalized_actor
+        mark_video_processing_not_started(self)
 
     def mark_processing_failed(self, *, save: bool = True) -> None:
-        self.processing_error = True
-        self.processing_started = False
-        self.ready_for_export = False
-        self.ready_for_export_at = None
-        self.ready_for_export_by = ""
-        self.processed_file_sha256 = ""
-        if save:
-            self.save(
-                update_fields=[
-                    "processing_error",
-                    "processing_started",
-                    "ready_for_export",
-                    "ready_for_export_at",
-                    "ready_for_export_by",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
+        from endoreg_db.services.media.state import mark_video_processing_failed
+
+        mark_video_processing_failed(self, save=save)
 
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
-        self._raise_if_processing_error("mark sensitive metadata processed")
-        self.sensitive_meta_processed = True
-        if save:
-            self.save(update_fields=["sensitive_meta_processed", "date_modified"])
+        from endoreg_db.services.media.state import mark_video_sensitive_meta_processed
+
+        mark_video_sensitive_meta_processed(self, save=save)
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
-        self._raise_if_processing_error("mark anonymization validated")
-        self.anonymization_validated = True
-        self.ready_for_export = False
-        self.ready_for_export_at = None
-        self.ready_for_export_by = ""
-        self.processed_file_sha256 = ""
-        if save:
-            self.save(
-                update_fields=[
-                    "anonymization_validated",
-                    "ready_for_export",
-                    "ready_for_export_at",
-                    "ready_for_export_by",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
+        from endoreg_db.services.media.state import mark_video_anonymization_validated
 
-    def mark_outside_segments_removed(self, *, save: bool = True) -> None:
-        self._raise_if_processing_error("mark outside segments removed")
-        self.outside_segments_removed = True
-        self.ready_for_export = False
-        self.ready_for_export_at = None
-        self.ready_for_export_by = ""
-        self.processed_file_sha256 = ""
-        if save:
-            self.save(
-                update_fields=[
-                    "outside_segments_removed",
-                    "ready_for_export",
-                    "ready_for_export_at",
-                    "ready_for_export_by",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
+        mark_video_anonymization_validated(self, save=save)
 
     def clear_export_readiness(
         self,
@@ -298,23 +221,13 @@ class VideoState(models.Model):
         clear_outside_segments_removed: bool = False,
         save: bool = True,
     ) -> None:
-        if clear_outside_segments_removed:
-            self.outside_segments_removed = False
-        self.ready_for_export = False
-        self.ready_for_export_at = None
-        self.ready_for_export_by = ""
-        self.processed_file_sha256 = ""
-        if save:
-            update_fields = [
-                "ready_for_export",
-                "ready_for_export_at",
-                "ready_for_export_by",
-                "processed_file_sha256",
-                "date_modified",
-            ]
-            if clear_outside_segments_removed:
-                update_fields.insert(0, "outside_segments_removed")
-            self.save(update_fields=update_fields)
+        from endoreg_db.services.media.state import clear_video_export_readiness
+
+        clear_video_export_readiness(
+            self,
+            clear_outside_segments_removed=clear_outside_segments_removed,
+            save=save,
+        )
 
     def mark_ready_for_export(
         self,
@@ -323,91 +236,34 @@ class VideoState(models.Model):
         ready_for_export_by: str,
         save: bool = True,
     ) -> None:
-        normalized_sha, normalized_actor = self._validate_ready_for_export_transition(
+        from endoreg_db.services.media.state import mark_video_ready_for_export
+
+        mark_video_ready_for_export(
+            self,
             processed_file_sha256=processed_file_sha256,
             ready_for_export_by=ready_for_export_by,
+            save=save,
         )
-        self.ready_for_export = True
-        self.ready_for_export_at = timezone.now()
-        self.ready_for_export_by = normalized_actor
-        self.processed_file_sha256 = normalized_sha
-        if save:
-            self.save(
-                update_fields=[
-                    "ready_for_export",
-                    "ready_for_export_at",
-                    "ready_for_export_by",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
-
-    def mark_frames_extracted(self, *, save: bool = True) -> None:
-        self._raise_if_processing_error("mark frames extracted")
-        self.frames_extracted = True
-        if save:
-            self.save(update_fields=["frames_extracted", "date_modified"])
-
-    def mark_frames_not_extracted(self, *, save: bool = True) -> None:
-        self.frames_extracted = False
-        if save:
-            self.save(update_fields=["frames_extracted", "date_modified"])
 
     def mark_anonymized(self, *, save: bool = True) -> None:
-        self._raise_if_processing_error("mark anonymized")
-        with transaction.atomic():
-            self.anonymized = True
-            self.outside_segments_removed = False
-            self.ready_for_export = False
-            self.ready_for_export_at = None
-            self.ready_for_export_by = ""
-            self.processed_file_sha256 = ""
-            self.save(
-                update_fields=[
-                    "anonymized",
-                    "outside_segments_removed",
-                    "ready_for_export",
-                    "ready_for_export_at",
-                    "ready_for_export_by",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
+        from endoreg_db.services.media.state import mark_video_anonymized
 
-    def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
-        self.initial_prediction_completed = True
-        if save:
-            self.save(update_fields=["initial_prediction_completed", "date_modified"])
-
-    def mark_video_meta_extracted(self, *, save: bool = True) -> None:
-        self.video_meta_extracted = True
-        if save:
-            self.save(update_fields=["video_meta_extracted", "date_modified"])
-
-    def mark_text_meta_extracted(self, *, save: bool = True) -> None:
-        self.text_meta_extracted = True
-        if save:
-            self.save(update_fields=["text_meta_extracted", "date_modified"])
+        mark_video_anonymized(self, save=save)
 
     def get_or_create_state(self) -> VideoState:
-        if not hasattr(self, "video_file"):
-            raise ValueError("This method requires a related VideoFile instance.")
+        from endoreg_db.services.media.state import get_state_for_video_state
 
-        if self.video_file.state:
-            return self.video_file.state
-
-        new_state = VideoState.objects.create()
-        self.video_file.state = new_state
-        self.video_file.save(update_fields=["state"])
-        return new_state
+        return get_state_for_video_state(self)
 
     def mark_processing_started(self, *, save: bool = True) -> None:
-        self._raise_if_processing_error("start processing")
-        self.processing_started = True
-        if save:
-            self.save(update_fields=["processing_started", "date_modified"])
+        from endoreg_db.services.media.state import mark_video_processing_started
 
-    class Meta:
+        mark_video_processing_started(self, save=save)
+
+    class Meta(GuardedStateModel.Meta):
+        abstract = False
+        base_manager_name = "objects"
+        default_manager_name = "objects"
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"
         constraints = [

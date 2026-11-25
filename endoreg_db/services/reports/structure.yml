@@ -11,9 +11,6 @@ boundaries:
 - Keep workflow ownership in services; preserve existing model compatibility wrappers.
 - Canonical report import remains in endoreg_db/import_files/report_import_service.py.
 entrypoints:
-- name: ReportImportService
-  file: import_service.py
-  purpose: Compatibility export of the canonical report import service.
 - name: save_report_submission
   file: persistence.py
   purpose: Persist an edited report and its clinical snapshot in one transaction.
@@ -42,10 +39,8 @@ files:
   role: Exports acquire_report_import_fence, renew_report_import_fence, report_import_finalization_guard.
 - file: import_lifecycle.py
   role: Read-only admission checks and job mutations owned by the report content fence.
-- file: import_service.py
-  role: Compatibility import for the canonical report import service.
 - file: import_state_machine.py
-  role: Exports validate_report_import_claim, validate_report_import_success, validate_report_import_failure.
+  role: Thin native report-status and expired-lease claim adapters; callers own fencing and persistence.
 - file: materialization.py
   role: Exports document_type_description, ensure_document_types, resolve_report_text.
 - file: patient_context.py

@@ -20,7 +20,7 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.media.frame.frame import Frame
 from endoreg_db.utils.file_operations import atomic_write_file
-from endoreg_db.utils.ai.data_loader_for_model_input import build_dataset_for_training
+from endoreg_db.utils.ai.multilabel_dataset_builder import build_dataset_for_training
 from endoreg_db.utils.ai.model_training.config import (
     TrainingConfig,
     RUNS_DIR,

@@ -82,7 +82,7 @@ from endoreg_db.services.jobs.video_fps_normalization_jobs import (
     dispatch_video_fps_normalization,
     normalization_status,
 )
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.services.video_files.timeline_index import VideoTimelineIndexCache
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from endoreg_db.serializers.label_video_segment import (

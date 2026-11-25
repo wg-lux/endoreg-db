@@ -5,17 +5,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import MedicationIndication
-
-
-class MedicationIndicationTypeManager(models.Manager["MedicationIndicationType"]):
-    """Manager for the medication indication type model."""
-
-    def get_by_natural_key(self, name: str) -> "MedicationIndicationType":
-        """Retrieve a medication indication type by its natural key."""
-        return self.get(name=name)
 
 
 class MedicationIndicationType(models.Model):
@@ -27,7 +20,7 @@ class MedicationIndicationType(models.Model):
         max_length=255, blank=True, null=True
     )
 
-    objects = MedicationIndicationTypeManager()
+    objects = NameNaturalKeyManager["MedicationIndicationType"]()
 
     if TYPE_CHECKING:
 

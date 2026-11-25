@@ -3,11 +3,12 @@
 from pathlib import Path
 
 from django.core.exceptions import ValidationError
-from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.core.management.base import CommandError, CommandParser
 from lx_dtypes.terminology.terminology_service import TerminologyError
 from lx_dtypes.packages import load_package, load_registered_package
 from lx_dtypes.models.contracts.package_snapshot import build_package_snapshot
-import yaml
+
+from endoreg_db.management.reference_catalog_command import ReconciliationCommand
 
 from endoreg_db.services.reference_data.clinical_projection import (
     clinical_snapshot,
@@ -16,23 +17,15 @@ from endoreg_db.services.reference_data.clinical_projection import (
 )
 
 
-class Command(BaseCommand):
+class Command(ReconciliationCommand):
     help = "Project an exact registered clinical package; dry-run reports legacy conflicts."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument("--module", required=True)
-        parser.add_argument("--module-version", required=True)
+        super().add_arguments(parser)
         parser.add_argument(
             "--config-path",
             type=Path,
             help="Validate an exact local package manifest before host projection.",
-        )
-        parser.add_argument("--dry-run", action="store_true")
-        parser.add_argument("--format", choices=("json", "yml"), default="json")
-        parser.add_argument(
-            "--adopt-existing",
-            action="store_true",
-            help="Bind equivalent legacy rows without rewriting their clinical meaning.",
         )
 
     def handle(self, *args: str, **options: object) -> None:
@@ -60,20 +53,8 @@ class Command(BaseCommand):
                 package_snapshot=package_snapshot,
             )
 
-            def render() -> None:
-                if options["format"] == "yml":
-                    self.stdout.write(
-                        yaml.safe_dump(
-                            plan.model_dump(mode="json"),
-                            allow_unicode=True,
-                            sort_keys=False,
-                        )
-                    )
-                else:
-                    self.stdout.write(plan.model_dump_json(indent=2))
-
             if not plan.can_import:
-                render()
+                self.render_plan(plan, as_yaml=options["format"] == "yml")
                 raise CommandError(
                     "Clinical reference reconciliation has conflicts; no rows were changed"
                 )
@@ -83,7 +64,7 @@ class Command(BaseCommand):
                     adopt_existing=options["adopt_existing"] is True,
                     package_snapshot=package_snapshot,
                 )
-            render()
+            self.render_plan(plan, as_yaml=options["format"] == "yml")
         except (ValueError, ValidationError, OSError, TerminologyError) as exc:
             raise CommandError(
                 "Clinical reference import failed validation; no partial import committed"

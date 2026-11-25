@@ -2,18 +2,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import ExaminationTimeType, InformationSource
-
-
-class ExaminationTimeManager(models.Manager["ExaminationTime"]):
-    """
-    Manager for ExaminationTime with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ExaminationTime":
-        return self.get(name=name)
 
 
 class ExaminationTime(models.Model):
@@ -35,7 +27,7 @@ class ExaminationTime(models.Model):
     time_types: "models.ManyToManyField[ExaminationTimeType, ExaminationTimeType]" = (
         models.ManyToManyField("ExaminationTimeType", blank=True)
     )
-    objects = ExaminationTimeManager()
+    objects = NameNaturalKeyManager["ExaminationTime"]()
 
     information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource",

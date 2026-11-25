@@ -44,6 +44,7 @@ from endoreg_db.views.video.segments_crud import (
 
 
 from tests.helpers.video_timeline import constant_rate_video_metadata
+from endoreg_db.services.media.state import update_media_state
 
 
 class VideoSegmentFpsNormalizationViewTest(TestCase):
@@ -267,7 +268,9 @@ class LabelVideoSegmentSerializerTest(TestCase):
         from django.db import connection
         from django.test.utils import CaptureQueriesContext
 
-        from endoreg_db.services.video_files import video_frame_number_to_seconds
+        from endoreg_db.services.video_files.metadata import (
+            video_frame_number_to_seconds,
+        )
 
         Frame.objects.bulk_create(
             Frame(
@@ -358,14 +361,12 @@ class LabelVideoSegmentSerializerTest(TestCase):
         self.assertEqual(data["validated_annotators"], [])
 
         state = self.video.get_or_create_state()
-        state.segment_annotations_validated = True
-        state.outside_segments_removed = True
-        state.save(
-            update_fields=[
-                "segment_annotations_validated",
-                "outside_segments_removed",
-                "date_modified",
-            ]
+        update_media_state(
+            state,
+            changes={
+                "segment_annotations_validated": True,
+                "outside_segments_removed": True,
+            },
         )
 
         serializer = VideoFileListSerializer(self.video)
@@ -376,16 +377,13 @@ class LabelVideoSegmentSerializerTest(TestCase):
 
     def test_video_list_serializer_requires_outside_cleanup_for_final_validation(self):
         state = self.video.get_or_create_state()
-        state.segment_annotations_created = True
-        state.segment_annotations_validated = True
-        state.outside_segments_removed = False
-        state.save(
-            update_fields=[
-                "segment_annotations_created",
-                "segment_annotations_validated",
-                "outside_segments_removed",
-                "date_modified",
-            ]
+        update_media_state(
+            state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+                "outside_segments_removed": False,
+            },
         )
 
         serializer = VideoFileListSerializer(self.video)
@@ -1114,16 +1112,13 @@ class VideoSegmentsBlackenOutsideRouteTest(TestCase):
     def test_dispatch_failure_clears_stale_final_flags_and_serializes_failed(self):
         self._create_validated_outside_segment()
         state = self.video.get_or_create_state()
-        state.segment_annotations_created = True
-        state.segment_annotations_validated = True
-        state.outside_segments_removed = True
-        state.save(
-            update_fields=[
-                "segment_annotations_created",
-                "segment_annotations_validated",
-                "outside_segments_removed",
-                "date_modified",
-            ]
+        update_media_state(
+            state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+                "outside_segments_removed": True,
+            },
         )
 
         class BrokenTask:
@@ -1441,13 +1436,12 @@ class VideoSegmentsBulkMutationTest(TestCase):
             ]
         )
         state = self.video.get_or_create_state()
-        state.segment_annotations_created = True
-        state.segment_annotations_validated = True
-        state.save(
-            update_fields=[
-                "segment_annotations_created",
-                "segment_annotations_validated",
-            ]
+        update_media_state(
+            state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+            },
         )
 
     def test_bulk_mutation_defers_annotation_sync_and_marks_state_stale(self):

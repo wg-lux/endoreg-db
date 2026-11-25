@@ -9,7 +9,33 @@ from lx_dtypes.models.contracts.reference_catalog import (
     TERMINOLOGY_REFERENCE_MODELS,
 )
 from lx_dtypes.terminology.terminology_loader import hydrate_shipped_terminology
+from pydantic import BaseModel
+import yaml
 from endoreg_db.config.settings.dataloader import APPLICATION_PACKAGE
+
+
+class ReconciliationCommand(BaseCommand):
+    """Shared command boundary for exact-package reconciliation plans."""
+
+    def add_arguments(self, parser: CommandParser) -> None:
+        parser.add_argument("--module", required=True)
+        parser.add_argument("--module-version", required=True)
+        parser.add_argument("--dry-run", action="store_true")
+        parser.add_argument("--format", choices=("json", "yml"), default="json")
+        parser.add_argument(
+            "--adopt-existing",
+            action="store_true",
+            help="Bind equivalent legacy rows without rewriting their clinical meaning.",
+        )
+
+    def render_plan(self, plan: BaseModel, *, as_yaml: bool) -> None:
+        self.stdout.write(
+            yaml.safe_dump(
+                plan.model_dump(mode="json"), allow_unicode=True, sort_keys=False
+            )
+            if as_yaml
+            else plan.model_dump_json(indent=2)
+        )
 
 
 class ReferenceCatalogCommand(BaseCommand):

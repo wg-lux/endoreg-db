@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, TypedDict, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -21,14 +22,6 @@ class MedicationIndicationLinks(TypedDict):
     diseases: list["Disease"]
     events: list["Event"]
     disease_classification_choices: list["DiseaseClassificationChoice"]
-
-
-class MedicationIndicationManager(models.Manager["MedicationIndication"]):
-    """Manager for the medication indication model."""
-
-    def get_by_natural_key(self, name: str) -> "MedicationIndication":
-        """Retrieve a medication indication by its natural key."""
-        return self.get(name=name)
 
 
 class MedicationIndication(models.Model):
@@ -81,8 +74,8 @@ class MedicationIndication(models.Model):
         }
         return links
 
-    objects: ClassVar[MedicationIndicationManager] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        MedicationIndicationManager()
+    objects: ClassVar[NameNaturalKeyManager["MedicationIndication"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        NameNaturalKeyManager["MedicationIndication"]()
     )
 
     def natural_key(self) -> tuple[str]:

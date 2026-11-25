@@ -36,11 +36,11 @@ from endoreg_db.services.runtime.lifecycle_state_machine import (
     OperationLifecycleState,
     transition_operation_lifecycle,
 )
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.io import (
     ensure_local_processed_video_file,
     ensure_local_raw_video_file,
-    get_or_create_video_state,
 )
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.structured_logging import (
     emit_structured_event,

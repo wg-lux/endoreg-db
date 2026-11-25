@@ -27,9 +27,3 @@ Related guides:
 - [AI model setup](../../setup/AI_MODEL_SETUP.md)
 - [Video storage normalization](../video_storage_normalization.md)
 - [Hub ingest operations](../hub_ingest_operations.md)
-
-## Historical Planning Context
-
-[Hub ingest gap closure](hub_ingest_gap_closure.md) explains earlier design
-choices. See [HubIngest.yml](../../feature-tracking/done/HubIngest.yml) for its
-acceptance criteria and evidence.

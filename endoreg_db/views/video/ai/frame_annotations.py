@@ -67,7 +67,7 @@ from endoreg_db.services.frames.frame_retention import (
 from endoreg_db.services.queue.frame_annotation_queue import (
     frame_annotation_queue_spec_from_payload,
 )
-from endoreg_db.services.video_files import VideoArtifactKind
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.utils.media_urls import build_video_frame_decoded_stream_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 from endoreg_db.authz.permissions import PolicyPermission

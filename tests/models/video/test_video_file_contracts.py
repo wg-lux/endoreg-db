@@ -13,7 +13,7 @@ from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProc
 from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.metadata import (
     get_video_import_context_names,
     get_video_import_processor,
 )

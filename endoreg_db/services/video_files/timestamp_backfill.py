@@ -18,7 +18,7 @@ from endoreg_db.schemas.video_storage import (
     VideoSourceTimelineEvidence,
 )
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.utils.video.timeline import validate_presentation_timestamp_seconds
 from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.video_storage.canonical_timelines import (

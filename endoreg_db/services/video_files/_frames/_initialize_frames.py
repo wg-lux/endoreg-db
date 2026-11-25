@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 from django.db import OperationalError
 from tqdm import tqdm
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.utils.rust_backend import (
     build_expected_frame_records as rust_build_expected_frame_records,
 )
@@ -122,9 +123,9 @@ def _reset_empty_initialization_state(video: "VideoFile") -> None:
     try:
         state = video.get_or_create_state()
         if state.frames_initialized or state.frame_count is not None:
-            state.frames_initialized = False
-            state.frame_count = None
-            state.save(update_fields=["frames_initialized", "frame_count"])
+            update_media_state(
+                state, changes={"frames_initialized": False, "frame_count": None}
+            )
     except Exception as error:
         logger.exception(
             "Failed to reset state during empty initialization for video %s: %s",
@@ -163,9 +164,9 @@ def _update_initialization_state(
 ) -> None:
     try:
         state = video.get_or_create_state()
-        state.frames_initialized = True
-        state.frame_count = frame_count
-        state.save(update_fields=["frames_initialized", "frame_count"])
+        update_media_state(
+            state, changes={"frames_initialized": True, "frame_count": frame_count}
+        )
     except Exception as error:
         logger.exception(
             "Failed to update state after frame initialization for video %s: %s",

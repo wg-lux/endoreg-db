@@ -19,7 +19,7 @@ from django.db.models import Q
 from pydantic import ValidationError
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.services.video_files.timestamp_backfill import (
     backfill_missing_video_timestamps,
     has_reconciled_video_timeline,

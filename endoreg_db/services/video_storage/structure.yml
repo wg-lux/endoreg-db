@@ -32,11 +32,11 @@ files:
 - file: frame_provenance.py
   role: Capture decoder ancestry and resolve chains from the original recording identity, or explicit unresolved receipts, for hub and ledger exports.
 - file: generation_cleanup.py
-  role: Retire committed superseded generations and reconcile proven rolled-back receipts without deleting media.
+  role: Recheck validation and integrity under lock before raw cleanup; retire committed superseded generations and reconcile rollback receipts.
 - file: hls_encoding.py
   role: Exports hls_encoding_profile_by_name, configured_hls_encoding_profile, assert_hls_encoder_runtime_available.
 - file: inventory.py
-  role: Exports inventory_video_storage, video_normalization_evidence, raw_cleanup_blockers.
+  role: Collect storage and timeline evidence for inventory and native raw-cleanup admission.
 - file: normalization.py
   role: Exports ensure_video_file_profile, normalize_video_file.
 - file: probes.py

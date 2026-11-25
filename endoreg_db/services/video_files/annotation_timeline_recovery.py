@@ -13,7 +13,7 @@ from endoreg_db.schemas.video_storage import (
     SegmentTimelineRemapping,
     VideoSourceTimelineEvidence,
 )
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.services.video_storage.processed_timelines import nearest_boundary
 
 if TYPE_CHECKING:

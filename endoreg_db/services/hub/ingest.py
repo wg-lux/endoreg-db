@@ -28,6 +28,7 @@ from django.db.models.fields.files import FieldFile
 from kombu.exceptions import OperationalError as KombuOperationalError
 
 # Explicit re-exports preserve historical helper imports and object identity.
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.services.hub import ingest_provenance, preanonymized_metadata
 from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.ingest_provenance import (
@@ -126,7 +127,7 @@ from endoreg_db.services.hub.watcher_handoff import (
 )
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.payloads import LocalStudyServerPreanonymizedIngestPayload
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.set_default_center import get_default_processor
 from endoreg_db.services.centers.defaults import resolve_local_center
 from endoreg_db.utils.file_operations import (
@@ -189,7 +190,7 @@ def _video_upload_import_task_dispatcher() -> CeleryTaskDispatcher:
 def _upload_job_task_dispatcher() -> CeleryTaskDispatcher:
     # Local import avoids the task/service cycle:
     # ingest -> endoreg_db.tasks.process_upload_job ->
-    # endoreg_db.services.hub.process_upload_job -> ingest.
+    # endoreg_db.services.hub.ingest.process_upload_job.
     from endoreg_db.tasks import process_upload_job as process_upload_job_task
 
     return cast(CeleryTaskDispatcher, process_upload_job_task)
@@ -834,6 +835,13 @@ def _matching_active_upload_job(
             raise UploadJobIdempotencyConflict(
                 "Upload idempotency key is already bound to different content."
             )
+        # The active content constraint identifies the same row for a scoped center.
+        if (
+            keyed_job is not None
+            and context.source_center is not None
+            and keyed_job.status not in (UploadJob.Status.ERROR, UploadJob.Status.LOST)
+        ):
+            return keyed_job
     existing_job_qs = (
         UploadJob.objects.filter(
             source_center=context.source_center,
@@ -1245,6 +1253,7 @@ def create_or_reuse_watcher_upload_job(
     retention_policy: str = UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
     processing_provenance: UploadProvenance | None = None,
     settled_stat: os.stat_result | None = None,
+    expected_content_hash: str | None = None,
 ) -> tuple[UploadJob, bool]:
     file_path = Path(file_path)
     if settled_stat is None:
@@ -1265,6 +1274,8 @@ def create_or_reuse_watcher_upload_job(
         current_stat=stat_result,
         stage="post_hash",
     )
+    if expected_content_hash is not None and file_hash != expected_content_hash:
+        raise WatcherFileNotReadyError("Watcher media changed after sidecar validation")
     idempotency_key = (
         f"watcher:{file_hash}:{int(stat_result.st_mtime_ns)}:{stat_result.st_size}"
     )
@@ -1451,14 +1462,21 @@ def _persist_preanonymized_file(
     source_path: Path,
     target_path: Path,
     field_file: FieldFile,
+    expected_hash: str,
 ) -> None:
-    expected_hash = get_file_hash(source_path)
     storage_name = to_storage_relative(target_path)
     field_file.name = storage_name
     if not field_file.storage.exists(storage_name):
         save_local_file(field_file, source_path, name=storage_name)
     if get_file_hash(field_file) != expected_hash:
         raise ValueError("Preanonymized stored artifact differs from its source")
+
+
+def _preanonymized_source_hash(source_path: Path, expected: str | None) -> str:
+    digest = get_file_hash(source_path)
+    if expected is not None and digest != expected:
+        raise ValueError("Preanonymized upload source content identity changed")
+    return digest
 
 
 def _finalize_preanonymized_video(
@@ -1469,8 +1487,9 @@ def _finalize_preanonymized_video(
     payload: PreanonymizedIngestPayload | None,
     delete_source: bool,
     original_file_name: str | None = None,
+    expected_source_hash: str | None = None,
 ) -> VideoFile:
-    raw_video_hash = get_file_hash(source_path)
+    raw_video_hash = _preanonymized_source_hash(source_path, expected_source_hash)
     existing_video = VideoFile.objects.filter(raw_video_hash=raw_video_hash).first()
     if existing_video is not None and existing_video.center_id != center.pk:
         raise ValueError("Preanonymized video belongs to another center")
@@ -1482,6 +1501,7 @@ def _finalize_preanonymized_video(
             source_path=source_path,
             target_path=final_path,
             field_file=stored_file,
+            expected_hash=raw_video_hash,
         )
         processor = _resolve_preanonymized_video_processor(processor_name)
         relative_name = str(stored_file.name)
@@ -1638,10 +1658,11 @@ def _finalize_preanonymized_report(
     center: Center,
     payload: PreanonymizedIngestPayload | None,
     delete_source: bool,
+    expected_source_hash: str | None = None,
 ) -> RawPdfFile:
     from endoreg_db.import_files.report_import_service import ReportImportService
 
-    approval_hash = get_file_hash(source_path)
+    approval_hash = _preanonymized_source_hash(source_path, expected_source_hash)
     converted_path: Path | None = None
     try:
         if source_path.suffix.lower() == ".txt":
@@ -1651,6 +1672,9 @@ def _finalize_preanonymized_report(
             center=center,
             payload=payload,
             approval_hash=approval_hash,
+            artifact_hash=get_file_hash(converted_path)
+            if converted_path is not None
+            else approval_hash,
         )
     finally:
         if converted_path is not None:
@@ -1678,6 +1702,7 @@ def _publish_preanonymized_report(
     center: Center,
     payload: PreanonymizedIngestPayload | None,
     approval_hash: str,
+    artifact_hash: str,
 ) -> RawPdfFile:
     pdf_hash = approval_hash
     existing_report = RawPdfFile.objects.filter(pdf_hash=pdf_hash).first()
@@ -1691,6 +1716,7 @@ def _publish_preanonymized_report(
             source_path=source_path,
             target_path=final_path,
             field_file=stored_file,
+            expected_hash=artifact_hash,
         )
 
         relative_name = str(stored_file.name)
@@ -1763,8 +1789,10 @@ def _publish_preanonymized_report(
             state.mark_processing_started()
             state.mark_anonymized()
             state.mark_sensitive_meta_processed()
-            state.processed_file_sha256 = get_file_hash(report.processed_file)
-            state.save(update_fields=["processed_file_sha256", "date_modified"])
+            update_media_state(
+                state,
+                changes={"processed_file_sha256": artifact_hash},
+            )
             if _preanonymized_approval_matches(payload, approval_hash):
                 state.mark_anonymization_validated()
 
@@ -2567,7 +2595,9 @@ def process_watcher_file(
         upload_job=upload_job,
         watched_path=watched_path,
     )
-    effective_processor_name = processor_name or _default_processor_name()
+    effective_processor_name = processor_name
+    if normalized_type == "video" and not effective_processor_name:
+        effective_processor_name = _default_processor_name()
 
     try:
         _prepare_watcher_video_dispatch(
@@ -2772,6 +2802,7 @@ def _handle_watcher_handoff_failure(
 
 @dataclass(frozen=True)
 class _PreanonymizedWatcherContext:
+    media_hash: str
     normalized_type: str
     content_type: str
     source_center: Center
@@ -2792,25 +2823,6 @@ def _preanonymized_file_contract(watched_path: Path) -> tuple[str, str]:
         raise ValueError(
             f"Unsupported preanonymized watcher file suffix: {watched_path.suffix}"
         ) from exc
-
-
-def _verify_strict_preanonymized_source(
-    *,
-    watched_path: Path,
-    settled_stat: os.stat_result,
-    payload: PreanonymizedIngestPayload,
-) -> None:
-    _validate_local_preanonymized_drop_path(watched_path)
-    declared_hash = (payload.file_sha256 or "").strip().lower()
-    actual_hash = get_file_hash(watched_path)
-    _assert_watcher_file_unchanged(
-        file_path=watched_path,
-        expected_stat=settled_stat,
-        current_stat=watched_path.stat(),
-        stage="preanonymized_sidecar_hash",
-    )
-    if declared_hash != actual_hash:
-        raise ValueError("Preanonymized sidecar file_sha256 does not match media file")
 
 
 def _resolve_strict_preanonymized_center(
@@ -2877,7 +2889,7 @@ def _watcher_center_or_default(
 def _load_preanonymized_watcher_context(
     *,
     watched_path: Path,
-    settled_stat: os.stat_result,
+    media_hash: str,
     center: Center | None,
 ) -> _PreanonymizedWatcherContext:
     normalized_type, content_type = _preanonymized_file_contract(watched_path)
@@ -2899,11 +2911,11 @@ def _load_preanonymized_watcher_context(
         raise WatcherFileNotReadyError("Preanonymized sidecar changed while loading")
     if strict_local:
         assert metadata_payload is not None
-        _verify_strict_preanonymized_source(
-            watched_path=watched_path,
-            settled_stat=settled_stat,
-            payload=metadata_payload,
-        )
+        _validate_local_preanonymized_drop_path(watched_path)
+        if (metadata_payload.file_sha256 or "").strip().lower() != media_hash:
+            raise ValueError(
+                "Preanonymized sidecar file_sha256 does not match media file"
+            )
         source_center = _resolve_strict_preanonymized_center(
             payload=metadata_payload,
             watcher_center=center,
@@ -2914,6 +2926,7 @@ def _load_preanonymized_watcher_context(
             watcher_center=center,
         )
     return _PreanonymizedWatcherContext(
+        media_hash=media_hash,
         normalized_type=normalized_type,
         content_type=content_type,
         source_center=source_center,
@@ -2958,7 +2971,7 @@ def _prepare_preanonymized_watcher_context(
     try:
         return _load_preanonymized_watcher_context(
             watched_path=watched_path,
-            settled_stat=settled_stat,
+            media_hash=media_hash,
             center=center,
         )
     except WatcherFileNotReadyError:
@@ -2990,8 +3003,6 @@ def _finalize_preanonymized_watcher_media(
     processor_name: str | None,
 ) -> SensitiveMeta | None:
     with ensure_local_file(upload_job.file, suffix=watched_path.suffix) as source_path:
-        if get_file_hash(source_path) != upload_job.content_hash:
-            raise ValueError("Preanonymized upload source content identity changed")
         return _finalize_preanonymized_stored_media(
             context=context,
             source_path=source_path,
@@ -3013,6 +3024,7 @@ def _finalize_preanonymized_stored_media(
             center=context.source_center,
             payload=context.metadata_payload,
             delete_source=False,
+            expected_source_hash=upload_job.content_hash,
         )
         record_media_files(upload_job, report)
         return report.sensitive_meta
@@ -3023,6 +3035,7 @@ def _finalize_preanonymized_stored_media(
         processor_name=processor_name,
         payload=context.metadata_payload,
         delete_source=False,
+        expected_source_hash=upload_job.content_hash,
         original_file_name=upload_job.original_filename,
     )
     record_media_files(upload_job, video)
@@ -3247,6 +3260,7 @@ def _create_preanonymized_upload_job(
         storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED,
         retention_policy=UploadJob.RetentionPolicy.DELETE_AFTER_SUCCESS,
         settled_stat=settled_stat,
+        expected_content_hash=context.media_hash,
         processing_provenance=_preanonymized_processing_provenance(context),
     )
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 from scipy.stats import skewnorm
 from typing import TYPE_CHECKING, cast, Any
 from collections.abc import Callable
@@ -19,21 +20,13 @@ if TYPE_CHECKING:
     from endoreg_db.models import LabValue, Patient
 
 
-class NumericValueDistributionManager(models.Manager["NumericValueDistribution"]):
-    """Object manager for NumericValueDistribution"""
-
-    def get_by_natural_key(self, name: str) -> "NumericValueDistribution":
-        """Retrieve a NumericValueDistribution by its natural key."""
-        return self.get(name=name)
-
-
 class NumericValueDistribution(BaseValueDistribution):
     """
     Numeric value distribution model.
     Supports uniform, normal, and skewed normal distributions with hard limits.
     """
 
-    objects = NumericValueDistributionManager()
+    objects = NameNaturalKeyManager["NumericValueDistribution"]()
     DISTRIBUTION_CHOICES = [
         (NumericValueDistributionType.UNIFORM.value, "Uniform"),
         (NumericValueDistributionType.NORMAL.value, "Normal"),

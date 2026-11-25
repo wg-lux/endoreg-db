@@ -22,7 +22,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
     SegmentLabel,
     SegmentPredictionMeta,
 )
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.metadata import (
     video_frame_number_to_seconds,
     video_seconds_to_frame_number,
 )

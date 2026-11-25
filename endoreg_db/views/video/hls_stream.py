@@ -29,7 +29,7 @@ from endoreg_db.services.streaming.hls_media import (
     verify_ready_hls_source_before_lock,
 )
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
-from endoreg_db.services.video_files import VideoArtifactKind
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.utils.cors import resolve_response_origin
 from endoreg_db.utils.nginx_accel import build_nginx_accel_response_for_path
 from endoreg_db.utils.permissions import EnvironmentAwarePermission

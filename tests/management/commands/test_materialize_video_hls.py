@@ -16,6 +16,7 @@ from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.services.streaming import hls_media as hls_media
 from endoreg_db.utils.paths import EndoregPathsModel
 from tests.helpers.hls import FakeHlsOutputRecorder
+from endoreg_db.services.media.state import update_media_state
 
 
 @pytest.mark.parametrize("status", ["failed_validation", "already_materializing"])
@@ -305,8 +306,7 @@ def test_backfill_prioritizes_reviewed_processed_videos_before_limit(
     reviewed_peer = _create_processed_video(center=hls_command_center, payload=b"peer")
     for video in (raw, reviewed, reviewed_peer):
         state = video.get_or_create_state()
-        setattr(state, review_flag, True)
-        state.save(update_fields=[review_flag])
+        update_media_state(state, changes={review_flag: True})
 
     def selected_ids(
         *,

@@ -164,11 +164,8 @@ definition_of_done:
       Production validator unchanged; 47 tests in the combined regression passed. This local fixture correction
       is not complete documentation acceptance.
 
-      2026-10-15: prose YAML conversion exposed a governance policy conflict: docs/video_datenerhalt_gc02_gc10_20260923.md
-      is a historical German operational report preserved under AGENTS.md, but the checker enforces English
-      on every Markdown source. docs/implementation_standards_review.md already fails the same check.
-      No checker exception or weakened policy was introduced. Language-aware report classification needs
-      implementation and verification.
+      2026-11-24: the two historical German snapshot reports that conflicted with the English-only checker
+      were removed together with migrated planning documents; their scope and evidence live in feature YAML.
 
 
       2026-10-20: At the user''s explicit request, translated German prose in eleven repository Markdown

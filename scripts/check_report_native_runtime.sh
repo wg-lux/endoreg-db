@@ -50,15 +50,22 @@ import endoreg_db.endoreg_rust_backend as native
 contracts = {(name, contract) for name, contract, _version in native.native_capabilities()}
 for required in (
     ("report_source_snapshot", "report_source_snapshot_v1"),
+    ("media_decisions", "media_decisions_v1"),
     ("hls_state_machine", "hls_state_v1"),
     ("lifecycle_state_machine", "lifecycle_state_v3"),
+    ("status_transition", "status_transition_v2"),
     ("state_vocabulary", "state_vocabulary_v1"),
     ("hub_transfer_state_machine", "hub_transfer_state_v2"),
     ("hls_artifact_transition", "hls_artifact_transition_v1"),
-    ("status_transition", "status_transition_v1"),
 ):
     assert required in contracts, required
 vocabularies = dict(native.native_state_vocabularies())
+assert native.media_validation_available(False, "lost") is False
+assert native.segment_status_with_history(True, True, True, "failure") == "cleanup_failed"
+assert native.hub_export_integrity(True, True, "a", "b", False, None) == "hash_metadata_mismatch"
+assert "validation_comment" in native.direct_identifier_fields()
+assert native.decide_status_transition("upload_job", "pending", "processing") is True
+assert native.decide_status_transition("upload_job_lease_recovery", "processing", "error") is True
 assert "materializing" in vocabularies["hls_in_flight_status"]
 assert "transient_retry" in vocabularies["hub_failure_class"]
 assert native.reduce_hub_transfer_event("completed", None, "fail", None, "transient_retry") == ("completed", None, False)

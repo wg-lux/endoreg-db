@@ -22,7 +22,7 @@ from endoreg_db.services.secret_rotation.historical_resolution import (
     resolve_historical_identity,
 )
 
-from endoreg_db.utils import guess_name_gender
+from endoreg_db.utils.names import guess_name_gender
 
 # Assuming these utils are correctly located
 from endoreg_db.utils.hashs import (

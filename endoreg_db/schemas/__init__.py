@@ -116,7 +116,7 @@ from .report_llm import (
     dump_report_llm_job_config,
     dump_report_llm_job_result,
 )
-from .video_metadata import (
+from lx_dtypes.models.meta.VideoMeta import (
     VideoFpsDetailsPayload,
     VideoFpsErrorPayload,
     VideoFpsPayload,

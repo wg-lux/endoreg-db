@@ -1,33 +1,15 @@
 import json
-
-# from endoreg_db.models import (
-# )
-import logging
 import tempfile
-from logging import getLogger
 from pathlib import Path
-from typing import Any, TypedDict, cast
+from typing import TypedDict
 from uuid import uuid4
 
 from django.core.management import call_command
 from django.test import TransactionTestCase
-from endoreg_db.utils.ffmpeg_wrapper import is_ffmpeg_available  # ADDED
 
 from endoreg_db.models import AIDataSet, Center, Frame, LabelSet, VideoFile
 from endoreg_db.utils.file_operations import safe_rmtree
 from endoreg_db.utils.paths import EndoregPathsModel
-
-logger = getLogger("legacy_data")
-logger.setLevel(logging.WARNING)
-
-from ..helpers.data_loader import (
-    load_ai_model_data,
-    load_ai_model_label_data,
-)
-
-IMG_DICT_PATH = "tests/assets/legacy_img_dicts.jsonl"
-
-FFMPEG_AVAILABLE = is_ffmpeg_available()  # ADDED
 
 
 class LegacyImageRow(TypedDict):
@@ -50,34 +32,6 @@ def _frame_video_id(frame: Frame) -> int:
     video_id = getattr(frame, "video_id", None)
     assert video_id is not None
     return int(video_id)
-
-
-class LegacyImageDataTest(TransactionTestCase):
-    img_dicts: list[dict[str, Any]]
-
-    def setUp(self) -> None:
-        """
-        Prepares test data by loading AI model data and parsing legacy image dictionaries.
-
-        Loads AI model label and model data, then reads and parses a JSON Lines file containing legacy image dictionaries into the `img_dicts` attribute for use in tests.
-        """
-        load_ai_model_label_data()
-        load_ai_model_data()
-
-        # read the .jsonl file
-        with open(IMG_DICT_PATH, "r", encoding="utf-8") as f:
-            self.img_dicts = [cast(dict[str, Any], json.loads(line)) for line in f]
-
-    def test_load_legacy_data(self) -> None:
-        """
-        Verifies that legacy image dictionaries are loaded from the JSONL file.
-
-        Asserts that the list of image dictionaries is not empty, ensuring test data is present.
-        """
-        assert len(self.img_dicts) > 0, "No image dictionaries found in the JSONL file."
-
-    def tearDown(self) -> None:
-        pass
 
 
 class LegacyLoadCommandBackfillTest(TransactionTestCase):

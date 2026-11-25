@@ -290,7 +290,7 @@ in the service until the lx-data-models contract provides database choices
 
 | Area | Current role | First files to inspect |
 | --- | --- | --- |
-| Video file lifecycle | central video model plus wrappers for IO, streaming, metadata, frames, anonymization, prediction, state | `endoreg_db/models/media/video/video_file.py`, `endoreg_db/services/video_files/__init__.py` |
+| Video file lifecycle | central video model plus wrappers for IO, streaming, metadata, frames, anonymization, prediction, state | `endoreg_db/models/media/video/video_file.py`, `endoreg_db/services/video_files/{io,frames,metadata,streaming}.py` |
 | Raw PDF lifecycle | report model plus wrappers for IO, metadata, state, validation, creation, deletion | `endoreg_db/models/media/pdf/raw_pdf.py`, `endoreg_db/services/raw_pdf_files/__init__.py` |
 | Frame extraction | frame cache manifests, validation, staging, record sync | `endoreg_db/services/video_files/_frames/_extract_frames.py` |
 | Video anonymization | processed artifact generation, outside-frame blackening, raw cleanup | `endoreg_db/services/video_files/_anonymization.py` |
@@ -372,7 +372,7 @@ models/media/video/video_file.py
 Primary references:
 
 - `endoreg_db/models/media/video/video_file.py:200`
-- `endoreg_db/services/video_files/__init__.py:3`
+- `endoreg_db/services/video_files/frames.py`
 - `endoreg_db/services/video_files/_io.py`
 - `endoreg_db/services/video_files/_frames`
 - `endoreg_db/services/video_files/_metadata`

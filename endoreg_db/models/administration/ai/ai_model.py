@@ -8,6 +8,7 @@ from logging import getLogger
 from typing import TYPE_CHECKING, Protocol, cast, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 from icecream import ic
 
 logger = getLogger(__name__)
@@ -38,27 +39,6 @@ class _AiModelVersionSource(Protocol):
     version: str
 
 
-class AiModelManager(models.Manager["AiModel"]):
-    """
-    Manager for AI models with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "AiModel":
-        """
-        Retrieves the AiModel instance with the specified unique name.
-
-        Args:
-            name: The unique identifier of the AiModel to retrieve.
-
-        Returns:
-            The AiModel instance matching the given name.
-
-        Raises:
-            AiModel.DoesNotExist: If no AiModel with the specified name exists.
-        """
-        return self.get(name=name)
-
-
 class AiModel(models.Model):
     """
     Represents a generic AI model that encapsulates high-level metadata about the model,
@@ -73,7 +53,7 @@ class AiModel(models.Model):
         active_meta (ModelMeta): reference to the currently active ModelMeta instance associated with the model when configured.
     """
 
-    objects = AiModelManager()
+    objects = NameNaturalKeyManager["AiModel"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     # German display name; NULL when the catalogue carries none.

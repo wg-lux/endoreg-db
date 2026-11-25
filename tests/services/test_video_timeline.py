@@ -19,7 +19,7 @@ from endoreg_db.services.video_files._time import (
     video_source_timeline,
 )
 from endoreg_db.services.video_files.timeline_index import load_video_timeline_index
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,

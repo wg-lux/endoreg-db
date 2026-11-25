@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_error,
+)
+
 # Direct lifecycle boundary coverage is intentional.
 # pyright: reportPrivateUsage=false
 
@@ -23,7 +27,7 @@ from endoreg_db.services.jobs.report_llm_jobs import (
     report_llm_job_payload,
 )
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.reports.import_fencing import (
     acquire_report_import_fence,
     report_import_finalization_guard,
@@ -250,7 +254,8 @@ def test_eager_report_task_failure_is_not_logged_as_dispatch_failure(
         task_args = cast(tuple[str], kwargs["args"])
         job = ReportLlmInferenceJob.objects.get(job_id=task_args[0])
         job.mark_failure("invalid PDF")
-        upload_job.mark_error(
+        mark_upload_job_error(
+            upload_job,
             "invalid PDF",
             error_code=UploadJob.ErrorCode.INVALID_INPUT,
         )
@@ -306,16 +311,15 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
         ),
     )
     state = report.get_or_create_state()
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.processed_file_sha256 = "a" * 64
-    state.save(
-        update_fields=[
-            "anonymized",
-            "sensitive_meta_processed",
-            "processed_file_sha256",
-            "date_modified",
-        ]
+    from endoreg_db.services.media.state import update_media_state
+
+    update_media_state(
+        state,
+        changes={
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+            "processed_file_sha256": "a" * 64,
+        },
     )
 
     monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery" if explicit_inline else "inline")

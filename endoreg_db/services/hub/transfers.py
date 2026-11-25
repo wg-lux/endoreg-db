@@ -30,6 +30,7 @@ from lx_dtypes.models.contracts.hub_media_envelope import (
     validate_hub_media_receipt_matches_envelope,
 )
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
@@ -74,8 +75,8 @@ from endoreg_db.services.runtime.status_writers import (
 from endoreg_db.services.hub.audit import emit_hub_audit_event
 from endoreg_db.services.hub.cleanup import stored_media_name_referenced
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
-from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.utils.video.timeline import (
     presentation_timestamp_seconds,
     validate_presentation_timestamp_seconds,
 )
@@ -1743,20 +1744,15 @@ def _mark_video_transfer_as_processed(
     _reconcile_segment_annotations_validated(
         video_state=state, sender_state_payload=payload
     )
-    state.processing_started = True
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.anonymization_validated = True
-    state.processed_file_sha256 = str(video.processed_video_hash or "").strip()
-    state.save(
-        update_fields=[
-            "processing_started",
-            "anonymized",
-            "sensitive_meta_processed",
-            "anonymization_validated",
-            "processed_file_sha256",
-            "date_modified",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "processing_started": True,
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+            "anonymization_validated": True,
+            "processed_file_sha256": str(video.processed_video_hash or "").strip(),
+        },
     )
     ProcessingHistory.mark_success(file_hash=video.raw_video_hash, obj=video)
 
@@ -1771,20 +1767,15 @@ def _mark_report_transfer_as_processed(
         resource_rows.get("raw_pdf_state") or {}, field_name="raw_pdf_state"
     )
     _save_synced_payload_fields(state, payload, _REPORT_STATE_SYNC_FIELDS)
-    state.processing_started = True
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.anonymization_validated = True
-    state.processed_file_sha256 = actual_hash
-    state.save(
-        update_fields=[
-            "processing_started",
-            "anonymized",
-            "sensitive_meta_processed",
-            "anonymization_validated",
-            "processed_file_sha256",
-            "date_modified",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "processing_started": True,
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+            "anonymization_validated": True,
+            "processed_file_sha256": actual_hash,
+        },
     )
     ProcessingHistory.mark_success(file_hash=report.pdf_hash, obj=report)
 
@@ -1898,8 +1889,7 @@ def _apply_frame_annotation_rows(
 
     video_state = get_or_create_video_state(video)
     if not video_state.frame_annotations_generated:
-        video_state.frame_annotations_generated = True
-        video_state.save(update_fields=["frame_annotations_generated", "date_modified"])
+        update_media_state(video_state, changes={"frame_annotations_generated": True})
 
 
 def _processed_timeline(
@@ -2088,11 +2078,15 @@ def _reconcile_segment_annotations_validated(
 ) -> None:
     if "segment_annotations_validated" not in sender_state_payload:
         return
-    video_state.segment_annotations_validated = _json_bool(
-        sender_state_payload["segment_annotations_validated"],
-        field_name="resource_rows.video_state.segment_annotations_validated",
+    update_media_state(
+        video_state,
+        changes={
+            "segment_annotations_validated": _json_bool(
+                sender_state_payload["segment_annotations_validated"],
+                field_name="resource_rows.video_state.segment_annotations_validated",
+            ),
+        },
     )
-    video_state.save(update_fields=["segment_annotations_validated", "date_modified"])
 
 
 def _transfer_annotation_external_id(
@@ -2295,9 +2289,10 @@ def _save_synced_payload_fields(
     payload: JsonObject,
     field_names: tuple[str, ...],
 ) -> None:
-    copied = _sync_payload_fields(instance, payload, field_names)
-    if copied:
-        instance.save(update_fields=[*copied, "date_modified"])
+    update_media_state(
+        instance,
+        changes={name: payload[name] for name in field_names if name in payload},
+    )
 
 
 @transaction.atomic

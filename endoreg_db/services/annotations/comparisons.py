@@ -30,7 +30,7 @@ from endoreg_db.services.video_files._time import (
     timeline_mapping_from_source,
     video_source_timeline,
 )
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMappingError,
     frame_durations,
 )

@@ -56,6 +56,8 @@ from endoreg_db.services.studies.cohort import (
     StudyCohortFilters,
     build_study_cohort_payload,
 )
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 REPORT_API_MODULE = "endoreg_db.views.patient_report.patient_examination_report"
 API_PREFIX = "/api/patient-examination-reports"
@@ -262,15 +264,20 @@ def test_two_polyps_keep_resection_and_segment_identity_through_report_and_cohor
     video.processed_file.save(
         "study.mp4", SimpleUploadedFile("study.mp4", content), save=False
     )
-    video.state = VideoState.objects.create(
+    video.state = create_media_state(
+        VideoState,
         anonymization_validated=True,
         processed_file_sha256=hashlib.sha256(content).hexdigest(),
     )
     video.save(update_fields=["processed_file", "state"])
     # Publication invalidates readiness; review belongs after the file change.
-    video.state.anonymization_validated = True
-    video.state.processed_file_sha256 = hashlib.sha256(content).hexdigest()
-    video.state.save(update_fields=["anonymization_validated", "processed_file_sha256"])
+    update_media_state(
+        video.state,
+        changes={
+            "anonymization_validated": True,
+            "processed_file_sha256": hashlib.sha256(content).hexdigest(),
+        },
+    )
     cohort = build_study_cohort_payload(StudyCohortFilters())
     findings = cohort["cases"][0]["examinations"][0]["findings"]
     by_id = {row["patient_finding_id"]: row for row in findings}
@@ -1229,8 +1236,8 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     from endoreg_db.services.reports import pdf_renderer as renderer_module
     from endoreg_db.utils.frame_stream import EncodedFrameSample
 
-    export_context.video.state = VideoState.objects.create(
-        anonymized=True, anonymization_validated=True
+    export_context.video.state = create_media_state(
+        VideoState, anonymized=True, anonymization_validated=True
     )
     export_context.video.save(update_fields=["state"])
     clicked_frame = Frame.objects.create(
@@ -1590,8 +1597,8 @@ def test_report_frame_candidates_filter_labels_and_paginate_without_extracting(
 ) -> None:
     from endoreg_db.models import ImageClassificationAnnotation, Label
 
-    export_context.video.state = VideoState.objects.create(
-        anonymized=True, anonymization_validated=True
+    export_context.video.state = create_media_state(
+        VideoState, anonymized=True, anonymization_validated=True
     )
     export_context.video.save(update_fields=["state"])
     zero = Frame.objects.create(
@@ -1664,8 +1671,8 @@ def test_auto_selection_uses_canonical_report_and_preserves_existing_choice(
     from endoreg_db.models import ImageClassificationAnnotation, Label
 
     video = cast(VideoFile, selector_context.video)
-    video.state = VideoState.objects.create(
-        anonymized=True, anonymization_validated=True
+    video.state = create_media_state(
+        VideoState, anonymized=True, anonymization_validated=True
     )
     video.save(update_fields=["state"])
     label, _ = Label.objects.get_or_create(name="auto-report-selection")
@@ -1764,8 +1771,8 @@ def test_auto_selection_respects_media_validation_and_exclusive_segment_end(
     from endoreg_db.models import ImageClassificationAnnotation, Label
 
     video = cast(VideoFile, selector_context.video)
-    video.state = VideoState.objects.create(
-        anonymized=True, anonymization_validated=validated
+    video.state = create_media_state(
+        VideoState, anonymized=True, anonymization_validated=validated
     )
     video.save(update_fields=["state"])
     source, _ = InformationSource.objects.get_or_create(name="human_annotation")

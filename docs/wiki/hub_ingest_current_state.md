@@ -465,5 +465,4 @@ Primary files for current hub functionality:
 
 - `docs/hub_ingest_operations.md`
 - `docs/deployment_note_hub_contract.md`
-- `docs/wiki/hub_ingest_gap_closure.md`
 - `endoreg_db/import_files/multi_centre_storage_hub_roadmap.md`

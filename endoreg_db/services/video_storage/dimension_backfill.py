@@ -16,7 +16,7 @@ from lx_anonymizer.video_processing import video_utils
 from django.db.models.fields.files import FieldFile
 
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.io import (
     ensure_local_processed_video_file,
     ensure_local_raw_video_file,
 )

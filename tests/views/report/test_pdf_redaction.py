@@ -14,6 +14,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import connection
 from django.test import Client as DjangoClient
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.models.media.pdf.pdf_processing_history import PdfProcessingHistory
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.operation_log import OperationLog
@@ -62,10 +63,14 @@ class TestPdfRedactionEndpoints:
             MINIMAL_PDF_BYTES,
             content_type="application/pdf",
         )
-        state = RawPdfState.objects.create(
-            anonymized=True,
-            sensitive_meta_processed=True,
-            anonymization_validated=True,
+        state = RawPdfState.objects.create()
+        update_media_state(
+            state,
+            changes={
+                "anonymized": True,
+                "sensitive_meta_processed": True,
+                "anonymization_validated": True,
+            },
         )
         return RawPdfFile.objects.create(
             pdf_hash=f"pdf-redaction-{uuid4().hex}",

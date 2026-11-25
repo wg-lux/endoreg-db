@@ -65,13 +65,11 @@ from endoreg_db.services.hub.media_integrity import (
     require_reusable_video_raw_source,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
-from endoreg_db.services.video_files import (
-    ensure_local_raw_video_file,
-    get_or_create_video_state,
-    get_video_by_content_hash,
-    get_video_import_context_names,
-    initialize_video_file,
-)
+from endoreg_db.services.video_files.imports import initialize_video_file
+from endoreg_db.services.video_files.io import ensure_local_raw_video_file
+from endoreg_db.services.video_files.metadata import get_video_import_context_names
+from endoreg_db.services.video_files.queries import get_video_by_content_hash
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.services.video_storage.workflow import (
     normalize_video_file,
     probe_video_artifact,

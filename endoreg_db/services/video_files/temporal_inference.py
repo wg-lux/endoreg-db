@@ -57,11 +57,9 @@ from endoreg_db.services.jobs.video_task_cleanup import rollback_video_frame_art
 from endoreg_db.services.jobs.processing_history import (
     set_history_task_id as _set_history_task_id,
 )
-from endoreg_db.services.video_files import (
-    delete_video_frames,
-    predict_video,
-    update_video_meta,
-)
+from endoreg_db.services.video_files.ai import predict_video
+from endoreg_db.services.video_files.frames import delete_video_frames
+from endoreg_db.services.video_files.metadata import update_video_meta
 from endoreg_db.services.video_files._ai import (
     VideoFrameScoreResult,
 )
@@ -76,7 +74,7 @@ from endoreg_db.services.video_files.frame_coordinates import (
     annotation_artifact_kind,
     prediction_frame_boundaries,
 )
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMappingError,
     validate_timestamp_seconds,
 )

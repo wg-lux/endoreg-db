@@ -32,8 +32,6 @@ files:
   role: Writer kinds, single-writer rule and review workflow for quality/state_mutation_owners.yml.
 - file: report_import_concurrency_implementation.md
   role: Report ownership, publication, extraction receipts and native lifecycle contract.
-- file: implementation_standards_review.md
-  role: Technical standards and security review snapshot linked to authoritative feature definitions.
 - file: annotation_comparisons.md
   role: Named practitioner overlap metrics, report eligibility and dashboard API contract.
 - file: key_rotation.md
@@ -44,8 +42,6 @@ files:
   role: Authorized processed-frame streaming for local training.
 - file: video_reimport_budget.md
   role: Reimport throughput budgeting and timeout operations.
-- file: video_datenerhalt_gc02_gc10_20260923.md
-  role: Historical sanitized data-retention investigation; not current runtime evidence.
 - file: wiki/reference_catalog_migration.md
   role: Bounded legacy colorectal catalogue reconciliation runbook.
 - file: video_pts_fps_callsite_inventory.md

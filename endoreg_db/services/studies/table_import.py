@@ -139,7 +139,7 @@ def _persist_row(
     center: Center,
     mapping_hash: str,
     source_hash: str,
-) -> tuple[PatientExamination, bool, int, int]:
+) -> tuple[int, int, bool, int, int]:
     meta = _identity(row, center)
     patient_hash = meta.calculate_patient_hash()
     examination_hash = meta.get_patient_examination_hash()
@@ -167,21 +167,31 @@ def _persist_row(
         ):
             raise ValueError("Imported examination identity has changed")
         record.patient = str(previous_examination.patient_id)
-        receipt = TableImportReceiptPayload(
-            patient_hash=patient_hash, examination_hash=examination_hash, record=record
+        receipt = TableImportReceiptPayload.model_validate(existing.payload)
+        # Older receipts can only prove the original gender from identical file bytes.
+        gender_matches = (
+            existing.source_hash == source_hash
+            if receipt.gender is None
+            else receipt.gender == row.patient.gender
         )
         if (
             existing.mapping_hash != mapping_hash
-            or TableImportReceiptPayload.model_validate(existing.payload).model_dump(
-                mode="json"
-            )
-            != receipt.model_dump(mode="json")
+            or not gender_matches
+            or receipt.patient_hash != patient_hash
+            or receipt.examination_hash != examination_hash
+            or receipt.record.model_dump(mode="json") != record.model_dump(mode="json")
         ):
             raise ValueError("Existing source row has different content")
         meta.patient_hash = patient_hash
         meta.examination_hash = examination_hash
         videos, reports = _match_media(meta, previous_examination)
-        return previous_examination, True, videos, reports
+        return (
+            cast(int, previous_examination.pk),
+            cast(int, existing.pk),
+            True,
+            videos,
+            reports,
+        )
 
     examination_type = Examination.objects.get(name=record.examination)
     # SensitiveMeta owns salt validation, collision detection, identity rotation,
@@ -222,9 +232,12 @@ def _persist_row(
     )
     videos, reports = _match_media(meta, examination)
     receipt = TableImportReceiptPayload(
-        patient_hash=patient_hash, examination_hash=examination_hash, record=record
+        patient_hash=patient_hash,
+        examination_hash=examination_hash,
+        gender=row.patient.gender,
+        record=record,
     )
-    StudyTableImport.objects.create(
+    imported = StudyTableImport.objects.create(
         owner=owner,
         center=center,
         patient_examination=examination,
@@ -236,7 +249,7 @@ def _persist_row(
         owns_examination=owns_examination,
         deletion_record=examination.dtypes_record,
     )
-    return examination, False, videos, reports
+    return cast(int, examination.pk), cast(int, imported.pk), False, videos, reports
 
 
 def import_table(
@@ -273,19 +286,22 @@ def import_table(
     ):
         raise ValueError("Input changed during validation")
     examinations: set[int] = set()
+    receipt_ids: list[int] = []
     replayed = videos = reports = 0
     with transaction.atomic():
         # Serialize import writers for this center, including the first receipt.
         center = Center.objects.select_for_update().get(pk=center.pk)
         for row in rows:
             try:
-                examination, reused, matched_videos, matched_reports = _persist_row(
-                    row,
-                    spec,
-                    owner=owner,
-                    center=center,
-                    mapping_hash=mapping_hash,
-                    source_hash=source_hash,
+                examination_id, receipt_id, reused, matched_videos, matched_reports = (
+                    _persist_row(
+                        row,
+                        spec,
+                        owner=owner,
+                        center=center,
+                        mapping_hash=mapping_hash,
+                        source_hash=source_hash,
+                    )
                 )
             except (ValueError, Gender.DoesNotExist, Examination.DoesNotExist) as error:
                 raise TableExtractionError(
@@ -293,10 +309,11 @@ def import_table(
                     "persistence",
                     "identity_terminology_or_reimport_conflict",
                 ) from error
-            if examination.pk not in examinations:
+            if examination_id not in examinations:
                 videos += matched_videos
                 reports += matched_reports
-            examinations.add(cast(int, examination.pk))
+            examinations.add(examination_id)
+            receipt_ids.append(receipt_id)
             replayed += int(reused)
         if dry_run:
             transaction.set_rollback(True)
@@ -305,6 +322,7 @@ def import_table(
         created_count=len(rows) - replayed,
         replayed_count=replayed,
         patient_examination_ids=[] if dry_run else sorted(examinations),
+        receipt_ids=[] if dry_run else receipt_ids,
         matched_video_count=videos,
         matched_report_count=reports,
         dry_run=dry_run,

@@ -10,6 +10,9 @@ Callers save the returned fields together with their own timestamps.
 from __future__ import annotations
 
 from django.db import transaction
+from django.db.models import Q
+
+from endoreg_db.models import RawPdfFile, VideoFile
 
 from endoreg_db.models.hub.outbound_hub_transfer_job import OutboundHubTransferJob
 from endoreg_db.models.state.hub_transfer import HubExportFailureClass
@@ -50,3 +53,38 @@ def apply_outbound_transfer_event(
         job.local_status = status
         job.failure_class = failure or ""
     return apply
+
+
+def other_generation_blocks_dispatch(job: OutboundHubTransferJob) -> bool:
+    """Serialize generations on their resource; unresolved sends retain priority."""
+    if not transaction.get_connection().in_atomic_block:
+        raise RuntimeError("Generation dispatch requires an atomic transaction.")
+    if job.video_file_id is not None:
+        VideoFile.objects.select_for_update().get(pk=job.video_file_id)
+        others = OutboundHubTransferJob.objects.filter(video_file_id=job.video_file_id)
+    elif job.raw_pdf_file_id is not None:
+        RawPdfFile.objects.select_for_update().get(pk=job.raw_pdf_file_id)
+        others = OutboundHubTransferJob.objects.filter(
+            raw_pdf_file_id=job.raw_pdf_file_id
+        )
+    else:
+        raise ValueError("Outbound transfer has no clinical resource.")
+    return (
+        others.filter(target_node_id=job.target_node_id)
+        .exclude(pk=job.pk)
+        .exclude(
+            local_status=job.LocalStatus.COMPLETED,
+        )
+        .filter(
+            Q(registration_started_at__isnull=False)
+            | Q(
+                local_status__in=[
+                    job.LocalStatus.QUEUED,
+                    job.LocalStatus.REGISTERING,
+                    job.LocalStatus.AWAITING_MEDIA,
+                    job.LocalStatus.UPLOADING,
+                ]
+            )
+        )
+        .exists()
+    )

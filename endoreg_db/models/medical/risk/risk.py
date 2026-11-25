@@ -2,20 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
-
-
-class RiskManager(models.Manager["Risk"]):
-    def get_by_natural_key(self, name: str) -> "Risk":
-        """
-        Retrieve a risk instance using its natural key.
-
-        Args:
-            name: The unique name identifying the risk instance.
-
-        Returns:
-            The risk instance with the matching name.
-        """
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class Risk(models.Model):
@@ -52,7 +39,7 @@ class Risk(models.Model):
         null=True,
     )
 
-    objects = RiskManager()
+    objects = NameNaturalKeyManager["Risk"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import RiskType

@@ -39,6 +39,7 @@ from endoreg_db.services.video_files.clinical_contracts import (
     resolve_lx_anonymization_state,
     resolve_segment_labelset_name,
 )
+from tests.helpers.media_states import create_media_state
 
 
 def _create_video(
@@ -221,7 +222,7 @@ def test_build_lx_patient_video_file_rejects_invalid_segments_without_omission(
         patient_first_name="Valid",
         patient_last_name="Patient",
     )
-    state = VideoState.objects.create(anonymization_validated=True)
+    state = create_media_state(VideoState, anonymization_validated=True)
     video = _create_video(
         center=center,
         raw_video_hash="video-contract",

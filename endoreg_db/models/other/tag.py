@@ -2,11 +2,7 @@ from __future__ import annotations
 from typing import ClassVar, Any
 
 from django.db import models
-
-
-class TagManager(models.Manager["Tag"]):
-    def get_by_natural_key(self, name: str) -> "Tag":
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class Tag(models.Model):
@@ -16,7 +12,7 @@ class Tag(models.Model):
         max_length=255, blank=True, null=True
     )
 
-    objects: ClassVar[TagManager] = TagManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: ClassVar[NameNaturalKeyManager["Tag"]] = NameNaturalKeyManager["Tag"]()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     class Meta:
         verbose_name = "Tag"

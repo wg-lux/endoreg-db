@@ -28,7 +28,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     evidence_as_json,
 )
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,
@@ -152,8 +152,9 @@ def persist_video_source_timeline(
         probe_frame_timestamps(path) if probe_frame_timestamps is not None else None
     )
     captured = None
+    exact_seconds: list[float] | None = None
     if exact_timestamps is not None:
-        _exact_timestamp_seconds(source, exact_timestamps)
+        exact_seconds = _exact_timestamp_seconds(source, exact_timestamps)
         assert source.timeline.time_base_num is not None
         assert source.timeline.time_base_den is not None
         captured = CanonicalFrameTimeline(
@@ -236,7 +237,7 @@ def persist_video_source_timeline(
             path=path,
             source=source,
             rows=rows,
-            exact_timestamps=exact_timestamps,
+            exact_seconds=exact_seconds,
             probe_frame_pts=probe_frame_pts,
         )
         repair_unpublished = (
@@ -286,11 +287,10 @@ def persist_video_source_timeline(
             video.frame_count = len(timestamps)
             initialize_video_frames(video)
             rows = list(Frame.objects.filter(video=video).order_by("frame_number"))
-        _validate_timestamp_counts(
-            rows=rows,
-            timestamps=timestamps,
-            exact_timestamps=exact_timestamps,
-        )
+        if len(timestamps) != len(rows):
+            raise VideoStorageNormalizationError(
+                "Probed presentation timestamp count does not match persisted frames"
+            )
         video.frame_count = len(timestamps)
         source = _source_with_probed_frame_count(source, len(timestamps))
         update_fields = _apply_frame_timestamps(
@@ -324,11 +324,11 @@ def _resolve_source_timestamps(
     path: Path,
     source: VideoArtifactProbe,
     rows: list["Frame"],
-    exact_timestamps: list[FramePresentationTimestamp] | None,
+    exact_seconds: list[float] | None,
     probe_frame_pts: Callable[[Path], list[float]],
 ) -> tuple[VideoArtifactProbe, list[float], TimestampMapping]:
-    if exact_timestamps is not None:
-        return source, _exact_timestamp_seconds(source, exact_timestamps), "ffprobe_pts"
+    if exact_seconds is not None:
+        return source, exact_seconds, "ffprobe_pts"
     if source.timeline.variable_frame_rate:
         return source, probe_frame_pts(path), "ffprobe_pts"
     return _constant_frame_rate_timestamps(video, source, rows)
@@ -389,22 +389,6 @@ def _constant_frame_rate_timestamps(
         for row in rows
     ]
     return source, timestamps, "rational_cfr"
-
-
-def _validate_timestamp_counts(
-    *,
-    rows: list["Frame"],
-    timestamps: list[float],
-    exact_timestamps: list[FramePresentationTimestamp] | None,
-) -> None:
-    if len(timestamps) != len(rows):
-        raise VideoStorageNormalizationError(
-            "Probed presentation timestamp count does not match persisted frames"
-        )
-    if exact_timestamps is not None and len(exact_timestamps) != len(rows):
-        raise VideoStorageNormalizationError(
-            "Probed exact presentation timestamp count does not match persisted frames"
-        )
 
 
 def _source_with_probed_frame_count(

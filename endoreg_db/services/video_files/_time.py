@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,

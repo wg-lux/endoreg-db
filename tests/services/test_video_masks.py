@@ -6,7 +6,7 @@ import pytest
 from lx_dtypes.models.contracts.video_masks import VideoMaskProfile
 from pydantic import ValidationError
 
-from endoreg_db.services import video_masks
+from endoreg_db.services.video_files import video_masks
 from endoreg_db.services.jobs.video_correction_jobs import (
     apply_video_anonymization_strategy,
 )

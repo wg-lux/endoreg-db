@@ -4,6 +4,7 @@ from django.test import TestCase
 
 from endoreg_db.models.state.anonymization import AnonymizationState
 from endoreg_db.models.state.raw_pdf import RawPdfState
+from endoreg_db.services.media.state import update_media_state
 
 
 class TestRawPdfState(TestCase):
@@ -19,11 +20,15 @@ class TestRawPdfState(TestCase):
             AnonymizationState.PROCESSING_ANONYMIZING,
         )
 
-        state.anonymized = True
-        state.sensitive_meta_processed = True
-        state.anonymization_validated = True
-        state.processed_file_sha256 = "a" * 64
-        state.save()
+        update_media_state(
+            state,
+            changes={
+                "anonymized": True,
+                "sensitive_meta_processed": True,
+                "anonymization_validated": True,
+                "processed_file_sha256": "a" * 64,
+            },
+        )
         state.mark_processing_failed()
         state.refresh_from_db()
         self.assertEqual(state.anonymization_status, AnonymizationState.FAILED)

@@ -20,6 +20,7 @@ from endoreg_db.models import (
     VideoFile,
 )
 from endoreg_db.services.video_files.io import get_temp_anonymized_video_frame_dir
+from endoreg_db.services.media.state import update_media_state
 
 
 class _CenterRelation(Protocol):
@@ -110,8 +111,7 @@ def test_prediction_frame_deletion_keeps_db_frames_and_clears_extracted_flags(
         frame_path.write_bytes(b"dummy-frame-content")
     Frame.objects.filter(video=video).update(is_extracted=True)
     state = video.get_or_create_state()
-    state.frames_extracted = True
-    state.save(update_fields=["frames_extracted"])
+    update_media_state(state, changes={"frames_extracted": True})
 
     # Cleanup step used after cache-backed derived frame processing.
     video.delete_frames()
@@ -212,8 +212,7 @@ def test_delete_frames_preserves_dataset_backed_frame_files(
     dataset.image_annotations.add(annotation)
 
     state = video.get_or_create_state()
-    state.frames_extracted = True
-    state.save(update_fields=["frames_extracted"])
+    update_media_state(state, changes={"frames_extracted": True})
 
     with django_capture_on_commit_callbacks(execute=True):
         video.delete_frames()
@@ -302,8 +301,7 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
 
     Frame.objects.filter(video=video).update(is_extracted=True)
     state = video.get_or_create_state()
-    state.frames_extracted = True
-    state.save(update_fields=["frames_extracted"])
+    update_media_state(state, changes={"frames_extracted": True})
 
     original_state_save = type(state).save
 
@@ -314,9 +312,11 @@ def test_delete_frames_restores_staged_directories_when_state_update_fails(
         using: str | None = None,
         update_fields: list[str] | None = None,
     ) -> object:
-        if getattr(self, "pk", None) == state.pk and update_fields == [
-            "frames_extracted"
-        ]:
+        if (
+            getattr(self, "pk", None) == state.pk
+            and update_fields is not None
+            and "frames_extracted" in update_fields
+        ):
             raise RuntimeError("simulated state persistence failure")
         return original_state_save(
             cast(Any, self),

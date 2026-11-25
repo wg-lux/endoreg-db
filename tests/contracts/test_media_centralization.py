@@ -16,7 +16,8 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.models import VideoFile
 from endoreg_db.services.patient_identity import validated_media_identity
 
-from endoreg_db.utils import file_operations, hashs
+from endoreg_db.utils import hashs
+from endoreg_db.utils import file_operations
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.storage.report_fields import ReportArtifactFieldFile
 from endoreg_db.utils.storage.video_fields import VideoArtifactFieldFile

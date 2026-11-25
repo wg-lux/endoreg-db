@@ -6,13 +6,13 @@
 macro_rules! state_tokens {
     (
         $(#[$meta:meta])*
-        enum $name:ident {
+        $visibility:vis enum $name:ident {
             $($variant:ident => $token:literal),+ $(,)?
         }
     ) => {
         $(#[$meta])*
         #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-        enum $name {
+        $visibility enum $name {
             $($variant),+
         }
 

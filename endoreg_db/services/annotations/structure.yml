@@ -42,7 +42,7 @@ files:
 - file: segment_sync.py
   role: Service for synchronizing annotation updates with LabelVideoSegment creation.
 - file: segment_validation_workflow.py
-  role: Segment-validation workflows and overlong submitted end clamping to the last persisted presentation timestamp; collapsed ranges fail.
+  role: Native segment flag and history precedence, scoped rebuild lookup and overlong submitted end clamping to the last persisted presentation timestamp; collapsed ranges fail.
 - file: segments_bulk_mutation.py
   role: Exports bulk_mutate_video_segments, validate_bulk_segment_mutation_payload.
 - file: workflow.py

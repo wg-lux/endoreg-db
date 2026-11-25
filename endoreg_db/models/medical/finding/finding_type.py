@@ -2,20 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
-
-
-class FindingTypeManager(models.Manager["FindingType"]):
-    def get_by_natural_key(self, name: str) -> "FindingType":
-        """
-        Retrieve a FindingType instance by its unique name for natural key deserialization.
-
-        Parameters:
-            name (str): The unique name of the FindingType to retrieve.
-
-        Returns:
-            FindingType: The instance matching the given name.
-        """
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class FindingType(models.Model):
@@ -26,7 +13,7 @@ class FindingType(models.Model):
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects: models.Manager["FindingType"] = FindingTypeManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: models.Manager["FindingType"] = NameNaturalKeyManager["FindingType"]()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     if TYPE_CHECKING:
         from endoreg_db.models import FindingClassification

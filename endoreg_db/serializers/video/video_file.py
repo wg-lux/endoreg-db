@@ -8,10 +8,8 @@ from rest_framework import serializers
 
 from endoreg_db.models.media.video.video_file import VideoFile
 
-from endoreg_db.services.video_files import (
-    get_active_video_file,
-    video_frame_number_to_seconds,
-)
+from endoreg_db.services.video_files.metadata import video_frame_number_to_seconds
+from endoreg_db.services.video_files.streaming import get_active_video_file
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_hls_playlist_path,

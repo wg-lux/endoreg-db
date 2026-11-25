@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class EndoscopeManager(models.Manager["Endoscope"]):
@@ -54,13 +55,8 @@ class Endoscope(models.Model):
         return self.center
 
 
-class EndoscopeTypeManager(models.Manager["EndoscopeType"]):
-    def get_by_natural_key(self, name: str) -> "EndoscopeType":
-        return self.get(name=name)
-
-
 class EndoscopeType(models.Model):
-    objects = EndoscopeTypeManager()
+    objects = NameNaturalKeyManager["EndoscopeType"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     # German display name; NULL when the catalogue carries none.

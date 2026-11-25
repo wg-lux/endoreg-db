@@ -170,3 +170,23 @@ def test_raw_cleanup_runs_after_validation_and_audit_commit(
     assert video.raw_file.name == raw_name
     with video.raw_file.open("rb") as raw:
         assert raw.read() == raw_bytes
+
+
+@pytest.mark.parametrize("failed", [False, True])
+def test_lost_or_failed_video_cannot_release_validated_raw_source(failed: bool) -> None:
+    from uuid import uuid4
+    from endoreg_db.models import Center, VideoState
+    from tests.helpers.media_states import create_media_state
+
+    center = Center.objects.create(name=uuid4().hex)
+    video = VideoFile.objects.create(
+        center=center,
+        raw_video_hash=uuid4().hex,
+        meta={} if failed else {"integrity_status": "lost"},
+        state=create_media_state(
+            VideoState, anonymization_validated=True, processing_error=failed
+        ),
+    )
+    assert generation_cleanup.cleanup_validated_raw_video(video.pk, apply=True) == (
+        "media_failed_or_lost",
+    )

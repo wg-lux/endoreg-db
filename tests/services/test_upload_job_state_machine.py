@@ -126,7 +126,13 @@ def test_upload_job_interrupted_retry_recovers_to_running(
 
 @pytest.mark.parametrize(
     "current_status",
-    [UploadJob.Status.ANONYMIZED.value, UploadJob.Status.ERROR.value],
+    [
+        UploadJob.Status.ANONYMIZED,
+        UploadJob.Status.ERROR,
+        UploadJob.Status.LOST,
+        UploadJob.Status.CANCEL_REQUESTED,
+        UploadJob.Status.CANCELLED,
+    ],
 )
 def test_upload_job_terminal_outcome_is_not_an_interrupted_attempt(
     current_status: str,
@@ -196,4 +202,76 @@ def test_cancellation_intent_and_outcome_are_irreversible(
     with pytest.raises(ValueError, match="invalid UploadJob status transition"):
         validate_upload_job_status_transition(
             current_status=current_status, target_status=target_status
+        )
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize("current_status", [*UploadJob.Status, "", "unknown"])
+@pytest.mark.parametrize("target_status", [*UploadJob.Status, "", "unknown"])
+def test_upload_transition_contract_is_exhaustive(
+    current_status: str,
+    target_status: str,
+) -> None:
+    # Expected contract retained from the former Python validator, including
+    # cancellation intent and terminal states; Rust alone implements it.
+    allowed = {
+        "pending": {
+            "pending",
+            "processing",
+            "retrying",
+            "error",
+            "lost",
+            "cancel_requested",
+            "cancelled",
+        },
+        "processing": {
+            "processing",
+            "retrying",
+            "anonymized",
+            "error",
+            "lost",
+            "cancel_requested",
+            "cancelled",
+        },
+        "retrying": {
+            "processing",
+            "retrying",
+            "error",
+            "lost",
+            "cancel_requested",
+            "cancelled",
+        },
+        "anonymized": {"processing", "anonymized", "error", "lost", "cancel_requested"},
+        "error": {"processing", "retrying", "error", "cancel_requested"},
+        "lost": {"lost"},
+        "cancel_requested": {"error", "lost", "cancel_requested", "cancelled"},
+        "cancelled": {"cancelled"},
+    }
+    if target_status in allowed.get(current_status, set()):
+        validate_upload_job_status_transition(
+            current_status=current_status,
+            target_status=target_status,
+        )
+    else:
+        with pytest.raises(ValueError):
+            validate_upload_job_status_transition(
+                current_status=current_status,
+                target_status=target_status,
+            )
+
+
+@pytest.mark.no_db
+def test_upload_validator_rejects_missing_native_capability(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.utils import rust_backend
+
+    def unavailable(_name: str, _contract_version: str) -> bool:
+        return False
+
+    monkeypatch.setattr(rust_backend, "has_native_capability", unavailable)
+    with pytest.raises(RuntimeError, match="status_transition_v2"):
+        validate_upload_job_status_transition(
+            current_status="pending",
+            target_status="processing",
         )

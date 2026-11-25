@@ -16,6 +16,7 @@ from rest_framework.decorators import permission_classes
 from rest_framework.request import Request
 from rest_framework.response import Response
 
+from endoreg_db import endoreg_rust_backend as native
 from endoreg_db.authz.permissions import PolicyPermission
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -55,9 +56,7 @@ from endoreg_db.services.reports.materialization import (
     ensure_document_types,
     upsert_anonym_examination_report_from_pdf,
 )
-from endoreg_db.services.video_files import (
-    get_or_create_video_state,
-)
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.operation_log import (
     ACTION_ANONYMIZATION_VALIDATED,
     STATUS_ANONYMIZED,
@@ -535,8 +534,9 @@ def _video_integrity_error(
     video_meta = (
         cast(dict[str, Any], raw_video_meta) if isinstance(raw_video_meta, dict) else {}
     )
-    if not getattr(video_state, "processing_error", False) and (
-        video_meta.get("integrity_status") != "lost"
+    if native.media_validation_available(
+        bool(getattr(video_state, "processing_error", False)),
+        str(video_meta.get("integrity_status", "")),
     ):
         return None
     return Response(

@@ -14,6 +14,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.import_files.context.default_sensitive_meta import (
     default_sensitive_meta,
 )
@@ -53,16 +54,13 @@ def completed_report() -> RawPdfFile:
     sensitive_meta = default_sensitive_meta(report)
     assert sensitive_meta is not None
     state = report.get_or_create_state()
-    state.processing_started = True
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.save(
-        update_fields=[
-            "processing_started",
-            "anonymized",
-            "sensitive_meta_processed",
-            "date_modified",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "processing_started": True,
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+        },
     )
     return report
 
@@ -80,8 +78,7 @@ def test_processed_report_sha256_is_persisted_and_mismatch_fails(
     assert digest == get_file_hash(report.processed_file)
     assert state.processed_file_sha256 == digest
 
-    state.processed_file_sha256 = "0" * 64
-    state.save(update_fields=["processed_file_sha256", "date_modified"])
+    update_media_state(state, changes={"processed_file_sha256": "0" * 64})
     with pytest.raises(ProcessedReportIntegrityError, match="does not match"):
         verify_and_persist_processed_report_sha256(report)
 
@@ -116,6 +113,16 @@ def test_validation_deletes_raw_only_and_retains_verified_processed_pdf(
     assert report.state is not None
     assert report.state.anonymization_validated is True
     assert report.state.processed_file_sha256 == get_file_hash(report.processed_file)
+    from endoreg_db.services.hub.outbound_export_readiness import (
+        report_hub_export_blocked_reason,
+    )
+
+    assert report_hub_export_blocked_reason(report, verify_processed_media=True) == ""
+    update_media_state(report.state, changes={"processed_file_sha256": "0" * 64})
+    assert (
+        report_hub_export_blocked_reason(report, verify_processed_media=True)
+        == "processed media hash mismatch"
+    )
 
 
 def test_validation_detaches_legacy_raw_alias_without_deleting_processed_pdf(
@@ -174,13 +181,11 @@ def test_upload_import_completion_keeps_report_review_separate_and_checks_bytes(
     assert report.state is not None
     report.state.refresh_from_db()
     assert not report.state.anonymization_validated
-    report.state.processed_file_sha256 = "0" * 64
-    report.state.save(update_fields=["processed_file_sha256"])
+    update_media_state(report.state, changes={"processed_file_sha256": "0" * 64})
     assert not check_upload_job_import_completion(job).ok
     report.state.refresh_from_db()
     assert not report.state.anonymization_validated
-    report.state.anonymization_validated = True
-    report.state.save(update_fields=["anonymization_validated"])
+    update_media_state(report.state, changes={"anonymization_validated": True})
     assert not check_upload_job_import_completion(job).ok
 
 
@@ -228,8 +233,7 @@ def test_rejected_approval_preserves_raw_and_validation_state(
         report.processed_file.name = ""
         report.save(update_fields=["processed_file"])
     else:
-        state.processed_file_sha256 = "0" * 64
-        state.save(update_fields=["processed_file_sha256", "date_modified"])
+        update_media_state(state, changes={"processed_file_sha256": "0" * 64})
     with django_capture_on_commit_callbacks(execute=True) as callbacks:
         with pytest.raises(ProcessedReportIntegrityError):
             validate_report_metadata_annotation(
@@ -374,3 +378,22 @@ def test_direct_creation_rejects_cross_center_reuse_before_deleting_record(
     assert report.center_id != other_center.pk
     assert file_exists(report.processed_file)
     assert source.read_bytes() == PDF_BYTES
+
+
+def test_report_cleanup_rechecks_approval_after_commit(
+    base_db_data: object,
+    django_capture_on_commit_callbacks: Callable[..., Any],
+) -> None:
+    report = completed_report()
+    with django_capture_on_commit_callbacks(execute=False) as callbacks:
+        validate_report_metadata_annotation(
+            report, {"anonymized_text": "Anonymized report text"}
+        )
+    assert len(callbacks) == 1
+    assert report.state is not None
+    report.state.mark_processing_failed()
+    with pytest.raises(ValueError, match="approval changed before raw cleanup"):
+        callbacks[0]()
+    report.refresh_from_db()
+    assert file_exists(report.file)
+    assert file_exists(report.processed_file)

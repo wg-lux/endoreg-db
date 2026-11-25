@@ -509,7 +509,7 @@ def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     track_started=True,
 )
 def process_upload_job(_task: Task[[str], bool], job_id: str) -> bool:
-    from endoreg_db.services.hub import process_upload_job as _process_upload_job
+    from endoreg_db.services.hub.ingest import process_upload_job as _process_upload_job
 
     return _process_upload_job(str(job_id))
 

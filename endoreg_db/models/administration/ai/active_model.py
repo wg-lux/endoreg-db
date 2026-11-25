@@ -3,14 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from ...metadata.model_meta import ModelMeta
-
-
-class ActiveModelManager(models.Manager["ActiveModel"]):
-    def get_by_natural_key(self, name: str) -> "ActiveModel":
-        return self.get(name=name)
 
 
 class ActiveModel(models.Model):
@@ -26,7 +22,7 @@ class ActiveModel(models.Model):
         - Type hints for model_meta are provided under a TYPE_CHECKING conditional import to avoid circular dependencies,
           importing ModelMeta only when type checking is performed.
     Managers:
-        objects (ActiveModelManager): Custom manager providing specialized query capabilities for ActiveModel instances.
+        objects (NameNaturalKeyManager): Resolves ActiveModel instances by natural key.
     """
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
@@ -35,4 +31,4 @@ class ActiveModel(models.Model):
         "ModelMeta", on_delete=models.SET_NULL, blank=True, null=True
     )
 
-    objects = ActiveModelManager()
+    objects = NameNaturalKeyManager["ActiveModel"]()

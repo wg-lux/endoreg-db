@@ -4,23 +4,23 @@ from __future__ import annotations
 Defines state tracking models related to report processing, including extraction of text and metadata, AI predictions, and anonymization status for RawPdfFile instances.
 """
 
-import logging
-from typing import TYPE_CHECKING, cast, Any
+from typing import TYPE_CHECKING, cast, Any, ClassVar
 
-from django.db import models, transaction
+from django.db import models
+
+from endoreg_db.models.state.write_guard import GuardedStateModel
 
 from endoreg_db.models.state.anonymization import (
     AnonymizationState,
     derive_report_anonymization_state,
 )
 
-logger = logging.getLogger(__name__)
 
 if TYPE_CHECKING:
     from ..media import RawPdfFile
 
 
-class RawPdfState(models.Model):
+class RawPdfState(GuardedStateModel):
     """
     Tracks the processing state of a RawPdfFile instance.
     Uses BooleanFields for clear, distinct states.
@@ -86,6 +86,21 @@ class RawPdfState(models.Model):
     if TYPE_CHECKING:
         raw_pdf_file: "RawPdfFile"
 
+    guarded_state_fields: ClassVar[frozenset[str]] = frozenset(
+        [
+            "text_meta_extracted",
+            "initial_prediction_completed",
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "processing_started",
+            "processing_error",
+            "processed_file_sha256",
+            "was_created",
+            "pdf_meta_extracted",
+        ]
+    )
+
     def __str__(self) -> str:
         """
         Return a string summarizing the RawPdfState instance, including the related report file UUID and key processing state flags with timestamps.
@@ -123,117 +138,39 @@ class RawPdfState(models.Model):
         )
 
     def mark_processing_not_started(self) -> None:
-        """
-        Mark the processing as not started and optionally save the updated state.
+        from endoreg_db.services.media.state import mark_report_processing_not_started
 
-        Parameters:
-            save (bool): If True, persist the change to the database immediately. Defaults to True.
-        """
-        with transaction.atomic():
-            self.processing_started = False
-            self.anonymized = False
-            self.was_created = False
-            self.sensitive_meta_processed = False
-            self.anonymization_validated = False
-            self.processed_file_sha256 = ""
-            self.save()
+        mark_report_processing_not_started(self)
 
     def mark_processing_started(self, *, save: bool = True) -> None:
-        """
-        Mark the processing as started and optionally save the updated state.
+        from endoreg_db.services.media.state import mark_report_processing_started
 
-        Parameters:
-            save (bool): If True, persist the change to the database immediately. Defaults to True.
-        """
-        self.processing_started = True
-        # An explicit retry starts a new attempt after a previous failure.
-        self.processing_error = False
-        if save:
-            self.save(
-                update_fields=[
-                    "processing_started",
-                    "processing_error",
-                    "date_modified",
-                ]
-            )
+        mark_report_processing_started(self, save=save)
 
     def mark_processing_failed(self, *, save: bool = True) -> None:
-        """Record failure and revoke readiness derived from the removed artifact."""
-        self.processing_error = True
-        self.processing_started = False
-        self.anonymized = False
-        self.sensitive_meta_processed = False
-        self.anonymization_validated = False
-        self.processed_file_sha256 = ""
-        if save:
-            self.save(
-                update_fields=[
-                    "processing_error",
-                    "processing_started",
-                    "anonymized",
-                    "sensitive_meta_processed",
-                    "anonymization_validated",
-                    "processed_file_sha256",
-                    "date_modified",
-                ]
-            )
+        from endoreg_db.services.media.state import mark_report_processing_failed
+
+        mark_report_processing_failed(self, save=save)
 
     # ---- Single‑responsibility mutators ---------------------------------
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
-        """
-        Mark the sensitive metadata processing step as completed for this report state.
+        from endoreg_db.services.media.state import mark_report_sensitive_meta_processed
 
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.sensitive_meta_processed = True
-        if save:
-            self.save(update_fields=["sensitive_meta_processed", "date_modified"])
+        mark_report_sensitive_meta_processed(self, save=save)
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
-        """
-        Mark the anonymization as validated for this report processing state.
+        from endoreg_db.services.media.state import mark_report_anonymization_validated
 
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.anonymization_validated = True
-        if save:
-            self.save(update_fields=["anonymization_validated", "date_modified"])
+        mark_report_anonymization_validated(self, save=save)
 
     def mark_anonymized(self, *, save: bool = True) -> None:
-        """
-        Mark the report as anonymized and optionally save the updated state.
+        from endoreg_db.services.media.state import mark_report_anonymized
 
-        Parameters:
-            save (bool): If True, persist the change to the database immediately. Defaults to True.
-        """
-        with transaction.atomic():
-            self.anonymized = True
-            self.save(update_fields=["anonymized", "date_modified"])
+        mark_report_anonymized(self, save=save)
 
-    def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
-        """
-        Mark the initial AI prediction step as completed for this report processing state.
-
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.initial_prediction_completed = True
-        if save:
-            self.save(update_fields=["initial_prediction_completed", "date_modified"])
-
-    def mark_text_meta_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the text metadata extraction step as completed for this report processing state.
-
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.text_meta_extracted = True
-        if save:
-            self.save(update_fields=["text_meta_extracted", "date_modified"])
-
-    class Meta:
+    class Meta(GuardedStateModel.Meta):
+        abstract = False
+        base_manager_name = "objects"
+        default_manager_name = "objects"
         verbose_name = "Raw report Processing State"
         verbose_name_plural = "Raw report Processing States"

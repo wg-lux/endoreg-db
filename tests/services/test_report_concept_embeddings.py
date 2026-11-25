@@ -37,6 +37,8 @@ from endoreg_db.services.reports.concept_embeddings import (
     default_report_text_embedder,
     similarity_rows,
 )
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 class RecordingEmbedder(SpacyReportTextEmbedder):
@@ -71,7 +73,9 @@ def report() -> RawPdfFile:
         examination=examination,
         text="RAW_ONLY_MUST_NOT_BE_EMBEDDED",
         anonymized_text="Polyp Wucherung",
-        state=RawPdfState.objects.create(anonymized=True, anonymization_validated=True),
+        state=create_media_state(
+            RawPdfState, anonymized=True, anonymization_validated=True
+        ),
     )
 
 
@@ -146,8 +150,9 @@ def test_reject_before_embedding(report: RawPdfFile, invalid: str) -> None:
     if invalid == "raw_only":
         RawPdfFile.objects.filter(pk=report.pk).update(anonymized_text="")
     elif invalid == "unvalidated":
-        RawPdfState.objects.filter(pk=report.state_id).update(
-            anonymization_validated=False
+        update_media_state(
+            RawPdfState.objects.get(pk=report.state_id),
+            changes={"anonymization_validated": False},
         )
     elif invalid == "stale":
         RawPdfFile.objects.filter(pk=report.pk).update(anonymized_text="Changed")

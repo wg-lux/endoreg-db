@@ -49,6 +49,11 @@ class StatusMachine(StrEnum):
     PATIENT_EXAMINATION_REPORT = "patient_examination_report"
     HUB_INBOUND_TRANSFER = "hub_inbound_transfer"
     HUB_INBOUND_CASE_RESOLUTION = "hub_inbound_case_resolution"
+    UPLOAD_JOB = "upload_job"
+    UPLOAD_JOB_LEASE_RECOVERY = "upload_job_lease_recovery"
+    MODEL_TRAINING_RUN = "model_training_run"
+    REPORT_IMPORT_ATTEMPT = "report_import_attempt"
+    REPORT_IMPORT_LEASE_RECOVERY = "report_import_lease_recovery"
     UPLOAD_JOB_SOURCE_CLEANUP = "upload_job_source_cleanup"
     HUB_OUTBOUND_LOCAL_CLEANUP = "hub_outbound_local_cleanup"
 
@@ -77,6 +82,16 @@ def _decide(machine: StatusMachine, current: str, target: str) -> bool:
     return decide_status_transition(
         machine=machine.value, current=current, target=target
     )
+
+
+def validate_status_transition(
+    machine: StatusMachine, current: str, target: str, *, error_message: str
+) -> bool:
+    """Validate a native transition, retaining the caller's domain error contract."""
+    try:
+        return _decide(machine, current, target)
+    except ValueError as exc:
+        raise ValueError(error_message) from exc
 
 
 def _require_applied(machine: StatusMachine, expected: str, target: str) -> None:

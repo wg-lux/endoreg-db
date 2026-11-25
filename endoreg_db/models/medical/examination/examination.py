@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -12,15 +13,6 @@ if TYPE_CHECKING:
         InformationSource,
     )
     from endoreg_db.utils.links import ModelLinks
-
-
-class ExaminationManager(models.Manager["Examination"]):
-    """
-    Manager for Examination with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "Examination":
-        return self.get(name=name)
 
 
 class Examination(models.Model):
@@ -65,7 +57,7 @@ class Examination(models.Model):
         blank=True,
     )
 
-    objects = ExaminationManager()
+    objects = NameNaturalKeyManager["Examination"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import FindingClassification

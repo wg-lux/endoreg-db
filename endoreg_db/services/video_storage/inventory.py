@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from endoreg_db import endoreg_rust_backend as native
 from typing import TYPE_CHECKING, Protocol, cast
 
 from endoreg_db.schemas.video_storage import (
@@ -217,36 +218,23 @@ def video_normalization_evidence(
 
 def raw_cleanup_blockers(video: "VideoFile") -> list[str]:
     """Return every unmet fail-closed prerequisite for destructive raw cleanup."""
-    blockers: list[str] = []
     from endoreg_db.services.media.operation_gate import (
         video_has_active_media_operation_leases,
     )
 
-    if video_has_active_media_operation_leases(int(video.pk)):
-        blockers.append("active_media_operation_lease")
+    active_lease = video_has_active_media_operation_leases(int(video.pk))
     normalization = video_normalization_evidence(video)
-    if normalization is None:
-        blockers.append("storage_normalization_evidence_missing")
     meta = video.meta if isinstance(video.meta, dict) else {}
     raw_timeline = cast(dict[str, object], meta).get("source_timeline")
     try:
         source_timeline = VideoSourceTimelineEvidence.model_validate(raw_timeline)
     except ValueError:
         source_timeline = None
-        blockers.append("source_timeline_evidence_missing")
     raw_quality = cast(dict[str, object], meta).get("clinical_frame_quality")
     try:
         quality = ClinicalFrameQualityEvidence.model_validate(raw_quality)
     except ValueError:
         quality = None
-        blockers.append("clinical_frame_quality_approval_missing")
-    if (
-        quality is not None
-        and normalization is not None
-        and quality.profile_name != normalization.profile_name
-    ):
-        blockers.append("clinical_frame_quality_profile_mismatch")
-
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
     from endoreg_db.services.streaming.hls_media import get_ready_hls_artifact
 
@@ -254,11 +242,7 @@ def raw_cleanup_blockers(video: "VideoFile") -> list[str]:
         processed_hls = get_ready_hls_artifact(video=video, artifact_kind="processed")
     except (FileNotFoundError, ValueError, VideoHlsArtifact.DoesNotExist):
         processed_hls = None
-    if processed_hls is None:
-        blockers.append("processed_hls_not_ready")
-    elif processed_hls.source_file_name != str(video.processed_file.name or ""):
-        blockers.append("processed_hls_generation_mismatch")
-
+    segment_timeline_valid = True
     if source_timeline is not None:
         try:
             segment_timeline_references(
@@ -266,5 +250,13 @@ def raw_cleanup_blockers(video: "VideoFile") -> list[str]:
                 timeline=source_timeline.source.timeline,
             )
         except VideoStorageNormalizationError:
-            blockers.append("segment_timeline_evidence_invalid")
-    return blockers
+            segment_timeline_valid = False
+    return native.raw_video_cleanup_blockers(
+        active_lease,
+        normalization.profile_name if normalization else None,
+        source_timeline is not None,
+        quality.profile_name if quality else None,
+        processed_hls.source_file_name if processed_hls else None,
+        str(video.processed_file.name or ""),
+        segment_timeline_valid,
+    )

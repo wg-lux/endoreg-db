@@ -9,6 +9,8 @@ responsibilities:
 boundaries:
 - Do not place secrets, patient information or parallel readiness records in messages.
 files:
+- file: reports/publication_preparation_20261124.yml
+  role: Reviewed publication cleanup cohorts and verification evidence; feature definitions retain readiness authority.
 - file: ElectricalToVideoMapping.yml
   role: Electrical sample and activation-summary import, PTS mapping and production acceptance criteria.
 - file: reports/release_preparation.yml

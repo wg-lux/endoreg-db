@@ -188,6 +188,7 @@ models:
   - api:endoreg_db/views/misc/application_settings_model_training.py
   - job:endoreg_db/services/jobs/model_training_jobs.py
   - service:endoreg_db/services/media/integrity.py
+  - service:endoreg_db/services/runtime/native_state_vocabulary.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
   - lx_dtypes.models.contracts.ai_dataset.AIDataSetActiveLearningCandidateContract
@@ -357,7 +358,6 @@ models:
   - service:endoreg_db/services/ai/model_meta_from_hf.py
   - service:endoreg_db/services/hub/ingest.py
   - service:endoreg_db/services/reference_data/catalog_models.py
-  - service:endoreg_db/services/video_files/_ai.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -709,6 +709,7 @@ models:
   - job:endoreg_db/management/commands/load_legacy_data.py
   - job:endoreg_db/management/commands/profile_segment_updates.py
   - job:endoreg_db/management/structure.yml
+  - job:endoreg_db/services/jobs/report_llm_jobs.py
   - job:endoreg_db/services/media/frame_annotation_export_jobs.py
   - service:endoreg_db/helpers/default_objects.py
   - service:endoreg_db/services/cases/auto_resolution.py
@@ -886,7 +887,6 @@ models:
   - endoreg_db/models/other/clinical_reference_import.py:ClinicalReferenceImport.clean
   - endoreg_db/schemas/clinical_reference.py:ClinicalReferenceReceipt
   boundary_consumers:
-  - job:endoreg_db/management/commands/collect_study_examination.py
   - service:endoreg_db/services/reference_data/clinical_projection.py
   - service:endoreg_db/services/studies/collections.py
   - service:endoreg_db/services/studies/exchange.py
@@ -918,7 +918,7 @@ models:
   - endoreg_db/models/state/clinical_workflow.py:ClinicalWorkflowRecord
   boundary_consumers:
   - service:endoreg_db/services/clinical_lifecycle/persistence.py
-  - service:endoreg_db/services/clinical_lifecycle/worklist.py
+  - service:endoreg_db/services/clinical_lifecycle/structure.yml
   dynamic_model_references:
   - endoreg_db/services/clinical_lifecycle/persistence.py
   module_lx_dtypes_imports: []
@@ -1131,6 +1131,7 @@ models:
   boundary_consumers:
   - import:endoreg_db/services/interoperability/dicom_import.py
   - service:endoreg_db/services/interoperability/fhir_r4.py
+  - service:endoreg_db/services/interoperability/fhir_r4_api.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports:
@@ -2240,10 +2241,12 @@ models:
   - lx-dtypes:lx_dtypes.models.contracts.video_frame
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
+  - api:endoreg_db/serializers/structure.yml
   - api:endoreg_db/views/media/patient_media_timeline.py
   - api:endoreg_db/views/patient_report/patient_examination_report.py
   - api:endoreg_db/views/video/ai/frame_annotations.py
   - api:endoreg_db/views/video/ai/frame_box_annotations.py
+  - api:endoreg_db/views/video/structure.yml
   - export:endoreg_db/export/frames/export_frames_with_labels.py
   - export:endoreg_db/services/reports/frame_export.py
   - import:endoreg_db/import_files/processing/video_processing/video_anonymization.py
@@ -2255,7 +2258,6 @@ models:
   - service:endoreg_db/services/annotations/segment_annotations.py
   - service:endoreg_db/services/annotations/structure.yml
   - service:endoreg_db/services/datasets/active_learning_shortlist.py
-  - service:endoreg_db/services/datasets/frame_buckets.py
   - service:endoreg_db/services/datasets/training_manifests.py
   - service:endoreg_db/services/datasets/training_selection.py
   - service:endoreg_db/services/frames/frame_retention.py
@@ -2274,6 +2276,7 @@ models:
   - service:endoreg_db/services/video_files/_frames/_initialize_frames.py
   - service:endoreg_db/services/video_files/_frames/_mark_frames_extracted_status.py
   - service:endoreg_db/services/video_files/_segments.py
+  - service:endoreg_db/services/video_files/annotation_timeline_recovery.py
   - service:endoreg_db/services/video_files/timestamp_backfill.py
   - service:endoreg_db/services/video_storage/processed_timelines.py
   - service:endoreg_db/services/video_storage/timelines.py
@@ -2406,6 +2409,32 @@ models:
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
+- label: endoreg_db.GuardedStateModel
+  kind: abstract
+  python_path: endoreg_db.models.state.write_guard.GuardedStateModel
+  source_path: endoreg_db/models/state/write_guard.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_guardedstatemodel
+  abstract: true
+  proxy: false
+  managed: true
+  json_fields: []
+  custom_clean: false
+  custom_save: true
+  target: persistence_only
+  owner: endoreg_db maintainers
+  rationale: Abstract Django persistence guard enforcing service-issued single-use permissions for exact
+    state writes; no independent workflow reducer.
+  ownership_evidence:
+  - endoreg_db/models/state/write_guard.py:GuardedStateModel
+  boundary_consumers: []
+  dynamic_model_references: []
+  module_lx_dtypes_imports: []
+  module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
 - label: endoreg_db.ImageClassificationAnnotation
   kind: registered
   python_path: endoreg_db.models.label.annotation.image_classification.ImageClassificationAnnotation
@@ -2433,7 +2462,6 @@ models:
   - api:endoreg_db/views/misc/application_settings.py
   - api:endoreg_db/views/misc/application_settings_ai_datasets.py
   - api:endoreg_db/views/video/ai/frame_annotations.py
-  - api:endoreg_db/views/video/segments_crud.py
   - export:endoreg_db/export/frames/export_frames_with_labels.py
   - export:endoreg_db/services/datasets/exports.py
   - job:endoreg_db/management/commands/load_legacy_data.py
@@ -2595,7 +2623,6 @@ models:
   - lx-dtypes:lx_dtypes.models.contracts.video_ai_labels
   boundary_consumers:
   - api:endoreg_db/serializers/label_video_segment/frame_annotation_bulk.py
-  - api:endoreg_db/serializers/label_video_segment/frame_box_annotation.py
   - api:endoreg_db/serializers/label_video_segment/label/label.py
   - api:endoreg_db/serializers/label_video_segment/label_video_segment.py
   - api:endoreg_db/views/media/patient_media_timeline.py
@@ -2605,6 +2632,7 @@ models:
   - api:endoreg_db/views/video/ai/frame_box_annotations.py
   - api:endoreg_db/views/video/ai/label.py
   - api:endoreg_db/views/video/segments_crud.py
+  - api:endoreg_db/views/video/structure.yml
   - export:endoreg_db/services/datasets/exports.py
   - import:endoreg_db/import_files/processing/video_processing/video_anonymization.py
   - job:endoreg_db/management/commands/load_legacy_data.py
@@ -2612,6 +2640,7 @@ models:
   - service:endoreg_db/data/ai_model_label/label/data.yaml
   - service:endoreg_db/data/ai_model_label/label/polyp_classification.yaml
   - service:endoreg_db/services/annotations/buckets.py
+  - service:endoreg_db/services/annotations/label_presentation.py
   - service:endoreg_db/services/annotations/segment_frame_annotations.py
   - service:endoreg_db/services/annotations/segment_sync.py
   - service:endoreg_db/services/annotations/segments_bulk_mutation.py
@@ -2750,6 +2779,7 @@ models:
   - job:endoreg_db/management/commands/profile_segment_updates.py
   - job:endoreg_db/services/jobs/model_training_jobs.py
   - service:endoreg_db/services/annotations/comparisons.py
+  - service:endoreg_db/services/annotations/label_presentation.py
   - service:endoreg_db/services/annotations/label_video_segment_states.py
   - service:endoreg_db/services/annotations/segment_annotations.py
   - service:endoreg_db/services/annotations/segment_frame_annotations.py
@@ -2763,15 +2793,16 @@ models:
   - service:endoreg_db/services/reports/finding_review.py
   - service:endoreg_db/services/reports/frame_selection.py
   - service:endoreg_db/services/video_files/_segments.py
+  - service:endoreg_db/services/video_files/annotation_timeline_recovery.py
   - service:endoreg_db/services/video_files/clinical_contracts.py
   - service:endoreg_db/services/video_files/post_validation_blackening.py
   - service:endoreg_db/services/video_files/temporal_inference.py
   - service:endoreg_db/services/video_storage/processed_timelines.py
   - service:endoreg_db/services/video_storage/processed_transcode.py
+  - service:endoreg_db/tasks.py
   - service:endoreg_db/utils/ai/multilabel_dataset_builder.py
   dynamic_model_references:
   - endoreg_db/management/commands/profile_segment_updates.py
-  - endoreg_db/services/datasets/frame_buckets.py
   - endoreg_db/services/video_files/segments.py
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -2802,6 +2833,7 @@ models:
   - api:endoreg_db/views/video/segments_crud.py
   - service:endoreg_db/services/annotations/label_video_segment_states.py
   - service:endoreg_db/services/hub/transfers.py
+  - service:endoreg_db/services/video_files/timestamp_backfill.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -3448,6 +3480,7 @@ models:
   - endoreg_db/integrations/lx_dtypes_host_models.py
   - endoreg_db/schemas/fhir_r4.py
   - endoreg_db/services/interoperability/fhir_r4.py
+  - endoreg_db/services/interoperability/fhir_r4_api.py
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
   exception_owner: null
@@ -3555,6 +3588,7 @@ models:
   - api:endoreg_db/serializers/patient_examination/patient_examination.py
   - api:endoreg_db/serializers/video_examination.py
   - api:endoreg_db/views/examination_revision.py
+  - api:endoreg_db/views/fhir_r4_api.py
   - api:endoreg_db/views/media/patient_media_timeline.py
   - api:endoreg_db/views/media/sensitive_metadata.py
   - api:endoreg_db/views/misc/stats.py
@@ -3579,6 +3613,7 @@ models:
   - service:endoreg_db/services/hub/study_transfer.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/interoperability/fhir_r4.py
+  - service:endoreg_db/services/interoperability/fhir_r4_api.py
   - service:endoreg_db/services/patient_identity/examination_hashes.py
   - service:endoreg_db/services/reports/concept_embeddings.py
   - service:endoreg_db/services/reports/finding_sync.py
@@ -3675,6 +3710,7 @@ models:
   - service:endoreg_db/services/cases/examination_revisions.py
   - service:endoreg_db/services/hub/transfers.py
   - service:endoreg_db/services/interoperability/fhir_r4.py
+  - service:endoreg_db/services/interoperability/fhir_r4_api.py
   - service:endoreg_db/services/reports/frame_selection.py
   - service:endoreg_db/services/reports/pdf_renderer.py
   - service:endoreg_db/services/reports/persistence.py
@@ -3750,6 +3786,7 @@ models:
   - service:endoreg_db/integrations/lx_dtypes_host_models.py
   - service:endoreg_db/services/cases/examination_links.py
   - service:endoreg_db/services/interoperability/fhir_r4.py
+  - service:endoreg_db/services/interoperability/fhir_r4_api.py
   - service:endoreg_db/services/reports/concept_embeddings.py
   - service:endoreg_db/services/reports/finding_review.py
   - service:endoreg_db/services/reports/finding_sync.py
@@ -4602,7 +4639,6 @@ models:
   - api:endoreg_db/views/pdf/pdf_redaction.py
   - api:endoreg_db/views/report/reimport.py
   - api:endoreg_db/views/report/report_stream.py
-  - import:endoreg_db/import_files/__init__.py
   - import:endoreg_db/import_files/context/default_sensitive_meta.py
   - import:endoreg_db/import_files/context/ensure_center.py
   - import:endoreg_db/import_files/context/import_context.py
@@ -4672,7 +4708,7 @@ models:
   python_path: endoreg_db.models.state.raw_pdf.RawPdfState
   source_path: endoreg_db/models/state/raw_pdf.py
   base_classes:
-  - django.db.models.base.Model
+  - endoreg_db.models.state.write_guard.GuardedStateModel
   db_table: endoreg_db_rawpdfstate
   abstract: false
   proxy: false
@@ -4693,6 +4729,7 @@ models:
   - job:endoreg_db/management/commands/check_system_health.py
   - service:endoreg_db/services/clinical_lifecycle/facts.py
   - service:endoreg_db/services/hub/transfers.py
+  - service:endoreg_db/services/media/state.py
   - service:endoreg_db/services/raw_pdf_files/state.py
   - service:endoreg_db/services/reports/concept_embeddings.py
   - service:endoreg_db/services/runtime/reconciliation.py
@@ -4792,6 +4829,7 @@ models:
   - job:endoreg_db/services/jobs/structure.yml
   - schema:endoreg_db/schemas/structure.yml
   - service:endoreg_db/data/lab_value/misc.yaml
+  - service:endoreg_db/services/hub/structure.yml
   - service:endoreg_db/services/reports/structure.yml
   - service:endoreg_db/services/structure.yml
   dynamic_model_references:
@@ -4859,6 +4897,7 @@ models:
   - job:endoreg_db/services/jobs/report_llm_jobs.py
   - service:endoreg_db/services/imports/recovery.py
   - service:endoreg_db/services/reports/completion.py
+  - service:endoreg_db/services/runtime/native_state_vocabulary.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -5012,6 +5051,7 @@ models:
   - job:endoreg_db/management/commands/load_risk_data.py
   boundary_consumers:
   - service:endoreg_db/services/reference_data/catalog_models.py
+  - service:endoreg_db/structure.yml
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
@@ -5104,7 +5144,6 @@ models:
   - api:endoreg_db/views/media/sensitive_metadata.py
   - api:endoreg_db/views/misc/stats.py
   - api:endoreg_db/views/stats/stats_views.py
-  - import:endoreg_db/import_files/__init__.py
   - import:endoreg_db/import_files/context/default_sensitive_meta.py
   - import:endoreg_db/import_files/file_storage/sensitive_meta_storage.py
   - import:endoreg_db/import_files/processing/video_processing/video_anonymization.py
@@ -5979,8 +6018,10 @@ models:
   - lx-dtypes:lx_dtypes.models.contracts.cohort_definition.CohortDefinition
   - lx-dtypes:lx_dtypes.models.contracts.study_setup.StudySetupDefinition
   boundary_consumers:
+  - service:endoreg_db/services/annotations/label_presentation.py
   - service:endoreg_db/services/studies/collections.py
   - service:endoreg_db/services/studies/exchange.py
+  - service:endoreg_db/services/studies/table_mappings.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
   - lx_dtypes.models.contracts.cohort_definition.CohortDefinition
@@ -6317,6 +6358,7 @@ models:
   - service:endoreg_db/services/runtime/status_writers.py
   - service:endoreg_db/services/runtime/transient_artifact_cleanup.py
   - service:endoreg_db/services/video_files/deletion.py
+  - service:endoreg_db/services/video_files/structure.yml
   - service:endoreg_db/services/video_storage/generation_cleanup.py
   dynamic_model_references: []
   module_lx_dtypes_imports: []
@@ -6345,6 +6387,7 @@ models:
   ownership_evidence:
   - endoreg_db/models/hub/upload_job_file.py:UploadJobFile
   boundary_consumers:
+  - import:endoreg_db/services/video_files/_imports.py
   - job:endoreg_db/services/hub/upload_job_files.py
   - service:endoreg_db/services/hub/cleanup.py
   - service:endoreg_db/services/hub/upload_staging_orphans.py
@@ -6353,6 +6396,75 @@ models:
   dynamic_model_references: []
   module_lx_dtypes_imports: []
   module_endoreg_schema_imports: []
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.VideoElectrosurgicalActivationLog
+  kind: registered
+  python_path: endoreg_db.models.media.video.electrosurgical_activation.VideoElectrosurgicalActivationLog
+  source_path: endoreg_db/models/media/video/electrosurgical_activation.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videoelectrosurgicalactivationlog
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - metadata
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: Host-owned immutable encrypted activation source metadata and recording binding are validated
+    by ActivationImportMetadata; shared synchronization and activation semantics remain in lx-dtypes.
+  ownership_evidence:
+  - endoreg_db/models/media/video/electrosurgical_activation.py:VideoElectrosurgicalActivationLog
+  - endoreg_db/schemas/electrosurgical_activation.py:ActivationImportMetadata
+  boundary_consumers:
+  - api:endoreg_db/views/video/electrical_measurements.py
+  - service:endoreg_db/services/electrical/activation_alignment.py
+  - service:endoreg_db/services/electrical/activation_storage.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.electrosurgical_activation.ActivationImportMetadata
+  exception_owner: null
+  exception_review_by: null
+  exception_exit_criteria: null
+- label: endoreg_db.VideoElectrosurgicalMeasurement
+  kind: registered
+  python_path: endoreg_db.models.media.video.electrosurgical_measurement.VideoElectrosurgicalMeasurement
+  source_path: endoreg_db/models/media/video/electrosurgical_measurement.py
+  base_classes:
+  - django.db.models.base.Model
+  db_table: endoreg_db_videoelectrosurgicalmeasurement
+  abstract: false
+  proxy: false
+  managed: true
+  json_fields:
+  - aggregation_profile
+  - channels
+  custom_clean: true
+  custom_save: true
+  target: local_boundary_schema
+  owner: endoreg_db maintainers
+  rationale: Host-owned immutable encrypted-source persistence validates channel descriptors and aggregation
+    metadata at the local model boundary; measurement series and aggregation semantics remain in lx-dtypes.
+  ownership_evidence:
+  - endoreg_db/models/media/video/electrosurgical_measurement.py:VideoElectrosurgicalMeasurement
+  - endoreg_db/schemas/electrosurgical_measurement.py:dump_aggregation_profile
+  - endoreg_db/schemas/electrosurgical_measurement.py:dump_channel_descriptors
+  boundary_consumers:
+  - api:endoreg_db/views/video/electrical_measurements.py
+  - import:endoreg_db/services/electrical/measurement_import.py
+  - service:endoreg_db/services/electrical/video_alignment.py
+  dynamic_model_references: []
+  module_lx_dtypes_imports:
+  - lx_dtypes.models.contracts.json_types.JsonObject
+  module_endoreg_schema_imports:
+  - endoreg_db.schemas.electrosurgical_measurement.dump_aggregation_profile
+  - endoreg_db.schemas.electrosurgical_measurement.dump_channel_descriptors
   exception_owner: null
   exception_review_by: null
   exception_exit_criteria: null
@@ -6407,6 +6519,7 @@ models:
   - api:endoreg_db/views/video/ai/frame_annotations.py
   - api:endoreg_db/views/video/ai/label.py
   - api:endoreg_db/views/video/correction.py
+  - api:endoreg_db/views/video/electrical_measurements.py
   - api:endoreg_db/views/video/hls_stream.py
   - api:endoreg_db/views/video/lookups.py
   - api:endoreg_db/views/video/provenance_recovery.py
@@ -6424,7 +6537,6 @@ models:
   - export:endoreg_db/services/media/export_file_names.py
   - export:endoreg_db/services/media/export_policy.py
   - export:endoreg_db/services/media/export_ready.py
-  - import:endoreg_db/import_files/__init__.py
   - import:endoreg_db/import_files/context/default_sensitive_meta.py
   - import:endoreg_db/import_files/context/ensure_center.py
   - import:endoreg_db/import_files/context/import_context.py
@@ -6433,7 +6545,10 @@ models:
   - import:endoreg_db/import_files/file_storage/state_management.py
   - import:endoreg_db/import_files/processing/video_processing/video_anonymization.py
   - import:endoreg_db/import_files/video_import_service.py
+  - import:endoreg_db/management/commands/import_electrosurgical_activations.py
+  - import:endoreg_db/management/commands/import_electrosurgical_measurements.py
   - import:endoreg_db/management/commands/kcache_video_import.py
+  - import:endoreg_db/services/electrical/measurement_import.py
   - import:endoreg_db/services/hub/import_monitoring.py
   - import:endoreg_db/services/jobs/video_reimport_jobs.py
   - import:endoreg_db/services/studies/table_import.py
@@ -6477,6 +6592,9 @@ models:
   - service:endoreg_db/services/clinical_lifecycle/persistence.py
   - service:endoreg_db/services/clinical_lifecycle/structure.yml
   - service:endoreg_db/services/clinical_lifecycle/worklist.py
+  - service:endoreg_db/services/electrical/activation_alignment.py
+  - service:endoreg_db/services/electrical/activation_storage.py
+  - service:endoreg_db/services/electrical/video_alignment.py
   - service:endoreg_db/services/frames/frame_retention.py
   - service:endoreg_db/services/hub/cleanup.py
   - service:endoreg_db/services/hub/ingest.py
@@ -6492,6 +6610,7 @@ models:
   - service:endoreg_db/services/media/integrity.py
   - service:endoreg_db/services/media/operation_gate.py
   - service:endoreg_db/services/media/source_deletion.py
+  - service:endoreg_db/services/media/state.py
   - service:endoreg_db/services/media/structure.yml
   - service:endoreg_db/services/patient_identity/validated_media_identity.py
   - service:endoreg_db/services/privacy/evaluation_manifest.py
@@ -6506,6 +6625,7 @@ models:
   - service:endoreg_db/services/studies/cohort.py
   - service:endoreg_db/services/video_files/_ai.py
   - service:endoreg_db/services/video_files/_anonymization.py
+  - service:endoreg_db/services/video_files/annotation_timeline_recovery.py
   - service:endoreg_db/services/video_files/clinical_contracts.py
   - service:endoreg_db/services/video_files/deletion.py
   - service:endoreg_db/services/video_files/frame_coordinates.py
@@ -6827,6 +6947,7 @@ models:
   - service:endoreg_db/services/runtime/transient_artifact_cleanup.py
   - service:endoreg_db/services/video_files/segment_blackening.py
   - service:endoreg_db/services/video_files/temporal_inference.py
+  - service:endoreg_db/services/video_files/timestamp_backfill.py
   dynamic_model_references: []
   module_lx_dtypes_imports:
   - lx_dtypes.models.contracts.json_types.JsonObject
@@ -6859,6 +6980,8 @@ models:
   - lx-dtypes:lx_dtypes.models.contracts.video_frame_annotations
   - scripts/check_lx_dtypes_model_inventory.py:discover_boundary_references
   boundary_consumers:
+  - service:endoreg_db/services/video_files/annotation_timeline_recovery.py
+  - service:endoreg_db/services/video_files/timestamp_backfill.py
   - service:endoreg_db/services/video_storage/processed_timelines.py
   - service:endoreg_db/services/video_storage/timelines.py
   dynamic_model_references: []
@@ -6930,7 +7053,7 @@ models:
   python_path: endoreg_db.models.state.video.VideoState
   source_path: endoreg_db/models/state/video.py
   base_classes:
-  - django.db.models.base.Model
+  - endoreg_db.models.state.write_guard.GuardedStateModel
   db_table: endoreg_db_videostate
   abstract: false
   proxy: false
@@ -6952,6 +7075,7 @@ models:
   - job:endoreg_db/management/commands/check_system_health.py
   - service:endoreg_db/services/clinical_lifecycle/facts.py
   - service:endoreg_db/services/hub/transfers.py
+  - service:endoreg_db/services/media/state.py
   - service:endoreg_db/services/privacy/metrics.py
   - service:endoreg_db/services/runtime/reconciliation.py
   - service:endoreg_db/services/video_files/state.py

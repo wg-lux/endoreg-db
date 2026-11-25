@@ -272,7 +272,7 @@ impl TimelineCore {
 /// Generation-bound frame/time resolver loaded once per video and request.
 ///
 /// It never mutates coordinates; it only answers boundary lookups using the
-/// same rules as `endoreg_db.services.video_files.timeline`.
+/// same rules as `endoreg_db.utils.video.timeline`.
 #[gen_stub_pyclass]
 #[pyclass(frozen)]
 pub(crate) struct TimelineIndex {

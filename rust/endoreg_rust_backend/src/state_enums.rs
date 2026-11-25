@@ -3,10 +3,7 @@ use pyo3::exceptions::PyValueError;
 use pyo3::prelude::*;
 
 state_tokens! {
-    /// The cleanup_queued/running/failed tokens are projected by Python from the
-    /// post-validation rebuild history; the flag reducer below never emits them.
-    #[allow(dead_code)]
-    enum SegmentAnnotationStatus {
+    pub(crate) enum SegmentAnnotationStatus {
         NotStarted => "not_started",
         CleanupRequired => "cleanup_required",
         CleanupQueued => "cleanup_queued",
@@ -100,6 +97,33 @@ fn normalize_task_mode(value: &str) -> Option<FrameTaskMode> {
 
 fn normalize_sampling_strategy(value: &str) -> Option<FrameSamplingStrategy> {
     FrameSamplingStrategy::parse(&value.trim().to_ascii_lowercase())
+}
+
+#[pyfunction]
+#[pyo3(signature = (created, validated, outside_removed, history))]
+pub(crate) fn segment_status_with_history(
+    created: bool,
+    validated: bool,
+    outside_removed: bool,
+    history: Option<&str>,
+) -> PyResult<&'static str> {
+    use crate::state_token::StateToken;
+    use crate::status_transition::ProcessingHistory as H;
+    let history = history
+        .map(|token| {
+            H::parse_token(token)
+                .ok_or_else(|| PyValueError::new_err("Unknown segment rebuild history status"))
+        })
+        .transpose()?;
+    Ok(match history {
+        Some(H::Pending) => SegmentAnnotationStatus::CleanupQueued,
+        Some(H::Running) => SegmentAnnotationStatus::CleanupRunning,
+        Some(H::Failure) => SegmentAnnotationStatus::CleanupFailed,
+        None | Some(H::Success | H::Cancelled) => {
+            resolve_segment_annotation_status(created, validated, outside_removed)
+        }
+    }
+    .as_str())
 }
 
 #[pyfunction]

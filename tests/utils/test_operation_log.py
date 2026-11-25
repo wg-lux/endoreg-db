@@ -38,6 +38,7 @@ from endoreg_db.views.video.segments_crud import (
     video_segment_validate,
     video_segments_validate_bulk,
 )
+from tests.helpers.media_states import create_media_state
 
 if TYPE_CHECKING:
     from django.db.models.fields.related_descriptors import ManyRelatedManager
@@ -138,8 +139,11 @@ def test_pdf_redaction_database_changes_roll_back_when_audit_storage_fails() -> 
     center = Center.objects.create(name="atomic-redaction-audit")
     content = render_single_page_pdf("Sample report")
     assert content is not None
-    state = RawPdfState.objects.create(
-        anonymized=True, sensitive_meta_processed=True, anonymization_validated=True
+    state = create_media_state(
+        RawPdfState,
+        anonymized=True,
+        sensitive_meta_processed=True,
+        anonymization_validated=True,
     )
     pdf = RawPdfFile.objects.create(
         center=center,
@@ -182,7 +186,7 @@ def test_start_audits_request_before_autocommit_work(
         raw_video_hash=content_hash,
         processed_video_hash=content_hash,
         meta={},
-        state=VideoState.objects.create(anonymized=True),
+        state=create_media_state(VideoState, anonymized=True),
     )
     with video_asset_file.open("rb") as source:
         video.processed_file.save("start-audit.mp4", File(source))
@@ -225,7 +229,7 @@ def test_start_rejects_ambient_transaction_before_audit_or_processing(
     video = VideoFile.objects.create(
         center=center,
         raw_video_hash="transactional-start-audit",
-        state=VideoState.objects.create(anonymized=True),
+        state=create_media_state(VideoState, anonymized=True),
     )
     started = False
     original_start = AnonymizationService.start

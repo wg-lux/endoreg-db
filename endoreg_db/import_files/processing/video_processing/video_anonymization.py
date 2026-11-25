@@ -54,10 +54,8 @@ from endoreg_db.models.medical.hardware.endoscopy_processor import (
     EndoscopyProcessor,
 )
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.services.video_files import (
-    ensure_local_raw_video_file,
-    get_or_create_video_state,
-)
+from endoreg_db.services.video_files.io import ensure_local_raw_video_file
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,

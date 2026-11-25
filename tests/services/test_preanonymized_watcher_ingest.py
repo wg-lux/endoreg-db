@@ -25,7 +25,7 @@ from endoreg_db.models import (
     UploadJob,
 )
 from endoreg_db.utils.paths import get_runtime_paths
-from endoreg_db.services.hub import process_preanonymized_watcher_file
+from endoreg_db.services.hub.ingest import process_preanonymized_watcher_file
 from endoreg_db.services.hub import ingest
 from endoreg_db.services.hub.payloads import PreanonymizedIngestPayload
 from endoreg_db.services.hub.watcher_handoff import WatcherFileNotReadyError
@@ -625,3 +625,24 @@ class PreanonymizedWatcherIngestTests(TestCase):
         assert sensitive_meta.external_id is not None
         assert sensitive_meta.external_id.external_id == "ext-42"
         assert sensitive_meta.external_id.origin == "hospital"
+
+
+@pytest.mark.django_db
+def test_pdf_publication_hashes_each_artifact_once(tmp_path: Path) -> None:
+    source = tmp_path / "report.pdf"
+    source.write_bytes(render_single_page_pdf("Anonymisierter Befund"))
+    digest = get_file_hash(source)
+    center = Center.objects.create(name="report-publication-digest")
+    with patch.object(ingest, "get_file_hash", wraps=get_file_hash) as hash_file:
+        report = ingest._finalize_preanonymized_report(
+            source_path=source,
+            center=center,
+            payload=None,
+            delete_source=False,
+            expected_source_hash=digest,
+        )
+    assert [args.args[0] for args in hash_file.call_args_list] == [
+        source,
+        report.processed_file,
+    ]
+    assert report.state is not None and report.state.processed_file_sha256 == digest

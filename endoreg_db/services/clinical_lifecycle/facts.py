@@ -55,7 +55,11 @@ def _identity_facts(sensitive_meta: SensitiveMeta | None) -> tuple[bool, bool]:
         verified = sensitive_meta.state_safe.is_verified
     except SensitiveMetaState.DoesNotExist:
         verified = False
-    return verified, sensitive_meta.direct_identifiers_cleared_at is not None
+    from endoreg_db.services.privacy.quality_evaluation import (
+        direct_identifier_erasure_complete,
+    )
+
+    return verified, direct_identifier_erasure_complete(sensitive_meta)
 
 
 def _video_export_approval(video: VideoFile, state: VideoState) -> ExportApproval:

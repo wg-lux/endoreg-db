@@ -16,6 +16,7 @@ from django.core.files.base import File
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
 from endoreg_db.models import Center, EndoscopyProcessor, VideoFile
+from endoreg_db.services.media.state import update_media_state
 
 
 class _CenterRelation(Protocol):
@@ -511,8 +512,7 @@ class TestValidationDeletion:
 
         # Create mock state that indicates frames not yet extracted
         state = video.get_or_create_state()
-        state.frames_extracted = False
-        state.save()
+        assert not state.frames_extracted
 
         # Track when extraction is attempted
         extraction_attempted = False
@@ -525,8 +525,7 @@ class TestValidationDeletion:
             # Check if raw video exists at this point
             raw_existed_during_extraction = raw_video_path.exists()
             # Mark as extracted
-            state.frames_extracted = True
-            state.save()
+            update_media_state(state, changes={"frames_extracted": True})
             return True
 
         # Mock the file paths and extract_frames only

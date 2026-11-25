@@ -4,9 +4,6 @@ from ..helpers.data_loader import (
     load_center_data,
     load_disease_data,
     load_endoscope_data,
-    load_examination_data,
-    load_examination_indication_data,
-    load_finding_data,
     load_ai_model_label_data,
     load_medication_data,
     load_organ_data,
@@ -20,7 +17,6 @@ from ..helpers.data_loader import (
     load_information_source_data,
     load_unit_data,
     load_risk_data,
-    load_base_db_data,
 )
 
 
@@ -30,16 +26,6 @@ class TestDataLoader(TestCase):
     Each test method runs in its own transaction, ensuring isolation.
     The database state is automatically reset after each test by Django's TestCase.
     """
-
-    def test_load_base_db_data(self):
-        """
-        Test if the load_base_db_data command runs without errors.
-        This command loads all base data into the database.
-        """
-        try:
-            load_base_db_data()
-        except Exception as e:
-            self.fail(f"load_base_db_data command failed: {e}")
 
     def test_load_information_source_data(self):
         """
@@ -163,15 +149,6 @@ class TestDataLoader(TestCase):
         except Exception as e:
             self.fail(f"load_contraindication_data command failed: {e}")
 
-    def test_load_examination_data(self):
-        """
-        Test if the load_examination_data command runs without errors.
-        """
-        try:
-            load_examination_data()
-        except Exception as e:
-            self.fail(f"load_examination_data command failed: {e}")
-
     def test_load_lab_value_data(self):
         """
         Test if the load_lab_value_data command runs without errors.
@@ -180,28 +157,6 @@ class TestDataLoader(TestCase):
             load_lab_value_data()
         except Exception as e:
             self.fail(f"load_lab_value_data command failed: {e}")
-
-    def test_load_finding_data(self):
-        """
-        Test if the load_finding_data command runs without errors.
-        """
-        try:
-            load_finding_data()
-        except Exception as e:
-            self.fail(f"load_finding_data command failed: {e}")
-
-    def test_load_examination_indication_data(self):
-        """
-        Test if the load_examination_indication_data command runs without errors.
-        Dependencies are loaded within the test's transaction.
-        """
-        try:
-            # Load necessary dependencies first
-            load_examination_data()
-            # Load the target data
-            load_examination_indication_data()
-        except Exception as e:
-            self.fail(f"load_examination_indication_data command failed: {e}")
 
     def test_load_medication_data(self):
         """

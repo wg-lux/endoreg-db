@@ -8,7 +8,7 @@ scan:
     - __pycache__
 broad_exception:
   count: 343
-  fingerprint: 920e3d31a7a73362c98757d1c0a4e81d93dc3dcb17aca628c50b7dc074f85e76
+  fingerprint: 4ab7d6ea49746094d662a5ab61651633edc09727b4796d35964270578ed5985d
   owner: endoreg_db maintainers
   reason: >-
     Reviewed inventory after the exception-reduction cohort, the extraction of
@@ -88,10 +88,27 @@ broad_exception:
     _predict_video_entry handler with its unreferenced private facade;
     repository, package exports and lx-annotate consumers use ai.predict_video.
     All other handler signatures and type suppressions remain unchanged.
-  review_after: 2026-11-20
+    Review 2026-11-24 by codex-publication-20261124-centralize against c8b3ca0c
+    (the recorded fingerprint matches that source exactly): five added and five
+    removed signatures, still 343 handlers. Electrical activation/measurement
+    import boundaries remove their newly written source on failed persistence
+    and re-raise. Report case-resolution logging moves unchanged into
+    _publish_preanonymized_report; its new outer handler deletes only a new,
+    unreferenced candidate and re-raises. Encrypted temporary-file cleanup moves
+    unchanged from _save_locked to _write_encrypted_file. Removed handlers had
+    swallowed annotation model lookup or required prediction dispatch failures.
+    AST comparison also reviewed all four changed surviving handler scopes:
+    video publication retains referenced artifacts; watcher quarantine receives
+    expected content hashes; transfer cleanup checks committed ownership and
+    requires a fence; temporal dispatch preserves durable upload prediction
+    intent while returning explicit failure or re-raising. Other handler bodies
+    are unchanged. Existing case-resolution exception text, best-effort paths
+    and legacy handlers remain technical debt; this inventory review is not
+    clinical or production approval and does not replace runtime regression.
+  review_after: 2026-12-24
 type_suppression:
   count: 74
-  fingerprint: 0352719a04b753ec7defb872c6e2d5f83f0ed73567b320f3d8cd7979ced35f37
+  fingerprint: 6595b9e4f791e54b780740149a4cb4d6905e0b60779b7da566e4fa2d53cf7139
   owner: endoreg_db maintainers
   reason: >-
     Reviewed legacy inventory after removing four type suppressions from the
@@ -125,4 +142,11 @@ type_suppression:
     VideoReadyForExportCommitted dataclass dispatched by transaction.on_commit;
     callback errors are not swallowed. No other suppression changed. Retire this
     exception when the Django signal boundary has a fully typed send contract.
-  review_after: 2026-11-20
+    Review 2026-11-24 by codex-publication-20261124-centralize against c8b3ca0c:
+    the only signature change moves reportIncompatibleVariableOverride from
+    VideoState.objects to the shared abstract GuardedStateModel.objects. Django
+    specializes the guarded manager for concrete subclasses; the suppression
+    remains restricted to that framework override. Retire it when the installed
+    Django typing contract supports this manager specialization. The other 73
+    suppression signatures are unchanged; no general type exemption is added.
+  review_after: 2026-12-24

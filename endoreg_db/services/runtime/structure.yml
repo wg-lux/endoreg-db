@@ -26,11 +26,11 @@ files:
 - file: environment_readiness.py
   role: Exports check_environment_readiness, assert_environment_readiness.
 - file: lifecycle_state_machine.py
-  role: Exports transition_service_lifecycle, transition_operation_lifecycle, reduce_operation_lifecycle.
+  role: Exports typed single-event transition_service_lifecycle and transition_operation_lifecycle adapters.
 - file: native_state_vocabulary.py
   role: Registry of Python mirrors for every native Rust vocabulary; verify_native_state_vocabularies fails startup on drift.
 - file: status_writers.py
-  role: Single locked writers for lifecycle statuses decided by the native decide_status_transition tables (report LLM jobs, processing history, quarantine, exports, DICOM, reports, inbound transfers, upload and outbound cleanup).
+  role: Shared domain-error validation adapter and single locked writers for lifecycle statuses decided by the native decide_status_transition tables (report LLM jobs, processing history, quarantine, exports, DICOM, reports, inbound transfers, upload and outbound cleanup).
 - file: offline_batch_runner.py
   role: Exports load_offline_batch_runner_config, run_offline_batch.
 - file: polling_coordinator.py

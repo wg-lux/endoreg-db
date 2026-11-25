@@ -12,6 +12,11 @@ from lx_dtypes.models.contracts.aidataset_frame_buckets import (
     AIDataSetTargetFrameBucket,
 )
 
+from endoreg_db.services.annotations.buckets import (
+    build_annotation_frame_buckets,
+    build_dataset_target_buckets,
+    build_segment_frame_buckets,
+)
 from endoreg_db.utils.model_fields import (
     model_bool as _model_bool,
     model_datetime as _model_datetime,
@@ -26,9 +31,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.aidataset.aidataset import AIDataSet
     from endoreg_db.models.label.label import Label
     from endoreg_db.models.label.label_set import LabelSet
-    from endoreg_db.models.label.label_video_segment.label_video_segment import (
-        LabelVideoSegment,
-    )
 
 
 class _LabelRelationManager(Protocol):
@@ -102,45 +104,17 @@ def _build_target_frame_buckets(
     *,
     target_label: Label | None,
 ) -> dict[AIDataSetTargetFrameBucket, set[int]]:
-    if (
-        _model_text(dataset, "dataset_type") != dataset.DATASET_TYPE_IMAGE
-        or target_label is None
-    ):
-        return {}
-
-    annotations = dataset.image_annotations.select_related("frame", "label").filter(
-        frame__isnull=False,
-        frame__is_extracted=True,
+    buckets = build_dataset_target_buckets(
+        dataset=dataset,
+        target_label=target_label,
+        require_extracted_frames=True,
     )
-    if not annotations.exists():
+    if not buckets:
         return {}
-
-    frame_ids_by_bucket: dict[AIDataSetTargetFrameBucket, set[int]] = {
-        AIDataSetTargetFrameBucket.POSITIVE: set(),
-        AIDataSetTargetFrameBucket.NEGATIVE: set(),
-        AIDataSetTargetFrameBucket.UNKNOWN: set(),
+    return {
+        bucket: buckets.get(bucket.value, set())
+        for bucket in AIDataSetTargetFrameBucket
     }
-    seen_frame_ids: set[int] = set()
-    target_values_by_frame_id: dict[int, list[bool]] = defaultdict(list)
-
-    for annotation in annotations.iterator():
-        frame_id = _model_int(annotation, "frame_id")
-        seen_frame_ids.add(frame_id)
-        if _model_optional_int(annotation, "label_id") == _model_int(
-            target_label, "id"
-        ):
-            target_values_by_frame_id[frame_id].append(_model_bool(annotation, "value"))
-
-    for frame_id in seen_frame_ids:
-        target_values = target_values_by_frame_id.get(frame_id, [])
-        if any(target_values):
-            frame_ids_by_bucket[AIDataSetTargetFrameBucket.POSITIVE].add(frame_id)
-        elif target_values:
-            frame_ids_by_bucket[AIDataSetTargetFrameBucket.NEGATIVE].add(frame_id)
-        else:
-            frame_ids_by_bucket[AIDataSetTargetFrameBucket.UNKNOWN].add(frame_id)
-
-    return frame_ids_by_bucket
 
 
 def _build_label_distribution(
@@ -198,22 +172,11 @@ def _build_annotation_frame_buckets(
     *,
     label_set: LabelSet | None,
 ) -> dict[int, set[int]]:
-    buckets: dict[int, set[int]] = defaultdict(set)
-    annotations = dataset.image_annotations.select_related("label").filter(
-        label__isnull=False,
-        value=True,
-        frame__isnull=False,
-        frame__is_extracted=True,
+    return build_annotation_frame_buckets(
+        dataset=dataset,
+        label_set=label_set,
+        require_extracted_frames=True,
     )
-
-    for annotation in annotations.iterator():
-        label_id = _model_optional_int(annotation, "label_id")
-        if not _label_allowed_by_set(label_id, label_set):
-            continue
-        if label_id is not None:
-            buckets[label_id].add(_model_int(annotation, "frame_id"))
-
-    return {label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids}
 
 
 def _build_segment_frame_buckets(
@@ -222,62 +185,12 @@ def _build_segment_frame_buckets(
     label_set: LabelSet | None,
     prediction_segments_only: bool,
 ) -> dict[int, set[int]]:
-    from endoreg_db.models.media.frame.frame import Frame
-    from endoreg_db.services.annotations.workflow import is_prediction_segment
-
-    buckets: dict[int, set[int]] = defaultdict(set)
-    segments = (
-        dataset.video_annotations.select_related("label", "source")
-        .filter(
-            label__isnull=False,
-            video_file_id__isnull=False,
-            start_frame_number__isnull=False,
-            end_frame_number__isnull=False,
-        )
-        .order_by("video_file_id", "start_frame_number", "end_frame_number")
+    return build_segment_frame_buckets(
+        dataset=dataset,
+        label_set=label_set,
+        only_prediction_segments=prediction_segments_only,
+        require_extracted_frames=True,
     )
-    segments_by_video_id: dict[int, list["LabelVideoSegment"]] = defaultdict(list)
-    for segment in segments.iterator():
-        if prediction_segments_only and not is_prediction_segment(segment):
-            continue
-        label_id = _model_optional_int(segment, "label_id")
-        if not _label_allowed_by_set(label_id, label_set):
-            continue
-        start_frame_number = _model_int(segment, "start_frame_number")
-        end_frame_number = _model_int(segment, "end_frame_number")
-        if start_frame_number >= end_frame_number:
-            continue
-        segments_by_video_id[_model_int(segment, "video_file_id")].append(segment)
-
-    for video_id, video_segments in segments_by_video_id.items():
-        min_start = min(
-            _model_int(segment, "start_frame_number") for segment in video_segments
-        )
-        max_end = max(
-            _model_int(segment, "end_frame_number") for segment in video_segments
-        )
-        frame_rows = Frame.objects.filter(
-            video_id=video_id,
-            frame_number__gte=min_start,
-            frame_number__lt=max_end,
-            is_extracted=True,
-        ).values_list("id", "frame_number")
-        frame_ids_by_number = {
-            frame_number: frame_id for frame_id, frame_number in frame_rows
-        }
-
-        for segment in video_segments:
-            for frame_number, frame_id in frame_ids_by_number.items():
-                if (
-                    _model_int(segment, "start_frame_number")
-                    <= frame_number
-                    < _model_int(segment, "end_frame_number")
-                ):
-                    label_id = _model_optional_int(segment, "label_id")
-                    if label_id is not None:
-                        buckets[label_id].add(int(frame_id))
-
-    return {label_id: frame_ids for label_id, frame_ids in buckets.items() if frame_ids}
 
 
 def build_frame_bucket_distribution(

@@ -12,6 +12,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
 from endoreg_db.models import Center, VideoFile
 from endoreg_db.utils import paths as paths_module
+from endoreg_db.services.media.state import update_media_state
 
 
 def _deny_artifact_cleanup(*args: object, **kwargs: object) -> NoReturn:
@@ -262,10 +263,14 @@ def test_import_failure_and_owned_retry_share_state_contract(
     if isinstance(instance, VideoFile):
         instance.raw_file.save("source.mp4", ContentFile(b"source"))
     state = instance.get_or_create_state()
-    state.anonymization_validated = True
-    state.sensitive_meta_processed = True
-    state.anonymized = True
-    state.save()
+    update_media_state(
+        state,
+        changes={
+            "anonymization_validated": True,
+            "sensitive_meta_processed": True,
+            "anonymized": True,
+        },
+    )
     ctx = ImportContext(
         mutation_guard=nullcontext,
         file_path=source,
@@ -488,11 +493,15 @@ def test_report_retry_start_preserves_artifacts_and_success_history(
         atomic_write_file(destination=path, content=[path.name.encode()])
     report = RawPdfFile.objects.create(center=center, pdf_hash="b" * 64)
     state = report.get_or_create_state()
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.sensitive_meta_processed = True
-    state.processed_file_sha256 = "c" * 64
-    state.save()
+    update_media_state(
+        state,
+        changes={
+            "anonymized": True,
+            "anonymization_validated": True,
+            "sensitive_meta_processed": True,
+            "processed_file_sha256": "c" * 64,
+        },
+    )
     history = ProcessingHistory.get_or_create_for_hash(
         obj=report, file_hash="b" * 64, success=True
     )

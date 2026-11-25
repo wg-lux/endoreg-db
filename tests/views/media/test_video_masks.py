@@ -5,7 +5,7 @@ import pytest
 from django.contrib.auth.models import AnonymousUser, User
 from rest_framework.test import APIRequestFactory, force_authenticate
 
-from endoreg_db.services import video_masks
+from endoreg_db.services.video_files import video_masks
 from endoreg_db.views.video.masks import VideoMasksView
 
 

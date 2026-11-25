@@ -2,15 +2,11 @@ from __future__ import annotations
 from typing import ClassVar, Any
 
 from django.db import models
-
-
-class WasteManager(models.Manager["Waste"]):
-    def get_by_natural_key(self, name: str) -> "Waste":
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class Waste(models.Model):
-    objects: ClassVar[WasteManager] = WasteManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: ClassVar[NameNaturalKeyManager["Waste"]] = NameNaturalKeyManager["Waste"]()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

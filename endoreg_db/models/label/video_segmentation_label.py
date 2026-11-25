@@ -3,15 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import models
-
-
-class VideoSegmentationLabelManager(models.Manager["VideoSegmentationLabel"]):
-    """
-    Manager for VideoSegmentationLabel with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "VideoSegmentationLabel":
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class VideoSegmentationLabel(models.Model):
@@ -25,7 +17,7 @@ class VideoSegmentationLabel(models.Model):
         order_priority (int): The priority for ordering labels.
     """
 
-    objects = VideoSegmentationLabelManager()
+    objects = NameNaturalKeyManager["VideoSegmentationLabel"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

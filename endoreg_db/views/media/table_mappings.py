@@ -34,6 +34,7 @@ from endoreg_db.services.studies.table_mappings import (
     mapping_path,
     mapping_vocabulary,
     save_table_mapping,
+    select_cohort_table_package,
 )
 from endoreg_db.services.studies.table_parser import (
     MAX_INSPECTED_VALUE_COLUMNS,
@@ -92,22 +93,11 @@ class TableMappingsView(OpenApiAPIView):
                 packages = cohort_table_packages(
                     cast(int, request.user.pk), int(scoped)
                 )
-                module, version = (
+                selected = select_cohort_table_package(
+                    packages,
                     request.query_params.get("module"),
                     request.query_params.get("version"),
                 )
-                if module or version:
-                    if not module or not version:
-                        raise ValueError("An exact package identity is required")
-                    selected = KnowledgeBaseIdentity(
-                        knowledge_base_module=module, knowledge_base_version=version
-                    )
-                    if selected not in packages:
-                        raise ValueError(
-                            "Mapping package must match the cohort requirements"
-                        )
-                elif len(packages) == 1:
-                    selected = packages[0]
                 if selected is not None:
                     template = template.model_copy(update={"knowledge_base": selected})
             except PermissionError:
@@ -131,7 +121,7 @@ class TableMappingsView(OpenApiAPIView):
                 "mappings": [
                     {"id": str(spec.mapping_id), "name": spec.name}
                     for spec in list_table_mappings(cast(int, request.user.pk))
-                    if scoped is None or spec.knowledge_base in packages
+                    if scoped is None or spec.knowledge_base == selected
                 ],
                 "centers": list(
                     centers.order_by("name").values("id", "name", "center_key")

@@ -4,6 +4,7 @@ from uuid import uuid4
 import pytest
 
 from endoreg_db.models import Center, Frame, VideoFile
+from endoreg_db.services.media.state import update_media_state
 
 
 def _video(*, frame_count: int | None) -> VideoFile:
@@ -46,9 +47,7 @@ def test_initialize_frames_preserves_authoritative_presentation_timestamps() -> 
 def test_initialize_frames_resets_state_when_frame_count_is_invalid() -> None:
     video = _video(frame_count=None)
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 4
-    state.save(update_fields=["frames_initialized", "frame_count"])
+    update_media_state(state, changes={"frames_initialized": True, "frame_count": 4})
 
     video.initialize_frames()
 

@@ -21,6 +21,7 @@ from endoreg_db.utils.file_operations import safe_rmtree, safe_unlink_file
 from endoreg_db.views import access_control
 from endoreg_db.views.video import hls_stream
 from tests.helpers.hls import FakeHlsOutputRecorder
+from endoreg_db.services.media.state import update_media_state
 
 pytestmark = pytest.mark.django_db
 
@@ -325,9 +326,7 @@ def _create_processed_video(center: Center) -> VideoFile:
         save=True,
     )
     state = video.get_or_create_state()
-    state.anonymized = True
-    state.processing_error = False
-    state.save(update_fields=["anonymized", "processing_error"])
+    update_media_state(state, changes={"anonymized": True, "processing_error": False})
     return video
 
 

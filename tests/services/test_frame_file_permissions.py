@@ -10,6 +10,7 @@ from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.services.reports.frame_export import materialized_report_frame
 from endoreg_db.utils.frame_stream import EncodedFrameSample
 from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.services.media.state import update_media_state
 
 
 @pytest.mark.django_db
@@ -22,8 +23,9 @@ def test_report_frame_export_is_protected_and_always_removed(
         center=center, raw_video_hash="report-frame-permissions"
     )
     state = video.get_or_create_state()
-    state.anonymized = state.anonymization_validated = True
-    state.save(update_fields=["anonymized", "anonymization_validated"])
+    update_media_state(
+        state, changes={"anonymized": True, "anonymization_validated": True}
+    )
     frame = Frame.objects.create(video=video, frame_number=3, timestamp=0.17)
     sample = EncodedFrameSample(
         frame_number=3, timestamp=0.17, content_type="image/jpeg", image_bytes=b"image"

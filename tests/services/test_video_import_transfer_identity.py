@@ -34,7 +34,7 @@ from endoreg_db.services.hub.transfers import (
     _record_media_upload,
     get_media_envelope_receipt,
 )
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     get_file_hash,
@@ -42,6 +42,7 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.paths import EndoregPathsModel
 from endoreg_db.utils.storage import save_local_file
+from endoreg_db.services.media.state import update_media_state
 
 pytestmark = pytest.mark.django_db
 
@@ -81,10 +82,14 @@ def transferred_video(mock_storage: EndoregPathsModel) -> TransferredVideo:
     )
     save_local_file(video.processed_file, processed, name="received.mp4", save=True)
     state = get_or_create_video_state(video)
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.processed_file_sha256 = processed_hash
-    state.save()
+    update_media_state(
+        state,
+        changes={
+            "anonymized": True,
+            "anonymization_validated": True,
+            "processed_file_sha256": processed_hash,
+        },
+    )
     ProcessingHistory.mark_success(file_hash=video.raw_video_hash, obj=video)
     transfer = TransferJob.objects.create(
         transfer_key="received-video",
@@ -242,8 +247,7 @@ def test_unproven_or_stale_transfer_cannot_authorize_duplicate_success(
         safe_unlink_file(Path(fixture.video.processed_file.path))
     else:
         state = get_or_create_video_state(fixture.video)
-        state.anonymization_validated = False
-        state.save()
+        update_media_state(state, changes={"anonymization_validated": False})
     transfer.save()
     fixture.video.refresh_from_db()
 

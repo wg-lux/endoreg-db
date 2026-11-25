@@ -97,10 +97,6 @@ writers:
     fields: [state]
     machine: sensitive_meta_state
     kind: state_relation
-  - path: endoreg_db/models/state/video.py
-    fields: [state]
-    machine: video_state
-    kind: state_relation
   - path: endoreg_db/services/video_files/imports.py
     fields: [state]
     machine: video_state

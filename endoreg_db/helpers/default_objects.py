@@ -28,7 +28,7 @@ from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProc
 from endoreg_db.models.metadata.model_meta import ModelMeta
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.other.information_source import InformationSource
-from endoreg_db.utils import create_mock_patient_name
+from endoreg_db.utils.names import create_mock_patient_name
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -484,7 +484,9 @@ def get_default_video_file() -> VideoFile:
     Returns:
         VideoFile: The created and initialized VideoFile instance.
     """
-    from endoreg_db.services.video_files import create_initialized_video_file_from_path
+    from endoreg_db.services.video_files.imports import (
+        create_initialized_video_file_from_path,
+    )
 
     from .data_load_orchestrator import (
         load_ai_model_data,

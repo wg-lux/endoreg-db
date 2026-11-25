@@ -26,7 +26,7 @@ from endoreg_db.models.hub.upload_job_file import UploadJobFile
 from endoreg_db.models.metadata.video_meta import VideoMeta
 from endoreg_db.models.state.processing_history import ProcessingHistory
 from endoreg_db.services.video_files import _imports as create_from_file_module
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.services.video_files import imports as video_imports_module
 from endoreg_db.services.hub.media_integrity import (
     MediaIntegrityError,
@@ -43,6 +43,7 @@ from endoreg_db.utils.storage import save_local_file
 from endoreg_db.schemas.video_storage import VideoStorageNormalizationEvidence
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from tests.helpers.canonical_timestamps import normalization_evidence_fixture
+from endoreg_db.services.media.state import update_media_state
 
 
 def _configure_storage_layout(
@@ -719,7 +720,6 @@ def test_create_from_file_duplicate_with_missing_file_requires_reconciliation_wi
 @pytest.mark.parametrize("raw_source", ["blank", "missing", "unreadable"])
 def test_duplicate_with_unusable_raw_source_preserves_human_work(
     mock_storage: EndoregPathsModel,
-    base_db_data: None,
     monkeypatch: pytest.MonkeyPatch,
     entrypoint: Literal["direct", "create", "context"],
     history: bool | None,
@@ -729,8 +729,8 @@ def test_duplicate_with_unusable_raw_source_preserves_human_work(
     source_bytes = b"synthetic incoming source for duplicate reconciliation"
     atomic_write_file(destination=source, content=(source_bytes,))
     source_hash = get_file_hash(source)
-    center_name, processor_name = _center_and_processor_names()
-    center = Center.objects.get(name=center_name)
+    center = Center.objects.create(name="duplicate-source-center")
+    processor = EndoscopyProcessor.objects.create(name="duplicate-source-processor")
     video = VideoFile.objects.create(
         center=center,
         raw_video_hash=source_hash,
@@ -745,8 +745,7 @@ def test_duplicate_with_unusable_raw_source_preserves_human_work(
     master_path = Path(video.processed_file.path)
     master_bytes = master_path.read_bytes()
     state = get_or_create_video_state(video)
-    state.anonymization_validated = True
-    state.save()
+    update_media_state(state, changes={"anonymization_validated": True})
     frame = Frame.objects.create(
         video=video, frame_number=7, timestamp=0.28, relative_path="7.jpg"
     )
@@ -778,15 +777,15 @@ def test_duplicate_with_unusable_raw_source_preserves_human_work(
     for _attempt in range(2):
         ctx = ImportContext(
             file_path=source,
-            center_name=center_name,
-            processor_name=processor_name,
+            center_name=center.name,
+            processor_name=processor.name,
             file_hash=source_hash,
             current_video=video if entrypoint == "context" else None,
         )
         with pytest.raises(MediaIntegrityError) as raised:
             if entrypoint == "direct":
                 create_from_file_module._create_from_file(
-                    VideoFile, source, center_name, processor_name, source_hash
+                    VideoFile, source, center.name, processor.name, source_hash
                 )
             else:
                 create_video_file.create_or_retrieve_video_file(ctx)

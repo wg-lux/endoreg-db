@@ -10,6 +10,18 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: dataloader/test_dataloader.py
+  role: Standalone application-catalogue compatibility-loader smoke tests; clinical package selection and bootstrap belong to test_load_base_db_data_command.py and test_load_base_db_data_repeat.py.
+- file: administration/ai/test_create_model_meta.py
+  role: Opt-in real Hugging Face weights acquisition; deterministic metadata selection and repair are covered by ai/test_ai_model_get_latest_version.py and services/test_model_meta_from_hf.py.
+- file: legacy/test_load_legacy_data.py
+  role: Real legacy import command backfills examination groups to video IDs, frame coordinates, dataset membership and a manifest.
+- file: dataloader/test_reference_command_rendering.py
+  role: Shared reconciliation CLI identity/format rejection and lossless Unicode conflict-plan output.
+- file: models/state/test_media_state_guard.py
+  role: Guarded video/report state writes, service transitions and concurrent stale-snapshot rejection.
+- file: helpers/media_states.py
+  role: Test media states initialized through default creation and the owning state service.
 - file: helpers/data_loader.py
   role: Fixture loaders selecting the central clinical package through application helpers.
 - file: dataloader/test_load_base_db_data_command.py

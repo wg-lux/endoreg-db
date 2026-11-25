@@ -13,7 +13,9 @@ from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.raw_pdf_files import validate_report_metadata_annotation
-from endoreg_db.services.video_files import validate_video_metadata_annotation
+from endoreg_db.services.video_files.validation import (
+    validate_video_metadata_annotation,
+)
 from tests.helpers.default_objects import get_default_center
 
 

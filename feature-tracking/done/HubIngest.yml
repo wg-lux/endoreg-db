@@ -81,9 +81,6 @@ tracking:
     changed_at: '2026-07-29T14:01:13.513640Z'
     note: Full SAP mirror import and clinical replay verified after source gender-code normalization.
 source_documents:
-- path: docs/wiki/hub_ingest_gap_closure.md
-  disposition: migrated
-  note: Gap- und Phasenstatus wurden in diese DoD überführt.
 - path: endoreg_db/import_files/multi_centre_storage_hub_roadmap.md
   disposition: migrated
   note: Blocker, Architekturphasen und Akzeptanzkriterien werden hier bewertet.

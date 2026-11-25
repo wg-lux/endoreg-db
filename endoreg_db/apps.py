@@ -95,6 +95,7 @@ class EndoregDbConfig(AppConfig):
         ensure_keycloak_settings()
         import_module("endoreg_db.checks")
         import_module("endoreg_db.models.state.signals")
+        import_module("endoreg_db.services.datasets.membership")
 
         from endoreg_db.celery_observability import register_celery_timing_signals
 

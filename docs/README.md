@@ -119,7 +119,6 @@ storage, transcoding, publication, or cleanup behavior.
 - [Dataloader setup overview](wiki/new_setup_overview.md)
 - [General data-loading operating model](wiki/new_setup_general_purpose.md)
 - [Sphinx API reference entry point](source/index.rst)
-- [Historical GitHub Wiki references](legacy_wiki_index.md)
 
 ## Generated References
 
@@ -136,21 +135,8 @@ records current scope and evidence.
 
 - [Colonoscopy requirements plan](colonoscopy-requirements-plan.md) →
   [`Colonoscopy.yml`](../feature-tracking/Colonoscopy.yml)
-- [Production workflow hardening plan](production_workflow_hardening_plan.md) →
-  [`ProductionWorkflow.yml`](../feature-tracking/ProductionWorkflow.yml)
-- [Pydantic and Django hardening plan](pydantic_django_hardening_plan.md) →
-  [`LxDtypesModelStandardization.yml`](../feature-tracking/LxDtypesModelStandardization.yml)
-- [Repository alignment TODO](repo_alignment_todo.md) →
-  [`StorageSecurity.yml`](../feature-tracking/StorageSecurity.yml)
-- [Video typing integration plan](video_typing_integration_plan.md) →
-  [`TypeSafety.yml`](../feature-tracking/TypeSafety.yml)
-- [Hub ingest gap-closure plan](wiki/hub_ingest_gap_closure.md) →
-  [`HubIngest.yml`](../feature-tracking/done/HubIngest.yml)
-
 - [Report import design](report_import_concurrency_implementation.md) →
   [Reporting.yml](../feature-tracking/Reporting.yml)
-- [Historical video data-retention investigation](video_datenerhalt_gc02_gc10_20260923.md) →
-  [VideoStorageNormalization.yml](../feature-tracking/VideoStorageNormalization.yml)
 
 ## Authoring Rules
 

@@ -52,10 +52,8 @@ from endoreg_db.services.video_files.source_hash import (
 from endoreg_db.services.video_storage.validation import (
     assert_normalization_source_supported,
 )
-from endoreg_db.services.video_files import (
-    VideoArtifactKind,
-    get_active_raw_video_file,
-)
+from endoreg_db.services.video_files.streaming import get_active_raw_video_file
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.utils import ffmpeg_wrapper
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.video.encoding_standard import STANDARD_VIDEO_ENCODING

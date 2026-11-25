@@ -41,9 +41,7 @@ from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
-from endoreg_db.services.video_files import (
-    ensure_local_processed_video_file,
-)
+from endoreg_db.services.video_files.io import ensure_local_processed_video_file
 from endoreg_db.services.video_files.post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
 )

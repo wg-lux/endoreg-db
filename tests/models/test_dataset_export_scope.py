@@ -23,6 +23,7 @@ from endoreg_db.services.datasets.exports import (
     build_export_payload,
     export_to_standardized_structure,
 )
+from endoreg_db.services.media.state import update_media_state
 
 
 def _dataset() -> AIDataSet:
@@ -119,14 +120,17 @@ def test_shared_export_approval_filter_for_frame_and_segment_relations(
         video_file=video, label=label, start_frame_number=0, end_frame_number=1
     )
     # Segment creation invalidates approval; establish the state under test afterward.
-    VideoState.objects.filter(pk=state.pk).update(
-        anonymization_validated=anonymized,
-        outside_segments_removed=outside_removed,
-        segment_annotations_validated=ready,
-        ready_for_export=ready,
-        ready_for_export_by="export-filter-reviewer" if ready else "",
-        ready_for_export_at=timezone.now() if ready else None,
-        processed_file_sha256=approval_hash,
+    update_media_state(
+        state,
+        changes={
+            "anonymization_validated": anonymized,
+            "outside_segments_removed": outside_removed,
+            "segment_annotations_validated": ready,
+            "ready_for_export": ready,
+            "ready_for_export_by": "export-filter-reviewer" if ready else "",
+            "ready_for_export_at": timezone.now() if ready else None,
+            "processed_file_sha256": approval_hash,
+        },
     )
     # Metadata selection must not require materialized media on this node.
     assert not video.processed_file

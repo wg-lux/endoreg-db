@@ -42,6 +42,8 @@ from endoreg_db.views.anonymization.overview import (
 from endoreg_db.services.privacy.workflow import AnonymizationService
 from endoreg_db.serializers.misc.file_overview import current_overview_hls_artifacts
 from endoreg_db.services.streaming import hls_media as hls_media
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 @pytest.mark.django_db
@@ -58,7 +60,8 @@ def test_interrupted_video_progress_agrees_between_overview_and_polling(
 
     cache.clear()
     center = Center.objects.create(name="interrupted-progress")
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         processing_started=progress != "anonymized",
         anonymized=progress == "anonymized",
         was_created=progress == "extracting_frames",
@@ -147,7 +150,7 @@ def test_interrupted_upload_does_not_override_unrelated_or_newer_video_state(
     change: str,
 ) -> None:
     center = Center.objects.create(name="interruption-scope")
-    state = VideoState.objects.create(processing_started=True, was_created=False)
+    state = create_media_state(VideoState, processing_started=True, was_created=False)
     video = VideoFile.objects.create(
         center=center,
         raw_video_hash="a" * 64,
@@ -183,10 +186,14 @@ def test_interrupted_upload_does_not_override_unrelated_or_newer_video_state(
             processing_lease_expires_at=timezone.now() + timedelta(minutes=5),
         )
     if change in {"newer_state", "completed", "validated"}:
-        state.sensitive_meta_processed = change in {"completed", "validated"}
-        state.anonymized = state.sensitive_meta_processed
-        state.anonymization_validated = change == "validated"
-        state.save()
+        update_media_state(
+            state,
+            changes={
+                "sensitive_meta_processed": change in {"completed", "validated"},
+                "anonymized": change in {"completed", "validated"},
+                "anonymization_validated": change == "validated",
+            },
+        )
         if change != "newer_state":
             job.save(update_fields=["updated_at"])
     expected = state.anonymization_status.value
@@ -368,7 +375,7 @@ def test_processing_failure_is_distinct_from_durable_integrity_loss(
         center=center,
         raw_video_hash="failure-source",
         meta={"integrity_status": integrity_status} if integrity_status else {},
-        state=VideoState.objects.create(processing_error=True),
+        state=create_media_state(VideoState, processing_error=True),
     )
     payload = AnonymizationService.get_status(video.pk, kind="video")
     assert payload is not None
@@ -545,7 +552,8 @@ def test_anonymization_overview_mixed_content():
     center = Center.objects.create(name="Test Center")
 
     # --- Create Video (Status: VALIDATED) ---
-    video_state = VideoState.objects.create(
+    video_state = create_media_state(
+        VideoState,
         anonymization_validated=True,
         anonymized=True,
         sensitive_meta_processed=True,
@@ -584,8 +592,8 @@ def test_anonymization_overview_mixed_content():
     )
 
     # --- Create PDF (Status: DONE_PROCESSING -> Needs Validation) ---
-    pdf_state = RawPdfState.objects.create(
-        sensitive_meta_processed=True, anonymization_validated=False
+    pdf_state = create_media_state(
+        RawPdfState, sensitive_meta_processed=True, anonymization_validated=False
     )
 
     # Create a dummy PDF file in memory
@@ -1061,8 +1069,7 @@ def test_central_hub_overview_unscopes_videos_but_not_reports() -> None:
         "foreign-anonymized.mp4", ContentFile(b"processed"), save=True
     )
     foreign_state = foreign_video.get_or_create_state()
-    foreign_state.anonymized = True
-    foreign_state.save(update_fields=["anonymized"])
+    update_media_state(foreign_state, changes={"anonymized": True})
     local_pdf = RawPdfFile.objects.create(center=local, pdf_hash="local-pdf")
     foreign_pdf = RawPdfFile.objects.create(center=foreign, pdf_hash="foreign-pdf")
     user = User.objects.create_user(username="hub-overview-reader")
@@ -1105,8 +1112,7 @@ def test_central_hub_centerless_user_discovers_processed_videos_only() -> None:
         "centerless-hub-anonymized.mp4", ContentFile(b"processed"), save=True
     )
     state = video.get_or_create_state()
-    state.anonymized = True
-    state.save(update_fields=["anonymized"])
+    update_media_state(state, changes={"anonymized": True})
     report = RawPdfFile.objects.create(center=center, pdf_hash="centerless-hub-report")
     user = User.objects.create_user(username="centerless-hub-overview-reader")
 
@@ -1131,8 +1137,8 @@ def test_failed_duplicates_do_not_overlay_completed_media(
             raw_video_hash=source_hash,
             processed_file="processed/video.mp4",
             processed_video_hash="b" * 64,
-            state=VideoState.objects.create(
-                anonymized=completed, sensitive_meta_processed=completed
+            state=create_media_state(
+                VideoState, anonymized=completed, sensitive_meta_processed=completed
             ),
         )
     else:
@@ -1140,7 +1146,8 @@ def test_failed_duplicates_do_not_overlay_completed_media(
             center=center,
             pdf_hash=source_hash,
             processed_file="processed/report.pdf",
-            state=RawPdfState.objects.create(
+            state=create_media_state(
+                RawPdfState,
                 anonymized=completed,
                 sensitive_meta_processed=completed,
                 processed_file_sha256="b" * 64,
@@ -1201,7 +1208,7 @@ def test_start_reset_video_reprocesses_existing_identity(
         center=Center.objects.create(name="reset-existing-video"),
         raw_file="retained-source.mp4",
         meta={},
-        state=VideoState.objects.create(was_created=False),
+        state=create_media_state(VideoState, was_created=False),
     )
     importer = Mock(spec=workflow.VideoImportService)
     monkeypatch.setattr(workflow, "VideoImportService", lambda: importer)
@@ -1230,13 +1237,13 @@ def test_polling_reports_actual_lock(
         media = VideoFile.objects.create(
             center=center,
             raw_video_hash="polling-lock-video",
-            state=VideoState.objects.create(frames_extracted=processing),
+            state=create_media_state(VideoState, frames_extracted=processing),
         )
     else:
         media = RawPdfFile.objects.create(
             center=center,
             pdf_hash="polling-lock-report",
-            state=RawPdfState.objects.create(processing_started=processing),
+            state=create_media_state(RawPdfState, processing_started=processing),
         )
     if locked:
         assert PollingCoordinator.acquire_processing_lock(media.pk, media_type)
@@ -1296,7 +1303,7 @@ def test_overview_sends_native_ai_prediction_status_without_extra_queries(
             center=center,
             raw_video_hash=f"prediction-{expected}-{index}",
             meta={},
-            state=VideoState.objects.create(**flags),
+            state=create_media_state(VideoState, **flags),
         )
     with CaptureQueriesContext(connection) as queries:
         rows = overview()

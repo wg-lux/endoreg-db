@@ -41,7 +41,7 @@ from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.privacy.evaluation_manifest import (
     write_performance_evaluation_manifest,
 )

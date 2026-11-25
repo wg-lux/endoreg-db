@@ -9,14 +9,18 @@ boundaries:
 - Preserve concurrent operation ownership and canonical media generation identity; raw media export is
   prohibited.
 files:
+- file: write_guard.py
+  role: Exact instance/field/value single-use write permits and guarded save/queryset persistence for service-owned state.
 - file: hub_transfer.py
   role: Sole Python hub failure-category mirror shared by persistence and API schemas, verified against Rust at startup.
 - file: sensitive_meta.py
   role: Persist name/date-of-birth checks; derived is_verified and compatibility mutators delegate to the verification service.
 - file: video.py
-  role: Video lifecycle state.
+  role: Guarded video evidence persistence and compatibility wrappers for service-owned mutations; native status derivation.
 - file: raw_pdf.py
-  role: Document lifecycle state.
+  role: Guarded report evidence persistence and compatibility wrappers for service-owned mutations; native status derivation.
+- file: video_segment_validation.py
+  role: Segment status enum and compatibility wrappers for service-owned segment evidence mutations.
 - file: report_import_attempt.py
   role: Fenced report import attempts.
 - file: clinical_workflow.py
@@ -24,7 +28,7 @@ files:
 - file: audit_ledger.py
   role: Audit ledger and head persistence.
 - file: frame_annotation.py
-  role: Annotation queue state and retained compatibility behavior.
+  role: Annotation queue contracts and compatibility wrappers delegating persisted media flags to services.
 - file: processing_history/processing_history.py
   role: Common processing-history persistence.
 dependencies:

@@ -14,4 +14,4 @@ contracts:
 - name: Agent workflow
   doc: AGENTS.md
 - name: Hub transfer contract
-  doc: docs/hub_transfer_typed_contract.en.md
+  doc: docs/hub_transfer_typed_contract.md

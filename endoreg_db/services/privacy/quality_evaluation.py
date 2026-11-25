@@ -20,6 +20,7 @@ from lx_dtypes.models.contracts.anonymization_quality import (
     SensitiveMetaHandlingPolicy,
 )
 
+from endoreg_db import endoreg_rust_backend as native
 from endoreg_db.import_files.file_storage.cleanup import staging_cleanup_roots
 from endoreg_db.models.label.annotation.frame_box import FrameBoxAnnotation
 from endoreg_db.models.media.anonymization_metrics import AnonymizationValidationMetric
@@ -44,22 +45,7 @@ logger = logging.getLogger(__name__)
 MediaType = Literal["video", "pdf"]
 
 
-DIRECT_IDENTIFIER_FIELDS: tuple[str, ...] = (
-    "patient_first_name",
-    "patient_last_name",
-    "patient_dob",
-    "examination_date",
-    "examination_time",
-    "casenumber",
-    "examiner_first_name",
-    "examiner_last_name",
-    "file_path",
-    "text",
-    "anonymized_text",
-    "endoscope_sn",
-    "external_id",
-    "validation_comment",
-)
+DIRECT_IDENTIFIER_FIELDS = tuple(native.direct_identifier_fields())
 
 
 @dataclass(frozen=True)
@@ -77,12 +63,6 @@ class PhiRegionConfusionMatrix:
     matching_annotation_count: int
     max_matching_annotations: int
     skip_reason: str
-
-
-class _ExaminerRelationManager(Protocol):
-    def exists(self) -> bool: ...
-
-    def clear(self) -> None: ...
 
 
 class _SensitiveMetaIdentifierRecord(Protocol):
@@ -799,23 +779,24 @@ def clear_sensitive_meta_direct_identifiers(sensitive_meta: SensitiveMeta) -> No
         for name in identity_fields
     ):
         raise ValueError("Identity changed before metadata erasure; reload and retry")
-    if (
-        locked.direct_identifiers_cleared_at is None
-        or _direct_identifier_residual_count(locked)
-    ):
-        _clear_sensitive_meta_direct_identifiers(
-            locked, policy=SensitiveMetaHandlingPolicy.CLEAR_DIRECT_IDENTIFIERS
-        )
+    fields = native.direct_identifier_clear_values(locked)
+    has_examiners = locked.examiners.exists()
+    if locked.direct_identifiers_cleared_at is None or fields or has_examiners:
+        _clear_sensitive_meta_direct_identifiers(locked, fields, has_examiners)
     sensitive_meta.refresh_from_db()
 
 
 def require_erased_sensitive_meta(sensitive_meta: SensitiveMeta) -> None:
     """An erasure receipt cannot authorize persisting direct identifiers again."""
-    if (
-        sensitive_meta.direct_identifiers_cleared_at is None
-        or _direct_identifier_residual_count(sensitive_meta)
-    ):
+    if not direct_identifier_erasure_complete(sensitive_meta):
         raise ValueError("Erased metadata cannot contain direct identifiers")
+
+
+def direct_identifier_erasure_complete(sensitive_meta: SensitiveMeta) -> bool:
+    return (
+        sensitive_meta.direct_identifiers_cleared_at is not None
+        and not _direct_identifier_residual_count(sensitive_meta)
+    )
 
 
 def _mark_sensitive_meta_policy(
@@ -839,25 +820,14 @@ def _mark_sensitive_meta_policy(
 
 def _clear_sensitive_meta_direct_identifiers(
     sensitive_meta: SensitiveMeta,
-    *,
-    policy: SensitiveMetaHandlingPolicy,
+    fields: list[tuple[str, str | None]],
+    cleared_examiners: bool,
 ) -> None:
-    updates: dict[str, Any] = {}
-    cleared_fields: list[str] = []
-    for field_name in DIRECT_IDENTIFIER_FIELDS:
-        if not hasattr(sensitive_meta, field_name):
-            continue
-        current_value = getattr(sensitive_meta, field_name)
-        if not _direct_identifier_present(current_value):
-            continue
-        updates[field_name] = _cleared_value_for_field(field_name)
-        cleared_fields.append(field_name)
-
-    cleared_examiners = False
-    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
-    if sensitive_meta.pk and examiners.exists():
-        examiners.clear()
-        cleared_examiners = True
+    policy = SensitiveMetaHandlingPolicy.CLEAR_DIRECT_IDENTIFIERS
+    updates: dict[str, object] = dict(fields)
+    cleared_fields = list(updates)
+    if cleared_examiners:
+        sensitive_meta.examiners.clear()
 
     cleared_at = timezone.now()
     updates.update(
@@ -883,41 +853,14 @@ def _clear_sensitive_meta_direct_identifiers(
             ),
         }
     )
-    if updates:
-        SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(**updates)
-
-
-def _cleared_value_for_field(field_name: str) -> Any:
-    if field_name == "validation_comment":
-        return ""
-    return None
+    SensitiveMeta.objects.filter(pk=sensitive_meta.pk).update(**updates)
 
 
 def _direct_identifier_residual_count(sensitive_meta: SensitiveMeta) -> int:
-    count = 0
-    for field_name in DIRECT_IDENTIFIER_FIELDS:
-        if hasattr(sensitive_meta, field_name) and _direct_identifier_present(
-            getattr(sensitive_meta, field_name)
-        ):
-            count += 1
-    examiners = cast(_ExaminerRelationManager, getattr(sensitive_meta, "examiners"))
-    if sensitive_meta.pk and examiners.exists():
-        count += 1
-    return count
-
-
-def _direct_identifier_present(value: Any) -> bool:
-    if value is None:
-        return False
-    if isinstance(value, str):
-        normalized = value.strip()
-        return bool(normalized) and normalized.casefold() not in {
-            "unknown",
-            "none",
-            "null",
-            "undefined",
-        }
-    return True
+    fields = native.direct_identifier_clear_values(sensitive_meta)
+    return len(fields) + int(
+        bool(sensitive_meta.pk and sensitive_meta.examiners.exists())
+    )
 
 
 def _sensitive_meta_has_other_references(

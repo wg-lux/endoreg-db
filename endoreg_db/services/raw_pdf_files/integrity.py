@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, cast
 
 import pymupdf
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.utils.hashs import get_file_hash
 
 from .state import get_or_create_raw_pdf_state
@@ -109,8 +110,7 @@ def verify_and_persist_processed_report_sha256(report: "RawPdfFile") -> str:
         expected_sha256=expected_sha256 or None,
     )
     if not expected_sha256:
-        state.processed_file_sha256 = actual_sha256
-        state.save(update_fields=["processed_file_sha256", "date_modified"])
+        update_media_state(state, changes={"processed_file_sha256": actual_sha256})
     return actual_sha256
 
 

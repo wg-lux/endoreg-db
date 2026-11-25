@@ -20,6 +20,9 @@ entrypoints:
 - name: process_watcher_file
   file: ingest.py
   purpose: Resolve a settled local watcher source into the upload ingestion workflow.
+- name: process_preanonymized_watcher_file
+  file: ingest.py
+  purpose: Bind sidecar validation to the persisted upload digest and verify the published artifact before recording media state.
 - name: attach_enveloped_transfer_media
   file: transfers.py
   purpose: Authenticate and atomically publish one processed-media envelope.
@@ -27,8 +30,10 @@ entrypoints:
   file: storage_placement.py
   purpose: Atomically reserve capacity and persist the primary placement intent.
 files:
+- file: outbound_export_readiness.py
+  role: Collect authenticated storage evidence and adapt native export integrity and video eligibility decisions for listing and send paths.
 - file: outbound_transfer_state.py
-  role: Only Python writer of outbound local_status/failure_class; locks the row, applies the Rust hub_transfer_event decision and leaves saving to the caller.
+  role: Only Python writer of outbound local_status/failure_class; locks the row, applies the Rust hub_transfer_event decision and leaves saving to the caller; owns resource-locked generation dispatch admission.
 - file: transfer_cleanup.py
   role: Fresh receiver master verification and restartable explicit site file reclamation with retained transfer and clinical records.
 - file: study_transfer.py
@@ -36,7 +41,7 @@ files:
 - file: video_provenance_recovery.py
   role: Explicit audited acknowledgment of unresolved frame mapping with current hashes and retained original timestamps.
 - file: __init__.py
-  role: Package imports and compatibility exports.
+  role: Package marker only; callers import the owning module directly.
 - file: audit.py
   role: Exports emit_hub_audit_event.
 - file: cleanup.py
@@ -105,7 +110,7 @@ files:
 - file: upload_job_import_lease.py
   role: Renewable fenced ownership, expired-attempt reconciliation and bounded retained-source recovery invoked by the retry dispatcher.
 - file: upload_job_state_machine.py
-  role: Native-validated status transitions and canonical recovery admission predicates, including retained_source_recovery_filter shared by ingest reuse, interrupted-import and persisted-stack recovery.
+  role: Rust-owned upload and expired-lease transition tables with canonical recovery admission predicates, including retained_source_recovery_filter shared by ingest reuse, interrupted-import and persisted-stack recovery.
 - file: video_provenance.py
   role: Recording-bound ancestry exports check exclusive writers and content identity before reusing timestamp proof; receivers decode media, and electrical joins use lx-dtypes.
 - file: watcher_handoff.py
@@ -147,7 +152,7 @@ contracts:
 - name: Hub ingest operations
   doc: docs/hub_ingest_operations.md
 - name: Typed transfer contract
-  doc: docs/hub_transfer_typed_contract.en.md
+  doc: docs/hub_transfer_typed_contract.md
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_unit.py tests/services/test_ingest_helper_compatibility.py
@@ -232,7 +237,7 @@ modules:
   upload_job_cancellation.py:
     owns: Cancellation intent and owner acknowledgement
   upload_job_state_machine.py:
-    owns: Native-validated job-state transitions, expired-execution interruption and shared cap-preserving recovery admission
+    owns: Native-validated job-state transitions, atomic reimport stack completion, expired-execution interruption and shared cap-preserving recovery admission
   upload_job_files.py:
     owns: Source and media artifact ledger registration
   upload_staging_orphans.py:

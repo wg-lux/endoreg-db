@@ -16,7 +16,7 @@ from rest_framework.response import Response
 from endoreg_db.helpers.typing import CompositePermissionClass
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.openapi import OpenApiAPIView as APIView
-from endoreg_db.services.video_files import require_persisted_video_fps
+from endoreg_db.services.video_files.metadata import require_persisted_video_fps
 from endoreg_db.utils.permissions import EnvironmentAwarePermission
 
 

@@ -32,6 +32,7 @@ from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from tests.helpers.video_timeline import constant_rate_video_metadata
+from endoreg_db.services.media.state import update_media_state
 
 jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from lx_dtypes.models.contracts.video_temporal_inference import (
@@ -966,15 +967,13 @@ def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rol
         },
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
     )
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
     stale_history = VideoProcessingHistory.objects.create(
@@ -1039,15 +1038,13 @@ def testrun_video_temporal_inference_redelivered_stream_success_preserves_frames
         },
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
     )
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -1538,15 +1535,13 @@ def testrun_video_temporal_inference_cleans_frames_for_redelivered_success(
         },
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
     )
     history = VideoProcessingHistory.objects.create(
         video=video,

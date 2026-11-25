@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from endoreg_db.helpers.model_ids import optional_model_pk
 from endoreg_db.services.video_files._time import resolve_video_timeline_mapping
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.utils.rust_backend import NativeTimelineIndex, build_timeline_index
 
 if TYPE_CHECKING:

@@ -66,11 +66,11 @@ anonymized document remains in place.
 
 ## End-to-End Lifecycle State Machine
 
-[clinical_lifecycle](../endoreg_db/services/clinical_lifecycle/state_machine.py)
-projects every video and report onto one deterministic state made of three
-tracks. It derives the state from the persisted axes above and stores no
-additional global status. The declarative transition tables are the reference
-contract until the native Rust reducer replaces them.
+The [clinical Rust reducer](../rust/endoreg_rust_backend/src/clinical_workflow.rs)
+projects persisted video and report facts onto three tracks and decides their
+transitions. Django supplies the facts and persists versioned workflow journal
+entries. The reducer exports its transition tables for comparison with the
+shared lx-dtypes contract.
 
 ```mermaid
 stateDiagram-v2
@@ -129,11 +129,24 @@ Current enforcement and gaps:
 * Export approval (`mark_video_ready_for_export`) runs through the reducer.
 * `manage.py audit_clinical_lifecycle` lists stage counts and invariant
   violations for stored records without patient identifiers.
-* Validation, purge, segment validation, dataset ingestion and hub export do
-  not yet call the reducer. Reports have no persisted annotation, approval or
-  dataset axis, so their annotation track never completes and they cannot be
-  released. `quarantined` and `withdrawn` have no persisted evidence yet and
-  are therefore never produced by the projection.
+* Verified report approval and post-commit raw PDF cleanup check the native
+  clinical transition. Cleanup reopens the approved processed PDF under the
+  report lock and checks its digest before releasing the original.
+* Video metadata validation checks failure and integrity evidence natively.
+  Rust ranks segment rebuild history against the persisted validation flags,
+  and decides video purge blockers from the lease, timeline, generation and
+  quality evidence collected by the storage service.
+* Direct identifier erasure and clinical release checks share the Rust field
+  list. A timestamp counts as erasure evidence only when direct fields and
+  examiner links are clear.
+* Explicit dataset video membership passes the clinical ingestion transition
+  before the database inserts links. Local annotation collection uses a
+  separate relationship. Existing workflow journals advance in the same transaction.
+* Hub transfer readiness uses the native processed-artifact integrity decision.
+  The sending worker requests byte verification; listing endpoints can inspect
+  persisted metadata without reading the media. Report transfers use their
+  validated report contract. Reports have no persisted clinical annotation or
+  dataset track.
 
 ## Failure Matrix
 

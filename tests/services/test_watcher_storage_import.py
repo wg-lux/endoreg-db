@@ -199,6 +199,7 @@ def test_preanonymized_import_observes_cancellation_before_processing(
     sidecar = _write_test_file(tmp_path / "report.yaml", b"metadata")
     job = UploadJob.objects.create(content_type="text/plain")
     context = ingest._PreanonymizedWatcherContext(
+        media_hash=get_file_hash(source),
         normalized_type="report",
         content_type="text/plain",
         source_center=watcher_center,
@@ -695,7 +696,7 @@ def test_process_watcher_file_reuse_deletes_duplicate_drop_without_reprocessing(
     original_id = upload_job.id
 
     with patch(
-        "endoreg_db.services.reports.import_service.ReportImportService.import_and_anonymize",
+        "endoreg_db.import_files.report_import_service.ReportImportService.import_and_anonymize",
         side_effect=AssertionError("duplicate watcher file must not be reprocessed"),
     ):
         reused_job = ingest.process_watcher_file(
@@ -1002,6 +1003,7 @@ def test_persist_preanonymized_file_encrypts_and_preserves_source_until_publicat
 
     ingest._persist_preanonymized_file(
         source_path=source,
+        expected_hash=get_file_hash(source),
         target_path=target,
         field_file=stored,
     )
@@ -1026,6 +1028,7 @@ def test_persist_preanonymized_file_reuses_authenticated_target_without_extra_co
 
     ingest._persist_preanonymized_file(
         source_path=source,
+        expected_hash=get_file_hash(source),
         target_path=target,
         field_file=stored,
     )
@@ -1033,6 +1036,7 @@ def test_persist_preanonymized_file_reuses_authenticated_target_without_extra_co
     published_bytes = target.read_bytes()
     ingest._persist_preanonymized_file(
         source_path=source,
+        expected_hash=get_file_hash(source),
         target_path=target,
         field_file=stored,
     )
@@ -1062,6 +1066,7 @@ def test_persist_preanonymized_file_preserves_source_when_target_is_corrupt(
     with pytest.raises(ValueError):
         ingest._persist_preanonymized_file(
             source_path=source,
+            expected_hash=get_file_hash(source),
             target_path=target,
             field_file=stored,
         )
@@ -1438,3 +1443,61 @@ def test_create_or_reuse_watcher_upload_job_defers_when_file_changes_after_hash(
     assert watched_file.name not in caplog.text
     assert str(watched_file) not in str(error.value)
     assert watched_file.name not in str(error.value)
+
+
+@pytest.mark.django_db
+def test_preanonymized_replacement_with_same_stat_is_retained(
+    tmp_path: Path, watcher_center: Center
+) -> None:
+    source = tmp_path / "drop.pdf"
+    source.write_bytes(b"first")
+    settled = source.stat()
+    context = ingest._prepare_preanonymized_watcher_context(
+        watched_path=source,
+        settled_stat=settled,
+        center=watcher_center,
+        source_system="watcher_preanonymized",
+    )
+    source.write_bytes(b"other")
+    os.utime(source, ns=(settled.st_atime_ns, settled.st_mtime_ns))
+    with pytest.raises(WatcherFileNotReadyError):
+        ingest._create_preanonymized_upload_job(
+            watched_path=source,
+            settled_stat=settled,
+            context=context,
+            source_system="watcher_preanonymized",
+        )
+    assert source.read_bytes() == b"other"
+    assert not UploadJob.objects.exists()
+
+
+@pytest.mark.django_db
+def test_matching_watcher_key_reuses_job_with_one_locked_lookup(
+    tmp_path: Path, watcher_center: Center
+) -> None:
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    source = _write_test_file(tmp_path / "report.txt", b"duplicate")
+    settled = source.stat()
+    first, created = ingest.create_or_reuse_watcher_upload_job(
+        file_path=source,
+        settled_stat=settled,
+        content_type="text/plain",
+        source_center=watcher_center,
+    )
+    assert created
+    with CaptureQueriesContext(connection) as queries:
+        replay, created = ingest.create_or_reuse_watcher_upload_job(
+            file_path=source,
+            settled_stat=settled,
+            content_type="text/plain",
+            source_center=watcher_center,
+        )
+    assert replay.pk == first.pk and not created
+    locks = [
+        query["sql"]
+        for query in queries
+        if UploadJob._meta.db_table in query["sql"] and "FOR UPDATE" in query["sql"]
+    ]
+    assert len(locks) == 1

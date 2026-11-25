@@ -20,9 +20,11 @@ from endoreg_db.services.clinical_lifecycle import (
     TransitionRejection as Rejection,
     derive_clinical_record_state,
     evidence_rejection,
-    require_clinical_transition,
     transition_clinical_record,
     transition_tables,
+)
+from endoreg_db.services.clinical_lifecycle.state_machine import (
+    require_clinical_transition,  # projection-only, tests only
 )
 
 pytestmark = pytest.mark.no_db
@@ -402,3 +404,9 @@ def test_legacy_exemption_does_not_waive_purge_before_export(
     with pytest.raises(ClinicalLifecycleTransitionError) as exc_info:
         require_clinical_transition(facts, Event.EXPORT_APPROVED)
     assert exc_info.value.reason is reason
+
+
+def test_native_reducer_matches_every_track_contract_edge() -> None:
+    from lx_dtypes.models.contracts.media_workflow import event_track_tables
+
+    assert transition_tables() == event_track_tables()

@@ -15,7 +15,7 @@ from endoreg_db.schemas.video_storage import (
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentSerializer,
 )
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.metadata import (
     get_video_frame_neighborhood,
     video_frame_number_to_seconds,
     video_seconds_to_frame_number,

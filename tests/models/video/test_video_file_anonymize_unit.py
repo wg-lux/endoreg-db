@@ -5,7 +5,7 @@ from endoreg_db.utils.paths import get_runtime_paths
 
 from collections.abc import Sequence
 from pathlib import Path
-from types import SimpleNamespace, TracebackType
+from types import TracebackType
 from typing import NoReturn, Protocol
 from unittest.mock import Mock
 import pytest
@@ -15,18 +15,21 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
     roi_box_to_legacy_dict,
 )
 
-import endoreg_db.models.media.video.video_file as video_file_module
+from django.core.files.base import ContentFile
 from endoreg_db.models import (
     Center,
     Label,
     LabelVideoSegment,
     SensitiveMeta,
     VideoFile,
+    VideoState,
 )
 from endoreg_db.services.video_files import _anonymization as anonymize_module
 from endoreg_db.services.video_storage import canonical_timelines
 from endoreg_db.utils.hashs import get_file_hash
+from tests.helpers.media_states import create_media_state
 from tests.helpers.canonical_timestamps import decoded_test_timestamps
+from endoreg_db.services.media.state import update_media_state
 
 
 class _NameWritableField(Protocol):
@@ -61,8 +64,7 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
         end_frame_number=20,
     )
     state = video.get_or_create_state()
-    state.frames_extracted = False
-    state.save(update_fields=["frames_extracted"])
+    update_media_state(state, changes={"frames_extracted": False})
 
     raw_path = tmp_path / "raw.mp4"
     raw_path.write_bytes(b"raw-video")
@@ -192,78 +194,28 @@ def test_anonymize_uses_streamed_mask_without_full_frame_extraction(
     assert state.frames_extracted is False
 
 
-def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(
-    tmp_path: Path, monkeypatch: MonkeyPatch
-) -> None:
-    raw_file_path = tmp_path / "raw.mp4"
-    raw_file_path.write_bytes(b"raw-video")
-
+@pytest.mark.django_db
+def test_cleanup_raw_assets_deletes_raw_paths_and_updates_state(tmp_path: Path) -> None:
+    state = create_media_state(VideoState, frames_extracted=True)
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="raw-cleanup"),
+        raw_video_hash="hash-cleanup",
+        state=state,
+    )
+    video.raw_file.save("raw-cleanup.mp4", ContentFile(b"raw-video"))
+    raw_name = video.raw_file.name
+    assert raw_name and video.raw_file.storage.exists(raw_name)
     raw_frame_dir = tmp_path / "frames"
-    raw_frame_dir.mkdir(parents=True, exist_ok=True)
+    raw_frame_dir.mkdir()
     (raw_frame_dir / "frame_0000001.jpg").write_bytes(b"frame")
 
-    class _FakeState:
-        def __init__(self) -> None:
-            self.frames_extracted = True
-            self.saved_update_fields: list[str] | None = None
-
-        def save(self, update_fields: list[str] | None = None) -> None:
-            self.saved_update_fields = update_fields
-
-    fake_state = _FakeState()
-    deleted_storage_names: list[str] = []
-
-    class _FakeStorage:
-        def delete(self, name: str) -> None:
-            deleted_storage_names.append(name)
-            raw_file_path.unlink(missing_ok=True)
-
-    class _FakeFieldFile:
-        name = ""
-        storage = _FakeStorage()
-
-        def delete(self, *, save: bool = False) -> None:
-            self.storage.delete(self.name)
-            self.name = ""
-
-    fake_video = SimpleNamespace(
-        state=fake_state,
-        raw_file=_FakeFieldFile(),
-        get_or_create_state=lambda: fake_state,
-    )
-
-    class _FakeQuerySet:
-        def __init__(self, result: object) -> None:
-            self.result = result
-            self.filter_kwargs: dict[str, object] | None = None
-
-        def select_related(self, *args: object, **kwargs: object) -> _FakeQuerySet:
-            return self
-
-        def filter(self, **kwargs: object) -> _FakeQuerySet:
-            self.filter_kwargs = dict(kwargs)
-            return self
-
-        def first(self) -> object:
-            return self.result
-
-    fake_queryset = _FakeQuerySet(fake_video)
-
-    def delete() -> None:
-        return None
-
-    fake_video_model = SimpleNamespace(objects=fake_queryset, delete=delete())
-    monkeypatch.setattr(video_file_module, "VideoFile", fake_video_model)
-
     anonymize_module._cleanup_raw_assets(
-        raw_video_hash="hash-cleanup",
-        raw_file_name="sensitive_videos/raw.mp4",
+        raw_video_hash=video.raw_video_hash,
+        raw_file_name=raw_name,
         raw_frame_dir=raw_frame_dir,
     )
 
-    assert deleted_storage_names == ["sensitive_videos/raw.mp4"]
-    assert not raw_file_path.exists()
+    assert not video.raw_file.storage.exists(raw_name)
     assert not raw_frame_dir.exists()
-    assert fake_queryset.filter_kwargs == {"raw_video_hash": "hash-cleanup"}
-    assert fake_state.frames_extracted is False
-    assert fake_state.saved_update_fields == ["frames_extracted"]
+    state.refresh_from_db()
+    assert state.frames_extracted is False

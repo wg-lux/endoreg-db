@@ -20,11 +20,15 @@ from endoreg_db.services.clinical_lifecycle import (
     ClinicalLifecycleEvent,
     ClinicalLifecycleInvariantError,
     ClinicalLifecycleTransitionError,
-    require_clinical_transition,
+    ClinicalRecordKind,
 )
 from endoreg_db.services.clinical_lifecycle.facts import video_record_facts
+from endoreg_db.services.clinical_lifecycle.persistence import (
+    WorkflowStateDriftError,
+    require_workflow_transition,
+)
 from endoreg_db.services.hub.audit import emit_hub_audit_event
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.services.annotations.segment_validation_workflow import (
     resolve_segment_annotation_status,
     segment_annotations_are_final,
@@ -176,10 +180,17 @@ def _verify_state(video: VideoFile) -> None:
 def _verify_clinical_lifecycle(video: VideoFile) -> None:
     """Export approval is one event of the end-to-end clinical lifecycle."""
     try:
-        require_clinical_transition(
-            video_record_facts(video), ClinicalLifecycleEvent.EXPORT_APPROVED
+        require_workflow_transition(
+            ClinicalRecordKind.VIDEO,
+            int(video.pk),
+            video_record_facts(video),
+            ClinicalLifecycleEvent.EXPORT_APPROVED,
         )
-    except (ClinicalLifecycleTransitionError, ClinicalLifecycleInvariantError) as exc:
+    except (
+        ClinicalLifecycleTransitionError,
+        ClinicalLifecycleInvariantError,
+        WorkflowStateDriftError,
+    ) as exc:
         raise ReadyForExportError(str(exc), status_code=409) from exc
 
 
@@ -250,7 +261,7 @@ def mark_video_ready_for_export(
     from endoreg_db.services.video_files.timestamp_backfill import (
         prepare_video_timestamps_for_export,
     )
-    from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+    from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 
     _require_authenticated_user(user)
     video.refresh_from_db()

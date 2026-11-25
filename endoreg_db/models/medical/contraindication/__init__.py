@@ -2,15 +2,11 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 if TYPE_CHECKING:
     from lx_dtypes.models.contracts.contraindication import ContraindicationCore
-
-
-class ContraindicationManager(models.Manager["Contraindication"]):
-    def get_by_natural_key(self, name: str) -> "Contraindication":
-        return self.get(name=name)
 
 
 class Contraindication(models.Model):
@@ -24,7 +20,7 @@ class Contraindication(models.Model):
         null=True,
     )
 
-    objects = ContraindicationManager()
+    objects = NameNaturalKeyManager["Contraindication"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import FindingIntervention

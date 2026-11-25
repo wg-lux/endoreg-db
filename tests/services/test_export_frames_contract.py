@@ -57,6 +57,7 @@ from endoreg_db.services.video_storage.probes import probe_video_artifact
 from endoreg_db.utils.video.executable_discovery import _resolve_ffmpeg_executable
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.hashs import get_file_hash
+from tests.helpers.media_states import create_media_state
 
 
 class _FakeValuesList:
@@ -313,7 +314,8 @@ def test_pts_dataset_export_preserves_exact_timeline_and_deduplicates_image_ids(
     later_timestamp: float,
 ) -> None:
     center = Center.objects.create(name="pts-export-center")
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         anonymization_validated=True,
         processed_file_sha256=approval_hash,
     )

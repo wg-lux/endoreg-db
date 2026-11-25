@@ -63,7 +63,7 @@ from endoreg_db.services.reports.import_fencing import (
     ReportImportBusyError,
     StaleReportImportAttemptError,
 )
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
@@ -196,6 +196,7 @@ def _mark_report_upload_jobs_anonymized(pdf: _RawPdfLike) -> int:
         _report_upload_jobs(pdf).select_for_update(),
         status=UploadJob.Status.ANONYMIZED,
         sensitive_meta_id=pdf.sensitive_meta_id,
+        published_media_id=pdf.pk,
     )
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -9,13 +10,10 @@ if TYPE_CHECKING:
     )
 
 
-class TransportRouteManager(models.Manager["TransportRoute"]):
-    def get_by_natural_key(self, name: str) -> "TransportRoute":
-        return self.get(name=name)
-
-
 class TransportRoute(models.Model):
-    objects: ClassVar[TransportRouteManager] = TransportRouteManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: ClassVar[NameNaturalKeyManager["TransportRoute"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        NameNaturalKeyManager["TransportRoute"]()
+    )
 
     distance: models.FloatField[Any, Any] = models.FloatField()
     name: models.CharField[Any, Any] = models.CharField(max_length=255)

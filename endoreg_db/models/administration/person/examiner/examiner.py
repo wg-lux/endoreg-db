@@ -9,7 +9,7 @@ from endoreg_db.services.secret_rotation.identity import (
     identity_rotation_transaction,
     rotate_examiner_match,
 )
-from endoreg_db.utils import create_mock_examiner_name
+from endoreg_db.utils.names import create_mock_examiner_name
 from endoreg_db.utils.hashs import get_examiner_hash
 
 from ..person import Person

@@ -210,7 +210,7 @@ def test_create_from_file_duplicate_with_existing_file(
     )
     if completed:
         monkeypatch.setattr(
-            create_from_file_module, "require_usable_completed_report", Mock()
+            create_from_file_module, "require_reusable_completed_report", Mock()
         )
     r2, processed2, needs_processing2 = (
         create_from_file_module.create_or_retrieve_report_file(ctx2)

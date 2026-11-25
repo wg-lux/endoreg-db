@@ -20,6 +20,7 @@ from endoreg_db.models.hub.storage_placement import StorageArtifactPlacement
 from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
+from endoreg_db.models.state.video import VideoState
 from endoreg_db.schemas.processed_video_cleanup import (
     ProcessedGenerationCleanupReceipt,
     ProcessedGenerationCleanupResult,
@@ -39,6 +40,19 @@ from endoreg_db.utils.paths import get_runtime_paths, to_protected_media_relativ
 logger = logging.getLogger(__name__)
 
 
+def _raw_validation_blocker(video: VideoFile) -> str | None:
+    from endoreg_db import endoreg_rust_backend as native
+
+    state = video.state
+    if state is None or not state.anonymization_validated:
+        return "anonymization_not_validated"
+    if not native.media_validation_available(
+        state.processing_error, str((video.meta or {}).get("integrity_status", ""))
+    ):
+        return "media_failed_or_lost"
+    return None
+
+
 def cleanup_validated_raw_video(
     video_id: int, *, apply: bool = False
 ) -> tuple[str, ...]:
@@ -49,8 +63,8 @@ def cleanup_validated_raw_video(
     from endoreg_db.services.video_storage.workflow import raw_cleanup_blockers
 
     video = VideoFile.objects.select_related("state").get(pk=video_id)
-    if video.state is None or not video.state.anonymization_validated:
-        return ("anonymization_not_validated",)
+    if blocker := _raw_validation_blocker(video):
+        return (blocker,)
     if (
         not video.raw_file.name
         and not video.raw_streamable_relative_path
@@ -62,8 +76,13 @@ def cleanup_validated_raw_video(
     try:
         with video_artifact_mutation(video_id=video_id), transaction.atomic():
             video = VideoFile.objects.select_for_update().get(pk=video_id)
-            if video.state is None or not video.state.anonymization_validated:
-                return ("anonymization_not_validated",)
+            state = video.state
+            if state is not None:
+                state.refresh_from_db(
+                    from_queryset=VideoState.objects.select_for_update()
+                )
+            if blocker := _raw_validation_blocker(video):
+                return (blocker,)
             blockers = tuple(raw_cleanup_blockers(video))
             if blockers or not apply:
                 return blockers

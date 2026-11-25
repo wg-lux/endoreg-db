@@ -27,7 +27,7 @@ from endoreg_db.services.video_files.direct_import import VideoImportService
 from endoreg_db.services.video_files.reimport_orchestrator import (
     VideoReimportOrchestrator,
 )
-from endoreg_db.views.reimport_helpers import request_payload_dict
+from endoreg_db.views.helpers.reimport_helpers import request_payload_dict
 
 logger = logging.getLogger(__name__)
 

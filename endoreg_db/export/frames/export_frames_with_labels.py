@@ -60,7 +60,7 @@ from endoreg_db.services.video_files.frame_coordinates import (
     artifact_frame_timeline,
     validate_frame_timeline_coordinate,
 )
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     validate_presentation_timestamp_seconds,
     validate_stream_time_base,
 )
@@ -73,8 +73,8 @@ from endoreg_db.services.streaming.seekable_media_input import (
     SeekableFieldFile,
     serve_seekable_media_input,
 )
-from endoreg_db.services.video_files import get_video_frame_dir_path
-from endoreg_db.utils import ensure_local_file
+from endoreg_db.services.video_files.io import get_video_frame_dir_path
+from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )

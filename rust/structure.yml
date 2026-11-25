@@ -15,6 +15,12 @@ entrypoints:
   file: endoreg_rust_backend/src/state_vocabulary.rs
   purpose: Export every native vocabulary for fail-closed Python mirror verification.
 files:
+- file: endoreg_rust_backend/src/media_decisions.rs
+  role: Validation admission, direct identifier erasure fields, raw video purge evidence and outbound processed-media integrity decisions.
+- file: endoreg_rust_backend/src/clinical_workflow.rs
+  role: Decide clinical privacy, annotation and release transitions, project persisted facts and validate evidence.
+- file: endoreg_rust_backend/src/status_transition.rs
+  role: Native lifecycle status tables, including upload cancellation and expired-lease recovery, report import and model training; status_transition_v2 capability.
 - file: endoreg_rust_backend/src/hub_transfer_state.rs
   role: Authoritative hub status, failure and transfer-event tokens; exhaustive transition table where duplicate, late or superseded events are explicit no-ops, completion is absorbing and non-retryable failures are kept; retry classification. Callers hold database row locks.
 - file: endoreg_rust_backend/Cargo.toml
@@ -35,10 +41,8 @@ files:
   role: Service and bounded-operation lifecycle reducers with idempotent redelivery.
 - file: endoreg_rust_backend/src/hls_state.rs
   role: Streaming playlist reservation, publication and stale-attempt reconciliation decisions; exhaustive artifact status transition table.
-- file: endoreg_rust_backend/src/status_transition.rs
-  role: Per-machine status transition tables behind decide_status_transition (status_transition_v1) with shared finality and reachability tests.
 - file: endoreg_rust_backend/src/state_enums.rs
-  role: Segment and frame annotation status derivation; frame task-mode and sampling tokens reject unknown input.
+  role: Segment rebuild history and flag precedence, frame annotation status derivation; frame task-mode and sampling tokens reject unknown input.
 - file: endoreg_rust_backend/src/encryption_state.rs
   role: LXENC magic probe classifying regular files as encrypted or plaintext.
 - file: endoreg_rust_backend/src/encrypted_format.rs

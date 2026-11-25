@@ -33,7 +33,7 @@ files:
 - file: types.py
   role: Exports parse_report_pdf_artifact_kind.
 - file: validation.py
-  role: Validates report metadata with atomic checked correction of inferred clinical links.
+  role: Report approval through the clinical reducer and post-commit, generation-checked raw PDF cleanup.
 dependencies:
   internal:
   - endoreg_db/services/cases

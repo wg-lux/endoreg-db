@@ -44,7 +44,7 @@ files:
 - file: commands/exempt_legacy_identity_verification.py
   role: Dry-run-first recording of the legacy identity exemption for validated videos before a cutoff.
 - file: reference_catalog_command.py
-  role: Shared command adapter using central application package settings and requiring explicit module/version for clinical loaders; optional packages pin their own versions.
+  role: Shared reconciliation options and JSON/YAML plan output; compatibility loaders use central package settings and require explicit clinical module/version.
 - file: command_errors.py
   role: Typed command error translation.
 dependencies:

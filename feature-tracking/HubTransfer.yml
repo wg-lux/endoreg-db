@@ -1046,7 +1046,7 @@ definition_of_done:
     status: in_progress
     evidence:
     - kind: document
-      reference: docs/hub_transfer_typed_contract.md; docs/hub_transfer_typed_contract.en.md
+      reference: docs/hub_transfer_typed_contract.md
     - kind: runbook
       reference: docs/hub_ingest_operations.md
     - kind: runbook

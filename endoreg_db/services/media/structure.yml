@@ -20,6 +20,8 @@ entrypoints:
   file: export_ready.py
   purpose: Approve the current processed generation after center, state, clinical lifecycle, hash and audit checks.
 files:
+- file: state.py
+  role: Row-locked explicit video/report evidence writes and domain mutation rules using exact one-use model permits; lifecycle statuses remain native.
 - file: frame_intervals.py
   role: Shared sorted, adjacency-preserving half-open frame interval merge for media processing and training selection.
 - file: __init__.py

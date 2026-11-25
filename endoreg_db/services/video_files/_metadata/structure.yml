@@ -27,12 +27,13 @@ files:
 - file: initialize_video_specs.py
   role: 'Internal helpers: _ObservedVideoSpecs, _select_metadata_field_file, _select_metadata_source.'
 - file: text_meta.py
-  role: 'Internal helpers: _VideoTextMetaState, _update_text_metadata.'
+  role: Updates text metadata and persists evidence through the guarded media-state service.
 - file: video_meta.py
   role: 'Internal helpers: _get_import_processor, _get_import_context_names, _populate_video_fields_from_meta.'
 dependencies:
   internal:
   - endoreg_db/models
+  - endoreg_db/services/media
   - endoreg_db/services/patient_identity
   - endoreg_db/services/video_storage
   - endoreg_db/services/video_files

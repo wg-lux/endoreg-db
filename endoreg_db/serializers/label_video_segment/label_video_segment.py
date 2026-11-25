@@ -28,7 +28,7 @@ from endoreg_db.services.video_files.timeline_index import (
     VideoTimelineIndex,
     VideoTimelineIndexCache,
 )
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.utils.media_urls import (
     build_absolute_media_url,
     build_video_frame_stream_path,

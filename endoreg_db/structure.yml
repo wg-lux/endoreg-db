@@ -8,6 +8,10 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0124_reconcile_study_import_receipts.py
+  role: Retire ambiguous historical receipt links while preserving clinical data.
+- file: migrations/0123_guarded_state_managers.py
+  role: Metadata-only default and base manager selection for guarded upload and media state persistence.
 - file: migrations/0122_outbound_transfer_generation.py
   role: Immutable outbound processed-generation and source-node snapshots with receipt-only legacy backfill.
 - file: migrations/0121_electrosurgical_activation_log.py
@@ -77,7 +81,7 @@ files:
 entrypoints:
 - name: EndoregDbConfig
   file: apps.py
-  purpose: Application startup registration.
+  purpose: Application startup registration, including explicit dataset membership admission.
 - name: urlpatterns
   file: urls/__init__.py
   purpose: Application API routes.

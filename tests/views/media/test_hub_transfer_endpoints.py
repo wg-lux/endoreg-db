@@ -1568,6 +1568,8 @@ class HubTransferEndpointTests(TestCase):
 
         assert first.status_code == 201, first.content
         assert second.status_code == 409, second.content
+        assert second.json()["rejection_code"] == "transfer_registration_conflict"
+        assert second.json()["rejection_phase"] == "registration"
         assert "different transfer payload" in str(second.json())
         video = VideoFile.objects.get(raw_video_hash="hash-changed-replay")
         assert video.fps == 25.0
@@ -1867,6 +1869,8 @@ class HubTransferEndpointTests(TestCase):
                     url, data=upload_data, headers=self._auth_headers()
                 )
                 assert deferred.status_code == 409, deferred.content
+                assert deferred.json()["rejection_code"] == "transfer_operation_busy"
+                assert deferred.json()["rejection_phase"] == "media_attachment"
                 job = TransferJob.objects.get(transfer_key=payload["transfer_key"])
                 assert job.transfer_status == TransferJob.TransferStatus.AWAITING_MEDIA
                 assert not job.operation_candidate_name
@@ -2390,6 +2394,8 @@ class HubTransferEndpointTests(TestCase):
         )
         rejected = self._secure_get(verification_url, headers=self._auth_headers())
         assert rejected.status_code == 409
+        assert rejected.json()["rejection_code"] == "received_media_verification_failed"
+        assert rejected.json()["rejection_phase"] == "verification"
         assert "media_verified" not in rejected.json()
 
     @override_settings(ENDOREG_DEPLOYMENT_ROLE="central_hub")
@@ -2501,6 +2507,11 @@ class HubTransferEndpointTests(TestCase):
             )
 
         assert conflict_response.status_code == 409, conflict_response.content
+        assert (
+            conflict_response.json()["rejection_code"]
+            == "media_envelope_replay_conflict"
+        )
+        assert conflict_response.json()["rejection_phase"] == "media_attachment"
         assert conflict_response.json()["transfer_status"] == "inconsistent"
         assert conflict_response.json()["processing_decision"] == "mark_inconsistent"
         video.refresh_from_db()

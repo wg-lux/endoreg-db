@@ -24,17 +24,8 @@ accepted_findings:
     path: endoreg_db/services/video_files/_ai.py
     message: "unused variable 'high_quality'"
   - <<: *protocol_signature
-    path: endoreg_db/helpers/typing.py
-    message: "unused variable 'objs'"
-  - <<: *protocol_signature
-    path: endoreg_db/models/media/pdf/report_reader/report_reader_config.py
-    message: "unused variable 'objs'"
-  - <<: *protocol_signature
     path: endoreg_db/utils/pydantic_models/db_config.py
     message: "unused variable 'ask_override'"
-  - <<: *protocol_signature
-    path: endoreg_db/views/anonymization/validate.py
-    message: "unused variable 'objs'"
   - <<: *protocol_signature
     path: endoreg_db/views/anonymization/validate.py
     message: "unused variable 'through_defaults'"
@@ -127,5 +118,9 @@ accepted_findings:
   - <<: *typing_only
     path: endoreg_db/services/raw_pdf_files/metadata.py
     message: "unused import 'CenterModel'"
+  - <<: *typing_only
+    path: endoreg_db/services/video_files/io.py
+    message: "unused import '_IndexableCollection'"
+    reason: Django's stub-only collection protocol is referenced in the quoted Collector.collect cast in delete_video_file; removing it breaks static typing, while a runtime import is unavailable.
 
 deletion_candidates: []

@@ -16,10 +16,8 @@ from endoreg_db.services.hub.media_integrity import (
     require_reusable_video_raw_source,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
-from endoreg_db.services.video_files import (
-    get_video_by_content_hash,
-    get_video_import_processor,
-)
+from endoreg_db.services.video_files.metadata import get_video_import_processor
+from endoreg_db.services.video_files.queries import get_video_by_content_hash
 
 logger = logging.getLogger(__name__)
 

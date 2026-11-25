@@ -2,14 +2,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import InformationSource
-
-
-class FindingInterventionManager(models.Manager["FindingIntervention"]):
-    def get_by_natural_key(self, name: str) -> "FindingIntervention":
-        return self.get(name=name)
 
 
 class FindingIntervention(models.Model):
@@ -33,7 +29,7 @@ class FindingIntervention(models.Model):
         related_name="finding_interventions",
         blank=True,
     )
-    objects = FindingInterventionManager()
+    objects = NameNaturalKeyManager["FindingIntervention"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import FindingInterventionType
@@ -45,11 +41,6 @@ class FindingIntervention(models.Model):
         return str(self.name)
 
 
-class FindingInterventionTypeManager(models.Manager["FindingInterventionType"]):
-    def get_by_natural_key(self, name: str) -> "FindingInterventionType":
-        return self.get(name=name)
-
-
 class FindingInterventionType(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
     # German display name; NULL when the catalogue carries none.
@@ -58,7 +49,7 @@ class FindingInterventionType(models.Model):
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = FindingInterventionTypeManager()
+    objects = NameNaturalKeyManager["FindingInterventionType"]()
 
     if TYPE_CHECKING:
 

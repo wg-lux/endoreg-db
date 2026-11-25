@@ -60,7 +60,7 @@ readiness checklist; assessments remain in the feature YAML linked above.
 | --- | --- | --- |
 | Import, metadata probing and frame-row initialization | Observe decoded PTS, integer ticks, time base, order and count; initialize rows from that sequence. Never synthesize clinical coordinates from average FPS. | `services/video_storage/canonical_timelines.py`, `services/video_files/frame_coordinates.py`, `services/video_files/_frames/_initialize_frames.py` |
 | Missing-timeline recovery | Decode the active canonical artifact; preserve existing annotated identities and reject partial/conflicting coordinates. Count reconciliation is restricted by the recovery contract. | `services/video_files/timestamp_backfill.py`, `services/video_files/timeline_backfill.py` |
-| Frame number ↔ time and bulk boundary lookup | Resolve against persisted PTS, including origin, lower-frame nearest ties and the exclusive terminal boundary. The terminal boundary is not a display frame. | `services/video_files/timeline.py`, `_time.py`, `timeline_index.py` |
+| Frame number ↔ time and bulk boundary lookup | Resolve against persisted PTS, including origin, lower-frame nearest ties and the exclusive terminal boundary. The terminal boundary is not a display frame. | `utils/video/timeline.py`, `services/video_files/_time.py`, `timeline_index.py` |
 | Previous/next frame, repeated steps and N-frame skipping | Count destination frames, then use their PTS. Refill bounded neighborhoods when needed; never extrapolate outside them from FPS. | `views/video/video_timeline.py`; `lx-annotate: frontend/src/stores/videoStore.ts`, `frontend/src/utils/segmentTimeline.ts`, `frontend/src/components/VideoExamination/Timeline.vue` |
 | Playback seeks, time skips and jumpmarks | Preserve the mapping between the player's clock and canonical media PTS, including nonzero origins and HLS offsets. Seek a returned frame timestamp for exact-frame navigation. | `lx-annotate: frontend/src/components/VideoExamination/VideoExaminationAnnotation.vue`, `Timeline.vue`, `segmentNavigation.ts` |
 | Segment create, resize, drag, copy/paste, bulk edit and validation | Submit timestamp boundaries and adopt canonical backend responses. Preserve half-open stored frame ranges `[start, end)`; export the last included frame as `end - 1`. | `services/annotations/segments_bulk_mutation.py`, `segment_sync.py`, `serializers/label_video_segment/label_video_segment.py`; `lx-annotate: frontend/src/utils/segmentTimeline.ts`, `frontend/src/stores/videoStore.ts` |
@@ -107,7 +107,7 @@ annotation-preserving reconstruction without a timestamp/ancestry contract.
 
 `utils/video/timeline.py` owns exact rational tick conversion,
 microsecond serialization consistency, display versus terminal bounds and
-observed adjacent-frame durations; `services/video_files/timeline.py` preserves
+observed adjacent-frame durations; `utils/video/timeline.py` preserves
 the existing service imports without duplicating those rules. `_time.py` owns validated source evidence,
 read-only optional lookup and canonical mapping construction; absent-coordinate
 recovery is reserved for persisted videos with an available canonical artifact.
@@ -128,7 +128,7 @@ Paths in this table are relative to `endoreg_db/`.
 
 | Owner | Responsibility |
 | --- | --- |
-| `services/video_files/timeline.py` | Resolve frame/time boundaries, preferring persisted PTS; nearest persisted ties select the lower frame number, while constant-rate fallback uses half-up rounding. Terminal boundaries use timeline origin plus duration. |
+| `utils/video/timeline.py` | Resolve frame/time boundaries, preferring persisted PTS; nearest persisted ties select the lower frame number, while constant-rate fallback uses half-up rounding. Terminal boundaries use timeline origin plus duration. |
 | `services/video_files/_time.py`, `services/video_files/metadata.py` | Load persisted neighboring coordinates and delegate to the shared resolver. |
 | `services/video_files/timeline_index.py` | Resolve many boundaries of one video generation per request through the native `TimelineIndex`, which applies the same rules after one metadata validation and one frame query. Segment views and serializers use it. |
 | `services/video_files/segment_coordinates.py` | Bind segment frames to exact integer ticks on the processed generation and, with a verified provenance bundle, to original-recording frames composed natively from `source_frame_indices`. Unresolved receipts report an explicit unresolved mapping. |

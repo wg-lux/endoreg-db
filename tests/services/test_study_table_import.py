@@ -242,6 +242,7 @@ def test_atomic_import_replay_and_conflict(
     owner, center, mapping, source = import_context
     result = import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert result.created_count == 1
+    assert result.receipt_ids == [StudyTableImport.objects.get().pk]
     examination = PatientExamination.objects.get(pk=result.patient_examination_ids[0])
     assert examination.patient.is_real_person is False
     assert len(examination.patient.patient_hash or "") == 64
@@ -250,6 +251,7 @@ def test_atomic_import_replay_and_conflict(
     meta_count = SensitiveMeta.objects.count()
     replay = import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert replay.replayed_count == 1
+    assert replay.receipt_ids == result.receipt_ids
     assert StudyTableImport.objects.count() == receipt_count
     assert SensitiveMeta.objects.count() == meta_count
     assert PatientFinding.objects.filter(patient_examination=examination).count() == 1
@@ -259,6 +261,31 @@ def test_atomic_import_replay_and_conflict(
     with pytest.raises(TableExtractionError):
         import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert StudyTableImport.objects.count() == receipt_count
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("legacy", [False, True])
+def test_replay_checks_gender_including_historical_receipts(
+    import_context: tuple[User, Center, Path, Path],
+    legacy: bool,
+) -> None:
+    owner, center, mapping, source = import_context
+    Gender.objects.get_or_create(name="male")
+    first = import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    receipt = StudyTableImport.objects.get()
+    assert receipt.payload["gender"] == "female"
+    if legacy:
+        historical = dict(receipt.payload)
+        del historical["gender"]
+        StudyTableImport.objects.filter(pk=receipt.pk).update(payload=historical)
+    replay = import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    assert replay.receipt_ids == first.receipt_ids
+    atomic_write_file(
+        destination=source, content=[(HEADER + ROW.replace("female", "male")).encode()]
+    )
+    with pytest.raises(TableExtractionError, match="reimport_conflict"):
+        import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    assert StudyTableImport.objects.count() == 1
 
 
 @pytest.mark.django_db
@@ -273,6 +300,7 @@ def test_dry_run_and_late_failure_rollback(
     )
     result = import_table(mapping, source, owner=owner, center=center)
     assert result.dry_run and not result.patient_examination_ids
+    assert result.receipt_ids == []
     assert (
         Patient.objects.count(),
         SensitiveMeta.objects.count(),

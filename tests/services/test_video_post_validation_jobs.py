@@ -35,6 +35,7 @@ import endoreg_db.services.video_files.segment_blackening as blackening
 from endoreg_db.services.annotations.segment_validation_workflow import (
     resolve_segment_annotation_status,
 )
+from endoreg_db.services.media.state import update_media_state
 
 
 def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
@@ -67,10 +68,14 @@ def _existing_extracted_frame(video: VideoFile) -> Frame:
         is_extracted=True,
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(update_fields=["frames_initialized", "frame_count", "frames_extracted"])
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
+    )
     return frame
 
 
@@ -235,16 +240,13 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
     state = video.get_or_create_state()
-    state.segment_annotations_created = True
-    state.segment_annotations_validated = True
-    state.outside_segments_removed = True
-    state.save(
-        update_fields=[
-            "segment_annotations_created",
-            "segment_annotations_validated",
-            "outside_segments_removed",
-            "date_modified",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "segment_annotations_created": True,
+            "segment_annotations_validated": True,
+            "outside_segments_removed": True,
+        },
     )
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
@@ -747,9 +749,9 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
                 },
             )
         extracted_state = video_obj.get_or_create_state()
-        extracted_state.frame_count = 2
-        extracted_state.frames_extracted = True
-        extracted_state.save(update_fields=["frame_count", "frames_extracted"])
+        update_media_state(
+            extracted_state, changes={"frame_count": 2, "frames_extracted": True}
+        )
         return True
 
     def fake_capture_frame(_video: VideoFile, frame_number: int) -> FrameSample:

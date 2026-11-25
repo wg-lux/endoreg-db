@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, cast, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 def get_prediction_information_source() -> "InformationSource":
@@ -135,22 +136,8 @@ class InformationSource(models.Model):
         return str(self.name)
 
 
-class InformationSourceTypeManager(models.Manager["InformationSourceType"]):
-    def get_by_natural_key(self, name: str) -> "InformationSourceType":
-        """
-        Retrieve an instance of the model by its natural key, which is the 'name' field.
-
-        Parameters:
-            name (str): The value of the 'name' field to look up.
-
-        Returns:
-            The model instance with the specified name.
-        """
-        return self.get(name=name)
-
-
 class InformationSourceType(models.Model):
-    objects = InformationSourceTypeManager()
+    objects = NameNaturalKeyManager["InformationSourceType"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
     # German display name; NULL when the catalogue carries none.

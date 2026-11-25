@@ -333,8 +333,16 @@ definition_of_done:
         failures preserve authoritative worker results; locked post-dispatch merge preserves provenance
         and refuses changed epochs for processing/error/completed states. Topology stub now records actual
         PDF digest. Full Pyright 0 errors, 2 existing warnings.'
-    assessed_by: codex-flow-audit-20261124
-    assessed_at: '2026-11-24T11:29:38.651335Z'
+    - kind: test
+      reference: tests/services/test_watcher_storage_import.py::test_matching_watcher_key_reuses_job_with_one_locked_lookup
+    - kind: test
+      reference: tests/services/test_preanonymized_watcher_ingest.py::test_pdf_publication_hashes_each_artifact_once
+    note: 'Watcher-Regressionslauf mit beiden Quellständen: 142 Backendtests und 4 Untertests bestanden.
+      Gleicher aktiver Schlüssel belegt eine Sperrabfrage. Voranonymisierte PDF-Veröffentlichung prüft
+      Quelle und Ziel je einmal. Gleich große Ersatzdatei mit identischer mtime bleibt zur erneuten Aufnahme
+      erhalten.'
+    assessed_by: codex-state-6c49
+    assessed_at: '2026-11-25T07:35:56.258643Z'
 - id: pseudonym_identity_resolution
   category: data_integrity
   title: Import pseudonym resolution rejects ambiguous or conflicting identities
@@ -1223,9 +1231,8 @@ definition_of_done:
         37 transaktionale Vorher-/Nachher-Belege bestätigen unveränderte klinische Daten und Master; aktiver
         Import 58 unberührt. Rohdateibereinigung nach Validierung ist kein Verlust; selbst gesetzte Warnung
         für gc-10 Video 12 zurückgenommen. Abschlussprüfung aller 38 Videos: mindestens eine Mediendatei
-        vorhanden. Details und verschlüsselte hostlokale Belegpfade: docs/video_datenerhalt_gc02_gc10_20260923.md.
-        Treiberkonflikt, unvollständige Ausgaben und nicht belegbare historische Stream-Zuordnungen bleiben
-        offen; keine allgemeine Produktionsfreigabe.'
+        vorhanden. Treiberkonflikt, unvollständige Ausgaben und nicht belegbare historische Stream-Zuordnungen
+        bleiben offen; keine allgemeine Produktionsfreigabe.'
     - kind: code
       reference: endoreg_db/services/reconciliation.py::ReconciliationService.relink_broken_video_raw_files;
         endoreg_db/serializers/misc/file_overview.py::current_overview_hls_artifacts
@@ -1236,8 +1243,7 @@ definition_of_done:
         0 Fehler/0 Warnungen; Ruff check und format bestanden. Gesamter Pyright meldete zusätzlich einen
         fremden Report-Serializer-Typfehler; keine saubere Gesamtprüfung behauptet. Testfälle decken klinisch
         validierte Rohbereinigung, Validierung/Quellwechsel während Kandidatensuche und sichtbare echte
-        Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Dokumentation: docs/video_datenerhalt_gc02_gc10_20260923.md.
-        Kein Rollout.'
+        Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Kein Rollout.'
     - kind: test
       reference: '2026-10-15: lease unit/process, cancellation, monitoring, state-machine and ingest dispatch
         suites79 passed; sole existing fake-object test corrected and targeted rerun1 passed, all80 selected

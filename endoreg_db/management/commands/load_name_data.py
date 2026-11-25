@@ -4,7 +4,7 @@ import os
 
 from django.core.management.base import BaseCommand, CommandParser
 
-from endoreg_db.utils import collect_center_names  # Import your function here
+from endoreg_db.utils.parse_and_generate_yaml import collect_center_names
 
 
 class Command(BaseCommand):
