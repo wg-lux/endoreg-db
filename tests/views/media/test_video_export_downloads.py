@@ -34,6 +34,7 @@ from endoreg_db.services.media.operation_gate import video_artifact_mutation
 from endoreg_db.services.media.export_downloads import leased_video_bytes
 from endoreg_db.services.media.export_policy import assert_video_media_export_ready
 from endoreg_db.services.media.csv_export import csv_lines
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
 from endoreg_db.utils.encryption.encrypted import EncryptedStorage
 from endoreg_db.utils.hashs import get_file_hash
@@ -58,6 +59,14 @@ class VideoExportDownloadTests(TestCase):
     center: Center
 
     def setUp(self) -> None:
+        # Transport fixtures intentionally contain opaque bytes, not an encoded video.
+        # Real decoded recovery is covered by test_video_timestamp_backfill and the
+        # site's export API integration test.
+        recovery = patch(
+            "endoreg_db.services.video_files.timestamp_backfill.prepare_video_timestamps_for_export"
+        )
+        recovery.start()
+        self.addCleanup(recovery.stop)
         suffix = uuid4().hex
         self.center = Center.objects.create(name=f"download-{suffix}")
         self.user = User.objects.create_user(username=f"download-{suffix}")
@@ -97,9 +106,13 @@ class VideoExportDownloadTests(TestCase):
         self.video.processed_video_hash = get_file_hash(self.video.processed_file)
         self.video.save(update_fields=["processed_video_hash"])
         self.state.refresh_from_db()
-        self.state.anonymization_validated = True
-        self.state.processed_file_sha256 = self.video.processed_video_hash
-        self.state.save()
+        update_media_state(
+            self.state,
+            changes={
+                "anonymization_validated": True,
+                "processed_file_sha256": self.video.processed_video_hash,
+            },
+        )
         self.video.state = self.state
         self.frame = Frame.objects.create(
             video=self.video,
@@ -177,15 +190,14 @@ class VideoExportDownloadTests(TestCase):
         assert self.client.get(self.url("annotations.csv")).status_code == 409
 
     def test_unvalidated_failed_and_missing_processed_media_are_blocked(self) -> None:
-        self.state.anonymization_validated = False
-        self.state.save()
+        update_media_state(self.state, changes={"anonymization_validated": False})
         assert self.client.get(self.url()).status_code == 409
-        self.state.anonymization_validated = True
-        self.state.processing_error = True
-        self.state.save()
+        update_media_state(
+            self.state,
+            changes={"anonymization_validated": True, "processing_error": True},
+        )
         assert self.client.get(self.url()).status_code == 409
-        self.state.processing_error = False
-        self.state.save()
+        update_media_state(self.state, changes={"processing_error": False})
         VideoFile.objects.filter(pk=self.video.pk).update(processed_file="")
         assert self.client.get(self.url()).status_code == 409
 
@@ -237,8 +249,7 @@ class VideoExportDownloadTests(TestCase):
         ]
 
     def test_readiness_proof_must_belong_to_the_processed_generation(self) -> None:
-        self.state.processed_file_sha256 = "0" * 64
-        self.state.save(update_fields=["processed_file_sha256"])
+        update_media_state(self.state, changes={"processed_file_sha256": "0" * 64})
         assert self.client.get(self.url("annotations.csv")).status_code == 409
 
     def test_missing_state_is_rejected_without_creating_one(self) -> None:

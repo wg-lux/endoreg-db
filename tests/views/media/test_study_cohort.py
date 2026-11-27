@@ -28,6 +28,7 @@ from endoreg_db.services.studies.cohort import (
     StudyCohortFilters,
     build_study_cohort_payload,
 )
+from tests.helpers.media_states import create_media_state
 
 
 PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
@@ -64,7 +65,8 @@ class StudyCohortPreviewViewTests(TestCase):
         raw_text: str = "SENTINEL RAW PHI",
     ) -> RawPdfFile:
         resolved_examination = patient_examination or self.patient_examination
-        state = RawPdfState.objects.create(
+        state = create_media_state(
+            RawPdfState,
             anonymized=True,
             anonymization_validated=True,
             sensitive_meta_processed=True,
@@ -95,7 +97,8 @@ class StudyCohortPreviewViewTests(TestCase):
         self, *, patient_examination: PatientExamination | None = None
     ) -> VideoFile:
         resolved_examination = patient_examination or self.patient_examination
-        state = VideoState.objects.create(
+        state = create_media_state(
+            VideoState,
             anonymized=True,
             anonymization_validated=True,
             sensitive_meta_processed=True,
@@ -178,6 +181,7 @@ class StudyCohortPreviewViewTests(TestCase):
                         "instance_id": str(patient_finding.instance_id),
                         "finding_id": finding.pk,
                         "finding_name": finding.name,
+                        "finding_name_de": None,
                         "classifications": [],
                         "interventions": [],
                     }
@@ -282,6 +286,7 @@ class StudyCohortPreviewViewTests(TestCase):
                 "instance_id": str(follow_up_finding.instance_id),
                 "finding_id": finding.pk,
                 "finding_name": finding.name,
+                "finding_name_de": None,
                 "classifications": [],
                 "interventions": [],
             }
@@ -297,7 +302,8 @@ class StudyCohortPreviewViewTests(TestCase):
     def test_excludes_real_patients_unvalidated_media_and_missing_integrity_hashes(
         self,
     ) -> None:
-        unvalidated_state = RawPdfState.objects.create(
+        unvalidated_state = create_media_state(
+            RawPdfState,
             anonymized=True,
             anonymization_validated=False,
             processed_file_sha256=hashlib.sha256(PDF_BYTES).hexdigest(),
@@ -314,7 +320,8 @@ class StudyCohortPreviewViewTests(TestCase):
             examination=self.patient_examination,
             center=self.center,
         )
-        missing_hash_state = VideoState.objects.create(
+        missing_hash_state = create_media_state(
+            VideoState,
             anonymized=True,
             anonymization_validated=True,
             processed_file_sha256="",
@@ -346,7 +353,8 @@ class StudyCohortPreviewViewTests(TestCase):
             examination=self.examination,
             hash=f"real-case-{uuid4().hex}",
         )
-        state = VideoState.objects.create(
+        state = create_media_state(
+            VideoState,
             anonymized=True,
             anonymization_validated=True,
             processed_file_sha256=hashlib.sha256(VIDEO_BYTES).hexdigest(),

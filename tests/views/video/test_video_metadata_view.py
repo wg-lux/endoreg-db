@@ -18,6 +18,7 @@ from endoreg_db.models import (
 from endoreg_db.models.state.video import VideoState
 from endoreg_db.services.video_files.segments import get_video_outside_segments
 from endoreg_db.views.video.video_metadata import VideoMetadataStatsView
+from tests.helpers.media_states import create_media_state
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ def test_video_metadata_view_returns_pydantic_validated_payload(
     metadata_center: Center,
 ) -> None:
     factory = APIRequestFactory()
-    state = VideoState.objects.create(anonymized=True, was_created=False)
+    state = create_media_state(VideoState, anonymized=True, was_created=False)
     video = VideoFile.objects.create(
         center=metadata_center,
         state=state,

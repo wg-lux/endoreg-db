@@ -9,7 +9,6 @@ Provides RESTful endpoints for video segment management:
 """
 
 import logging
-import os
 import uuid
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
@@ -38,9 +37,6 @@ from lx_dtypes.models.contracts.video_segments import (
     validate_segment_validation_status_payload,
 )
 from endoreg_db.models.aidataset.aidataset import AIDataSet
-from endoreg_db.models.label.annotation.image_classification import (
-    ImageClassificationAnnotation,
-)
 from endoreg_db.models.label.label import Label
 from endoreg_db.models.label.label import LabelManager
 from endoreg_db.models.label.label_video_segment.label_video_segment import (
@@ -49,6 +45,7 @@ from endoreg_db.models.label.label_video_segment.label_video_segment import (
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services.annotations.segment_annotations import (
+    segment_annotation_integrity_errors,
     ensure_prediction_segment_annotations,
     ensure_segment_annotations,
 )
@@ -85,7 +82,7 @@ from endoreg_db.services.jobs.video_fps_normalization_jobs import (
     dispatch_video_fps_normalization,
     normalization_status,
 )
-from endoreg_db.services.video_files import get_or_create_video_state
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.services.video_files.timeline_index import VideoTimelineIndexCache
 from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
 from endoreg_db.serializers.label_video_segment import (
@@ -205,10 +202,6 @@ def _segment_pk(segment: LabelVideoSegment) -> int:
 
 def _segment_label(segment: LabelVideoSegment) -> Label | None:
     return cast(Label | None, cast(Any, segment).label)
-
-
-def _segment_source(segment: LabelVideoSegment) -> InformationSource | None:
-    return cast(InformationSource | None, cast(Any, segment).source)
 
 
 def _segment_video_file(segment: LabelVideoSegment) -> VideoFile:
@@ -333,135 +326,6 @@ def _resolve_optional_ai_dataset(
     return dataset, None
 
 
-def _normalized_annotator(annotator: str | None) -> str | None:
-    if annotator is None:
-        return None
-    normalized = str(annotator).strip()
-    return normalized or None
-
-
-def _segment_annotation_integrity_errors(
-    segments: list[LabelVideoSegment],
-    *,
-    annotator: str | None,
-) -> list[dict[str, object]]:
-    normalized_annotator = _normalized_annotator(annotator)
-    errors: list[dict[str, object]] = []
-    segment_data: list[
-        tuple[
-            int,
-            Label,
-            InformationSource,
-            int | None,
-            list[tuple[int, int]],
-        ]
-    ] = []
-    all_frame_ids: list[int] = []
-
-    for segment in segments:
-        segment_pk = _segment_pk(segment)
-        label = _segment_label(segment)
-        if label is None:
-            errors.append({"segment_id": segment_pk, "reason": "missing_label"})
-            continue
-        information_source = _segment_source(segment)
-        if information_source is None:
-            errors.append(
-                {"segment_id": segment_pk, "reason": "missing_information_source"}
-            )
-            continue
-        frames = list(segment.get_frames().only("id", "frame_number"))
-        if not frames:
-            errors.append({"segment_id": segment_pk, "reason": "missing_frames"})
-            continue
-        try:
-            model_meta = segment.get_model_meta()
-        except MediaOperationDeferred:
-            raise
-        except Exception:
-            model_meta = None
-
-        frame_pairs = [
-            (int(cast(Any, frame).pk), int(cast(Any, frame).frame_number))
-            for frame in frames
-        ]
-        segment_data.append(
-            (
-                segment_pk,
-                label,
-                information_source,
-                model_meta.pk if model_meta else None,
-                frame_pairs,
-            )
-        )
-        all_frame_ids.extend(frame_id for frame_id, _frame_number in frame_pairs)
-
-    if not segment_data:
-        return errors
-
-    annotations = ImageClassificationAnnotation.objects.filter(
-        frame_id__in=all_frame_ids
-    )
-    if normalized_annotator is not None:
-        annotations = annotations.filter(annotator=normalized_annotator)
-
-    annotation_rows = annotations.values_list(
-        "frame_id",
-        "label_id",
-        "information_source_id",
-        "model_meta_id",
-        "annotator",
-    )
-
-    annotated_keys = {
-        (
-            int(frame_id),
-            int(label_id),
-            int(information_source_id) if information_source_id is not None else None,
-            int(model_meta_id) if model_meta_id is not None else None,
-            _normalized_annotator(cast(str | None, row_annotator)),
-        )
-        for (
-            frame_id,
-            label_id,
-            information_source_id,
-            model_meta_id,
-            row_annotator,
-        ) in annotation_rows
-        if label_id is not None
-    }
-
-    for (
-        segment_pk,
-        label,
-        information_source,
-        model_meta_id,
-        frame_pairs,
-    ) in segment_data:
-        missing_frame_numbers: list[int] = [
-            frame_number
-            for frame_id, frame_number in frame_pairs
-            if (
-                frame_id,
-                int(label.pk),
-                int(information_source.pk),
-                model_meta_id,
-                normalized_annotator,
-            )
-            not in annotated_keys
-        ]
-        if missing_frame_numbers:
-            errors.append(
-                {
-                    "segment_id": segment_pk,
-                    "reason": "missing_frame_annotations",
-                    "missing_frame_numbers": missing_frame_numbers[:10],
-                    "missing_count": len(missing_frame_numbers),
-                }
-            )
-    return errors
-
-
 def _dispatch_segment_annotation_expansion(
     *,
     video_id: int,
@@ -479,9 +343,7 @@ def _dispatch_segment_annotation_expansion(
         "information_source_name": information_source_name,
         "annotator": annotator,
     }
-    if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)) or (
-        "PYTEST_CURRENT_TEST" in os.environ
-    ):
+    if bool(getattr(settings, "CELERY_TASK_ALWAYS_EAGER", False)):
         result = run_segment_annotation_expansion_task.apply(kwargs=kwargs)
         return str(result.id), True
     kwargs["dispatch_post_validation_rebuild"] = bool(dispatch_post_validation_rebuild)
@@ -1797,7 +1659,7 @@ def _postprocess_bulk_validation(
             response_status=status.HTTP_202_ACCEPTED,
             annotation_task_id=annotation_task_id,
         )
-    annotation_errors = _segment_annotation_integrity_errors(
+    annotation_errors = segment_annotation_integrity_errors(
         segments,
         annotator=annotator,
     )

@@ -11,7 +11,7 @@ from endoreg_db.models import (
     LabelVideoSegment,
     VideoFile,
 )
-from endoreg_db.utils.ai.data_loader_for_model_input import (
+from endoreg_db.utils.ai.multilabel_dataset_builder import (
     build_image_multilabel_dataset_from_db as build_input_dataset,
 )
 from endoreg_db.utils.ai.multilabel_dataset_builder import (

@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass
+from functools import partial
 from datetime import timedelta
 from typing import cast
 
@@ -40,9 +41,7 @@ from endoreg_db.services.media.operation_gate import (
     MediaOperationDeferred,
     defer_if_video_media_busy,
 )
-from endoreg_db.services.video_files import (
-    ensure_local_processed_video_file,
-)
+from endoreg_db.services.video_files.io import ensure_local_processed_video_file
 from endoreg_db.services.video_files.post_validation_blackening import (
     merge_outside_frame_intervals as _merge_outside_frame_intervals,
 )
@@ -141,14 +140,11 @@ def _verify_processed_video_contract(
             sample = _capture_frame(video, frame_number)
             maximum_channel_value = int(sample.rgb_frame.max())
             if maximum_channel_value > tolerance:
-                logger.warning(
+                raise RuntimeError(
                     "Post-validation processed-video outside-frame sample exceeds "
-                    "blackness tolerance; continuing validation for video %s: "
-                    "frame_number=%s maximum_channel_value=%s tolerance=%s",
-                    video.pk,
-                    frame_number,
-                    maximum_channel_value,
-                    tolerance,
+                    f"blackness tolerance for video {video.pk}: "
+                    f"frame_number={frame_number} maximum_channel_value={maximum_channel_value} "
+                    f"tolerance={tolerance}"
                 )
 
         for frame_number in outside_sample_frames[:3]:
@@ -358,6 +354,11 @@ def _run_video_post_validation_rebuild(
                 only_validated=run_config.only_validated,
                 outside_intervals=rebuild_outside_intervals,
                 raise_on_error=True,
+                verify_output=partial(
+                    _verify_processed_video_contract,
+                    only_validated=run_config.only_validated,
+                    outside_intervals=rebuild_outside_intervals,
+                ),
             )
         )
         if not rebuilt:

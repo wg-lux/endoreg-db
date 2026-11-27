@@ -20,6 +20,7 @@ from endoreg_db.schemas.video_storage import (
 )
 from endoreg_db.services.video_storage.workflow import evidence_as_json
 from endoreg_db.views.video.video_timeline import VideoFrameNeighborhoodView
+from endoreg_db.services.media.state import update_media_state
 
 pytestmark = pytest.mark.django_db
 
@@ -183,8 +184,7 @@ def test_centerless_hub_user_can_read_processed_video_timeline() -> None:
         "timeline-anonymized.mp4", ContentFile(b"processed"), save=True
     )
     state = video.get_or_create_state()
-    state.anonymized = True
-    state.save(update_fields=["anonymized"])
+    update_media_state(state, changes={"anonymized": True})
     user = User.objects.create_user(username="centerless-hub-timeline-reader")
     request = APIRequestFactory().get(
         f"/api/media/videos/{video.pk}/timeline/frame-neighborhood/",

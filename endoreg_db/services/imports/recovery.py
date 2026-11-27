@@ -11,7 +11,7 @@ from endoreg_db.models.state.report_import_attempt import ReportImportAttempt
 from endoreg_db.schemas.import_processing import ImportProcessingStack
 from endoreg_db.services.hub.upload_job_state_machine import (
     admit_upload_job_recovery,
-    idle_upload_job_recovery_filter,
+    retained_source_recovery_filter,
     upload_job_recovery_filter,
     mark_upload_job_error,
 )
@@ -28,16 +28,9 @@ logger = logging.getLogger(__name__)
 def recover_persisted_import_stacks(*, limit: int = 100) -> int:
     if limit < 1:
         raise ValueError("limit must be positive")
-    eligible = (
-        UploadJob.objects.filter(
-            idle_upload_job_recovery_filter(),
-            processing_stack__isnull=False,
-            source_center__isnull=False,
-            source_file_persisted=True,
-            overview_dismissed_at__isnull=True,
-        )
-        .exclude(file="")
-        .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+    eligible = UploadJob.objects.filter(
+        retained_source_recovery_filter(),
+        processing_stack__isnull=False,
     )
     from endoreg_db.services.hub.import_monitoring import RETRY_HANDOFF_TIMEOUT_SECONDS
 

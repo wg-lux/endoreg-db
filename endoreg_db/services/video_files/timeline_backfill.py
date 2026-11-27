@@ -19,7 +19,7 @@ from django.db.models import Q
 from pydantic import ValidationError
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.services.video_files.timestamp_backfill import (
     backfill_missing_video_timestamps,
     has_reconciled_video_timeline,
@@ -143,7 +143,11 @@ def classify_video_timeline(
             )
         if has_reconciled_video_timeline(video, payload):
             return VideoTimelineBackfillStatus.READY, None
-    if source is not None and source.timestamp_mapping == "rational_cfr":
+    if (
+        source is not None
+        and source.timestamp_mapping == "rational_cfr"
+        and not video.processed_file
+    ):
         return VideoTimelineBackfillStatus.READY, None
     if not _has_canonical_media(video):
         return (
@@ -163,6 +167,7 @@ def _apply_backfill(
     *,
     processed_ordinals_operator: str | None = None,
     dry_run: bool = False,
+    remap_annotations: bool = False,
 ) -> VideoTimelineBackfillEntry:
     video_id = int(video.pk)
     try:
@@ -170,6 +175,7 @@ def _apply_backfill(
             video,
             processed_ordinals_operator=processed_ordinals_operator,
             dry_run=dry_run,
+            remap_annotations=remap_annotations,
         )
     except VideoTimelineMappingError as exc:
         reason = str(exc)
@@ -208,11 +214,16 @@ def backfill_video_timelines(
     apply: bool,
     video_ids: Iterable[int] | None = None,
     processed_ordinals_operator: str | None = None,
+    remap_annotations: bool = False,
 ) -> VideoTimelineBackfillResult:
     """Classify every selected video and, with ``apply``, recover candidates."""
     from endoreg_db.models.media.video.video_file import VideoFile
 
     selected_ids = list(video_ids) if video_ids is not None else None
+    if remap_annotations and processed_ordinals_operator is None:
+        raise ValueError(
+            "Annotation remapping requires explicit processed ordinal confirmation"
+        )
     if processed_ordinals_operator is not None and not selected_ids:
         raise ValueError("Processed ordinal recovery requires explicit video IDs")
     queryset = VideoFile.objects.order_by("pk")
@@ -227,6 +238,7 @@ def backfill_video_timelines(
         status, blocker = classify_video_timeline(video)
         if (
             status == VideoTimelineBackfillStatus.CANDIDATE
+            or (remap_annotations and status == VideoTimelineBackfillStatus.READY)
             or (
                 processed_ordinals_operator is not None
                 and blocker == VideoTimelineBackfillBlocker.SEGMENTS_WITHOUT_FRAME_ROWS
@@ -237,6 +249,7 @@ def backfill_video_timelines(
                     video,
                     processed_ordinals_operator=processed_ordinals_operator,
                     dry_run=not apply,
+                    remap_annotations=remap_annotations,
                 )
             )
             continue

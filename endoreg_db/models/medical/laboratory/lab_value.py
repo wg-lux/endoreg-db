@@ -6,6 +6,7 @@ from numbers import Real
 from typing import TYPE_CHECKING, cast, Any, Unpack
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 from django.core.exceptions import ValidationError
 from lx_dtypes.models.contracts.lab_value import (
     LabValueNormalRangeBandPayload,
@@ -303,11 +304,6 @@ class CommonLabValues:
     crp: "LabValue"
 
 
-class LabValueManager(models.Manager["LabValue"]):
-    def get_by_natural_key(self, name: str) -> "LabValue":
-        return self.get(name=name)
-
-
 class LabValue(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     # German display name; NULL when the catalogue carries none.
@@ -371,7 +367,7 @@ class LabValue(models.Model):
         default=0.1,
         help_text="Factor for adjusting bounds when generating increased/decreased values, e.g., 0.1 for 10%.",
     )
-    objects = LabValueManager()
+    objects = NameNaturalKeyManager["LabValue"]()
 
     def clean(self) -> None:
         super().clean()

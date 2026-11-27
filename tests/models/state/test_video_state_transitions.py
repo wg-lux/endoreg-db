@@ -7,6 +7,7 @@ from django.utils import timezone
 from typing import cast
 
 from endoreg_db.models.state.video import SHA256_HEX_LENGTH, VideoState
+from tests.helpers.media_states import create_media_state
 
 
 VALID_SHA256 = "a" * SHA256_HEX_LENGTH
@@ -18,7 +19,7 @@ ExpectedError = str
 
 def _assert_rejected_by_database(**state_values: object) -> None:
     with pytest.raises(IntegrityError), transaction.atomic():
-        VideoState.objects.create(**state_values)
+        create_media_state(VideoState, **state_values)
 
 
 def _ready_state_values(**overrides: object) -> dict[str, object]:
@@ -58,7 +59,7 @@ def test_database_rejects_unsafe_video_state_combinations(
 
 @pytest.mark.django_db
 def test_database_accepts_ready_state_with_required_evidence() -> None:
-    state = VideoState.objects.create(**_ready_state_values())
+    state = create_media_state(VideoState, **_ready_state_values())
 
     assert state.ready_for_export is True
 
@@ -79,7 +80,7 @@ def test_mark_ready_for_export_enforces_transition_order(
     state_values: VideoStateValues,
     expected_error: ExpectedError,
 ) -> None:
-    state = VideoState.objects.create(**state_values)
+    state = create_media_state(VideoState, **state_values)
 
     with pytest.raises(ValueError, match=expected_error):
         state.mark_ready_for_export(
@@ -97,7 +98,8 @@ def test_mark_ready_for_export_enforces_transition_order(
 
 @pytest.mark.django_db
 def test_processing_error_remains_terminal_and_clears_in_progress_state() -> None:
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         anonymization_validated=True,
         outside_segments_removed=True,
         segment_annotations_validated=True,
@@ -111,8 +113,6 @@ def test_processing_error_remains_terminal_and_clears_in_progress_state() -> Non
     assert state.processing_started is False
     assert state.ready_for_export is False
     with pytest.raises(ValueError, match="failed/lost"):
-        state.mark_frames_extracted()
-    with pytest.raises(ValueError, match="failed/lost"):
         state.mark_ready_for_export(
             processed_file_sha256=VALID_SHA256,
             ready_for_export_by="validator",
@@ -121,7 +121,8 @@ def test_processing_error_remains_terminal_and_clears_in_progress_state() -> Non
 
 @pytest.mark.django_db
 def test_mark_ready_for_export_normalizes_required_evidence() -> None:
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         anonymization_validated=True,
         outside_segments_removed=True,
         segment_annotations_validated=True,

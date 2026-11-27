@@ -1,97 +1,41 @@
-import logging
-from collections.abc import Mapping
-from typing import Protocol, cast
-
-from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
-from lx_dtypes.models.contracts.json_types import JsonValue
+from typing import Any
 
 from django.db import transaction
+from django.db.models import QuerySet
 from rest_framework import generics, status
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
 from rest_framework.response import Response
 
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
-
-logger = logging.getLogger(__name__)
-
-
-class _SerializerDataLike(Protocol):
-    @property
-    def data(self) -> Mapping[str, JsonValue]: ...
-
-
-class _SerializerErrorsLike(Protocol):
-    @property
-    def errors(self) -> JsonValue: ...
-
-
-def _serializer_data(serializer: _SerializerDataLike) -> Mapping[str, JsonValue]:
-    return serializer.data
-
-
-def _serializer_errors(serializer: _SerializerErrorsLike) -> JsonValue:
-    return serializer.errors
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.serializers.patient_examination.patient_examination import (
+    PatientExaminationDetailSerializer,
+    PatientExaminationPatchResponseSerializer,
+)
+from .patient_examination_list import scoped_examinations
 
 
 class PatientExaminationDetailView(generics.RetrieveUpdateAPIView[PatientExamination]):
-    """
-    Retrieve and update PatientExamination instances.
-    GET /api/examinations/{id}/
-    PATCH /api/examinations/{id}/
-    """
+    serializer_class = PatientExaminationDetailSerializer
+    permission_classes = [IsAuthenticated, PolicyPermission]
 
-    queryset = PatientExamination.objects.select_related("patient", "examination")
-    serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
+    def get_serializer_class(self):
+        if self.request.method == "PATCH":
+            return PatientExaminationPatchResponseSerializer
+        return PatientExaminationDetailSerializer
 
-    def get(self, request: Request, *args: str, **kwargs: str) -> Response:
-        try:
-            instance = self.get_object()
-            serializer = PatientExaminationSerializer(instance)
-            return Response(_serializer_data(cast(_SerializerDataLike, serializer)))
-        except Exception as e:
-            logger.exception(f"Error retrieving examination: {str(e)}")
-            return Response(
-                {"error": "Failed to retrieve examination"},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            )
+    def get_queryset(self) -> QuerySet[PatientExamination]:
+        return scoped_examinations(self.request)
 
     @transaction.atomic
-    def patch(self, request: Request, *args: str, **kwargs: str) -> Response:
+    def patch(self, request: Request, *args: Any, **kwargs: Any) -> Response:
+        # Preserve the PATCH success and validation envelopes used by existing clients.
         try:
-            instance = self.get_object()
-            serializer = PatientExaminationSerializer(
-                instance,
-                data=request.data,
-                partial=True,
-                context=self.get_serializer_context(),
-            )
-
-            if serializer.is_valid():
-                serializer.save()
-
-                response_data = dict(
-                    _serializer_data(cast(_SerializerDataLike, serializer))
-                )
-                response_data["message"] = "Examination updated successfully"
-
-                logger.info(f"Examination {instance.pk} updated successfully")
-                return Response(response_data, status=status.HTTP_200_OK)
-            else:
-                return Response(
-                    {
-                        "error": "Validation failed",
-                        "details": _serializer_errors(
-                            cast(_SerializerErrorsLike, serializer)
-                        ),
-                    },
-                    status=status.HTTP_400_BAD_REQUEST,
-                )
-
-        except Exception as e:
-            logger.exception(f"Error updating examination: {str(e)}")
+            return self.partial_update(request, *args, **kwargs)
+        except ValidationError as exc:
             return Response(
-                {"error": "Failed to update examination", "message": str(e)},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                {"error": "Validation failed", "details": exc.detail},
+                status=status.HTTP_400_BAD_REQUEST,
             )

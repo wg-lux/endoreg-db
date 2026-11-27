@@ -179,6 +179,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "endoreg_db.views.video.electrical_measurements.VideoElectricalMeasurementsView",
     ),
     (
+        "media/videos/<int:pk>/electrical-activations/<int:activation_log_id>/",
+        "video-electrical-activations",
+        "endoreg_db.views.video.electrical_measurements.VideoElectricalActivationsView",
+    ),
+    (
         "media/videos/<int:pk>/electrical-measurements/<int:measurement_id>/frames/",
         "video-electrical-aligned-frames",
         "endoreg_db.views.video.electrical_measurements.VideoElectricalAlignedFramesView",
@@ -277,6 +282,11 @@ EXPECTED_MEDIA_ROUTE_CONTRACT: list[RouteContract] = [
         "media/videos/labels/list/",
         "get_lvs_list",
         "endoreg_db.views.video.ai.label.label_list",
+    ),
+    (
+        "media/videos/labels/catalog/",
+        "video-label-catalog",
+        "endoreg_db.views.video.ai.label.label_catalog",
     ),
     (
         "media/videos/label-sets/list/",

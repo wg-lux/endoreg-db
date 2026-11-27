@@ -392,7 +392,7 @@ def test_model_training_task_delegates_and_returns_small_result() -> None:
 
 def test_upload_processing_task_delegates_with_normalized_job_id() -> None:
     with patch(
-        "endoreg_db.services.hub.process_upload_job",
+        "endoreg_db.services.hub.ingest.process_upload_job",
         return_value=True,
     ) as processor:
         result = cast(Any, tasks.process_upload_job).run(123)

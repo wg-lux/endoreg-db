@@ -27,7 +27,7 @@ from endoreg_db.services.annotations.segment_validation_workflow import (
 from endoreg_db.serializers.label_video_segment.label_video_segment import (
     LabelVideoSegmentTimelineSerializer,
 )
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from lx_dtypes.models.contracts.video_segment_validation import (
     PostValidationRebuildSummaryData,
 )

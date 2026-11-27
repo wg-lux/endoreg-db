@@ -367,3 +367,31 @@ def test_every_verified_legacy_identity_is_checked(gender_data: None) -> None:
             patient_last_name="Patient",
             patient_dob=timezone.make_aware(datetime(1980, 1, 2)),
         )
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    ("value", "present"),
+    [
+        (None, False),
+        ("\x1c UnKnOwN \x1f", False),
+        (" NULL ", False),
+        ("uNKnown", False),
+        ("UNDEFINED", False),
+        ("0", True),
+        ("text" * 1000, True),
+    ],
+)
+def test_native_erasure_returns_only_field_names_and_cleared_values(
+    value: str | None,
+    present: bool,
+) -> None:
+    from types import SimpleNamespace
+    from endoreg_db import endoreg_rust_backend as native
+
+    record = SimpleNamespace(**dict.fromkeys(DIRECT_IDENTIFIER_FIELDS))
+    record.text = value
+    record.validation_comment = value
+    assert native.direct_identifier_clear_values(record) == (
+        [("text", None), ("validation_comment", "")] if present else []
+    )

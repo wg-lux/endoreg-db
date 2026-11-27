@@ -268,18 +268,18 @@ def test_retained_inventory_role_is_an_owner_conflict(
     ("name", "kind"),
     [
         (
-            f"endoreg-fieldfile-{uuid4().hex}.mp4",
+            "endoreg-fieldfile-{token}.mp4",
             TransientArtifactOwnerKind.PROCESS_SCOPED,
         ),
-        (f"upload-source-{uuid4().hex}.mp4", TransientArtifactOwnerKind.PROCESS_SCOPED),
-        (f"{uuid4().hex}.pdf", TransientArtifactOwnerKind.PROCESS_SCOPED),
-        (f"operator-copy-{uuid4().hex}.bin", TransientArtifactOwnerKind.UNKNOWN),
+        ("upload-source-{token}.mp4", TransientArtifactOwnerKind.PROCESS_SCOPED),
+        ("{token}.pdf", TransientArtifactOwnerKind.PROCESS_SCOPED),
+        ("operator-copy-{token}.bin", TransientArtifactOwnerKind.UNKNOWN),
     ],
 )
 def test_entries_without_persisted_owner_are_never_deleted(
     created_paths: list[Path], name: str, kind: TransientArtifactOwnerKind
 ) -> None:
-    unit = _write(get_runtime_paths().transcoding / name)
+    unit = _write(get_runtime_paths().transcoding / name.format(token=uuid4().hex))
     created_paths.append(unit)
 
     item = _classify(unit, kind)

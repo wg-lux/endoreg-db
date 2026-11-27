@@ -31,10 +31,8 @@ from endoreg_db.services.streaming.hls_media import (
     HLS_CONTENT_KEY_BYTES,
     hls_playlist_path,
 )
-from endoreg_db.services.video_files import (
-    VideoArtifactKind,
-    get_video_stream_relative_path,
-)
+from endoreg_db.services.video_files.streaming import get_video_stream_relative_path
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.utils.paths import resolve_existing_protected_media_path
 from endoreg_db.views.video.hls_stream import (
     HLSKeyView,

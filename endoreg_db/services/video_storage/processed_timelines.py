@@ -23,7 +23,7 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
     VideoStorageProfile,
 )
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMapping,
     VideoTimelineMappingError,
     frame_number_to_seconds,

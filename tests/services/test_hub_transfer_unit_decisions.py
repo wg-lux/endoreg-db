@@ -14,11 +14,47 @@ from lx_dtypes.models.contracts.json_types import JsonObject
 from endoreg_db.models import Center, NetworkNode, TransferJob
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
-from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
-from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.hub import transfers
 from endoreg_db.services.patient_identity.hash_aliases import record_patient_hash_alias
+
+
+@pytest.mark.django_db
+def test_report_metadata_replay_preserves_local_authorship_and_reuses_placeholder() -> (
+    None
+):
+    from django.contrib.auth.models import User
+    from endoreg_db.models import PatientExaminationReport
+
+    patient = Patient.objects.create(patient_hash="hub-report-replay")
+    examination = PatientExamination.objects.create(patient=patient)
+    author = User.objects.create_user(username="local-report-author")
+    authored = PatientExaminationReport.objects.create(
+        patient_examination=examination,
+        template_name="example",
+        updated_by=author,
+        is_active=False,
+        version=3,
+    )
+    row: JsonObject = {"template_name": "example", "version": 3}
+    transfers._upsert_patient_examination_report(
+        patient_examination=examination, row=row
+    )
+    placeholder = PatientExaminationReport.objects.exclude(pk=authored.pk).get(
+        patient_examination=examination
+    )
+    assert placeholder.status == PatientExaminationReport.Status.FINAL
+    transfers._upsert_patient_examination_report(
+        patient_examination=examination, row=row
+    )
+    placeholder.refresh_from_db()
+    authored.refresh_from_db()
+    assert (
+        PatientExaminationReport.objects.filter(patient_examination=examination).count()
+        == 2
+    )
+    assert authored.updated_by_id == author.pk and not authored.is_active
+    assert authored.status == PatientExaminationReport.Status.DRAFT
 
 
 @pytest.mark.django_db
@@ -383,205 +419,27 @@ def test_plaintext_media_upload_rejects_unsupported_kind_before_staging() -> Non
 
 
 @pytest.mark.parametrize(
-    (
-        "local_history_success",
-        "local_raw_present",
-        "local_processed_present",
-        "transfer_mode",
-        "processing_policy",
-        "processing_success",
-        "snapshot_success",
-        "expected_decision",
-        "expected_status",
-    ),
-    [
-        (
-            True,
-            True,
-            False,
-            TransferJob.TransferMode.METADATA_ONLY.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            None,
-            None,
-            TransferJob.ProcessingDecision.SKIP_EXISTING_SUCCESS.value,
-            TransferJob.TransferStatus.APPLIED.value,
-        ),
-        (
-            False,
-            False,
-            False,
-            TransferJob.TransferMode.METADATA_ONLY.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            True,
-            None,
-            TransferJob.ProcessingDecision.MARK_INCONSISTENT.value,
-            TransferJob.TransferStatus.INCONSISTENT.value,
-        ),
-        (
-            False,
-            False,
-            False,
-            TransferJob.TransferMode.METADATA_ONLY.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            True,
-            False,
-            TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA.value,
-            TransferJob.TransferStatus.AWAITING_MEDIA.value,
-        ),
-        (
-            False,
-            False,
-            False,
-            TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            True,
-            True,
-            TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA.value,
-            TransferJob.TransferStatus.AWAITING_MEDIA.value,
-        ),
-    ],
-    ids=[
-        "existing-success",
-        "preserved-success-without-artifacts",
-        "snapshot-overrides-fallback",
-        "processed-media-transfer-awaits-upload",
-    ],
+    "processing_policy", [policy.value for policy in TransferJob.ProcessingPolicy]
 )
-def test_video_processing_decision_matrix(
-    local_history_success: bool,
-    local_raw_present: bool,
-    local_processed_present: bool,
-    transfer_mode: str,
-    processing_policy: str,
-    processing_success: bool | None,
-    snapshot_success: bool | None,
-    expected_decision: str,
-    expected_status: str,
-) -> None:
-    transfer_job = _transfer_job(
-        transfer_mode=transfer_mode,
-        processing_policy=processing_policy,
-    )
-    video = cast(
-        VideoFile,
-        SimpleNamespace(raw_file=object(), processed_file=object()),
-    )
-    processing_snapshot: JsonObject = {}
-    if snapshot_success is not None:
-        processing_snapshot["sender_processing_success"] = snapshot_success
-
-    with (
-        patch.object(
-            transfers.ProcessingHistory,
-            "has_history_for_hash",
-            return_value=local_history_success,
-        ),
-        patch.object(
-            transfers,
-            "file_exists",
-            side_effect=[local_raw_present, local_processed_present],
-        ),
-    ):
-        decision, status, _detail = transfers._decide_video_processing(
-            transfer_job=transfer_job,
-            video=video,
-            processing_success=processing_success,
-            processing_snapshot=processing_snapshot,
-        )
-
-    assert decision == expected_decision
-    assert status == expected_status
-
-
 @pytest.mark.parametrize(
-    (
-        "local_history_success",
-        "local_raw_present",
-        "local_processed_present",
-        "transfer_mode",
-        "processing_policy",
-        "processing_success",
-        "expected_decision",
-        "expected_status",
-    ),
+    "transfer_mode",
     [
-        (
-            True,
-            False,
-            True,
-            TransferJob.TransferMode.METADATA_ONLY.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            None,
-            TransferJob.ProcessingDecision.SKIP_EXISTING_SUCCESS.value,
-            TransferJob.TransferStatus.APPLIED.value,
-        ),
-        (
-            False,
-            False,
-            False,
-            TransferJob.TransferMode.METADATA_ONLY.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            True,
-            TransferJob.ProcessingDecision.MARK_INCONSISTENT.value,
-            TransferJob.TransferStatus.INCONSISTENT.value,
-        ),
-        (
-            False,
-            False,
-            False,
-            TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value,
-            TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value,
-            True,
-            TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA.value,
-            TransferJob.TransferStatus.AWAITING_MEDIA.value,
-        ),
-    ],
-    ids=[
-        "existing-success",
-        "preserved-success-without-artifacts",
-        "processed-media-transfer-awaits-upload",
+        TransferJob.TransferMode.METADATA_ONLY.value,
+        TransferJob.TransferMode.METADATA_AND_PROCESSED_MEDIA.value,
     ],
 )
-def test_report_processing_decision_matrix(
-    local_history_success: bool,
-    local_raw_present: bool,
-    local_processed_present: bool,
-    transfer_mode: str,
-    processing_policy: str,
-    processing_success: bool | None,
-    expected_decision: str,
-    expected_status: str,
+@pytest.mark.parametrize("resource_kind", ["video", "report"])
+def test_registration_requires_authenticated_media_for_every_policy(
+    processing_policy: str, transfer_mode: str, resource_kind: str
 ) -> None:
     transfer_job = _transfer_job(
-        resource_kind=TransferJob.ResourceKind.REPORT.value,
+        resource_kind=resource_kind,
         transfer_mode=transfer_mode,
         processing_policy=processing_policy,
     )
-    report = cast(
-        RawPdfFile,
-        SimpleNamespace(file=object(), processed_file=object()),
-    )
-
-    with (
-        patch.object(
-            transfers.ProcessingHistory,
-            "has_history_for_hash",
-            return_value=local_history_success,
-        ),
-        patch.object(
-            transfers,
-            "file_exists",
-            side_effect=[local_raw_present, local_processed_present],
-        ),
-    ):
-        decision, status, _detail = transfers._decide_report_processing(
-            transfer_job=transfer_job,
-            report=report,
-            processing_success=processing_success,
-        )
-
-    assert decision == expected_decision
-    assert status == expected_status
+    decision, status, _detail = transfers._await_transfer_media(transfer_job)
+    assert decision == TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA
+    assert status == TransferJob.TransferStatus.AWAITING_MEDIA
 
 
 @pytest.mark.parametrize(

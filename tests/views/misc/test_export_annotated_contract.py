@@ -57,6 +57,8 @@ from endoreg_db.utils.file_operations import (
 )
 from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 class _ExportResultLike(SimpleNamespace):
@@ -101,7 +103,8 @@ class ExportAnnotatedContractTests(TestCase):
         self.center = Center.objects.create(
             name=f"export-contract-center-{suffix}",
         )
-        self.state = VideoState.objects.create(
+        self.state = create_media_state(
+            VideoState,
             anonymization_validated=True,
             outside_segments_removed=True,
             segment_annotations_created=False,
@@ -544,13 +547,12 @@ class ExportAnnotatedContractTests(TestCase):
         assert config.limit == 50
 
     def test_video_specific_export_rejects_non_final_segment_cleanup(self) -> None:
-        self.state.segment_annotations_created = True
-        self.state.segment_annotations_validated = False
-        self.state.save(
-            update_fields=[
-                "segment_annotations_created",
-                "segment_annotations_validated",
-            ]
+        update_media_state(
+            self.state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": False,
+            },
         )
 
         captured: dict[str, export_config] = {}
@@ -571,13 +573,12 @@ class ExportAnnotatedContractTests(TestCase):
         assert "cleanup_required" in response.json()["error"]
 
     def test_video_specific_export_allows_final_segment_cleanup(self) -> None:
-        self.state.segment_annotations_created = True
-        self.state.segment_annotations_validated = True
-        self.state.save(
-            update_fields=[
-                "segment_annotations_created",
-                "segment_annotations_validated",
-            ]
+        update_media_state(
+            self.state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+            },
         )
 
         captured: dict[str, export_config] = {}
@@ -600,9 +601,13 @@ class ExportAnnotatedContractTests(TestCase):
     def test_video_specific_export_rejects_cleanup_history_despite_validated_flags(
         self,
     ) -> None:
-        self.state.segment_annotations_created = True
-        self.state.segment_annotations_validated = True
-        self.state.save()
+        update_media_state(
+            self.state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+            },
+        )
         for history_status in (
             VideoProcessingHistory.STATUS_PENDING,
             VideoProcessingHistory.STATUS_RUNNING,
@@ -631,10 +636,14 @@ class ExportAnnotatedContractTests(TestCase):
     def test_video_specific_export_rejects_validated_flags_without_cleanup(
         self,
     ) -> None:
-        self.state.segment_annotations_created = True
-        self.state.segment_annotations_validated = True
-        self.state.outside_segments_removed = False
-        self.state.save()
+        update_media_state(
+            self.state,
+            changes={
+                "segment_annotations_created": True,
+                "segment_annotations_validated": True,
+                "outside_segments_removed": False,
+            },
+        )
         captured: dict[str, export_config] = {}
         with patch(
             "endoreg_db.services.media.export_annotated.AnnotationExporterClient",
@@ -866,7 +875,8 @@ class ExportAnnotatedPresentationTimestampEndToEndTests(TestCase):
         center = Center.objects.create(
             name=f"pts-e2e-center-{suffix}", center_key=f"pts-e2e-center-{suffix}"
         )
-        state = VideoState.objects.create(
+        state = create_media_state(
+            VideoState,
             anonymization_validated=True,
             outside_segments_removed=True,
         )

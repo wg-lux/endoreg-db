@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Shared clinical contracts belong in lx_dtypes; local schemas do not own ORM queries or workflows.
 files:
+- file: electrosurgical_activation.py
+  role: Typed activation source formats, UTC clock binding and explicit timing-error limits.
 - file: electrosurgical_measurement.py
   role: Model-boundary validation of persisted electrosurgical channel descriptors and aggregation profiles.
 - file: import_processing.py
@@ -14,13 +16,19 @@ files:
 - file: patient_matching.py
   role: Strict immutable matching session, record-reference, aggregate-outcome and signature contracts.
 - file: report_llm.py
-  role: Report job contracts, immutable attempt references and read-only completion projections.
+  role: Report job contracts, immutable attempt references and read-only current/published completion evidence distinct from execution ownership.
 - file: annotation_comparisons.py
   role: Typed annotation and clinical finding comparison results shared by service and API.
+- file: processed_video_cleanup.py
+  role: Typed generation cleanup receipts and immutable outside-frame blackening output checkpoints.
 - file: persisted_json.py
   role: Persistence-specific payload validators, shared hub UUID identity validation and owner-bound report extraction receipts.
 - file: hub_payloads.py
   role: Hub request and provenance shapes.
+- file: temporal_inference.py
+  role: Canonical prediction options and immutable upload, model, and generation identity.
+- file: video_processing_history.py
+  role: Model-boundary validation of processing history JSON and automatic prediction identity.
 - file: video_storage.py
   role: Video profile, timeline, quality, recording-time and export file-name evidence.
 - file: frame_annotation_export.py

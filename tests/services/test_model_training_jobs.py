@@ -21,8 +21,10 @@ from endoreg_db.models import (
     Label,
     LabelVideoSegment,
     VideoFile,
+    VideoState,
 )
 from endoreg_db.services.jobs import model_training_jobs
+from tests.helpers.media_states import create_media_state
 
 
 def _phi_training_command_kwargs(
@@ -431,29 +433,19 @@ def test_prepare_model_training_inputs_streams_missing_frames_from_processed_vid
         frame_dir=str(tmp_path / "frames"),
         processed_file="anonymized_videos/processed.mp4",
     )
-    state = video.get_or_create_state()
-    state.sensitive_meta_processed = True
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.outside_segments_removed = True
-    state.segment_annotations_validated = True
-    state.ready_for_export_at = timezone.now()
-    state.ready_for_export_by = "test-reviewer"
-    state.processed_file_sha256 = "a" * 64
-    state.ready_for_export = True
-    state.save(
-        update_fields=[
-            "sensitive_meta_processed",
-            "anonymized",
-            "anonymization_validated",
-            "outside_segments_removed",
-            "segment_annotations_validated",
-            "ready_for_export",
-            "ready_for_export_at",
-            "ready_for_export_by",
-            "processed_file_sha256",
-        ]
+    video.state = create_media_state(
+        VideoState,
+        sensitive_meta_processed=True,
+        anonymized=True,
+        anonymization_validated=True,
+        outside_segments_removed=True,
+        segment_annotations_validated=True,
+        ready_for_export_at=timezone.now(),
+        ready_for_export_by="test-reviewer",
+        processed_file_sha256="a" * 64,
+        ready_for_export=True,
     )
+    video.save(update_fields=["state"])
     frame = Frame.objects.create(
         video=video,
         frame_number=7,
@@ -594,29 +586,19 @@ def test_prepare_model_training_inputs_streams_dataset_video_annotation_frames(
     )
     dataset.video_annotations.add(segment)
 
-    state = video.get_or_create_state()
-    state.sensitive_meta_processed = True
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.outside_segments_removed = True
-    state.segment_annotations_validated = True
-    state.ready_for_export_at = timezone.now()
-    state.ready_for_export_by = "test-reviewer"
-    state.processed_file_sha256 = "a" * 64
-    state.ready_for_export = True
-    state.save(
-        update_fields=[
-            "sensitive_meta_processed",
-            "anonymized",
-            "anonymization_validated",
-            "outside_segments_removed",
-            "segment_annotations_validated",
-            "ready_for_export",
-            "ready_for_export_at",
-            "ready_for_export_by",
-            "processed_file_sha256",
-        ]
+    video.state = create_media_state(
+        VideoState,
+        sensitive_meta_processed=True,
+        anonymized=True,
+        anonymization_validated=True,
+        outside_segments_removed=True,
+        segment_annotations_validated=True,
+        ready_for_export_at=timezone.now(),
+        ready_for_export_by="test-reviewer",
+        processed_file_sha256="a" * 64,
+        ready_for_export=True,
     )
+    video.save(update_fields=["state"])
 
     calls: list[dict[str, object]] = []
 
@@ -820,29 +802,19 @@ def test_prepare_model_training_inputs_only_selects_sparse_segment_frames(
         relative_path="frame_0000001.jpg",
         is_extracted=False,
     )
-    state = video.get_or_create_state()
-    state.sensitive_meta_processed = True
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.outside_segments_removed = True
-    state.segment_annotations_validated = True
-    state.ready_for_export_at = timezone.now()
-    state.ready_for_export_by = "test-reviewer"
-    state.processed_file_sha256 = "a" * 64
-    state.ready_for_export = True
-    state.save(
-        update_fields=[
-            "sensitive_meta_processed",
-            "anonymized",
-            "anonymization_validated",
-            "outside_segments_removed",
-            "segment_annotations_validated",
-            "ready_for_export",
-            "ready_for_export_at",
-            "ready_for_export_by",
-            "processed_file_sha256",
-        ]
+    video.state = create_media_state(
+        VideoState,
+        sensitive_meta_processed=True,
+        anonymized=True,
+        anonymization_validated=True,
+        outside_segments_removed=True,
+        segment_annotations_validated=True,
+        ready_for_export_at=timezone.now(),
+        ready_for_export_by="test-reviewer",
+        processed_file_sha256="a" * 64,
+        ready_for_export=True,
     )
+    video.save(update_fields=["state"])
 
     calls: list[dict[str, object]] = []
 
@@ -875,3 +847,34 @@ def test_prepare_model_training_inputs_only_selects_sparse_segment_frames(
     assert non_segment_frame.is_extracted is False
     assert not non_segment_frame.file_path.exists()
     assert calls == []
+
+
+@pytest.mark.no_db
+@pytest.mark.parametrize(
+    "current_status",
+    ["queued", "running", "retry_wait", "completed", "failed", "lost", "", "unknown"],
+)
+@pytest.mark.parametrize(
+    "target_status",
+    ["queued", "running", "retry_wait", "completed", "failed", "lost", "", "unknown"],
+)
+def test_training_transition_contract_is_exhaustive(
+    current_status: str, target_status: str
+) -> None:
+    allowed = {
+        "queued": {"queued", "running", "retry_wait", "failed", "lost"},
+        "running": {"completed", "failed", "lost"},
+        "retry_wait": {"retry_wait", "queued", "running", "failed"},
+        "completed": {"lost"},
+        "failed": {"failed"},
+        "lost": {"lost", "retry_wait"},
+    }
+    if target_status in allowed.get(current_status, set()):
+        model_training_jobs._validate_model_training_status_transition(
+            current_status=current_status, target_status=target_status
+        )
+    else:
+        with pytest.raises(ValueError):
+            model_training_jobs._validate_model_training_status_transition(
+                current_status=current_status, target_status=target_status
+            )

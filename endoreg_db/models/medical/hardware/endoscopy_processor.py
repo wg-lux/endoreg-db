@@ -2,6 +2,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 from lx_dtypes.models.contracts.endoscopy_processor import (
     EndoscopeImageRoiCore,
     RoiBoxCore,
@@ -32,13 +33,8 @@ def _build_optional_roi_box(
     return _build_roi_box(x=x, y=y, width=width, height=height)
 
 
-class EndoscopyProcessorManager(models.Manager["EndoscopyProcessor"]):
-    def get_by_natural_key(self, name: str) -> "EndoscopyProcessor":
-        return self.get(name=name)
-
-
 class EndoscopyProcessor(models.Model):
-    objects = EndoscopyProcessorManager()
+    objects = NameNaturalKeyManager["EndoscopyProcessor"]()
 
     centers: "models.ManyToManyField[Center, Center]" = models.ManyToManyField(
         "Center",

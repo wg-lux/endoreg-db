@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from .product import Product
@@ -11,13 +12,8 @@ if TYPE_CHECKING:
 ProductGroupReference: TypeAlias = "ReferenceProduct | None"
 
 
-class ProductGroupManager(models.Manager["ProductGroup"]):
-    def get_by_natural_key(self, name: str) -> "ProductGroup":
-        return self.get(name=name)
-
-
 class ProductGroup(models.Model):
-    objects = ProductGroupManager()
+    objects = NameNaturalKeyManager["ProductGroup"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

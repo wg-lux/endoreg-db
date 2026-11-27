@@ -57,8 +57,12 @@ def test_reimport_disk_exhaustion_preserves_usable_generation_or_fails(
     from endoreg_db.models.state.video import VideoState
     from endoreg_db.services.jobs import video_reimport_jobs as jobs
 
-    state = VideoState.objects.create(
-        was_created=False, anonymized=True, processing_started=False
+    from endoreg_db.services.media.state import update_media_state
+
+    state = VideoState.objects.create()
+    update_media_state(
+        state,
+        changes={"was_created": False, "anonymized": True, "processing_started": False},
     )
     center = Center.objects.create(name=f"storage-failure-{uuid4().hex}")
     video = VideoFile.objects.create(

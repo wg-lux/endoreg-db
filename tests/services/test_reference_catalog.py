@@ -3,6 +3,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
+import json
 
 import pytest
 from django.core.management import call_command
@@ -14,10 +15,18 @@ from lx_dtypes.models.contracts.reference_catalog import (
 )
 from lx_dtypes.models.contracts.reference_catalog_snapshot import (
     ReferenceCatalogSnapshot,
+    ReferenceCatalogReceipt,
+)
+from lx_dtypes.models.contracts.reference_migration import (
+    ReferenceMigrationCatalog,
+    ReferenceMigrationRule,
+    ReferenceMigrationTarget,
 )
 from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services.reference_data.catalog import (
     catalog_snapshot,
     import_reference_catalog,
@@ -32,7 +41,20 @@ pytestmark = pytest.mark.django_db
 
 def snapshot(module: str = "endoreg_reference") -> ReferenceCatalogSnapshot:
     root = Path(str(files("lx_dtypes").joinpath("data")))
-    kb = DataLoader(input_dirs=[root]).load_knowledge_base(module)
+    if module == "endoreg_reference":
+        from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
+
+        root = get_packaged_knowledge_base(module, "1.0.0").installed_data_root()
+    from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
+
+    kb = DataLoader(
+        input_dirs=[
+            root / "terminology" / module if module != "endoreg_reference" else root,
+            get_packaged_knowledge_base(
+                "endoreg_reference", "1.0.0"
+            ).installed_data_root(),
+        ]
+    ).load_knowledge_base(module)
     return catalog_snapshot(kb)
 
 
@@ -105,8 +127,108 @@ def test_catalog_row_drift_is_reported_and_never_overwritten():
 
 def test_bootstrap_uses_registered_catalog_without_legacy_loader() -> None:
     call_command("load_base_db_data", stdout=StringIO())
-    assert len(export_reference_catalog().records) == 673
-    assert ReferenceCatalogImport.objects.get().module == "endoreg_reference"
+    receipt = ReferenceCatalogImport.objects.get()
+    assert receipt.module == "endoreg_reference"
+    assert receipt.version == "2.0.0"
+    assert (
+        ReferenceCatalogReceipt.model_validate(
+            receipt.payload
+        ).snapshot.clinical_package
+        is not None
+    )
+
+
+def test_bootstrap_records_legacy_source_migration_once(
+    packaged_registry: Path,
+) -> None:
+    row = InformationSource.objects.create(name="unknown", description=None)
+    dry_run = StringIO()
+    call_command("load_base_db_data", dry_run=True, stdout=dry_run)
+    row.refresh_from_db()
+    assert row.description is None
+    assert not ReferenceCatalogImport.objects.exists()
+
+    output = StringIO()
+    call_command("load_base_db_data", stdout=output)
+    history = json.loads(output.getvalue())["clinical_plan"]["applied_migrations"]
+    assert len(history) == 1
+    assert history[0]["changes"][0]["decision"] == "fill_missing"
+    row.refresh_from_db()
+    assert row.description == "Data source is unknown."
+
+    repeated = StringIO()
+    call_command("load_base_db_data", stdout=repeated)
+    result = json.loads(repeated.getvalue())
+    assert result["unchanged"]
+    assert result["clinical_plan"]["applied_migrations"] == history
+    assert InformationSource.objects.get(name="unknown").pk == row.pk
+
+
+def test_catalogue_migration_and_history_commit_together() -> None:
+    kind = ReferenceKind.GENDER
+    old = _with_record_field(
+        select_catalog(snapshot(), {kind}), kind, "unknown", "description", "Old text."
+    )
+    import_reference_catalog(old)
+    changed = _with_record_field(old, kind, "unknown", "description", "Unspecified.")
+    identity = KnowledgeBaseIdentity(
+        knowledge_base_module=old.identity.knowledge_base_module,
+        knowledge_base_version="2.1.0",
+    )
+    updated = ReferenceCatalogSnapshot(
+        identity=identity,
+        payload=changed.payload,
+        projection=changed.projection,
+        snapshot_id=ReferenceCatalogSnapshot.content_digest(
+            identity, changed.payload, changed.projection
+        ),
+    )
+    rule = ReferenceMigrationRule(
+        kind=kind,
+        identity=next(
+            record.identity
+            for record in old.payload.records
+            if record.identity.name == "unknown"
+        ),
+        field="description",
+        existing="Old text.",
+        proposed="Unspecified.",
+        reason="Reviewed wording correction.",
+    )
+    rules = ReferenceMigrationCatalog(
+        schema_version=1,
+        targets=[
+            ReferenceMigrationTarget(
+                module=identity.knowledge_base_module,
+                version=identity.knowledge_base_version,
+                rules=[rule],
+            )
+        ],
+    )
+    with patch(
+        "endoreg_db.services.reference_data.catalog.load_reference_migrations",
+        return_value=rules,
+    ):
+        proposed = plan_reference_catalog(updated)
+        assert proposed.can_import
+        assert [change.action for change in proposed.changes].count("migrate") == 1
+        assert not proposed.applied_migrations
+        with patch.object(
+            ReferenceCatalogImport, "save", side_effect=ValueError("receipt failed")
+        ):
+            with pytest.raises(ValueError, match="receipt failed"):
+                import_reference_catalog(updated)
+        assert plan_reference_catalog(updated) == proposed
+        assert ReferenceCatalogImport.objects.count() == 1
+
+        applied = import_reference_catalog(updated)
+        replay = import_reference_catalog(updated)
+    (migration,) = applied.applied_migrations
+    assert migration.updates == {"description": "Unspecified."}
+    assert migration.changes[0].reason == rule.reason
+    assert replay.unchanged
+    assert replay.applied_migrations == [migration]
+    assert not plan_reference_catalog(old).can_import
 
 
 def test_selected_catalogue_closes_dependencies_and_full_import_reuses_rows() -> None:
@@ -179,7 +301,7 @@ def test_all_optional_compatibility_commands_can_bootstrap_together() -> None:
         "load_base_db_data",
     ):
         call_command(command, stdout=StringIO())
-    assert len(export_reference_catalog().records) == 865
+    assert len(export_reference_catalog().records) == 541
     for command in (
         "load_profession_data",
         "load_qualification_data",
@@ -188,7 +310,7 @@ def test_all_optional_compatibility_commands_can_bootstrap_together() -> None:
         "load_base_db_data",
     ):
         call_command(command, stdout=StringIO())
-    assert len(export_reference_catalog().records) == 865
+    assert len(export_reference_catalog().records) == 541
 
 
 def test_inactive_workforce_reference_is_not_hidden_during_reconciliation() -> None:
@@ -294,3 +416,60 @@ def test_catalog_entries_without_name_de_import_null_and_export_unchanged() -> N
     ]
     assert labels and all("name_de" not in record for record in labels)
     assert canonical(export_reference_catalog()) == canonical(source.payload)
+
+
+@pytest.mark.parametrize(
+    "module,version",
+    [("dgvs_reporting", "0.1.0"), ("dgvs_reporting", "0.2.0"), ("coloreg", "0.3.0")],
+)
+def test_dependency_only_reference_catalogue_accepts_clinical_packages(
+    packaged_registry: Path,
+    module: str,
+    version: str,
+) -> None:
+    from lx_dtypes.packages import load_registered_package
+    from lx_dtypes.models.contracts.reference_catalog import (
+        TERMINOLOGY_REFERENCE_MODELS,
+    )
+    from endoreg_db.services.reference_data.clinical_projection import (
+        import_clinical_package,
+    )
+
+    del packaged_registry
+    kb = load_registered_package("endoreg_reference", version="2.0.0")
+    selected = catalog_snapshot(kb)
+    assert selected.clinical_package is not None
+    assert not any(
+        record.kind in TERMINOLOGY_REFERENCE_MODELS
+        for record in selected.payload.records
+    )
+    assert plan_reference_catalog(selected).can_import
+    import_reference_catalog(selected)
+    replay_plan = plan_reference_catalog(selected)
+    assert replay_plan.can_import, replay_plan.model_dump_json()
+    assert import_reference_catalog(selected).unchanged
+    result = import_clinical_package(load_registered_package(module, version=version))
+    assert result.can_import
+    assert import_reference_catalog(selected).unchanged
+
+
+def test_catalogue_dependency_failure_rolls_back_application_records(
+    packaged_registry: Path,
+) -> None:
+    from lx_dtypes.packages import load_registered_package
+    from endoreg_db.models.other.unit import Unit
+
+    del packaged_registry
+    selected = catalog_snapshot(
+        load_registered_package("endoreg_reference", version="2.0.0")
+    )
+    Unit.objects.create(
+        name="miligram", abbreviation="wrong", description="conflicting unit"
+    )
+    plan = plan_reference_catalog(selected)
+    assert not plan.can_import
+    assert plan.clinical_plan is not None
+    with pytest.raises(ValueError, match="conflicts"):
+        import_reference_catalog(selected)
+    assert not ReferenceCatalogImport.objects.exists()
+    assert Unit.objects.get(name="miligram").abbreviation == "wrong"

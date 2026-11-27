@@ -25,6 +25,8 @@ from endoreg_db.models import (
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.state.audit_ledger import AuditLedger
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 from endoreg_db.schemas.sensitive_meta_verification import (
     SensitiveMetaVerificationCommand,
 )
@@ -42,6 +44,9 @@ import endoreg_db.services.video_files.segment_blackening as blackening
 
 
 class VideoReadyExportEndpointTests(TestCase):
+    processed_sha: str
+    user: User
+
     def setUp(self):
         suffix = uuid4().hex[:8]
         self.center = Center.objects.create(name=f"ready-center-{suffix}")
@@ -83,7 +88,8 @@ class VideoReadyExportEndpointTests(TestCase):
             raw_video_hash=f"ready-video-{uuid4().hex[:8]}",
             sensitive_meta=self._sensitive_meta(verified=identity_verified),
             state=state
-            or VideoState.objects.create(
+            or create_media_state(
+                VideoState,
                 anonymized=True,
                 anonymization_validated=True,
                 outside_segments_removed=True,
@@ -105,34 +111,32 @@ class VideoReadyExportEndpointTests(TestCase):
         if default_state:
             video_state = cast(VideoState, video.state)
             assert video_state is not None
-            video_state.anonymized = True
-            video_state.anonymization_validated = True
-            video_state.outside_segments_removed = True
-            video_state.segment_annotations_created = True
-            video_state.segment_annotations_validated = True
-            video_state.save(
-                update_fields=[
-                    "anonymized",
-                    "anonymization_validated",
-                    "outside_segments_removed",
-                    "segment_annotations_created",
-                    "segment_annotations_validated",
-                ]
+            update_media_state(
+                video_state,
+                changes={
+                    "anonymized": True,
+                    "anonymization_validated": True,
+                    "outside_segments_removed": True,
+                    "segment_annotations_created": True,
+                    "segment_annotations_validated": True,
+                },
             )
         return video
 
     def _mark_ready_state(self, video: VideoFile) -> None:
         state = video.get_or_create_state()
-        state.anonymized = True
-        state.anonymization_validated = True
-        state.outside_segments_removed = True
-        state.segment_annotations_created = True
-        state.segment_annotations_validated = True
-        state.ready_for_export = True
-        state.ready_for_export_at = timezone.now()
-        state.ready_for_export_by = self.user.username
-        state.processed_file_sha256 = self.processed_sha
-        state.save()
+        changes: dict[str, object] = {
+            "anonymized": True,
+            "anonymization_validated": True,
+            "outside_segments_removed": True,
+            "segment_annotations_created": True,
+            "segment_annotations_validated": True,
+            "ready_for_export": True,
+            "ready_for_export_at": timezone.now(),
+            "ready_for_export_by": self.user.get_username(),
+            "processed_file_sha256": self.processed_sha,
+        }
+        update_media_state(state, changes=changes)
 
     def test_marks_existing_managed_video_ready(self):
         video = self._video()
@@ -260,7 +264,8 @@ class VideoReadyExportEndpointTests(TestCase):
         assert video.get_or_create_state().ready_for_export is False
 
     def test_rejects_when_outside_segments_are_not_removed(self):
-        state = VideoState.objects.create(
+        state = create_media_state(
+            VideoState,
             anonymization_validated=True,
             outside_segments_removed=False,
             segment_annotations_created=True,
@@ -280,7 +285,8 @@ class VideoReadyExportEndpointTests(TestCase):
         assert video.get_or_create_state().ready_for_export is False
 
     def test_rejects_when_video_is_failed_lost(self):
-        state = VideoState.objects.create(
+        state = create_media_state(
+            VideoState,
             anonymization_validated=True,
             outside_segments_removed=True,
             segment_annotations_created=True,
@@ -307,7 +313,8 @@ class VideoReadyExportEndpointTests(TestCase):
             (VideoProcessingHistory.STATUS_FAILURE, "cleanup_failed"),
         ):
             with self.subTest(history_status=history_status):
-                state = VideoState.objects.create(
+                state = create_media_state(
+                    VideoState,
                     anonymization_validated=True,
                     outside_segments_removed=True,
                     segment_annotations_created=True,
@@ -315,16 +322,13 @@ class VideoReadyExportEndpointTests(TestCase):
                 )
                 video = self._video(state=state)
                 state.refresh_from_db()
-                state.outside_segments_removed = True
-                state.segment_annotations_created = True
-                state.segment_annotations_validated = False
-                state.save(
-                    update_fields=[
-                        "outside_segments_removed",
-                        "segment_annotations_created",
-                        "segment_annotations_validated",
-                        "date_modified",
-                    ]
+                update_media_state(
+                    state,
+                    changes={
+                        "outside_segments_removed": True,
+                        "segment_annotations_created": True,
+                        "segment_annotations_validated": False,
+                    },
                 )
                 if history_status is not None:
                     VideoProcessingHistory.objects.create(

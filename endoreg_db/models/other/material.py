@@ -2,18 +2,16 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from ..administration.product.product_material import ProductMaterial
 
 
-class MaterialManager(models.Manager["Material"]):
-    def get_by_natural_key(self, name: str) -> "Material":
-        return self.get(name=name)
-
-
 class Material(models.Model):
-    objects: ClassVar[MaterialManager] = MaterialManager()  # pyright: ignore[reportIncompatibleVariableOverride]
+    objects: ClassVar[NameNaturalKeyManager["Material"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        NameNaturalKeyManager["Material"]()
+    )
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

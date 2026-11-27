@@ -5,14 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
-
-
-class MedicationIntakeTimeManager(models.Manager["MedicationIntakeTime"]):
-    """Manager for the medication intake time model."""
-
-    def get_by_natural_key(self, name: str) -> "MedicationIntakeTime":
-        """Retrieve a medication intake time by its natural key."""
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class MedicationIntakeTime(models.Model):
@@ -28,7 +21,7 @@ class MedicationIntakeTime(models.Model):
     )
     time: models.TimeField[Any, Any] = models.TimeField()
 
-    objects = MedicationIntakeTimeManager()
+    objects = NameNaturalKeyManager["MedicationIntakeTime"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import MedicationSchedule

@@ -35,6 +35,11 @@ state_tokens! {
         HubInboundCaseResolution => "hub_inbound_case_resolution",
         UploadJobSourceCleanup => "upload_job_source_cleanup",
         HubOutboundLocalCleanup => "hub_outbound_local_cleanup",
+        UploadJob => "upload_job",
+        UploadJobLeaseRecovery => "upload_job_lease_recovery",
+        ModelTrainingRun => "model_training_run",
+        ReportImportAttempt => "report_import_attempt",
+        ReportImportLeaseRecovery => "report_import_lease_recovery",
     }
 }
 
@@ -65,7 +70,7 @@ fn report_llm(current: Option<ReportLlm>, target: ReportLlm) -> Verdict {
 }
 
 state_tokens! {
-    enum ProcessingHistory {
+    pub(crate) enum ProcessingHistory {
         Pending => "pending",
         Running => "running",
         Success => "success",
@@ -313,6 +318,113 @@ fn outbound_local_cleanup(
     }
 }
 
+state_tokens! {
+    enum UploadJobStatus {
+        Pending => "pending",
+        Processing => "processing",
+        Retrying => "retrying",
+        Anonymized => "anonymized",
+        Error => "error",
+        Lost => "lost",
+        CancelRequested => "cancel_requested",
+        Cancelled => "cancelled",
+    }
+}
+
+fn upload_job(current: Option<UploadJobStatus>, target: UploadJobStatus) -> Verdict {
+    use UploadJobStatus::*;
+    match (current, target) {
+        (None, Pending) => Some(Apply),
+        (Some(previous), next) if previous == next => Some(Ignore),
+        (Some(Lost | Cancelled), _) => None,
+        // Cancellation intent is irreversible; execution only unwinds.
+        (Some(CancelRequested), Error | Lost | Cancelled) => Some(Apply),
+        (Some(CancelRequested), _) => None,
+        // Claims and cancellation requests, including retries of an outcome.
+        (Some(_), Processing | CancelRequested) => Some(Apply),
+        (Some(Pending | Processing | Error), Retrying) => Some(Apply),
+        (Some(Processing), Anonymized) => Some(Apply),
+        (Some(Pending | Processing | Retrying | Anonymized), Error | Lost) => Some(Apply),
+        (Some(Pending | Processing | Retrying), Cancelled) => Some(Apply),
+        _ => None,
+    }
+}
+
+/// Transitions forced by an expired import lease owner; status writes still
+/// go through `upload_job`.
+fn upload_job_lease_recovery(current: Option<UploadJobStatus>, target: UploadJobStatus) -> Verdict {
+    use UploadJobStatus::*;
+    match (current, target) {
+        // Fencing the expired owner records the interrupted execution.
+        (Some(Processing | CancelRequested), Error) => Some(Apply),
+        // A new owner reclaims an attempt whose previous owner expired.
+        (Some(Pending | Processing | Retrying), Processing) => Some(Apply),
+        _ => None,
+    }
+}
+
+state_tokens! {
+    enum TrainingRun {
+        Queued => "queued",
+        Running => "running",
+        RetryWait => "retry_wait",
+        Completed => "completed",
+        Failed => "failed",
+        Lost => "lost",
+    }
+}
+
+fn model_training_run(current: Option<TrainingRun>, target: TrainingRun) -> Verdict {
+    use TrainingRun::*;
+    match (current, target) {
+        (None, Queued) => Some(Apply),
+        (Some(Queued), Queued)
+        | (Some(RetryWait), RetryWait)
+        | (Some(Failed), Failed)
+        | (Some(Lost), Lost) => Some(Ignore),
+        (Some(Queued | RetryWait), Running | Failed) => Some(Apply),
+        (Some(Queued), RetryWait | Lost) => Some(Apply),
+        (Some(RetryWait), Queued) => Some(Apply),
+        (Some(Running), Completed | Failed | Lost) => Some(Apply),
+        // Integrity loss of the dataset invalidates a completed run.
+        (Some(Completed), Lost) => Some(Apply),
+        (Some(Lost), RetryWait) => Some(Apply),
+        _ => None,
+    }
+}
+
+state_tokens! {
+    enum ReportImport {
+        Idle => "idle",
+        Active => "active",
+        Succeeded => "succeeded",
+        Failed => "failed",
+        Lost => "lost",
+    }
+}
+
+fn report_import_attempt(current: Option<ReportImport>, target: ReportImport) -> Verdict {
+    use ReportImport::*;
+    match (current, target) {
+        (None, Idle) => Some(Apply),
+        // A claim fences a new attempt; a live attempt is never reclaimed.
+        (Some(Idle | Succeeded | Failed | Lost), Active) => Some(Apply),
+        (Some(Active), Succeeded | Failed | Lost) => Some(Apply),
+        (Some(Idle), Failed | Lost) => Some(Apply),
+        (Some(Succeeded), Succeeded) | (Some(Failed), Failed) | (Some(Lost), Lost) => Some(Ignore),
+        _ => None,
+    }
+}
+
+// Only the caller holding the expired attempt fence may use this table.
+fn report_import_lease_recovery(current: Option<ReportImport>, target: ReportImport) -> Verdict {
+    match (current, target) {
+        (Some(ReportImport::Active), ReportImport::Active) => Some(Apply),
+        (_, ReportImport::Active) => report_import_attempt(current, target),
+        _ => None,
+    }
+}
+
 pub(crate) fn vocabularies() -> Vec<Vocabulary> {
     vec![
         ("status_machine", Machine::tokens()),
@@ -327,6 +439,9 @@ pub(crate) fn vocabularies() -> Vec<Vocabulary> {
         ("hub_inbound_case_resolution_status", CaseResolution::tokens()),
         ("upload_job_source_cleanup_status", SourceCleanup::tokens()),
         ("hub_outbound_local_cleanup_status", OutboundLocalCleanup::tokens()),
+        ("upload_job_status", UploadJobStatus::tokens()),
+        ("model_training_run_status", TrainingRun::tokens()),
+        ("report_import_attempt_status", ReportImport::tokens()),
     ]
 }
 
@@ -357,6 +472,11 @@ fn decide(machine: Machine, current: &str, target: &str) -> Result<Decision, Str
         Machine::HubInboundCaseResolution => run(current, target, case_resolution),
         Machine::UploadJobSourceCleanup => run(current, target, source_cleanup),
         Machine::HubOutboundLocalCleanup => run(current, target, outbound_local_cleanup),
+        Machine::UploadJob => run(current, target, upload_job),
+        Machine::UploadJobLeaseRecovery => run(current, target, upload_job_lease_recovery),
+        Machine::ModelTrainingRun => run(current, target, model_training_run),
+        Machine::ReportImportAttempt => run(current, target, report_import_attempt),
+        Machine::ReportImportLeaseRecovery => run(current, target, report_import_lease_recovery),
     }
 }
 
@@ -389,11 +509,25 @@ mod tests {
     ) {
         for current in currents::<S>() {
             for &target in S::all() {
-                let verdict = table(current, target);
-                if verdict == Some(Apply) {
+                if table(current, target) == Some(Apply) {
                     // Re-applying a reached status is defined (ignored or refreshed).
                     assert!(table(Some(target), target).is_some(), "{target:?} again");
                 }
+            }
+        }
+        check_validator_table(table, finals, legacy);
+    }
+
+    /// Finality and reachability for tables that only validate claims, where
+    /// re-applying an active status must stay illegal.
+    fn check_validator_table<S: StateToken>(
+        table: fn(Option<S>, S) -> Verdict,
+        finals: &[S],
+        legacy: &[S],
+    ) {
+        for current in currents::<S>() {
+            for &target in S::all() {
+                let verdict = table(current, target);
                 if let Some(state) = current {
                     if finals.contains(&state) && state != target {
                         assert_ne!(verdict, Some(Apply), "final {state:?} -> {target:?}");
@@ -450,6 +584,39 @@ mod tests {
         check_table(source_cleanup, &[S::Completed], &[]);
         use OutboundLocalCleanup as O;
         check_table(outbound_local_cleanup, &[O::Cleaned], &[]);
+        use UploadJobStatus as U;
+        check_table(upload_job, &[U::Lost, U::Cancelled], &[]);
+        use TrainingRun as T;
+        check_validator_table(model_training_run, &[T::Failed], &[]);
+        check_validator_table(report_import_attempt, &[], &[]);
+    }
+
+    #[test]
+    fn claim_rules_hold() {
+        use ReportImport as A;
+        use TrainingRun as T;
+        use UploadJobStatus as U;
+        // A live attempt or running training is never claimed again.
+        assert_eq!(report_import_attempt(Some(A::Active), A::Active), None);
+        assert_eq!(report_import_lease_recovery(Some(A::Active), A::Active), Some(Apply));
+        assert_eq!(report_import_lease_recovery(None, A::Active), None);
+        assert_eq!(model_training_run(Some(T::Running), T::Running), None);
+        // Completion requires a running claim.
+        assert_eq!(report_import_attempt(Some(A::Idle), A::Succeeded), None);
+        assert_eq!(model_training_run(Some(T::Queued), T::Completed), None);
+        assert_eq!(upload_job(Some(U::Pending), U::Anonymized), None);
+        // Cancellation intent and outcome are irreversible.
+        assert_eq!(upload_job(Some(U::CancelRequested), U::Processing), None);
+        assert_eq!(upload_job(Some(U::Cancelled), U::Error), None);
+        assert_eq!(upload_job(Some(U::Error), U::Cancelled), None);
+        // Lease recovery: only executing jobs are interrupted, finished outcomes stay.
+        for status in [U::Pending, U::Retrying, U::Anonymized, U::Error, U::Lost, U::Cancelled] {
+            assert_eq!(upload_job_lease_recovery(Some(status), U::Error), None, "{status:?}");
+        }
+        for status in [U::Anonymized, U::Error, U::Lost, U::CancelRequested, U::Cancelled] {
+            assert_eq!(upload_job_lease_recovery(Some(status), U::Processing), None, "{status:?}");
+        }
+        assert_eq!(upload_job_lease_recovery(None, U::Processing), None);
     }
 
     #[test]

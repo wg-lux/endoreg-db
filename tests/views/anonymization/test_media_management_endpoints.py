@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from tests.helpers.media_states import create_media_state
+
+
 from uuid import uuid4
 from pathlib import Path
 
@@ -251,7 +254,7 @@ def test_media_stats_use_canonical_state(
         VideoFile.objects.create(
             center=center,
             raw_video_hash=uuid4().hex,
-            state=VideoState.objects.create(was_created=False, **flags),
+            state=create_media_state(VideoState, was_created=False, **flags),
         )
     else:
         report_flags = {
@@ -261,7 +264,7 @@ def test_media_stats_use_canonical_state(
             center=center,
             pdf_hash=uuid4().hex,
             anonymized_text="Reviewed text",
-            state=RawPdfState.objects.create(**report_flags),
+            state=create_media_state(RawPdfState, **report_flags),
         )
     response = client.get("/api/media-management/status/")
     assert response.status_code == 200
@@ -288,13 +291,13 @@ def test_reset_returns_persisted_canonical_status(
         media = VideoFile.objects.create(
             center=center,
             raw_video_hash=uuid4().hex,
-            state=VideoState.objects.create(**flags),
+            state=create_media_state(VideoState, **flags),
         )
     else:
         media = RawPdfFile.objects.create(
             center=center,
             pdf_hash=uuid4().hex,
-            state=RawPdfState.objects.create(**flags),
+            state=create_media_state(RawPdfState, **flags),
         )
     response = client.post(f"/api/media-management/reset-status/{media.pk}/")
     assert response.status_code == 200

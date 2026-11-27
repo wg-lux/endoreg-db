@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterable
 from typing import TYPE_CHECKING, TypeAlias, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from endoreg_db.utils.product.sum_emissions import sum_emissions
 from endoreg_db.utils.product.sum_weights import sum_weights
@@ -19,13 +20,8 @@ ProductMaterialMetricCalculator: TypeAlias = Callable[
 ]
 
 
-class ProductManager(models.Manager["Product"]):
-    def get_by_natural_key(self, name: str) -> "Product":
-        return self.get(name=name)
-
-
 class Product(models.Model):
-    objects = ProductManager()
+    objects = NameNaturalKeyManager["Product"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

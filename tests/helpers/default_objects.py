@@ -25,7 +25,7 @@ from endoreg_db.services.raw_pdf_files import (
     create_initialized_raw_pdf_file_from_path,
     process_raw_pdf_file,
 )
-from endoreg_db.utils import create_mock_patient_name
+from endoreg_db.utils.names import create_mock_patient_name
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
     safe_unlink_file,

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import date, datetime
+from uuid import UUID
 from typing import Any, cast
 
 from lx_dtypes.models.contracts.patient_examination_report import (
@@ -89,6 +90,10 @@ class PatientExaminationReportSchema(Schema):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    uuid: UUID
+    author_academic_titles: list[str]
+    author_profession: str
+    source_document_ids: list[int]
     patient_examination_id: int
 
     template_name: str
@@ -119,6 +124,10 @@ class PatientExaminationReportSchema(Schema):
     created_by_id: int | None = None
     updated_by_id: int | None = None
     finalized_by_id: int | None = None
+
+    @staticmethod
+    def resolve_source_document_ids(obj: PatientExaminationReport) -> list[int]:
+        return sorted(document.pk for document in obj.source_documents.all())
 
     @staticmethod
     def resolve_patient_examination_id(obj: PatientExaminationReport) -> int:
@@ -192,6 +201,7 @@ class PatientExaminationReportSubmissionSchema(Schema):
     indications: list[ReportJsonObject] = Field(default_factory=_empty_report_json_list)
     findings: list[ReportJsonObject] = Field(default_factory=_empty_report_json_list)
 
+    source_document_ids: list[int] | None = None
     expected_version: int | None = Field(default=None, ge=1)
     history_limit: int = Field(default=5, ge=1, le=50)
 

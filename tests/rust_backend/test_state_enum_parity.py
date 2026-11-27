@@ -229,3 +229,29 @@ def test_model_normalizers_reject_unknown_values_instead_of_defaulting() -> None
         normalize_frame_task_mode("unexpected")
     with pytest.raises(ValueError):
         normalize_frame_sampling_strategy("unexpected")
+
+
+@pytest.mark.parametrize(
+    ("history", "expected"),
+    [
+        (None, "validated"),
+        ("pending", "cleanup_queued"),
+        ("running", "cleanup_running"),
+        ("failure", "cleanup_failed"),
+        ("success", "validated"),
+        ("cancelled", "validated"),
+    ],
+)
+def test_native_segment_rebuild_history_precedes_evidence(
+    history: str | None, expected: str
+) -> None:
+    from endoreg_db import endoreg_rust_backend as native
+
+    assert native.segment_status_with_history(True, True, True, history) == expected
+
+
+def test_unknown_segment_rebuild_cannot_authorize_export() -> None:
+    from endoreg_db import endoreg_rust_backend as native
+
+    with pytest.raises(ValueError, match="history status"):
+        native.segment_status_with_history(True, True, True, "unknown")

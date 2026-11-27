@@ -17,13 +17,24 @@ from django.contrib.auth import get_user_model
 from django.contrib.auth.models import User as AuthUser
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.db.models import Q, QuerySet
 from django.utils import timezone
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
+from lx_dtypes.models.contracts.patient_examination_report import (
+    report_json_safe,
+    validate_segment_selection_map,
+)
 from lx_dtypes.terminology.terminology_loader import load_module_kb
 from lx_dtypes.terminology.terminology_service import TerminologyError
 
+from endoreg_db.models.administration.person.user.portal_user_information import (
+    PortalUserInfo,
+)
+from endoreg_db.models.administration.person.patient.patient_hash_alias import (
+    PatientHashAlias,
+)
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_file import AnonymExaminationReport
@@ -42,12 +53,17 @@ from endoreg_db.schemas.report_persistence import (
     report_language_from_editor_payload,
     validate_report_editor_payload,
 )
+from endoreg_db.services.raw_pdf_files.integrity import (
+    ProcessedReportIntegrityError,
+    require_usable_completed_report,
+)
 from endoreg_db.services.runtime.status_writers import (
     set_patient_examination_report_status,
 )
 from endoreg_db.services.reports.structured_records import (
     persist_patient_examination_dtypes_record_from_ledger,
 )
+from endoreg_db.services.reports.frame_selection import SEGMENT_FRAME_SELECTIONS_KEY
 from endoreg_db.services.reports.finding_sync import sync_report_findings
 from endoreg_db.services.reports.history import get_patient_examination_history_context
 from endoreg_db.services.reports.patient_context import update_report_patient_context
@@ -234,7 +250,7 @@ def persist_report_pdf_artifact(
     pdf_filename = canonical_media_name(pdf_hash, ".pdf")
 
     # Keep full report file in sync too (optional but useful for timeline/display)
-    full_report.file.save(pdf_filename, ContentFile[bytes](pdf_bytes), save=False)
+    full_report.file.save(pdf_filename, ContentFile(pdf_bytes), save=False)
     full_report.save()
 
     raw_pdf = RawPdfFile.objects.filter(anonym_examination_report=full_report).first()
@@ -283,7 +299,7 @@ def persist_report_pdf_artifact(
 
     raw_pdf.file.save(
         canonical_media_name(raw_pdf.pdf_hash, ".pdf"),
-        ContentFile[bytes](pdf_bytes),
+        ContentFile(pdf_bytes),
         save=False,
     )
     raw_pdf.save()
@@ -365,6 +381,87 @@ def _resolve_indication_selection(
             }
         )
     return _ResolvedIndicationSelection(indication=indication, choice=choice)
+
+
+def report_media_identity(examination: PatientExamination) -> Q:
+    """Resolve media against the same center, patient and examination identity."""
+    patient = examination.patient
+    if patient.center_id is None or not patient.patient_hash or not examination.hash:
+        return Q(pk__in=[])
+    aliases = PatientHashAlias.objects.filter(
+        patient=patient, center_id=patient.center_id
+    )
+    return Q(
+        Q(sensitive_meta__patient_hash=patient.patient_hash)
+        | Q(sensitive_meta__patient_hash__in=aliases.values("patient_hash")),
+        Q(sensitive_meta__pseudo_patient__isnull=True)
+        | Q(sensitive_meta__pseudo_patient=patient),
+        Q(sensitive_meta__pseudo_examination__isnull=True)
+        | Q(sensitive_meta__pseudo_examination=examination),
+        examination=examination,
+        patient=patient,
+        center_id=patient.center_id,
+        sensitive_meta__center_id=patient.center_id,
+        sensitive_meta__examination_hash=examination.hash,
+    )
+
+
+def authored_final_reports() -> QuerySet[PatientExaminationReport]:
+    """Completed structured annotations with an attributable saved author."""
+    return PatientExaminationReport.objects.filter(
+        status=PatientExaminationReport.Status.FINAL,
+        is_active=True,
+        dtypes_record__isnull=False,
+        updated_by__isnull=False,
+    )
+
+
+def eligible_report_documents(examination: PatientExamination) -> QuerySet[RawPdfFile]:
+    return (
+        RawPdfFile.objects.filter(
+            report_media_identity(examination),
+            state__anonymization_validated=True,
+            state__anonymized=True,
+            state__sensitive_meta_processed=True,
+            state__processing_error=False,
+            state__processed_file_sha256__regex=r"^[0-9a-f]{64}$",
+            processed_file__gt="",
+        )
+        .exclude(
+            Q(raw_meta__has_key="integrity_status")
+            & Q(raw_meta__integrity_status__iexact="lost")
+        )
+        .exclude(
+            Q(raw_meta__has_key="source")
+            & Q(raw_meta__source="patient_examination_report")
+        )
+        .order_by("pk")
+    )
+
+
+def validated_report_source_documents(
+    examination: PatientExamination, ids: Sequence[int]
+) -> list[RawPdfFile]:
+    documents = list(
+        eligible_report_documents(examination)
+        .filter(pk__in=ids)
+        .select_related("state", "sensitive_meta")
+        .select_for_update(of=("self", "state", "sensitive_meta"))
+    )
+    if len(documents) != len(ids):
+        raise ReportPersistenceValidationError(
+            {
+                "source_document_ids": "Select unique validated source documents belonging to this examination."
+            }
+        )
+    try:
+        for document in documents:
+            require_usable_completed_report(document)
+    except ProcessedReportIntegrityError as exc:
+        raise ReportPersistenceValidationError(
+            {"source_document_ids": "The approved source PDF could not be verified."}
+        ) from exc
+    return documents
 
 
 def _resolve_submission_examination(
@@ -533,6 +630,13 @@ def _apply_submission_report_fields(
         _mapping_or_empty(editor_payload),
         default_language="de",
     )
+    canonical_editor_payload.pop(SEGMENT_FRAME_SELECTIONS_KEY, None)
+    if SEGMENT_FRAME_SELECTIONS_KEY in report.editor_payload:
+        canonical_editor_payload[SEGMENT_FRAME_SELECTIONS_KEY] = report_json_safe(
+            validate_segment_selection_map(
+                report.editor_payload[SEGMENT_FRAME_SELECTIONS_KEY]
+            )
+        )
     report.editor_payload = canonical_editor_payload
     report.language = report_language_from_editor_payload(canonical_editor_payload)
     report.knowledge_base_module = patient_examination.knowledge_base_module
@@ -627,6 +731,7 @@ def save_report_submission(
     patient_data: Mapping[str, object] | None = None,
     indications: Sequence[Mapping[str, object]] | None = None,
     findings: Sequence[Mapping[str, object]] | None = None,
+    source_document_ids: Sequence[int] | None = None,
     title: str = "",
     template_version: str = "",
     template_hash: str = "",
@@ -657,6 +762,18 @@ def save_report_submission(
         report_id=report_id,
     )
     report_ref = cast(_PatientExaminationReportLike, report)
+    if report_ref.updated_by is not None and report_ref.updated_by != user_ref:
+        raise ReportPersistenceValidationError(
+            {"report_id": "Create a separate report for this annotator."}
+        )
+    selected_ids = source_document_ids
+    if selected_ids is None and not created:
+        selected_ids = list(report.source_documents.values_list("pk", flat=True))
+    documents = (
+        validated_report_source_documents(patient_examination, selected_ids)
+        if selected_ids
+        else []
+    )
     _validate_submission_version(
         report_ref,
         created=created,
@@ -704,7 +821,26 @@ def save_report_submission(
     _apply_submission_finalization(report_ref, user=user_ref)
     report.dtypes_record = patient_examination.dtypes_record
     report.dtypes_record_updated_at = patient_examination.dtypes_record_updated_at
-    report_ref.save()
+    profile = (
+        PortalUserInfo.objects.filter(user=user_ref).first()
+        if user_ref is not None
+        else None
+    )
+    report.author_profession = profile.annotation_profession or "" if profile else ""
+    report.author_academic_titles = (
+        profile.annotation_academic_titles if profile else []
+    )
+    from endoreg_db.services.clinical_lifecycle.persistence import (
+        journal_report_annotation_changes,
+    )
+
+    source_ids = {int(doc.pk) for doc in documents}
+    if not created:
+        source_ids.update(report.source_documents.values_list("pk", flat=True))
+    with journal_report_annotation_changes(source_ids, user_ref):
+        report_ref.save()
+        if source_document_ids is not None:
+            report.source_documents.set(documents)
     _clear_finalized_submission_draft(
         patient_examination,
         report_status=report_ref.status,
@@ -735,11 +871,19 @@ def save_report_submission(
 
 @transaction.atomic
 def delete_report_draft(
-    *, patient_examination_id: int, report_id: int, expected_version: int
+    *,
+    patient_examination_id: int,
+    report_id: int,
+    expected_version: int,
+    user: AuthUser | None = None,
 ) -> None:
     """Delete only a draft, serialized with report saves on the examination lock."""
     examination = _resolve_submission_examination(patient_examination_id)
     report, _ = _resolve_submission_report(examination, report_id=report_id)
+    if report.updated_by_id is not None and report.updated_by != user:
+        raise ReportPersistenceValidationError(
+            {"report_id": "Only the annotator can delete this draft."}
+        )
     if report.status != PatientExaminationReport.Status.DRAFT:
         raise ReportPersistenceValidationError(
             {"status": "Finalized reports cannot be deleted."}

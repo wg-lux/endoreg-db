@@ -104,6 +104,12 @@ definition_of_done:
   category: functionality
   title: Users can recover transfer media without bypassing provenance or review
   acceptance:
+  - Synchronous and asynchronous segment finalization enforce the same required frame, label and annotation
+    integrity; skipped required work cannot set successful validation flags.
+  - Samples that violate required blackening tolerance reject completion. Interrupted derivative generation
+    or verification resumes the exact published master bound to the source and interval configuration.
+  - Automatic repair cannot inherit human approval from a changed processed generation. A verified import
+    checkpoint resumes without an unnecessary full source copy or a fresh-import storage budget.
   - Every authenticated center member can preview and acknowledge unresolved frame provenance for one
     usable video without administrator privileges.
   - Integrity failures and active media work block recovery; missing original evidence remains explicitly
@@ -137,11 +143,14 @@ definition_of_done:
         raw/merged dates reject before media IO. Shared contract23 passed via isolated --noconftest; normal
         shared pytest lacks django_stubs_ext. Focused Pyright0/0, frontend47 component tests+6 final generated-type
         panel tests, TypeScript/ESLint pass.'
-    note: Local recovery checks pass, including replay no-op and shared pre-I/O date validation. Publish
-      lx-dtypes0.5.3 then refresh backend lock through normal resolution before release; registry currently
-      stops at0.5.2. Protected staging and deployed recovery/transfer acceptance remain outstanding.
-    assessed_by: codex-endoreg-durable-01a1398f
-    assessed_at: '2026-10-14T12:30:48.279524Z'
+    - kind: test
+      reference: '2026-11-24: Scoped Pyright 0 errors/0 warnings; RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false
+        pytest tests/services/test_video_post_validation_jobs.py tests/services/test_post_validation_generation_cleanup.py
+        tests/views/video/test_segments_crud.py -n 0 -q: 88 passed, 2 subtests passed. Covers asynchronous
+        annotation integrity, blackness rejection and exact published-generation resume. No deployment
+        or production approval.'
+    assessed_by: codex-flow-audit-20261124
+    assessed_at: '2026-11-24T10:24:26.819517Z'
 - id: browser_video_annotation_downloads
   category: functionality
   title: Direkte Video- und Annotationsexporte auf der Exportseite
@@ -509,14 +518,21 @@ definition_of_done:
       reference: '2026-10-09: vollständiger Endoreg-Pyright 0 Fehler, 17 Warnungen; abschließender validation.py-Pyright
         0 Fehler, 0 Warnungen. Ruff für Provenance-Adapter, Provenance-Tests und validation.py sowie git
         diff --check bestanden. 37 Feature-Definitionen schema-gültig.'
-    note: Maskierung und Frame-Entfernung laufen ausschließlich durch lx-anonymizer mit optionalen instanzgebundenen
-      VideoExecutionHooks. Endoreg persistiert tatsächliche Herkunft und hält die Ausführungsgrenzen.
-      Doppelter Detector-Kompatibilitätspfad entfernt; identische HLS-Zeitbasiskonvertierung vereinheitlicht.
-      Lokale Regressionen bestanden. Passende lx-anonymizer-Veröffentlichung und Migration 0092 bleiben
-      vor Deployment erforderlich; lx-dtypes 0.4.4 enthält den Vertrag bereits. Bestehende Modellinventar-Abweichungen
-      und übergreifende Produktionsfreigaben sind nicht Gegenstand dieser Änderung.
-    assessed_by: codex-sidecar-20261008-a
-    assessed_at: '2026-10-09T10:37:23.658781Z'
+    - kind: test
+      reference: '2026-11-23: devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_video_storage_normalization.py tests/import_files/test_video_import_normalization.py
+        tests/services/test_video_processed_transcode_integration.py -q --tb=short: 93 passed, one existing
+        plugin warning. Final timestamp matrix plus import/real-transcode regression after adding legacy
+        rational_cfr recovery: 40 passed, one existing plugin warning. Covers decoded raw history/hash,
+        missing fields, safe unpublished incorrect ticks/seconds, source replacement rejection, retained
+        processed coordinates and explicit processed resampling history. Conflicting annotated/history-backed
+        coordinates remain blocked. No deployment or production approval.'
+    - kind: command
+      reference: '2026-11-23: scoped Pyright for timelines.py, workflow.py, processed_transcode.py and
+        both changed tests: 0 errors, 0 warnings; Ruff check/format, git diff --check and 68 structure
+        manifests passed.'
+    assessed_by: codex-import-pts-20261123
+    assessed_at: '2026-11-23T11:26:59.796852Z'
 - id: storage_profile_contract
   category: requirements
   title: Rollen und Größenbudgets aller Videoartefakte sind verbindlich definiert
@@ -2251,6 +2267,15 @@ definition_of_done:
   category: data_integrity
   title: Every frame decoder exposes authoritative generation-bound presentation timestamps
   acceptance:
+  - Authorized export approval and download requests start bounded processed-timestamp recovery before
+    export validation transactions, so renewed-review rejection preserves repairs. Hub marking, bulk queueing,
+    retry and worker preparation use the same service; preflight stays read-only.
+  - Explicit processed-ordinal recovery may remap legacy annotation times with at most two seconds of
+    error per boundary, preserving labels and row identities. It verifies processed bytes, rejects ambiguous/collapsed
+    mappings and count changes, records typed before/after segment mappings, and clears segment/export
+    validation when coordinates change. Ordinary automatic backfill stays strict.
+  - Processed videos with only rational constant-frame-rate estimates remain automatic backfill candidates
+    until their decoded presentation timestamps are persisted; such estimates cannot mask missing PTS.
   - Explicit operator-confirmed processed-ordinal recovery is scoped to named videos and previews without
     persistent writes. It verifies processed content identity, decoded frame count, existing coordinates
     and every saved segment boundary; only absent ordinals and null coordinates may be filled. Existing
@@ -2316,6 +2341,12 @@ definition_of_done:
   assessment:
     status: in_progress
     evidence:
+    - kind: test
+      reference: '2026-11-23 codex-hub-transfer-20261123: export preparation helper and approval/download
+        integration. Timestamp/approval/download matrix: 105 passed, six opaque-byte transport fixture
+        failures; isolated recovery from those transport fixtures, rerun downloads: 23 passed. Full backend
+        Pyright: 0 errors, 2 pre-existing warnings; changed tests: 0 errors/warnings. Ruff, 68 structure
+        manifests and tracker validation passed. No deployment or production changes.'
     - kind: code
       reference: endoreg_db/utils/frame_stream.py
     - kind: test
@@ -2427,8 +2458,22 @@ definition_of_done:
         0.7.1 wheel: 0 errors, 0 warnings; Ruff check and format check passed for five scoped Python files;
         68 structure manifests and git diff --check passed. Runtime behavior of the new branch remains
         unverified; no deployment or production approval.'
-    assessed_by: codex-video-takeover-20261120
-    assessed_at: '2026-11-20T14:14:01.814608Z'
+    - kind: test
+      reference: '2026-11-23: devenv shell -- env RUN_VIDEO_TESTS=true SKIP_EXPENSIVE_TESTS=false .devenv/state/venv/bin/pytest
+        tests/services/test_video_timestamp_backfill.py tests/management/commands/test_backfill_video_timelines.py
+        tests/services/test_processed_timelines.py -q --tb=short: 106 passed, one existing plugin warning.
+        Final classifier follow-up: command suite 12 passed; PYTHONPATH=/home/admin/endoreg-db lx-annotate
+        tests/system/test_video_timeline_tasks.py: 25 passed. Covers encrypted processed media, exact
+        two-second positive/negative offsets, rational integer time bases, oversized errors, ambiguous/collapsed
+        intervals, active work, preview rollback, retained labels, cleared validation, idempotence and
+        automatic migration/Celery dispatch. Full backend Pyright 0 errors/2 existing warnings; changed-file
+        Pyright 0/0; Ruff, formatting, both structure validators and feature validation passed.'
+    note: Automatic processed PTS backfill remains strict and now includes rate-only processed metadata.
+      Explicit --confirm-processed-ordinals --remap-annotations recovery uses a two-second bound, preserves
+      label/frame identities, records typed segment mappings, and clears segment/export validation when
+      coordinates change. Preview rolls back. No production data changed or deployment performed.
+    assessed_by: codex-hub-transfer-20261123
+    assessed_at: '2026-11-23T12:05:27.743923Z'
 - id: native_segment_timeline_index
   category: functionality
   title: Segment boundaries resolve through one generation-bound native timeline index per video and request

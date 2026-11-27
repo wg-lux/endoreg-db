@@ -43,13 +43,30 @@ definition_of_done:
     evidence:
     - kind: review
       reference: endoreg_db/models/hub/upload_job.py; endoreg_db/services/hub/ingest.py; tests/services/test_upload_operation_identity.py
+    - kind: test
+      reference: 'Pyright 0 errors; .devenv/state/venv/bin/pytest tests/services/test_upload_operation_identity.py:
+        10 passed (pytest-postgresql, ein Prozess; kein unabhaengiger Prozessrennen-Nachweis), inkl. stale
+        pending/processing In-place-Recovery mit Konvergenz, Lease-Besitz unveraendert, fehlende Quelle
+        und erschoepftes Budget; Nachbarsuiten Ingest/Lease/Watcher/Upload-Endpunkte: 253 passed'
+    - kind: test
+      reference: 'Nach SSOT-Review: Pyright 0 errors; pytest-postgresql, ein Prozess: 24 Dateien (Identitaet,
+        Recovery-Sweeps, Lease, Ingest, Watcher, Integritaet, Cleanup, Hub-Transfer, Doku-Governance,
+        Strukturlint) 609 passed, 3 skipped, 1 erwarteter Fehler im zurueckgesetzten Report-Stale-Test;
+        danach test_ingest_idempotency_quarantine.py und test_upload_operation_identity.py 29 passed.'
     note: 'Upload: aktive Datenbank-Constraints binden Zentrum, Medientyp und Inhaltshash sowie den Schluessel
       an Quellsystem, Ingest-Modus und Storage-Klasse/-Tier. Geaenderter Inhalt zu einem bestehenden Schluessel
-      wird abgelehnt; geplanter Retry behaelt Job und Budget. Noch offen: unveraenderliche generationsgebundene
-      Identitaet fuer Approval, Segmentrevision, direkten Prediction-Aufruf und Recovery; terminale Fehler
+      wird abgelehnt; geplanter Retry behaelt Job und Budget. Veraltete, besitzerlose pending/processing-Videojobs
+      werden bei erneuter Zustellung in derselben Zeile innerhalb des Retry-Budgets neu eingeplant, wenn
+      sie die gemeinsame Zulassung retained_video_source_recovery_filter (upload_job_state_machine.py;
+      ebenso von recover_interrupted_upload_jobs genutzt, retained_source_recovery_filter von recover_persisted_import_stacks)
+      erfuellen und die Quelle existiert. Lease-, Abbruch- und Cleanup-Besitz bleiben unberuehrt; Reportjobs
+      (Besitz ueber ReportImportAttempt), verworfene, vorab anonymisierte und quellenlose Jobs behalten
+      die Neuanlage. STALE_UPLOAD_JOB_AGE liegt mit den uebrigen Recovery-Uhren in import_monitoring.py.
+      Noch offen: unveraenderliche generationsgebundene Identitaet fuer Approval, Segmentrevision, direkten
+      Prediction-Aufruf und Recovery; terminale Fehler, Reportjobs, fehlende Quellen und erschoepfte Budgets
       koennen weiterhin neue Importzeilen erzeugen.'
-    assessed_by: codex-idempotency-20260907-a
-    assessed_at: '2026-09-07T11:58:58.898550Z'
+    assessed_by: claude-stale-upload-recovery
+    assessed_at: '2026-11-24T09:43:50.544846Z'
 - id: durable_success_evidence
   category: functionality
   title: Completion and duplicate detection preserve truthful workflow gates
@@ -78,16 +95,29 @@ definition_of_done:
     - kind: code
       reference: endoreg_db/services/video_files/state.py; tests/services/test_video_state_identity.py;
         tests/services/test_upload_job_import_lease_postgresql.py::test_simultaneous_state_creation_preserves_one_state
-    note: 'Abgeschlossene Video-Task-Redelivery prueft zentrumsgebundene Medien, lesbare Artefakte, technischen
-      und sensitiven Metadatenbestand sowie den Verarbeitungszustand. Fehlende Evidenz wird LOST, ohne
-      Quellenloeschung oder automatische Review-Freigabe. get_or_create_video_state liest die autoritative
+    - kind: test
+      reference: 'Pyright 0 errors; pytest-postgresql, ein Prozess: tests/services/test_upload_operation_identity.py
+        14 passed (u.a. parametrisierte Wiederverwendung reviewter und review-ausstehender Importe, LOST
+        bei fehlendem Verarbeitungsnachweis oder Artefakt); 19 Testdateien mit Aufrufern von create_or_reuse/watcher/Integritaetscheck
+        in zwei Laeufen: 95 passed und 233 passed. test_ingest_idempotency_quarantine.py: Stale-Watcher-Test
+        auf In-place-Recovery desselben Jobs umgestellt.'
+    - kind: test
+      reference: 'Nach SSOT-Review: Pyright 0 errors; pytest-postgresql, ein Prozess: 24 Dateien (Identitaet,
+        Recovery-Sweeps, Lease, Ingest, Watcher, Integritaet, Cleanup, Hub-Transfer, Doku-Governance,
+        Strukturlint) 609 passed, 3 skipped, 1 erwarteter Fehler im zurueckgesetzten Report-Stale-Test;
+        danach test_ingest_idempotency_quarantine.py und test_upload_operation_identity.py 29 passed.'
+    note: 'Abschluss eines Uploadimports fuer Wiederverwendung und Task-Redelivery ist einheitlich check_upload_job_import_completion
+      (media_integrity.py): reviewte Medien oder verarbeitete Medien mit technischem und sensitivem Metadatenbestand
+      vor dem Review. Task-Redelivery akzeptiert damit auch reviewte Medien ohne Metadatenbestand, die
+      zuvor LOST wurden. Fehlende Evidenz wird LOST, ohne Quellenloeschung oder automatische Review-Freigabe;
+      Quellen-Cleanup verlangt weiterhin den reviewten Zustand. get_or_create_video_state liest die autoritative
       Zuordnung unter dem Videozeilenlock: ein alter VideoFile-Cache kann weder eine zweite State-Zeile
       erzeugen noch die aktuelle Zuordnung und deren Review-Flags ersetzen. Offen bleiben vollstaendige
       generationsgebundene Abschlussbelege einschliesslich HTTP Live Streaming und Normalisierung sowie
-      ein gemeinsamer Repair-Vertrag. Der Default-Integritaetscheck anderer Duplicate-Einstiegspunkte
-      verlangt weiterhin Review.'
-    assessed_by: codex-idempotency-20260907-a
-    assessed_at: '2026-09-07T12:15:34.177659Z'
+      ein gemeinsamer Repair-Vertrag. Die Reprocessing-Pruefung im VideoImportService verlangt weiterhin
+      Review.'
+    assessed_by: claude-stale-upload-recovery
+    assessed_at: '2026-11-24T09:43:52.298860Z'
 - id: concurrent_delivery_fencing
   category: functionality
   title: Only the current execution owner can publish or complete work
@@ -213,8 +243,23 @@ definition_of_done:
       artifact generations.
     timeout_seconds: 600
   assessment:
-    status: not_assessed
-    evidence: []
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'Pyright 0 errors; pytest-postgresql, ein Prozess: 13 Hub-Transfer-Testdateien plus Upload-Identitaetstests
+        288 passed, 1 skipped; tests/services/test_hub_transfer_unit_decisions.py Entscheidungsmatrix
+        fuer Video und Report ueber alle ProcessingPolicy-Werte.'
+    note: 'Metadaten-only-Transfer mit Absender-Erfolgsmeldung ohne lokale Artefakte wird nicht mehr INCONSISTENT,
+      sondern AWAITING_MEDIA/WAIT_FOR_MISSING_MEDIA (Video und Report): ein Zeitversatz zwischen Metadaten
+      und Medien ist kein Integritaetskonflikt und fuehrte zuvor beim Absender zu integrity_inconsistency.
+      Das Wire-Feld sender_processing_success bleibt validiert, persistiert und Teil der exakten Replay-Identitaet,
+      steuert aber keine Entscheidung mehr. INCONSISTENT entsteht nur noch bei Eigentumskonflikt (anderes
+      Zentrum/anderer Quellknoten) und abweichendem Envelope-Replay nach APPLIED; diese bleiben gemaess
+      Rust-Zustandsmaschine terminal. Offen: Altbestand, der durch die fruehere Regel INCONSISTENT wurde,
+      kann ohne explizite Rust-Transition nicht reaktiviert werden; HLS-Wiederverwendung, Ack-Verlust
+      und Cleanup-Kriterien nicht bewertet.'
+    assessed_by: claude-stale-upload-recovery
+    assessed_at: '2026-11-24T09:28:26.096699Z'
 - id: observable_retry_lifecycle
   category: operations
   title: Recovery remains observable until a trustworthy terminal outcome

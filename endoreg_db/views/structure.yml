@@ -12,9 +12,11 @@ files:
 - file: misc/upload_views.py
   role: Content-validated API uploads; missing, failed or unsupported content detection rejects before persistence and dispatch.
 - file: patient_examination/patient_examination_detail.py
-  role: Examination detail and update adapter passing request authorization context to identity validation.
+  role: Authenticated center-scoped examination detail and update with persisted examiner and indication selections.
 - file: access_control.py
   role: Center-scoped access helpers.
+- file: fhir_r4_api.py
+  role: Read-only FHIR R4 API views (application/fhir+json); route policy plus center scope, OperationOutcome for every error.
 - file: case.py
   role: Clinical case endpoints.
 - file: examination_revision.py

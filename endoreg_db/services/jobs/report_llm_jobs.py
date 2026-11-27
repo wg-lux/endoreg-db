@@ -27,6 +27,7 @@ from endoreg_db.services.reports.completion import (
 from endoreg_db.config.env import env_choice, env_int
 from endoreg_db.import_files.report_import_service import InvalidReportDocumentError
 from endoreg_db.models.hub.upload_job import UploadJob
+from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.pdf.report_llm_job import (
     ReportLlmInferenceJob,
@@ -54,13 +55,15 @@ from endoreg_db.services.jobs.heavy_jobs import (
     ensure_secure_transport_for_job_kind,
     queue_for_job_kind,
 )
-from endoreg_db.services.raw_pdf_files import require_usable_completed_report
+from endoreg_db.services.raw_pdf_files.integrity import (
+    require_reusable_completed_report,
+)
 from endoreg_db.services.jobs.error_handling import database_recovery_reason
 from endoreg_db.services.reports.import_fencing import (
     ReportImportBusyError,
     StaleReportImportAttemptError,
 )
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.reports.import_lifecycle import ReportJobAlreadyCompleted
 from endoreg_db.utils.api_urls import endoreg_api_path
 from endoreg_db.utils.storage import ensure_local_file
@@ -193,6 +196,7 @@ def _mark_report_upload_jobs_anonymized(pdf: _RawPdfLike) -> int:
         _report_upload_jobs(pdf).select_for_update(),
         status=UploadJob.Status.ANONYMIZED,
         sensitive_meta_id=pdf.sensitive_meta_id,
+        published_media_id=pdf.pk,
     )
 
 
@@ -446,6 +450,10 @@ class _ReportJobLifecycle:
         self.job = ReportLlmInferenceJob.objects.select_for_update().get(pk=self.job.pk)
         if self.reimport and self.job.pdf != report:
             raise ValueError("Reimport source does not match the requested report")
+        if not self.reimport:
+            source_center = cast(Center | None, self.upload_job().source_center)
+            if source_center is None or source_center.pk != report.center_id:
+                raise ValueError("Imported report belongs to a different center")
         if self.job.status == ReportLlmInferenceJob.STATUS_CANCELLED:
             raise ReportImportBusyError("Report job was cancelled")
 
@@ -480,10 +488,9 @@ class _ReportJobLifecycle:
             self.job.mark_running()
         report.refresh_from_db()
         pdf = cast(_RawPdfLike, report)
-        processed_file_sha256 = require_usable_completed_report(
+        processed_file_sha256 = require_reusable_completed_report(
             report,
             source_sha256=pdf.pdf_hash,
-            require_artifact=False,
         )
         attempt = ReportImportAttempt.objects.get(content_hash=pdf.pdf_hash)
         if (
@@ -636,6 +643,7 @@ def _run_report_job(job_id: str, *, reimport: bool) -> bool:
             report = ReportImportService(lifecycle=lifecycle).import_and_anonymize(
                 file_path=file_path,
                 center_name=center.name,
+                center_key=center.center_key,
                 retry=config.retry,
             )
             if inventory_job is not None:
@@ -810,8 +818,10 @@ def dispatch_report_llm_import(
     upload_job_id: str,
     payload: Any | None = None,
     resume_existing: bool = False,
+    execute_inline: bool = False,
 ) -> ReportLlmDispatchResult:
-    mode = get_report_llm_job_mode()
+    """Dispatch the same fenced job, optionally inline for trusted broker recovery."""
+    mode: ReportLlmJobMode = "inline" if execute_inline else get_report_llm_job_mode()
     task_id = str(uuid.uuid4())
     queue = _queue_for_report_job(HeavyJobKind.REPORT_LLM_IMPORT)
     operation = REPORT_LLM_IMPORT_OPERATION

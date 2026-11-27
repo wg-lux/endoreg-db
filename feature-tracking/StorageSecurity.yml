@@ -13,9 +13,6 @@ source_documents:
 - path: docs/storage_lifecycle.md
   disposition: reference
   note: General current-state map of application storage ownership, protection, lifecycle, and cleanup.
-- path: docs/repo_alignment_todo.md
-  disposition: migrated
-  note: Cross-Repository-Divergenzen, Phasen und Erfolgskriterien sind Teil dieser DoD.
 - path: docs/video_hls_permissions_and_streaming.md
   disposition: reference
   note: Streaming- und Berechtigungsvertrag.

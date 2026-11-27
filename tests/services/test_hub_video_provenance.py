@@ -2,7 +2,8 @@ from __future__ import annotations
 
 from fractions import Fraction
 from datetime import timedelta
-from unittest.mock import Mock
+from concurrent.futures import ThreadPoolExecutor
+from unittest.mock import Mock, call
 
 import pytest
 from django.utils import timezone
@@ -11,6 +12,7 @@ from lx_dtypes.models.contracts.video_provenance import (
     ElectricalTimestampSeries,
     VideoFrameProvenancePayload,
     VideoProvenanceBundle,
+    VideoProvenanceRecovery,
 )
 
 from endoreg_db.models.media.video.video_file import VideoFile
@@ -200,6 +202,7 @@ def test_resolver_composes_current_generation_without_mutating_metadata(
 @pytest.mark.parametrize("persisted_bundle", [False, True])
 def test_processed_history_cannot_substitute_for_missing_recording_ancestry(
     persisted_bundle: bool,
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     second = VideoFrameProvenancePayload(
@@ -233,9 +236,82 @@ def test_processed_history_cannot_substitute_for_missing_recording_ancestry(
     monkeypatch.setattr(
         "endoreg_db.services.media.export_downloads.validate_video_download", validate
     )
-    with pytest.raises(ValueError, match="unavailable|another recording"):
+    caplog.set_level("INFO", logger=exchange.__name__)
+    decode = Mock(return_value=second.output)
+    monkeypatch.setattr(exchange, "_decode_processed_timeline", decode)
+    if persisted_bundle:
+        with pytest.raises(ValueError, match="another recording"):
+            exchange.export_video_provenance(video)
+        validate.assert_not_called()
+        decode.assert_not_called()
+        assert not MediaOperationLease.objects.filter(video=video).exists()
+    else:
+        receipt = exchange.export_video_provenance(video)
+        assert isinstance(receipt, VideoProvenanceRecovery)
+        assert receipt.method == "decoded_processed_timeline_v1"
+        assert receipt.processed_timeline == second.output
+        assert receipt.original_timeline is None
+        assert not receipt.electrical_matching_eligible
+        assert validate.call_args_list == [
+            call(video, verify_content=False),
+            call(video, verify_content=False),
+        ]
+        [event] = [
+            vars(record)["structured_event"]
+            for record in caplog.records
+            if record.name == exchange.__name__
+        ]
+        assert event == {
+            "event": "hub_transfer.processed_timeline_selected",
+            "video_id": video.pk,
+            "recording_hash": video.raw_video_hash,
+            "processed_hash": video.processed_video_hash,
+            "method": receipt.method,
+        }
+        caplog.clear()
+        decode.return_value = second.source
+        with pytest.raises(ValueError, match="another processed generation"):
+            exchange.export_video_provenance(video)
+
+    assert not any(record.name == exchange.__name__ for record in caplog.records)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_writer_can_replace_generation_during_sender_probe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from django.db import connections, transaction
+    from lx_dtypes.models.contracts.video_provenance import VideoFrameTimeline
+
+    video = VideoFile.objects.create(
+        center=Center.objects.create(name="concurrent-publication"),
+        raw_video_hash="a" * 64,
+        processed_video_hash="b" * 64,
+        processed_file="processed/provenance-test.mp4",
+    )
+
+    def publish() -> None:
+        try:
+            with transaction.atomic():
+                current = VideoFile.objects.select_for_update(nowait=True).get(
+                    pk=video.pk
+                )
+                current.processed_video_hash = "c" * 64
+                current.save(update_fields=["processed_video_hash"])
+        finally:
+            connections.close_all()
+
+    def decode(snapshot: VideoFile) -> VideoFrameTimeline:
+        with ThreadPoolExecutor(max_workers=1) as writer:
+            writer.submit(publish).result(timeout=10)
+        return timeline("b", [0, 10])
+
+    monkeypatch.setattr(exchange, "_decode_processed_timeline", decode)
+    monkeypatch.setattr(
+        "endoreg_db.services.media.export_downloads.validate_video_download", Mock()
+    )
+    with pytest.raises(ValueError, match="generation changed"):
         exchange.export_video_provenance(video)
-    validate.assert_not_called()
     assert not MediaOperationLease.objects.filter(video=video).exists()
 
 
@@ -245,8 +321,10 @@ def test_processed_history_cannot_substitute_for_missing_recording_ancestry(
 )
 def test_sender_reuses_hash_bound_proof_and_checks_gates_before_export(
     blocker: str,
+    caplog: pytest.LogCaptureFixture,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    caplog.set_level("INFO", logger=exchange.__name__)
     bundle = synchronized_bundle()
     video = VideoFile.objects.create(
         center=Center.objects.create(name="sender-proof-gates"),
@@ -281,10 +359,14 @@ def test_sender_reuses_hash_bound_proof_and_checks_gates_before_export(
     elif blocker == "integrity":
         with pytest.raises(ValueError, match="integrity mismatch"):
             exchange.export_video_provenance(video)
-        validate.assert_called_once_with(video)
+        validate.assert_called_once_with(video, verify_content=True)
     else:
         assert exchange.export_video_provenance(video) == bundle
-        validate.assert_called_once_with(video)
+        assert validate.call_args_list == [
+            call(video, verify_content=True),
+            call(video, verify_content=False),
+        ]
+    assert not any(record.name == exchange.__name__ for record in caplog.records)
     decode.assert_not_called()
     assert MediaOperationLease.objects.filter(
         video=video, lease_type="stream"

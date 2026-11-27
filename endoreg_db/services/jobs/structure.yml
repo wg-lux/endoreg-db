@@ -26,7 +26,7 @@ files:
 - file: heavy_jobs.py
   role: Exports queue_name, queue_for_job_kind, ensure_secure_transport_for_job_kind.
 - file: model_training_jobs.py
-  role: Exports prepare_model_training_inputs, dispatch_due_model_training_retries, reconcile_model_training_artifacts.
+  role: Training admission, retries and artifact reconciliation with Rust-owned status decisions and fenced persistence.
 - file: report_llm_jobs.py
   role: Report job orchestration and API payloads with canonical attempt completion evidence.
 - file: stale_recovery.py

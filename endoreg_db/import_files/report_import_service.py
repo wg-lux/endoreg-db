@@ -28,6 +28,7 @@ from endoreg_db.import_files.context.file_lock import (
     file_lock,
 )
 from endoreg_db.import_files.context.import_context import ImportContext
+from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.context.validate_directories import validate_directories
 from endoreg_db.import_files.file_storage.cleanup import (
     cleanup_staging_files,
@@ -55,7 +56,9 @@ from endoreg_db.services.raw_pdf_files import (
     ProcessedReportIntegrityError,
     get_or_create_raw_pdf_state,
     get_raw_pdf_by_content_hash,
-    require_usable_completed_report,
+)
+from endoreg_db.services.raw_pdf_files.integrity import (
+    require_reusable_completed_report,
 )
 from endoreg_db.services.reports.import_lifecycle import (
     ReportImportLifecycle,
@@ -127,11 +130,14 @@ class ReportImportService:
         file_path: Path | str,
         center_name: str = "",
         retry: bool = False,
+        *,
+        center_key: str | None = None,
     ) -> RawPdfFile:
         return self._timed_import_and_anonymize(
             file_path=file_path,
             center_name=center_name,
             retry=retry,
+            center_key=center_key,
         )
 
     def _timed_import_and_anonymize(
@@ -140,6 +146,7 @@ class ReportImportService:
         file_path: Path | str,
         center_name: str,
         retry: bool,
+        center_key: str | None = None,
     ) -> RawPdfFile:
         started_at = start_workload_timing()
         outcome_token = _report_import_outcome.set(WorkloadOutcome.FAILED)
@@ -148,6 +155,7 @@ class ReportImportService:
                 file_path=file_path,
                 center_name=center_name,
                 retry=retry,
+                center_key=center_key,
             )
             if result is None:
                 raise RuntimeError("Report import returned no media instance.")
@@ -181,14 +189,17 @@ class ReportImportService:
         file_path: Path | str,
         center_name: str,
         retry: bool,
+        center_key: str | None = None,
     ) -> RawPdfFile | None:
         """Prepare the format-specific source before entering the locked pipeline."""
         temp_pdf_path: Path | None = None
         try:
-            ctx = self._create_import_context(file_path, center_name)
+            ctx = self._create_import_context(
+                file_path, center_name, center_key=center_key
+            )
 
             if ctx.file_path.suffix.lower() == ".txt":
-                temp_pdf_path = self._create_temp_pdf_from_txt(ctx.file_path)
+                temp_pdf_path = self.create_pdf_from_text(ctx.file_path)
                 ctx.file_path = temp_pdf_path
             else:
                 self._validate_pdf_document(ctx.file_path)
@@ -205,6 +216,8 @@ class ReportImportService:
         self,
         file_path: Path | str,
         center_name: str,
+        *,
+        center_key: str | None = None,
     ) -> ImportContext:
         path = Path(file_path)
         if not path.exists():
@@ -214,11 +227,10 @@ class ReportImportService:
 
         self.logger.info("validating and preparing file")
         center_name = TypeAdapter(str).validate_python(center_name, strict=True)
-        center_key: str | None = None
         if not center_name.strip():
-            from endoreg_db.services.centers.defaults import resolve_local_center
+            from endoreg_db.services.centers.defaults import resolve_import_center
 
-            center = resolve_local_center()
+            center = resolve_import_center(center_name, center_key=center_key)
             center_name = str(center.name)
             center_key = str(center.center_key)
         return ImportContext(
@@ -305,10 +317,12 @@ class ReportImportService:
                 with report_import_finalization_guard(fence):
                     # Re-read completion under cluster ownership.
                     existing_completed.refresh_from_db()
-                    require_usable_completed_report(
+                    ensure_center(
+                        existing_completed, ctx.center_name, center_key=ctx.center_key
+                    )
+                    require_reusable_completed_report(
                         existing_completed,
                         source_sha256=ctx.file_hash,
-                        require_artifact=False,
                     )
                     self.lifecycle.succeeded(existing_completed, reused=True)
             except Exception:
@@ -421,16 +435,18 @@ class ReportImportService:
             # to the upload-job boundary, which handles FileNotFoundError.
             raise RuntimeError(f"Report OCR runtime is not configured: {exc}") from exc
 
-    def _create_temp_pdf_from_txt(self, txt_path: Path) -> Path:
+    @staticmethod
+    def create_pdf_from_text(txt_path: Path) -> Path:
+        """Render an immutable text snapshot; the caller owns the returned PDF."""
         with file_lock(txt_path):
             snapshot = create_snapshot(txt_path, get_runtime_paths().sensitive_report)
         try:
-            txt_content = self._read_txt_content(snapshot.path)
+            txt_content = ReportImportService._read_txt_content(snapshot.path)
             if not txt_content.strip():
                 raise InvalidReportDocumentError("TXT report is empty.")
             # Render only the report text: a digest of the unanonymized source
             # would otherwise survive into anonymized_text and hub transfers.
-            pdf_bytes = self._render_report_pdf(txt_content)
+            pdf_bytes = ReportImportService._render_report_pdf(txt_content)
         finally:
             cleanup_staging_files((snapshot.path,), label="TXT conversion snapshot")
         destination = (
@@ -562,11 +578,11 @@ class ReportImportService:
             )
             return None
 
+        ensure_center(existing_report, ctx.center_name, center_key=ctx.center_key)
         try:
-            require_usable_completed_report(
+            require_reusable_completed_report(
                 existing_report,
                 source_sha256=file_hash,
-                require_artifact=False,
             )
         except ProcessedReportIntegrityError as exc:
             ctx.current_report = existing_report

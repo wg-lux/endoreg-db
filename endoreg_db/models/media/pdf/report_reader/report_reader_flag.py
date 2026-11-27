@@ -3,18 +3,14 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import ReportReaderConfig
 
 
-class ReportReaderFlagManager(models.Manager["ReportReaderFlag"]):
-    def get_by_natural_key(self, name: str) -> "ReportReaderFlag":
-        return self.get(name=name)
-
-
 class ReportReaderFlag(models.Model):
-    objects = ReportReaderFlagManager()
+    objects = NameNaturalKeyManager["ReportReaderFlag"]()
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     # German display name; NULL when the catalogue carries none.
     name_de: models.CharField[Any, Any] = models.CharField(

@@ -23,7 +23,14 @@ from endoreg_db.views import (
     application_settings_network_node_roles_dropdown,
 )
 
+from endoreg_db.views.misc.application_settings import PersonalAnnotatorProfileView
+
 urlpatterns = [
+    path(
+        "settings/application/my-annotation-profile/",
+        PersonalAnnotatorProfileView.as_view(),
+        name="personal-annotator-profile",
+    ),
     path(
         "settings/application/",
         application_settings_detail,

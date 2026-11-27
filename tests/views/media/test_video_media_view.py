@@ -20,6 +20,8 @@ from endoreg_db.models import (
     VideoState,
 )
 from tests.helpers.video_timeline import constant_rate_video_metadata
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 class VideoMediaViewTests(TestCase):
@@ -205,8 +207,7 @@ class VideoMediaViewTests(TestCase):
             "processed-safe.mp4", ContentFile(b"processed"), save=True
         )
         state = processed.get_or_create_state()
-        state.anonymized = True
-        state.save(update_fields=["anonymized"])
+        update_media_state(state, changes={"anonymized": True})
         centerless = User.objects.create_user(username=f"centerless-{uuid4().hex}")
         m2m_add_relation(centerless.groups).add(Group.objects.get(name="video:read"))  # type: ignore
         self.client.force_login(centerless)
@@ -237,8 +238,7 @@ class VideoMediaViewTests(TestCase):
             "processed-secret.mp4", ContentFile(b"processed"), save=True
         )
         state = self.video.get_or_create_state()
-        state.anonymized = True
-        state.save(update_fields=["anonymized"])
+        update_media_state(state, changes={"anonymized": True})
         centerless = User.objects.create_user(username=f"hub-detail-{uuid4().hex}")
         m2m_add_relation(centerless.groups).add(Group.objects.get(name="video:read"))  # type: ignore
         self.client.force_login(centerless)
@@ -267,8 +267,7 @@ class VideoMediaViewTests(TestCase):
             "processed-write-boundary.mp4", ContentFile(b"processed"), save=True
         )
         state = self.video.get_or_create_state()
-        state.anonymized = True
-        state.save(update_fields=["anonymized"])
+        update_media_state(state, changes={"anonymized": True})
         centerless = User.objects.create_user(username=f"hub-writer-{uuid4().hex}")
         m2m_add_relation(centerless.groups).add(  # type: ignore
             Group.objects.create(name="video:write"),
@@ -291,7 +290,7 @@ class VideoMediaViewTests(TestCase):
             return VideoFile.objects.create(
                 center=self.center,
                 raw_video_hash=f"phase-{uuid4().hex}",
-                state=VideoState.objects.create(was_created=False, **flags),
+                state=create_media_state(VideoState, was_created=False, **flags),
             ).pk
 
         expected = {

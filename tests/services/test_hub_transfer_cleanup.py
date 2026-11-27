@@ -1,10 +1,15 @@
 from datetime import timedelta
 from hashlib import sha256
+from concurrent.futures import ThreadPoolExecutor
+from collections.abc import Sequence
+from threading import Event
 from unittest.mock import patch
 
 import pytest
 from django.core.files.base import ContentFile
 from django.db.models.fields.files import FieldFile
+from django.db import close_old_connections, connection, connections, transaction
+from django.db.models import QuerySet
 from django.utils import timezone
 from lx_dtypes.models.contracts.hub_media_envelope import HubMediaEnvelopeReceipt
 
@@ -158,6 +163,95 @@ def test_partial_deletion_retries_from_durable_intent(
     assert job.local_files_cleanup_started_at is not None
     assert job.local_files_cleanup_completed_at is None
     cleanup_transferred_video_files(outbound_job_id=str(job.pk), receipt=receipt)
+    job.refresh_from_db()
+    assert job.local_files_cleanup_completed_at is not None
+
+
+@pytest.mark.parametrize("phase", [1, 2])
+def test_changed_video_binding_blocks_cleanup_before_mutation(
+    completed_video: tuple[OutboundHubTransferJob, HubMediaEnvelopeReceipt],
+    phase: int,
+) -> None:
+    job, receipt = completed_video
+    video = job.video_file
+    assert video is not None
+    replacement = VideoFile.objects.create(
+        center=video.center, raw_video_hash="replacement"
+    )
+    original = VideoFile.objects.select_for_update
+    acquisitions = 0
+
+    def change_binding(
+        nowait: bool = False,
+        skip_locked: bool = False,
+        of: Sequence[str] = (),
+        no_key: bool = False,
+    ) -> QuerySet[VideoFile]:
+        nonlocal acquisitions
+        acquisitions += 1
+        if acquisitions == phase:
+            OutboundHubTransferJob.objects.filter(pk=job.pk).update(
+                video_file=replacement
+            )
+        return original(nowait=nowait, skip_locked=skip_locked, of=of, no_key=no_key)
+
+    with patch.object(
+        VideoFile.objects, "select_for_update", side_effect=change_binding
+    ):
+        with pytest.raises(ValueError, match="binding changed"):
+            cleanup_transferred_video_files(
+                outbound_job_id=str(job.pk), receipt=receipt
+            )
+    job.refresh_from_db()
+    assert (job.local_files_cleanup_started_at is None) == (phase == 1)
+    raw_name, processed_name = video.raw_file.name, video.processed_file.name
+    assert raw_name and processed_name
+    assert video.raw_file.storage.exists(raw_name)
+    assert video.processed_file.storage.exists(processed_name)
+
+
+@pytest.mark.django_db(transaction=True)
+def test_cleanup_does_not_hold_job_while_waiting_for_generation_worker(
+    completed_video: tuple[OutboundHubTransferJob, HubMediaEnvelopeReceipt],
+) -> None:
+    if connection.vendor != "postgresql":
+        pytest.skip("Requires PostgreSQL row locks")
+    job, receipt = completed_video
+    video_id = job.video_file_id
+    assert video_id is not None
+    waiting = Event()
+    original = VideoFile.objects.select_for_update
+
+    def waiting_for_video(
+        nowait: bool = False,
+        skip_locked: bool = False,
+        of: Sequence[str] = (),
+        no_key: bool = False,
+    ) -> QuerySet[VideoFile]:
+        waiting.set()
+        return original(nowait=nowait, skip_locked=skip_locked, of=of, no_key=no_key)
+
+    def cleanup() -> None:
+        close_old_connections()
+        try:
+            with patch.object(
+                VideoFile.objects, "select_for_update", side_effect=waiting_for_video
+            ):
+                cleanup_transferred_video_files(
+                    outbound_job_id=str(job.pk), receipt=receipt
+                )
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with transaction.atomic():
+            VideoFile.objects.select_for_update().get(pk=video_id)
+            future = executor.submit(cleanup)
+            assert waiting.wait(timeout=10), "Cleanup did not reach the resource lock"
+            # A generation worker already holding the video must be able to
+            # acquire its job. Job-first cleanup would make this NOWAIT fail.
+            OutboundHubTransferJob.objects.select_for_update(nowait=True).get(pk=job.pk)
+        future.result(timeout=20)
     job.refresh_from_db()
     assert job.local_files_cleanup_completed_at is not None
 

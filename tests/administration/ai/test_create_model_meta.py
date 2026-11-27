@@ -3,14 +3,10 @@ from typing import Protocol, cast
 from pathlib import Path
 
 import pytest
-from django.test import TestCase
 
 from endoreg_db.models import ModelMeta
 
 from ...helpers.data_loader import load_data
-from ...helpers.default_objects import (
-    get_latest_segmentation_model,
-)
 
 
 class _WeightsFileLike(Protocol):
@@ -24,19 +20,6 @@ class _AiModelWithActiveMeta(Protocol):
 
 class _ModelMetaWithModel(Protocol):
     model: _AiModelWithActiveMeta
-
-
-class AiModelTest(TestCase):
-    ai_model_meta: ModelMeta
-
-    def setUp(self):
-        load_data()
-
-        self.ai_model_meta = get_latest_segmentation_model()
-
-    def test_model_meta_creation(self):
-        """Test the creation of an AiModel instance."""
-        print(self.ai_model_meta)
 
 
 @pytest.mark.expensive

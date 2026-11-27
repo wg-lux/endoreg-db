@@ -1,4 +1,6 @@
 mod capabilities;
+mod clinical_workflow;
+mod media_decisions;
 mod encrypted_format;
 mod encrypted_range;
 mod encryption_state;
@@ -35,7 +37,19 @@ fn endoreg_rust_backend(_py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResu
         import_processing::transition_import_processing_stack,
         module
     )?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::direct_identifier_fields, module)?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::direct_identifier_clear_values, module)?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::media_validation_available, module)?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::video_hub_export_blocker, module)?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::hub_export_integrity_blocker, module)?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::hub_export_integrity, module)?)?;
+    module.add_function(wrap_pyfunction!(media_decisions::raw_video_cleanup_blockers, module)?)?;
+    module.add_function(wrap_pyfunction!(state_enums::segment_status_with_history, module)?)?;
     module.add_class::<file_identity::BatchProcessor>()?;
+    module.add_function(wrap_pyfunction!(clinical_workflow::clinical_workflow_tables, module)?)?;
+    module.add_function(wrap_pyfunction!(clinical_workflow::reduce_clinical_workflow, module)?)?;
+    module.add_function(wrap_pyfunction!(clinical_workflow::clinical_evidence_rejection, module)?)?;
+    module.add_function(wrap_pyfunction!(clinical_workflow::project_clinical_workflow, module)?)?;
     module.add_class::<timeline_index::TimelineIndex>()?;
     module.add_function(wrap_pyfunction!(
         frame_ancestry::compose_frame_ancestry,

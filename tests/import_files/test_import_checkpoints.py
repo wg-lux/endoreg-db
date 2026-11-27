@@ -55,6 +55,7 @@ from endoreg_db.services.reports.import_fencing import (
     report_import_mutation_guard,
 )
 from pydantic import ValidationError
+from tests.helpers.media_states import create_media_state
 from tests.import_files.test_video_finalize_success import build_normalization_evidence
 
 pytestmark = pytest.mark.django_db
@@ -411,9 +412,9 @@ def test_committed_or_validated_media_is_not_reopened_by_a_leftover_checkpoint(
         "anonymization_validated": validated,
     }
     if isinstance(instance, VideoFile):
-        instance.state = VideoState.objects.create(**flags)
+        instance.state = create_media_state(VideoState, **flags)
     else:
-        instance.state = RawPdfState.objects.create(**flags)
+        instance.state = create_media_state(RawPdfState, **flags)
     instance.save(update_fields=["state"])
     assert has_pending_import_checkpoint(instance) is False
     assert (

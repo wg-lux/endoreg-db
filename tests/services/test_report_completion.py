@@ -95,6 +95,101 @@ def test_duplicate_completion_projects_native_state_without_mutation(
     ] == evidence.model_dump(mode="json")
 
 
+def test_successful_reuse_preserves_previous_published_completion(
+    completed_job: ReportLlmInferenceJob,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = completed_job.pdf
+    assert report is not None
+    original = ReportLlmInferenceJob.objects.values().get(pk=completed_job.pk)
+    reused_job = ReportLlmInferenceJob.objects.create(
+        pdf=report,
+        config={"kind": "report_llm_reimport", "queue": "pipeline"},
+    )
+    monkeypatch.setattr(
+        report_llm_jobs,
+        "require_reusable_completed_report",
+        Mock(return_value="b" * 64),
+    )
+    fence = acquire_report_import_fence(report.pdf_hash)
+    with report_import_finalization_guard(fence):
+        report_llm_jobs._ReportJobLifecycle(reused_job, reimport=True).succeeded(
+            report, reused=True
+        )
+    reused_job.refresh_from_db()
+    require_report_job_completion(reused_job)
+    assert report_completion_projection(reused_job).attempt == "current"
+    assert report_completion_projection(completed_job).attempt == "published"
+    assert report_llm_jobs._run_report_llm_reimport_job(completed_job.job_key)
+    assert ReportLlmInferenceJob.objects.values().get(pk=completed_job.pk) == original
+
+
+def test_same_display_name_center_cannot_claim_existing_success(
+    completed_job: ReportLlmInferenceJob,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    import endoreg_db.import_files.report_import_service as service_module
+
+    report = completed_job.pdf
+    assert report is not None and report.center is not None
+    other = Center.objects.create(name=report.center.name, center_key="other-owner")
+    source = tmp_path / "redelivery.pdf"
+    source.touch()
+    monkeypatch.setattr(service_module, "validate_directories", Mock())
+    monkeypatch.setattr(service_module, "ReportAnonymizer", Mock())
+    monkeypatch.setattr(
+        service_module.ProcessingHistory,
+        "has_history_for_hash",
+        Mock(return_value=True),
+    )
+    monkeypatch.setattr(
+        service_module, "get_raw_pdf_by_content_hash", Mock(return_value=report)
+    )
+    service = service_module.ReportImportService()
+    ctx = service._create_import_context(
+        source, other.name, center_key=other.center_key
+    )
+    ctx.file_hash = report.pdf_hash
+    before = ReportImportAttempt.objects.values().get(pk=report.pdf_hash)
+    with pytest.raises(ValueError, match="different center"):
+        service._get_existing_completed_report(ctx)
+    assert ReportImportAttempt.objects.values().get(pk=report.pdf_hash) == before
+    require_report_job_completion(completed_job)
+
+
+@pytest.mark.parametrize("changed", ["receipt", "artifact", "missing_receipt"])
+def test_later_success_cannot_validate_changed_publication(
+    completed_job: ReportLlmInferenceJob,
+    monkeypatch: pytest.MonkeyPatch,
+    changed: str,
+) -> None:
+    report = completed_job.pdf
+    assert report is not None
+    fence = acquire_report_import_fence(report.pdf_hash)
+    with report_import_finalization_guard(fence):
+        if changed == "receipt":
+            receipt = ReportExtractionReceipt.model_validate_json(
+                json.dumps((report.raw_meta or {})["report_extraction_receipt"])
+            )
+            report.raw_meta = {
+                "report_extraction_receipt": receipt.model_copy(
+                    update={"attempt_id": fence.owner_id.hex}
+                ).model_dump(mode="json")
+            }
+            report.save(update_fields=["raw_meta"])
+        elif changed == "missing_receipt":
+            report.raw_meta = {}
+            report.save(update_fields=["raw_meta"])
+        else:
+            monkeypatch.setattr(
+                "endoreg_db.services.reports.completion.require_usable_completed_report",
+                Mock(return_value="c" * 64),
+            )
+    with pytest.raises(ReportCompletionUnverifiedError):
+        require_report_job_completion(completed_job)
+
+
 @pytest.mark.parametrize(
     "defect",
     [
@@ -105,6 +200,7 @@ def test_duplicate_completion_projects_native_state_without_mutation(
         "receipt_missing",
         "receipt_changed",
         "result_artifact_changed",
+        "future_reference",
     ],
 )
 def test_unverified_delivery_preserves_historical_success(
@@ -134,6 +230,18 @@ def test_unverified_delivery_preserves_historical_success(
         ).model_dump(mode="json")
         report.raw_meta = payload
         report.save(update_fields=["raw_meta"])
+    elif defect == "future_reference":
+        from endoreg_db.schemas.report_llm import ReportLlmJobResult
+
+        result = ReportLlmJobResult.model_validate(completed_job.result)
+        assert result.attempt_reference is not None
+        reference = result.attempt_reference.model_copy(
+            update={"fencing_token": result.attempt_reference.fencing_token + 1}
+        )
+        completed_job.result = result.model_copy(
+            update={"attempt_reference": reference}
+        ).model_dump(mode="json", exclude_none=True)
+        completed_job.save(update_fields=["result"])
     else:
         result = dict(completed_job.result)
         result["processed_file_sha256"] = "c" * 64
@@ -186,7 +294,9 @@ def test_legacy_reuse_is_explicit_and_fresh_missing_receipt_cannot_publish(
         config={"kind": "report_llm_reimport", "queue": "pipeline"},
     )
     monkeypatch.setattr(
-        report_llm_jobs, "require_usable_completed_report", Mock(return_value="b" * 64)
+        report_llm_jobs,
+        "require_reusable_completed_report",
+        Mock(return_value="b" * 64),
     )
     lifecycle = report_llm_jobs._ReportJobLifecycle(job, reimport=True)
     fence = acquire_report_import_fence(report.pdf_hash)

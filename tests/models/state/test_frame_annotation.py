@@ -32,6 +32,7 @@ from endoreg_db.models.state.frame_annotation import (
 from endoreg_db.models.state.frame_annotation_segment_identity import (
     segment_derived_external_annotation_id,
 )
+from endoreg_db.services.media.state import update_media_state
 
 
 def _task_payload(task: object) -> dict[str, Any]:
@@ -150,8 +151,7 @@ class FrameAnnotationStateTest(TestCase):
         )
 
         state = self.video.get_or_create_state()
-        state.frames_extracted = True
-        state.save(update_fields=["frames_extracted"])
+        update_media_state(state, changes={"frames_extracted": True})
 
         self.assertEqual(
             resolve_frame_annotation_status(self.video),

@@ -1,0 +1,111 @@
+schema_version: '1.0'
+date: '2026-11-24'
+assessor: codex-publication-20261124-root
+feature_authorities:
+- feature-tracking/CodeQuality.yml
+- feature-tracking/StateMachineConformance.yml
+- feature-tracking/LongRunningServiceStateMachines.yml
+- feature-tracking/LxDtypesModelStandardization.yml
+purpose: >-
+  Prüfbelege der Publikationsvorbereitung. Freigabeentscheidungen bleiben ausschließlich
+  in den Feature-Definitionen; dieser Bericht erklärt keine Produktionsfreigabe.
+baseline:
+  base_revision: c5d77e86ff7984a0cbe808a37901e035ed36e643
+  working_directory: /home/admin/endoreg-db
+  source: >-
+    Arbeitsbaum mit umfangreichen bereits gestagten Änderungen; vorhandene Änderungen
+    erhalten. Dieser Agent hat nichts gestagt; während der parallelen Arbeit wurde
+    der gemeinsame Index durch einen anderen Akteur aktualisiert.
+  coordination: Auf Benutzeranweisung beide abgebrochenen Claude-Locks freigegeben und verwaisten Testlauf beendet.
+changes:
+- Die neun konsolidierten Python-Module sind netto 390 Zeilen kleiner; zusätzliche
+  Regressionstests, Vokabularregistrierung und Prüfbelege sind darin nicht verrechnet.
+- uv.lock korrigiert ausschließlich die lokale Projektversion von 1.8.9 auf 1.9.0.
+- Gemeinsame Kommandooptionen und JSON/YAML-Ausgabe für klinische Referenzimporte zentralisiert.
+- Datensatz-Buckets verwenden vorhandene Annotation-Bucket-Abfragen; 393 auf 306 Zeilen.
+- Serializer-Tests parametrisiert; 363 auf 163 Zeilen, nur eine identische Datumsassertion entfernt.
+- Native Statusentscheidungen ersetzen duplizierte Python-Tabellen; Persistenz und Fencing bleiben in den Services.
+- Zwei vorhandene elektrochirurgische Persistenzmodelle anhand ihrer lokalen Validierungsgrenzen klassifiziert.
+- Qualitätsinventare nach konkreter Fundprüfung und veraltete Alias-Aussagen in der Servicelandkarte korrigiert.
+verification:
+  initial_pyright: '0 Fehler, 3 Warnungen.'
+  initial_structure: '68 Manifeste gültig.'
+  initial_tracker: '41 Feature-Definitionen gültig.'
+  dependency_lock: 'uv lock --check --offline: bestanden nach Versionskorrektur; keine Abhängigkeit aktualisiert.'
+  serializer_comparison: >-
+    Vorher 32, nachher 31 Tests bestanden. Ausgeführte Zeilen und Zweige exakt gleich:
+    sensitive_meta_logic 72/11, Serializer 36/8 (100 Prozent). Keine Datenbank-Fixture
+    mehr erforderlich. Laufzeiten 87,38 und 6,99 Sekunden unter geteilter Last sind
+    kein kontrollierter Benchmark.
+  native_runtime: >-
+    scripts/check_report_native_runtime.sh bestanden: 58 native Tests, Stub-Parität,
+    isolierter Release-Wheel-Build und Laufzeit-/Capability-Prüfung. Anschließend
+    maturin develop --release erfolgreich. Vergleich mit ursprünglichen Adaptern:
+    64 Upload-, 36 Trainings- und 35 Report-Kombinationen ohne Abweichung.
+  model_inventory: '193 registrierte und 6 abstrakte Modelle; vollständig klassifiziert, Guard bestanden.'
+  quality_inventory: '26 geprüfte Dead-Code-Ausnahmen, 343 breite Handler und 74 Typunterdrückungen; Guards bestanden.'
+  formatting: 'Ruff-Prüfung und Formatprüfung des gesamten Python-Baums bestanden vor letzter Adapterzentralisierung.'
+  startup: 'scripts/check_django_startup_imports.py: bestanden, 6 Root-URL-Patterns.'
+  final_pyright_before_external_adapter: '0 Fehler, 3 bestehende Warnungen.'
+  ci_checks: >-
+    devenv tasks run ci:checks: zweimal Exit 0 (214 und 137 Sekunden). Lock, Pyright, Ruff, Formatierung, Struktur,
+    Tracker, Dead-Code-/Boundary-/Typ-/Modell-/State-Ownership-Guards, Dokumentation,
+    Routen, Startup und Migrationsdrift geprüft. Deployment-Check unter Test-Settings
+    meldet erwartete Warnungen für DEBUG, HTTPS-Redirect, HSTS und sichere Cookies;
+    dies prüft kein produktives Deployment.
+  combined_python_initial: >-
+    971 bestanden, 7 fehlgeschlagen in 215,39 Sekunden. Drei Trainings-Fixtures
+    schreiben direkt in geschützte Zustände; vier Lease-Tests injizieren Fehler am
+    abgelösten Lifecycle-Reducer statt an der nativen Statusentscheidung.
+    Datensatz-, Kommando-, native Adapter- und Inventarprüfungen ansonsten bestanden.
+  adapter_retry: >-
+    Nach Korrektur der drei State-Fixtures und des nativen Fehler-Injektionspunkts:
+    352 Tests bestanden, eine Plugin-Warnung, 59,72 Sekunden. Umfasst status_writers,
+    Upload-Status, Upload-Lease, Report-Status und Training. Alle sieben ursprünglichen
+    Fehler behoben. Zusätzliche Tests sichern native Ablehnung, fehlende Capability
+    und unerwartetes False/No-op vor Lease-Mutation; Datenbankzeile, Fence und
+    Quelldatei bleiben unverändert. Abschließender fokussierter Pyright fehlerfrei.
+  report_fencing_retry: >-
+    tests/services/test_report_import_fencing.py -n 0 -q --tb=short:
+    23 bestanden, eine Plugin-Warnung, 48,29 Sekunden. Zusammen mit dem finalen
+    Adapterlauf 375 bestandene Tests; keine verbleibenden Fehler dieses Kohorts.
+  coordinated_test_pruning: >-
+    Externer koordinierter Agent codex-test-prune-20261124 meldet 45 bestandene Tests
+    nach Entfernung von sechs redundanten Smoke-Tests (108 Testzeilen); der reale
+    Netzwerkdownload-Test wurde nur gesammelt, nicht ausgeführt.
+  coordinated_lifecycle_removal: >-
+    Externer koordinierter Agent codex-state-centralize-20261124 meldet nach Prüfung
+    der Frontend-/Backend-Verbraucher 41 bestandene Backend- und 97 bestandene
+    native Vertragstests im Geschwisterrepository; OperationClaimPath und der
+    ungenutzte Python-Mehrfachreduzierer samt exklusiven Tests entfernt.
+  call_trace: >-
+    PYTHONDONTWRITEBYTECODE=1 .devenv/state/venv/bin/python -m trace --count
+    -C /tmp/endoreg-publication-call-trace
+    --ignore-dir /nix/store:/home/admin/endoreg-db/.devenv/state/venv --module pytest
+    tests/services/test_aidataset_frame_buckets_unit.py
+    tests/services/test_frame_annotation_bucket_builders_unit.py
+    tests/models/test_aidataset_frame_bucket_distribution.py
+    tests/dataloader/test_reference_command_rendering.py -n 0 -q --tb=short:
+    33 bestanden. JUnit bestätigt 0 Fehler/Fehlschläge. Trace belegt Aufrufe der
+    gemeinsamen Annotation-Buckets und Kommandoausgabe; kein Beweis globaler Nichtnutzung.
+  release_build: >-
+    uv build --python .devenv/state/venv/bin/python --out-dir /tmp/endoreg-publication-dist:
+    Quelldistribution und daraus gebautes Wheel erfolgreich. Alle 1095 versionierten
+    Python-Quelldateien stimmen bytegenau überein; eine native Erweiterung enthalten,
+    keine Test-Runtime-, Bytecode-, SQLite- oder .env-Dateien nachgewiesen.
+  readiness_check: >-
+    tracker check bleibt Exit 1: code_quality 18/25, state_machine_conformance 0/9,
+    long_running_service_state_machines 0/11. Keine pauschale Freigabe oder
+    vollständige Testsuite aus den fokussierten Ergebnissen abgeleitet.
+artifacts:
+- file: /tmp/endoreg-publication-dist/endoreg_db-1.9.0-cp312-cp312-linux_x86_64.whl
+  bytes: 2934830
+  sha256: f6eed6e6c26722e6884ea82d6bab540b2f2cb5cd8a982e90cdaa633e04fc5290
+- file: /tmp/endoreg-publication-dist/endoreg_db-1.9.0.tar.gz
+  bytes: 1653825
+  sha256: 050ed347a1ba3cfaf76003d5ba19e912fb8772502ddab5bc05d6139833edff34
+limits:
+- Klinische Privacy-, Annotation- und Release-Projektion besitzt weiterhin den ausdrücklich dokumentierten Python-Referenzreduzierer.
+- Kein Commit, Tag, Upload oder Deployment ausgeführt.
+- Der Migrationscheck verglich den Modellzustand; die persistierte Migrationshistorie
+  war unter Test-Settings mangels Datenbank auf Port 1 nicht prüfbar.

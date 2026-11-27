@@ -29,12 +29,12 @@ def test_missing_schema_is_a_failure_without_import() -> None:
         ) as importer,
     ):
         service.return_value.load.return_value.config.name = "endoreg_reference"
-        service.return_value.load.return_value.config.version = "1.0.0"
+        service.return_value.load.return_value.config.version = "2.0.0"
         with pytest.raises(CommandError, match="database migrations"):
             call_command(
                 "import_reference_catalog",
                 module="endoreg_reference",
-                module_version="1.0.0",
+                module_version="2.0.0",
                 stdout=StringIO(),
             )
     importer.assert_not_called()

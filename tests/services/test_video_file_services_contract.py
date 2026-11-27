@@ -18,22 +18,30 @@ from endoreg_db.config.env import DEFAULT_VIDEO_FPS
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.storage_mode import VideoStorageMode
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files import (
-    VideoArtifactKind,
+from endoreg_db.services.video_files.anonymization import (
     anonymize_video_file,
+    rebuild_processed_video_without_outside_frames,
+)
+from endoreg_db.services.video_files.frames import (
     delete_video_frame_range,
     extract_video_frame_range,
     extract_video_frames,
-    get_active_video_file,
-    get_or_create_video_state,
+)
+from endoreg_db.services.video_files.metadata import get_video_fps
+from endoreg_db.services.video_files.queries import (
     get_video_by_content_hash,
     get_video_by_pk,
-    get_video_fps,
-    get_video_stream_relative_path,
-    parse_video_artifact_kind,
-    rebuild_processed_video_without_outside_frames,
-    resolve_video_stream_source,
     video_hash_exists,
+)
+from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.services.video_files.streaming import (
+    get_active_video_file,
+    get_video_stream_relative_path,
+    resolve_video_stream_source,
+)
+from endoreg_db.services.video_files.types import (
+    VideoArtifactKind,
+    parse_video_artifact_kind,
 )
 
 

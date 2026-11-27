@@ -552,11 +552,22 @@ def test_retry_dispatch_reconciles_only_expired_owned_attempts() -> None:
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("cancel_requested", [False, True])
-@pytest.mark.parametrize("native_refuses", [False, True])
+@pytest.mark.parametrize(
+    ("native_failure", "error_type", "error_message"),
+    [
+        ("refused", ValueError, "no active execution to interrupt"),
+        ("unavailable", RuntimeError, "capability is unavailable"),
+        ("ignored", RuntimeError, "unexpected no-op"),
+    ],
+)
 def test_interruption_requires_native_authorization_before_mutation(
-    monkeypatch: pytest.MonkeyPatch, cancel_requested: bool, native_refuses: bool
+    monkeypatch: pytest.MonkeyPatch,
+    cancel_requested: bool,
+    native_failure: str,
+    error_type: type[Exception],
+    error_message: str,
 ) -> None:
-    from endoreg_db.services.runtime import lifecycle_state_machine
+    from endoreg_db.utils import rust_backend
 
     job = _upload_job(Center.objects.create(name="native-interruption-guard"))
     lease = acquire_upload_job_import_lease(
@@ -570,30 +581,61 @@ def test_interruption_requires_native_authorization_before_mutation(
         cancellation_requested_at=timezone.now() if cancel_requested else None,
     )
     before = UploadJob.objects.values().get(pk=job.pk)
-    native_transition = lifecycle_state_machine.transition_operation_lifecycle_native
-    events: list[tuple[str, str]] = []
+    native_transition = rust_backend.decide_status_transition
+    decisions: list[tuple[str, str, str]] = []
 
-    def reject_interruption(*, current_state: str, event: str) -> str:
-        events.append((current_state, event))
-        if event == "reconcile_fail":
-            if native_refuses:
+    def reject_interruption(*, machine: str, current: str, target: str) -> bool:
+        decisions.append((machine, current, target))
+        if machine == "upload_job_lease_recovery":
+            if native_failure == "refused":
                 raise ValueError("native interruption refused")
-            return "running"
-        return native_transition(current_state=current_state, event=event)
+            if native_failure == "ignored":
+                return False
+            raise RuntimeError(
+                "Required Rust status_transition_v2 capability is unavailable"
+            )
+        return native_transition(machine=machine, current=current, target=target)
 
+    # The native table now returns apply/ignore, not an intermediate lifecycle
+    # state. Rejected, unavailable and unexpected no-op decisions cannot mutate.
     monkeypatch.setattr(
-        lifecycle_state_machine,
-        "transition_operation_lifecycle_native",
+        "endoreg_db.services.runtime.status_writers.decide_status_transition",
         reject_interruption,
     )
-    with pytest.raises(
-        ValueError if native_refuses else RuntimeError,
-        match="native interruption refused" if native_refuses else "unexpected state",
-    ):
+    with pytest.raises(error_type, match=error_message):
         reconcile_expired_upload_job_import_leases()
-    assert events == [("running", "ownership_lost"), ("lost", "reconcile_fail")]
+    assert decisions == [
+        (
+            "upload_job_lease_recovery",
+            "cancel_requested" if cancel_requested else "processing",
+            "error",
+        )
+    ]
     assert UploadJob.objects.values().get(pk=job.pk) == before
     job.refresh_from_db()
     assert job.processing_fencing_token == lease.fencing_epoch
     with job.file.open("rb") as source:
         assert source.read() == b"video"
+
+
+@pytest.mark.no_db
+def test_interrupted_retry_requires_an_applied_native_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from endoreg_db.services.hub.upload_job_state_machine import (
+        validate_upload_job_interrupted_retry,
+    )
+
+    def ignored(*, machine: str, current: str, target: str) -> bool:
+        assert (machine, current, target) == (
+            "upload_job_lease_recovery",
+            "processing",
+            "processing",
+        )
+        return False
+
+    monkeypatch.setattr(
+        "endoreg_db.services.runtime.status_writers.decide_status_transition", ignored
+    )
+    with pytest.raises(RuntimeError, match="unexpected no-op"):
+        validate_upload_job_interrupted_retry(current_status="processing")

@@ -5,14 +5,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
-
-
-class MedicationManager(models.Manager["Medication"]):
-    """Manager for the medication model."""
-
-    def get_by_natural_key(self, name: str) -> "Medication":
-        """Retrieve a medication by its natural key."""
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class Medication(models.Model):
@@ -39,7 +32,7 @@ class Medication(models.Model):
         "Unit", on_delete=models.CASCADE
     )
 
-    objects = MedicationManager()
+    objects = NameNaturalKeyManager["Medication"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import MedicationSchedule, Unit

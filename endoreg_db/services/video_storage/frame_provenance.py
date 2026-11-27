@@ -275,6 +275,14 @@ def run_with_frame_provenance(
         return result
 
 
+class FrameProvenanceConflict(ValueError):
+    """Recorded frame evidence is inconsistent with this generation or its ancestry."""
+
+
+class MissingFrameAncestry(ValueError):
+    """No complete path connects the original recording to the processed generation."""
+
+
 def provenance_chain(*, source_hash: str, output_hash: str) -> VideoProvenanceBundle:
     """Resolve exactly one bounded ancestry chain; ambiguous ancestry fails closed."""
     from endoreg_db.models.media.video.frame_provenance import VideoFrameProvenance
@@ -285,25 +293,29 @@ def provenance_chain(*, source_hash: str, output_hash: str) -> VideoProvenanceBu
         if current == source_hash:
             return [[]]
         if current in seen or len(seen) >= 128:
-            raise ValueError("Cyclic or excessive frame provenance history")
+            raise FrameProvenanceConflict(
+                "Cyclic or excessive frame provenance history"
+            )
         chains: list[list[VideoFrameProvenancePayload]] = []
         rows = VideoFrameProvenance.objects.filter(output_content_hash=current).exclude(
             source_content_hash=current
         )
         candidates = list(rows[:129])
         if len(candidates) > 128:
-            raise ValueError("Excessive frame provenance ancestry")
+            raise FrameProvenanceConflict("Excessive frame provenance ancestry")
         for row in candidates:
             proof = VideoFrameProvenancePayload.model_validate(row.payload)
             for parent in visit(proof.source.content_hash, seen | {current}):
                 chains.append([*parent, proof])
                 if len(chains) > 1:
-                    raise ValueError("Ambiguous frame provenance ancestry")
+                    raise FrameProvenanceConflict("Ambiguous frame provenance ancestry")
         return chains
 
     chains = visit(output_hash, frozenset())
     if len(chains) != 1 or not chains[0]:
-        raise ValueError("Actual frame provenance is unavailable for this recording")
+        raise MissingFrameAncestry(
+            "Actual frame provenance is unavailable for this recording"
+        )
     return VideoProvenanceBundle(transformations=chains[0])
 
 
@@ -323,7 +335,9 @@ def resolve_video_provenance(
         if recovery.recording_hash != video.raw_video_hash or (
             recovery.processed_timeline.content_hash != video.processed_video_hash
         ):
-            raise ValueError("Unresolved provenance acknowledgment is stale")
+            raise FrameProvenanceConflict(
+                "Unresolved provenance acknowledgment is stale"
+            )
         return recovery
     source_hash = video.raw_video_hash
     existing = meta.video_frame_provenance
@@ -331,7 +345,7 @@ def resolve_video_provenance(
         existing is not None
         and existing.transformations[0].source.content_hash != source_hash
     ):
-        raise ValueError("Frame provenance belongs to another recording")
+        raise FrameProvenanceConflict("Frame provenance belongs to another recording")
     if existing is not None:
         previous_hash = existing.transformations[-1].output.content_hash
         if previous_hash == video.processed_video_hash:

@@ -121,7 +121,7 @@ def build_pseudo_patient_profile(
     *,
     patient_hash: str,
 ) -> _PseudoPatientProfile:
-    from endoreg_db.utils import random_day_by_month_year
+    from endoreg_db.utils.dates import random_day_by_month_year
 
     pseudo_dob = random_day_by_month_year(
         month=creation_input.birth_month,

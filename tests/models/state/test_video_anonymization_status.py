@@ -6,6 +6,7 @@ from django.test import TestCase
 
 from endoreg_db.models import Center, VideoFile, VideoState
 from endoreg_db.models.state.anonymization import AnonymizationState
+from tests.helpers.media_states import create_media_state
 
 
 class VideoStateAnonymizationStatusTests(TestCase):
@@ -22,7 +23,7 @@ class VideoStateAnonymizationStatusTests(TestCase):
         ]
 
         for flags in state_flags:
-            state = VideoState.objects.create(**flags)
+            state = create_media_state(VideoState, **flags)
             sql_status = (
                 VideoState.objects.filter(pk=state.pk)
                 .annotate(status_value=VideoState.anonymization_status_case())

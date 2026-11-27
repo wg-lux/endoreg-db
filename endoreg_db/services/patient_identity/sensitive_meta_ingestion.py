@@ -25,7 +25,7 @@ from endoreg_db.models.metadata.sensitive_meta_logic import (
 # Django stubs type Gender.objects as Manager[Gender]; narrow to the real
 # manager class here instead of suppressing the model attribute override.
 from endoreg_db.models.other.gender import Gender, GenderManager
-from endoreg_db.utils import guess_name_gender
+from endoreg_db.utils.names import guess_name_gender
 
 if TYPE_CHECKING:
     from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta

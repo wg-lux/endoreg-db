@@ -3,15 +3,11 @@
 from __future__ import annotations
 from typing import Any
 from django.db import models
-
-
-class FirstNameManager(models.Manager["FirstName"]):
-    def get_by_natural_key(self, name: str) -> "FirstName":
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class FirstName(models.Model):
-    objects = FirstNameManager()
+    objects = NameNaturalKeyManager["FirstName"]()
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
     def natural_key(self) -> tuple[str]:

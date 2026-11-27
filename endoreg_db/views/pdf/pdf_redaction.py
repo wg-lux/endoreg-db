@@ -1,4 +1,5 @@
 from __future__ import annotations
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.utils.storage.files import canonical_media_name
 
 
@@ -103,11 +104,6 @@ def _state_sensitive_meta_processed(state: RawPdfState) -> bool:
 def _save_pdf_after_processed_file(pdf: RawPdfFile) -> None:
     pdf_obj = cast(Any, pdf)
     pdf_obj.save(update_fields=["processed_file", "date_modified"])
-
-
-def _save_pdf_state(state: RawPdfState, *, update_fields: list[str]) -> None:
-    state_obj = cast(Any, state)
-    state_obj.save(update_fields=update_fields)
 
 
 def _serializer_data(serializer: PdfProcessingHistorySerializer) -> object:
@@ -258,20 +254,15 @@ def _persist_redaction(
         )
         _save_pdf_after_processed_file(pdf)
 
-        state_update_fields = [
-            "anonymized",
-            "anonymization_validated",
-            "processed_file_sha256",
-            "date_modified",
-        ]
-        state.anonymized = True
-        state.anonymization_validated = False
-        state.processed_file_sha256 = ""
+        state_changes: dict[str, object] = {
+            "anonymized": True,
+            "anonymization_validated": False,
+            "processed_file_sha256": "",
+        }
         # Keep existing value unless missing; a redacted upload is processed output.
         if not _state_sensitive_meta_processed(state):
-            state.sensitive_meta_processed = True
-            state_update_fields.append("sensitive_meta_processed")
-        _save_pdf_state(state, update_fields=state_update_fields)
+            state_changes["sensitive_meta_processed"] = True
+        update_media_state(state, changes=state_changes)
         verify_and_persist_processed_report_sha256(pdf)
 
         user = getattr(request, "user", None)

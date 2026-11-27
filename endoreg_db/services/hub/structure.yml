@@ -20,6 +20,9 @@ entrypoints:
 - name: process_watcher_file
   file: ingest.py
   purpose: Resolve a settled local watcher source into the upload ingestion workflow.
+- name: process_preanonymized_watcher_file
+  file: ingest.py
+  purpose: Bind sidecar validation to the persisted upload digest and verify the published artifact before recording media state.
 - name: attach_enveloped_transfer_media
   file: transfers.py
   purpose: Authenticate and atomically publish one processed-media envelope.
@@ -27,8 +30,10 @@ entrypoints:
   file: storage_placement.py
   purpose: Atomically reserve capacity and persist the primary placement intent.
 files:
+- file: outbound_export_readiness.py
+  role: Collect authenticated storage evidence and adapt native export integrity and video eligibility decisions for listing and send paths.
 - file: outbound_transfer_state.py
-  role: Only Python writer of outbound local_status/failure_class; locks the row, applies the Rust hub_transfer_event decision and leaves saving to the caller.
+  role: Only Python writer of outbound local_status/failure_class; locks the row, applies the Rust hub_transfer_event decision and leaves saving to the caller; owns resource-locked generation dispatch admission.
 - file: transfer_cleanup.py
   role: Fresh receiver master verification and restartable explicit site file reclamation with retained transfer and clinical records.
 - file: study_transfer.py
@@ -36,22 +41,22 @@ files:
 - file: video_provenance_recovery.py
   role: Explicit audited acknowledgment of unresolved frame mapping with current hashes and retained original timestamps.
 - file: __init__.py
-  role: Package imports and compatibility exports.
+  role: Package marker only; callers import the owning module directly.
 - file: audit.py
   role: Exports emit_hub_audit_event.
 - file: cleanup.py
   role: Exports additional_source_paths, inspect_upload_job_source, apply_upload_job_source_cleanup and the shared
-    stored_media_name_referenced query.
+    stored_media_name_referenced query; excluding one retiring raw-report reference preserves all processed and other owners.
 - file: deployment.py
   role: Exports get_deployment_role, hub_mode_enabled, local_study_server_mode_enabled.
 - file: import_monitoring.py
-  role: Exports can_dismiss_upload_job, dismissed_upload_job_filter, safe_import_error_detail.
+  role: Exports can_dismiss_upload_job, dismissed_upload_job_filter, safe_import_error_detail; owns retry scheduling and the documented recovery timeouts including STALE_UPLOAD_JOB_AGE.
 - file: ingest.py
-  role: Upload and watcher orchestration with historical helper re-exports.
+  role: Upload and watcher orchestration, authenticated preanonymized publication and required generation-bound prediction handoff before completion; preserves historical helper re-exports.
 - file: ingest_provenance.py
   role: Upload provenance construction and updates; orchestration lives in ingest.py.
 - file: media_integrity.py
-  role: Exports video_integrity_failure_allows_existing_video_reprocessing, require_reusable_video_raw_source, has_verified_processed_video_transfer.
+  role: Canonical completed-import predicates for reuse and redelivery, retained raw/video integrity and verified transfers; report import completion remains separate from human review and requires authenticated artifact evidence.
 - file: network_nodes.py
   role: Exports create_network_node, update_network_node, delete_network_node.
 - file: payloads.py
@@ -90,7 +95,7 @@ files:
 - file: transfer_logging.py
   role: Exports enabled, sanitize, section.
 - file: transfers.py
-  role: Version 7 pseudonymous identity linkage, received presentation timelines as the frame_count authority, typed segment and frame annotation coordinates bound to them, authenticated standalone study archives and encrypted processed-media publication; retired plaintext attachment rejects before staging.
+  role: Version 7 identity and timeline linkage, typed annotations, authenticated study archives and encrypted media publication; existing-generation metadata and sender completion claims wait for verified publication, and cleanup cannot roll back referenced masters.
 - file: upload_center_resolution.py
   role: Declared center_key/center_name lookup and pure center-or-error decision; ingest.py re-exports it.
 - file: upload_job_cancellation.py
@@ -105,9 +110,9 @@ files:
 - file: upload_job_import_lease.py
   role: Renewable fenced ownership, expired-attempt reconciliation and bounded retained-source recovery invoked by the retry dispatcher.
 - file: upload_job_state_machine.py
-  role: Native-validated status transitions and canonical recovery admission predicates shared by overview and fenced coordinators.
+  role: Rust-owned upload and expired-lease transition tables with canonical recovery admission predicates, including retained_source_recovery_filter shared by ingest reuse, interrupted-import and persisted-stack recovery.
 - file: video_provenance.py
-  role: Recording-bound ancestry exports check exclusive writers and content identity before reusing timestamp proof; receivers decode media, and electrical joins use lx-dtypes.
+  role: Export verified ancestry or decoded processed-frame coordinates when ancestry is missing; receivers verify media timestamps and electrical joins require recording ancestry.
 - file: watcher_handoff.py
   role: Exports watcher_path_reference_text, is_in_progress_handoff_path, reject_in_progress_handoff_path.
 dependencies:
@@ -147,7 +152,7 @@ contracts:
 - name: Hub ingest operations
   doc: docs/hub_ingest_operations.md
 - name: Typed transfer contract
-  doc: docs/hub_transfer_typed_contract.en.md
+  doc: docs/hub_transfer_typed_contract.md
 tests:
   directory: tests
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_unit.py tests/services/test_ingest_helper_compatibility.py
@@ -182,6 +187,10 @@ entrypoint: ingest.py
 rules:
 - Historical ingest.py helper names explicitly re-export the canonical function or type object.
 - Helper modules must not import ingest.py; orchestration owns transactions and publication order.
+- Video transfer publication defers active playback or segment-update leases through a fenced awaiting_media retry.
+- Unpublished transfer cleanup checks global media references under the operation fence and retains candidate ownership until encrypted storage deletion succeeds.
+- Watcher producers close writable handles before settled handoff; media and sidecar claims preserve changed arrivals but cannot atomically rename the pair.
+- Report dispatch callers preserve worker-written provenance and terminal results, and never adopt a changed import epoch after dispatch returns.
 - Use this map to select files; readiness and verification evidence belong in the feature definition.
 modules:
   ingest.py:
@@ -197,6 +206,8 @@ modules:
     - tests/services/test_hub_ingest_import_job_contract.py
     - tests/services/test_hub_ingest_dispatch.py
     - tests/services/test_watcher_storage_import.py
+    - tests/services/test_upload_operation_identity.py
+    - tests/services/test_ingest_idempotency_quarantine.py
   ingest_provenance.py:
     owns: UploadProvenance and provenance copying, normalization, mutation and active-learning recording
     effects: Helpers mutate the supplied job; active-learning recording saves only when save is true.
@@ -220,13 +231,13 @@ modules:
     - tests/services/test_hub_ingest_unit.py
     - tests/services/test_ingest_helper_compatibility.py
   watcher_handoff.py:
-    owns: Temporary-name rejection, source settling and stat snapshot checks
+    owns: Temporary-name rejection, source settling, stat snapshots and claim-before-delete content checks preserving changed arrivals.
   upload_job_import_lease.py:
     owns: Execution ownership, heartbeat, fenced row access and expired-attempt interruption without media deletion
   upload_job_cancellation.py:
     owns: Cancellation intent and owner acknowledgement
   upload_job_state_machine.py:
-    owns: Native-validated job-state transitions, expired-execution interruption and shared cap-preserving recovery admission
+    owns: Native-validated job-state transitions, atomic reimport stack completion, expired-execution interruption and shared cap-preserving recovery admission
   upload_job_files.py:
     owns: Source and media artifact ledger registration
   upload_staging_orphans.py:

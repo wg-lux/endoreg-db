@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, TypeAlias, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 from lx_dtypes.models.contracts.report import ReportMetaJsonObject
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
@@ -20,15 +21,6 @@ DocumentMeta: TypeAlias = ReportMetaJsonObject | None
 DocumentPatientExamination: TypeAlias = "PatientExamination | None"
 
 
-class DocumentTypeManager(models.Manager["DocumentType"]):
-    """
-    Custom manager for DocumentType.
-    """
-
-    def get_by_natural_key(self, name: str) -> "DocumentType":
-        return self.get(name=name)
-
-
 class DocumentType(models.Model):
     """
     Represents the type of a document.
@@ -37,7 +29,7 @@ class DocumentType(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = DocumentTypeManager()
+    objects = NameNaturalKeyManager["DocumentType"]()
 
     def natural_key(self) -> tuple[str]:
         return (self.name,)

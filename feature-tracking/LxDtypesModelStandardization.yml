@@ -23,11 +23,6 @@ source_documents:
     note:
       Dokumentiert den bestehenden lx_dtypes-Contract-Bestand und bekannte endoreg_db-Consumer als Ausgangspunkt
       der Modellstandardisierung.
-  - path: docs/pydantic_django_hardening_plan.md
-    disposition: reference
-    note:
-      Liefert Architekturkontext zu Pydantic-, Django- und Mehrfachvererbungsrisiken; der verbindliche
-      Status wird nur hier geführt.
 definition_of_done:
   - id: complete_model_inventory
     category: requirements

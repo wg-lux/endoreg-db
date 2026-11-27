@@ -5,12 +5,99 @@ from pathlib import Path
 
 import pytest
 
-from endoreg_db.utils.encryption.encrypted import EncryptedStorage
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage, LazyEncryptedStorage
 from endoreg_db.utils.encryption.encryption import (
     encrypt_stream,
     inspect_encrypted_file_layout,
     iter_decrypted_byte_range,
 )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("lazy", [False, True])
+def test_save_intent_records_final_collision_name_before_artifact_bytes(
+    tmp_path: Path, lazy: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "endoreg_db.utils.encryption.encrypted.load_master_key", lambda: b"k" * 32
+    )
+    encrypted = EncryptedStorage(location=tmp_path, master_key=b"k" * 32)
+    storage: EncryptedStorage | LazyEncryptedStorage = encrypted
+    if lazy:
+        storage = LazyEncryptedStorage(location=tmp_path)
+    original = encrypted.save("candidate.bin", BytesIO(b"original"))
+    recorded: list[str] = []
+
+    def record_intent(name: str) -> None:
+        assert name != original
+        assert not storage.exists(name)
+        assert not list(tmp_path.glob("*.tmp"))
+        recorded.append(name)
+
+    saved = storage.save_with_intent(
+        "candidate.bin", BytesIO(b"candidate"), before_write=record_intent
+    )
+    assert recorded == [saved]
+    with encrypted.open(saved) as source:
+        assert source.read() == b"candidate"
+    with encrypted.open(original) as source:
+        assert source.read() == b"original"
+
+
+@pytest.mark.unit
+def test_rejected_save_intent_creates_no_candidate(tmp_path: Path) -> None:
+    storage = EncryptedStorage(location=tmp_path, master_key=b"k" * 32)
+
+    def expired_fence(name: str) -> None:
+        raise RuntimeError("Expired execution fence")
+
+    with pytest.raises(RuntimeError, match="Expired execution fence"):
+        storage.save_with_intent(
+            "candidate.bin", BytesIO(b"private"), before_write=expired_fence
+        )
+    assert not storage.exists("candidate.bin")
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+@pytest.mark.unit
+def test_interrupted_publication_preserves_exact_recorded_candidate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from endoreg_db.utils.encryption import encrypted as storage_module
+
+    storage = EncryptedStorage(location=tmp_path, master_key=b"k" * 32)
+    recorded: list[str] = []
+    publish = storage_module.atomic_move_file
+
+    def publish_then_interrupt(*, source: Path, destination: Path) -> None:
+        publish(source=source, destination=destination)
+        raise SystemExit("Worker interrupted after publication")
+
+    monkeypatch.setattr(storage_module, "atomic_move_file", publish_then_interrupt)
+    with pytest.raises(SystemExit, match="Worker interrupted"):
+        storage.save_with_intent(
+            "candidate.bin", BytesIO(b"private"), before_write=recorded.append
+        )
+    assert recorded == ["candidate.bin"]
+    assert storage.exists(recorded[0])
+    with storage.open(recorded[0]) as source:
+        assert source.read() == b"private"
+
+
+@pytest.mark.unit
+def test_save_intent_rejects_overwriting_existing_artifact(tmp_path: Path) -> None:
+    storage = EncryptedStorage(
+        location=tmp_path, master_key=b"k" * 32, allow_overwrite=True
+    )
+    storage.save("candidate.bin", BytesIO(b"original"))
+    recorded: list[str] = []
+    with pytest.raises(FileExistsError, match="new artifact"):
+        storage.save_with_intent(
+            "candidate.bin", BytesIO(b"replacement"), before_write=recorded.append
+        )
+    assert recorded == []
+    with storage.open("candidate.bin") as source:
+        assert source.read() == b"original"
 
 
 @pytest.mark.unit

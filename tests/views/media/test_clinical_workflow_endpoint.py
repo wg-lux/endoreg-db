@@ -6,13 +6,17 @@ from uuid import uuid4
 
 import pytest
 from django.contrib.auth.models import Group, User
+from django.db import transaction
 from django.test import Client
 from django.utils import timezone
 
 from endoreg_db.models import Center, PortalUserInfo, RawPdfFile, VideoFile, VideoState
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.services.clinical_lifecycle.persistence import apply_workflow_event
+from endoreg_db.services.media.state import mark_video_processing_started
 from endoreg_db.services.clinical_lifecycle.state_machine import (
     ClinicalLifecycleEvent,
     ClinicalRecordKind,
@@ -88,6 +92,8 @@ def test_video_item_matches_frontend_contract(client: Client, center: Center) ->
         "not_available",
         "not_released",
     )
+    # Reducer-accepted tokens, system events included; not user-triggerable.
+    assert all(isinstance(event, str) for event in body["allowed_events"])
     assert "import_started" in body["allowed_events"]
     assert "raw_purged" not in body["allowed_events"]
 
@@ -96,12 +102,15 @@ def test_video_item_reports_stored_state_after_event(
     client: Client, center: Center
 ) -> None:
     video = _video(center)
-    apply_workflow_event(
-        kind=ClinicalRecordKind.VIDEO,
-        record_id=video.pk,
-        event=ClinicalLifecycleEvent.IMPORT_STARTED,
-        idempotency_key="import-1",
-    )
+    with transaction.atomic():
+        apply_workflow_event(
+            kind=ClinicalRecordKind.VIDEO,
+            record_id=video.pk,
+            event=ClinicalLifecycleEvent.IMPORT_STARTED,
+            idempotency_key="import-1",
+        )
+        # The fact change that realizes the event commits with it.
+        mark_video_processing_started(VideoState.objects.get(pk=video.state_id))
 
     body = client.get(VIDEO_ITEM.format(video.pk)).json()
 
@@ -132,13 +141,19 @@ def test_inconsistent_facts_are_surfaced_not_guessed(
     client: Client, center: Center
 ) -> None:
     # Validated without a processed artifact cannot be mapped to any state.
-    video = _video(center, VideoState.objects.create(anonymized=True))
-    VideoState.objects.filter(pk=video.state_id).update(anonymization_validated=True)
+    video = _video(center, create_media_state(VideoState, anonymized=True))
+    update_media_state(
+        VideoState.objects.get(pk=video.state_id),
+        changes=dict(anonymization_validated=True),
+    )
 
     response = client.get(VIDEO_ITEM.format(video.pk))
 
     assert response.status_code == 409
-    assert "anonymized_without_artifact" in response.json()["violations"]
+    body = response.json()
+    assert set(body) == {"kind", "record_id", "violations"}
+    assert (body["kind"], body["record_id"]) == ("video", video.pk)
+    assert "anonymized_without_artifact" in body["violations"]
 
 
 def test_missing_record_is_not_found(client: Client) -> None:
@@ -171,6 +186,31 @@ def test_stage_counts_match_contract_and_respect_centers(
     assert body["unmappable"] == 0
 
 
+@pytest.mark.parametrize("unmappable_records", [0, 1])
+def test_stage_counts_wire_shape_is_unchanged(
+    client: Client, center: Center, unmappable_records: int
+) -> None:
+    _video(center)
+    for _ in range(unmappable_records):
+        # Validated without a processed artifact is never staged.
+        _video(
+            center,
+            create_media_state(
+                VideoState, anonymized=True, anonymization_validated=True
+            ),
+        )
+
+    body = client.get(STAGES).json()
+
+    assert set(body) == {"stages", "unmappable"}
+    assert body["unmappable"] == unmappable_records
+    for entry in body["stages"]:
+        assert set(entry) == {"stage", "count", "transient"}
+        assert isinstance(entry["stage"], str)
+        assert isinstance(entry["count"], int)
+        assert isinstance(entry["transient"], int)
+
+
 @pytest.mark.parametrize(
     "url",
     [VIDEO_ITEM.format(1), REPORT_ITEM.format(1), STAGES],
@@ -189,3 +229,24 @@ def test_role_is_required_outside_debug(client: Client, center: Center) -> None:
         user.groups.add(Group.objects.create(name="video:read"))  # pyright: ignore[reportUnknownMemberType]
         assert client.get(url).status_code == 200
         assert client.get(STAGES).status_code == 200
+
+
+def test_stored_row_disagreeing_with_facts_is_a_conflict(
+    client: Client, center: Center
+) -> None:
+    video = _video(center)
+    apply_workflow_event(
+        kind=ClinicalRecordKind.VIDEO,
+        record_id=video.pk,
+        event=ClinicalLifecycleEvent.IMPORT_STARTED,
+        idempotency_key="import-1",
+    )
+
+    response = client.get(VIDEO_ITEM.format(video.pk))
+
+    assert response.status_code == 409
+    assert response.json() == {
+        "kind": "video",
+        "record_id": video.pk,
+        "violations": ["stored_state_drift"],
+    }

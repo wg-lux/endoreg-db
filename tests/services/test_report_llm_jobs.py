@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from endoreg_db.services.hub.upload_job_state_machine import (
+    mark_upload_job_error,
+)
+
 # Direct lifecycle boundary coverage is intentional.
 # pyright: reportPrivateUsage=false
 
@@ -23,7 +27,7 @@ from endoreg_db.services.jobs.report_llm_jobs import (
     report_llm_job_payload,
 )
 from endoreg_db.services.raw_pdf_files import ProcessedReportIntegrityError
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.reports.import_fencing import (
     acquire_report_import_fence,
     report_import_finalization_guard,
@@ -81,6 +85,32 @@ def _make_upload_job(center: Center) -> UploadJob:
         source_system="test",
         processing_provenance={"entrypoint": "test"},
     )
+
+
+@pytest.mark.parametrize("complete", [False, True])
+def test_import_callback_rejects_cross_center_report_without_binding_job(
+    center: Center, complete: bool
+) -> None:
+    from endoreg_db.services.jobs.report_llm_jobs import _ReportJobLifecycle
+
+    report = _make_report(center)
+    upload = _make_upload_job(Center.objects.create(name="Other upload center"))
+    job = ReportLlmInferenceJob.objects.create(
+        upload_job=upload,
+        operation=ReportLlmInferenceJob.OPERATION_IMPORT,
+        config={"kind": "report_llm_import", "queue": "pipeline"},
+    )
+    before = ReportLlmInferenceJob.objects.values().get(pk=job.pk)
+    lifecycle = _ReportJobLifecycle(job, reimport=False)
+    with pytest.raises(ValueError, match="different center"):
+        if complete:
+            lifecycle.succeeded(report, reused=True)
+        else:
+            lifecycle.started(report)
+    assert ReportLlmInferenceJob.objects.values().get(pk=job.pk) == before
+    upload.refresh_from_db()
+    assert upload.status == UploadJob.Status.PENDING
+    assert upload.sensitive_meta is None
 
 
 def test_report_reimport_dispatches_to_pipeline_queue(
@@ -224,7 +254,8 @@ def test_eager_report_task_failure_is_not_logged_as_dispatch_failure(
         task_args = cast(tuple[str], kwargs["args"])
         job = ReportLlmInferenceJob.objects.get(job_id=task_args[0])
         job.mark_failure("invalid PDF")
-        upload_job.mark_error(
+        mark_upload_job_error(
+            upload_job,
             "invalid PDF",
             error_code=UploadJob.ErrorCode.INVALID_INPUT,
         )
@@ -263,9 +294,11 @@ def test_eager_report_task_failure_is_not_logged_as_dispatch_failure(
     )
 
 
+@pytest.mark.parametrize("explicit_inline", [False, True])
 def test_report_upload_import_inline_returns_report_poll_url_after_completion(
     monkeypatch: MonkeyPatch,
     center: Center,
+    explicit_inline: bool,
 ) -> None:
     upload_job = _make_upload_job(center)
     report = RawPdfFile.objects.create(
@@ -278,24 +311,24 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
         ),
     )
     state = report.get_or_create_state()
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.processed_file_sha256 = "a" * 64
-    state.save(
-        update_fields=[
-            "anonymized",
-            "sensitive_meta_processed",
-            "processed_file_sha256",
-            "date_modified",
-        ]
+    from endoreg_db.services.media.state import update_media_state
+
+    update_media_state(
+        state,
+        changes={
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+            "processed_file_sha256": "a" * 64,
+        },
     )
 
-    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery" if explicit_inline else "inline")
 
     def fake_import_and_anonymize(
         service: ReportImportService, **_kwargs: object
     ) -> RawPdfFile:
         assert service.lifecycle is not None
+        assert _kwargs["center_key"] == center.center_key
         fence = acquire_report_import_fence(report.pdf_hash)
         from lx_dtypes.models.contracts.report_anonymization import (
             ReportExtractionReceipt,
@@ -332,7 +365,7 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
         return "a" * 64
 
     monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        "endoreg_db.services.jobs.report_llm_jobs.require_reusable_completed_report",
         fake_require_usable_completed_report,
     )
 
@@ -340,7 +373,9 @@ def test_report_upload_import_inline_returns_report_poll_url_after_completion(
         "endoreg_db.services.reports.completion.require_usable_completed_report",
         fake_require_usable_completed_report,
     )
-    result = dispatch_report_llm_import(upload_job_id=str(upload_job.pk), payload={})
+    result = dispatch_report_llm_import(
+        upload_job_id=str(upload_job.pk), payload={}, execute_inline=explicit_inline
+    )
 
     assert result.status == "completed", result.reason
     assert result.report_id == report.pk
@@ -401,7 +436,7 @@ def test_report_upload_import_does_not_publish_success_without_usable_artifact(
         raise ProcessedReportIntegrityError("processed report missing")
 
     monkeypatch.setattr(
-        "endoreg_db.services.jobs.report_llm_jobs.require_usable_completed_report",
+        "endoreg_db.services.jobs.report_llm_jobs.require_reusable_completed_report",
         fail_completion,
     )
 

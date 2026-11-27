@@ -32,6 +32,7 @@ from endoreg_db.services.streaming.streamable_media import STREAMABLE_FILE_MODE
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
 )
+from endoreg_db.services.media.state import update_media_state
 
 
 pytestmark = pytest.mark.django_db
@@ -144,17 +145,14 @@ def _video_with_successful_lifecycle_state() -> VideoFile:
         processed_file="",
     )
     state = video.get_or_create_state()
-    state.sensitive_meta_processed = True
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.outside_segments_removed = True
-    state.save(
-        update_fields=[
-            "sensitive_meta_processed",
-            "anonymized",
-            "anonymization_validated",
-            "outside_segments_removed",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "sensitive_meta_processed": True,
+            "anonymized": True,
+            "anonymization_validated": True,
+            "outside_segments_removed": True,
+        },
     )
     return video
 
@@ -186,8 +184,7 @@ def test_processing_failure_without_integrity_evidence_is_not_lost() -> None:
         raw_video_hash=f"failed-video-{uuid.uuid4().hex}",
     )
     state = video.get_or_create_state()
-    state.processing_error = True
-    state.save(update_fields=["processing_error"])
+    update_media_state(state, changes={"processing_error": True})
 
     # Act
     _repaired, lost, report = reconcile_video_integrity(
@@ -209,11 +206,15 @@ def test_preexisting_integrity_loss_is_counted_on_every_inventory() -> None:
     }
     video.save(update_fields=["meta"])
     state = video.get_or_create_state()
-    state.processing_error = True
-    state.processing_started = False
-    state.ready_for_export = False
-    state.processed_file_sha256 = ""
-    state.save()
+    update_media_state(
+        state,
+        changes={
+            "processing_error": True,
+            "processing_started": False,
+            "ready_for_export": False,
+            "processed_file_sha256": "",
+        },
+    )
 
     # Act
     _repaired, lost, report = reconcile_video_integrity(
@@ -322,15 +323,13 @@ def _video_with_initialized_frames(
     Frame.objects.filter(video=video).update(is_extracted=True)
 
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = frame_count
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": frame_count,
+            "frames_extracted": True,
+        },
     )
     return video
 

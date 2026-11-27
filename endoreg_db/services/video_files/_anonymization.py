@@ -11,10 +11,9 @@ from lx_dtypes.models.contracts.endoscopy_processor import (
 )
 from django.db import transaction
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.import_files.file_storage.cleanup import safe_cleanup_staging_file
-from endoreg_db.services.media.frame_intervals import (
-    merge_half_open_frame_intervals as _merge_half_open_intervals,
-)
+from endoreg_db.services.video_files.anonymization import merge_outside_frame_intervals
 from endoreg_db.services.streaming.streamable_media import (
     sync_video_streamable_artifacts,
 )
@@ -49,12 +48,8 @@ from endoreg_db.utils.file_operations import (
     safe_unlink_file,
 )
 from endoreg_db.utils.storage import save_local_file
-from endoreg_db.utils.validate_endo_roi import validate_endo_roi
 
 from endoreg_db.utils.ffmpeg_wrapper import mask_video_to_roi_and_blacken_intervals
-from endoreg_db.services.video_files._segments import (
-    _get_outside_segments,
-)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
@@ -81,42 +76,6 @@ def _video_has_integrity_failure(video: "VideoFile") -> bool:
     return payload.get("integrity_status") == "lost" or bool(
         getattr(getattr(video, "state", None), "processing_error", False)
     )
-
-
-def _outside_blackening_intervals(video: "VideoFile") -> list[tuple[int, int]]:
-    intervals: list[tuple[int, int]] = []
-    for segment in _get_outside_segments(video, only_validated=False):
-        start_frame = int(getattr(segment, "start_frame_number", -1))
-        end_frame = int(getattr(segment, "end_frame_number", -1))
-        if start_frame < 0 or end_frame <= start_frame:
-            logger.warning(
-                "Skipping invalid outside segment for video %s: start=%s end=%s",
-                video.raw_video_hash,
-                start_frame,
-                end_frame,
-            )
-            continue
-        intervals.append((start_frame, end_frame))
-
-    from endoreg_db.models.label.annotation.image_classification import (
-        ImageClassificationAnnotation,
-    )
-
-    annotated_frame_numbers = (
-        ImageClassificationAnnotation.objects.filter(
-            frame__video=video,
-            frame__frame_number__gte=0,
-            label__name__iexact="outside",
-            value=True,
-        )
-        .values_list("frame__frame_number", flat=True)
-        .distinct()
-    )
-    for frame_number in annotated_frame_numbers.iterator():
-        start_frame = int(frame_number)
-        intervals.append((start_frame, start_frame + 1))
-
-    return _merge_half_open_intervals(intervals)
 
 
 def _anonymize(video: "VideoFile", delete_original_raw: bool = False) -> bool:
@@ -157,7 +116,7 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
         )
 
     endo_roi = roi_box_or_none_from_object(video.get_endo_roi())
-    if endo_roi is None or not validate_endo_roi(endo_roi):
+    if endo_roi is None:
         raise ValueError(f"Endoscope ROI is not valid for video {video.raw_video_hash}")
 
     reconcile_previous_processed_cleanup(video)
@@ -175,7 +134,7 @@ def _anonymize_owned(video: "VideoFile", delete_original_raw: bool = False) -> b
         missing_ok=True,
     )
 
-    outside_intervals = _outside_blackening_intervals(video)
+    outside_intervals = merge_outside_frame_intervals(video)
     logger.info(
         "Starting streamed anonymization for video %s with %d outside intervals.",
         video.raw_video_hash,
@@ -382,8 +341,7 @@ def _cleanup_raw_assets(
             )
 
         if state.frames_extracted:
-            state.frames_extracted = False
-            state.save(update_fields=["frames_extracted"])
+            update_media_state(state, changes={"frames_extracted": False})
             logger.info(
                 "Set state.frames_extracted=False for video %s after raw asset cleanup.",
                 raw_video_hash,

@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.classification_choice import (
@@ -12,22 +13,6 @@ from endoreg_db.schemas.classification_choice import (
 
 if TYPE_CHECKING:
     from .patient import PatientDisease
-
-
-class DiseaseManager(models.Manager["Disease"]):
-    """Manager for Disease with natural key support."""
-
-    def get_by_natural_key(self, name: str) -> "Disease":
-        """
-        Retrieve a Disease instance by its natural key (name).
-
-        Args:
-            name: The natural key value used to match the model's 'name' field.
-
-        Returns:
-            The Disease instance corresponding to the provided natural key.
-        """
-        return self.get(name=name)
 
 
 class Disease(models.Model):
@@ -45,7 +30,7 @@ class Disease(models.Model):
     subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
     numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 
-    objects = DiseaseManager()
+    objects = NameNaturalKeyManager["Disease"]()
 
     def clean(self) -> None:
         super().clean()
@@ -89,22 +74,6 @@ class Disease(models.Model):
         return classifications
 
 
-class DiseaseClassificationManager(models.Manager["DiseaseClassification"]):
-    """Manager for DiseaseClassification with natural key support."""
-
-    def get_by_natural_key(self, name: str) -> "DiseaseClassification":
-        """
-        Retrieve a DiseaseClassification instance by its natural key (name).
-
-        Args:
-            name: A unique identifier representing the natural key of the instance.
-
-        Returns:
-            The DiseaseClassification instance corresponding to the given natural key.
-        """
-        return self.get(name=name)
-
-
 class DiseaseClassification(models.Model):
     """
     Represents a classification system applicable to a specific disease (e.g., Forrest classification for ulcers).
@@ -120,7 +89,7 @@ class DiseaseClassification(models.Model):
         Disease, on_delete=models.CASCADE, related_name="disease_classifications"
     )
 
-    objects = DiseaseClassificationManager()
+    objects = NameNaturalKeyManager["DiseaseClassification"]()
 
     if TYPE_CHECKING:
 
@@ -148,24 +117,6 @@ class DiseaseClassification(models.Model):
         return choices
 
 
-class DiseaseClassificationChoiceManager(models.Manager["DiseaseClassificationChoice"]):
-    """Manager for DiseaseClassificationChoice with natural key support."""
-
-    def get_by_natural_key(self, name: str) -> "DiseaseClassificationChoice":
-        """
-        Retrieve a DiseaseClassificationChoice instance by its natural key (name).
-
-        Queries for and returns the instance whose 'name' attribute matches the provided key.
-
-        Args:
-            name: The natural key value used to match the model's 'name' field.
-
-        Returns:
-            The DiseaseClassificationChoice instance corresponding to the provided natural key.
-        """
-        return self.get(name=name)
-
-
 class DiseaseClassificationChoice(models.Model):
     """
     Represents a specific choice within a disease classification system (e.g., Forrest IIa).
@@ -185,7 +136,7 @@ class DiseaseClassificationChoice(models.Model):
         )
     )
 
-    objects = DiseaseClassificationChoiceManager()
+    objects = NameNaturalKeyManager["DiseaseClassificationChoice"]()
 
     if TYPE_CHECKING:
         pass

@@ -10,7 +10,7 @@ from unittest.mock import Mock, patch
 from typing import Any, cast
 
 from django.core.files.uploadedfile import SimpleUploadedFile
-from django.db import IntegrityError
+from django.db import IntegrityError, connections
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 
@@ -28,13 +28,14 @@ from endoreg_db.services.hub.ingest import (
     process_watcher_file,
 )
 from endoreg_db.utils.file_operations import (
+    atomic_write_file,
     ensure_directory,
     safe_rmtree,
     safe_unlink_file,
 )
+from endoreg_db.utils.paths import get_runtime_paths
 
 
-@override_settings(MEDIA_ROOT=(Path(__file__).parent / "test_media").as_posix())
 class IngestIdempotencyQuarantineTests(TransactionTestCase):
     test_media_dir: Path
     center: Center
@@ -43,22 +44,13 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
     quarantine_dir: Path
     quarantine_patch: object
 
-    @classmethod
-    def setUpClass(cls) -> None:
-        super().setUpClass()
-        cls.test_media_dir = Path(__file__).parent / "test_media"
-        cls.test_media_dir.mkdir(parents=True, exist_ok=True)
-
-    @classmethod
-    def tearDownClass(cls) -> None:
-        super().tearDownClass()
-        import shutil
-
-        if cls.test_media_dir.exists():
-            shutil.rmtree(cls.test_media_dir)
-
     def setUp(self) -> None:
         super().setUp()
+        self.test_media_dir = ensure_directory(
+            get_runtime_paths().test / f"ingest-{uuid.uuid4().hex}"
+        )
+        self.addCleanup(safe_rmtree, self.test_media_dir, missing_ok=True)
+        self.enterContext(override_settings(MEDIA_ROOT=str(self.test_media_dir)))
         self.center = Center.objects.create(
             name="test-center",
             display_name="Test Center",
@@ -75,20 +67,11 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
         self.quarantine_patch.start()
         self.addCleanup(self.quarantine_patch.stop)
 
-        if self.quarantine_dir.exists():
-            safe_rmtree(self.quarantine_dir)
         ensure_directory(self.quarantine_dir)
-
-    def tearDown(self) -> None:
-        super().tearDown()
-        if self.quarantine_dir.exists():
-            for item in self.quarantine_dir.iterdir():
-                if item.is_file():
-                    safe_unlink_file(item)
 
     def _create_temp_file(self, filename: str, content: bytes) -> Path:
         temp_path = self.test_media_dir / filename
-        temp_path.write_bytes(content)
+        atomic_write_file(destination=temp_path, content=[content])
         return temp_path
 
     def test_create_or_reuse_upload_job_idempotency_with_hash(self):
@@ -483,10 +466,6 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 side_effect=ValueError("Preanonymized processing error"),
             ),
             patch(
-                "endoreg_db.services.hub.ingest.get_file_hash",
-                return_value="dummy_hash_preanonymized",
-            ),
-            patch(
                 "endoreg_db.services.hub.ingest.File",
                 return_value=SimpleUploadedFile(
                     name=filename,
@@ -619,6 +598,8 @@ class IngestIdempotencyQuarantineTests(TransactionTestCase):
                 results_list.append(("IntegrityError", False))
             except Exception as e:
                 results_list.append((f"Error: {e}", False))
+            finally:
+                connections.close_all()
 
         num_threads = 5
         results: list[tuple[uuid.UUID | str, bool]] = []

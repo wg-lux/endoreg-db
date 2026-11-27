@@ -14,7 +14,7 @@ from endoreg_db.services.raw_pdf_files.imports import (
 )
 from endoreg_db.services.raw_pdf_files.integrity import (
     ProcessedReportIntegrityError,
-    require_usable_completed_report,
+    require_reusable_completed_report,
 )
 
 logger = logging.getLogger(__name__)
@@ -57,10 +57,12 @@ def create_or_retrieve_report_file(
     )
     if ctx.current_report is None:
         ctx.current_report = RawPdfFile.objects.filter(pdf_hash=file_hash).first()
+    if ctx.current_report is not None:
+        ensure_center(ctx.current_report, ctx.center_name, center_key=ctx.center_key)
     if has_success_history and ctx.current_report is not None:
         try:
-            require_usable_completed_report(
-                ctx.current_report, source_sha256=file_hash, require_artifact=False
+            require_reusable_completed_report(
+                ctx.current_report, source_sha256=file_hash
             )
         except ProcessedReportIntegrityError:
             logger.info("Completed report is unusable; continuing import for repair.")

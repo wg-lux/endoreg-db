@@ -80,6 +80,7 @@ class ReportCompletionProjection(BaseModel):
 
     attempt: Literal[
         "current",
+        "published",
         "superseded",
         "legacy_unverified",
         "missing",

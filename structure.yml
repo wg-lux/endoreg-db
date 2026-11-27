@@ -19,6 +19,8 @@ entrypoints:
 files:
 - file: AGENTS.md
   role: Binding agent instructions and map maintenance protocol
+- file: CLAUDE.md
+  role: Symlink to AGENTS.md so Claude Code loads the same single instruction source
 - file: pyproject.toml
   role: Project dependencies and packaging; large model data is deployment-provisioned.
 - file: pyrightconfig.json
@@ -26,7 +28,7 @@ files:
 - file: .pre-commit-config.yaml
   role: Fast changed-file commit checks and explicitly invoked comprehensive hooks.
 - file: pytest.ini
-  role: Pytest markers and runtime plugin
+  role: Pytest markers, runtime isolation and grouped parallel execution capped at two workers by default.
 - file: .github/workflows/ci.yml
   role: Pinned, bounded CI invoking shared local quality tasks and Python/native tests.
 - file: .github/dependabot.yml

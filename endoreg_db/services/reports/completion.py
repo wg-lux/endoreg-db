@@ -1,7 +1,7 @@
 """Read-only report completion evidence projected from the canonical native attempt."""
 
 import json
-from typing import cast
+from typing import Literal, cast
 
 from django.db import transaction
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
@@ -44,19 +44,30 @@ def report_completion_projection(
     ).first()
     if attempt is None:
         return ReportCompletionProjection(attempt="missing")
+    projected_attempt: Literal["current", "published"] = "current"
     if attempt.fencing_token != reference.fencing_token:
-        return ReportCompletionProjection(attempt="superseded")
+        if (
+            reference.fencing_token > attempt.fencing_token
+            or attempt.status != ReportImportAttempt.STATUS_SUCCEEDED
+            or job.status != ReportLlmInferenceJob.STATUS_SUCCESS
+        ):
+            return ReportCompletionProjection(attempt="superseded")
+        # A later successful reuse owns a new execution token, not the earlier
+        # job's immutable publication receipt. Require that exact receipt below;
+        # this never authorizes a superseded worker to perform a mutation.
+        projected_attempt = "published"
     # No state reduction here: expose precisely the canonical persisted value.
     status = str(attempt.status)
     receipt_payload = (report.raw_meta or {}).get("report_extraction_receipt")
     if receipt_payload is None:
         legacy_reuse = (
-            reference.reused
+            projected_attempt == "current"
+            and reference.reused
             and reference.extraction_attempt_id is None
             and reference.staged_artifact_sha256 is None
         )
         return ReportCompletionProjection(
-            attempt="current",
+            attempt=projected_attempt,
             canonical_status=status,
             extraction="legacy_unverified" if legacy_reuse else "invalid",
         )
@@ -66,7 +77,7 @@ def report_completion_projection(
         )
     except (ValidationError, TypeError, ValueError):
         return ReportCompletionProjection(
-            attempt="current", canonical_status=status, extraction="invalid"
+            attempt=projected_attempt, canonical_status=status, extraction="invalid"
         )
     if (
         receipt.source_sha256 != reference.content_hash
@@ -75,11 +86,11 @@ def report_completion_projection(
         or receipt.staged_artifact_sha256 != reference.staged_artifact_sha256
     ):
         return ReportCompletionProjection(
-            attempt="current", canonical_status=status, extraction="invalid"
+            attempt=projected_attempt, canonical_status=status, extraction="invalid"
         )
     evidence = receipt.extraction_evidence
     return ReportCompletionProjection(
-        attempt="current",
+        attempt=projected_attempt,
         canonical_status=status,
         extraction="validated",
         extraction_outcome=evidence.outcome,
@@ -101,7 +112,7 @@ def require_report_job_completion(job: ReportLlmInferenceJob) -> None:
     projection = report_completion_projection(job)
     if (
         job.status != ReportLlmInferenceJob.STATUS_SUCCESS
-        or projection.attempt != "current"
+        or projection.attempt not in {"current", "published"}
         or projection.canonical_status != ReportImportAttempt.STATUS_SUCCEEDED
         or projection.extraction == "invalid"
     ):

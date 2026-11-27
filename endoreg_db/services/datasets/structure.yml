@@ -16,6 +16,8 @@ entrypoints:
   file: active_learning_shortlist.py
   purpose: Select operator-requested prediction candidates for human review.
 files:
+- file: membership.py
+  role: Admit explicit video membership through the native clinical workflow before related-manager insertion.
 - file: __init__.py
   role: Trainingsauswahl, Active Learning und Datensatzexporte.
 - file: active_learning.py
@@ -26,13 +28,14 @@ files:
 - file: exports.py
   role: Build scoped dataset exports using the shared batched ledger segment builder and exact timeline coordinates.
 - file: frame_buckets.py
-  role: Exports build_frame_bucket_distribution.
+  role: Typed dataset summaries reuse the annotation owner's target, annotation and segment bucket queries.
 - file: training_manifests.py
   role: Exports infer_training_label_set_from_annotations, build_frame_format_manifest, build_frame_multilabel_training_manifest.
 - file: training_selection.py
   role: Shared, dataset-bounded selection of manual or confirmed training labels.
 dependencies:
   internal:
+  - endoreg_db/services/clinical_lifecycle
   - endoreg_db/models
   - endoreg_db/schemas
   - endoreg_db/services/annotations

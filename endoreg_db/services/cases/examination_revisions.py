@@ -5,10 +5,15 @@ from pydantic import BaseModel
 
 from django.db import transaction
 from django.utils import timezone
+from lx_dtypes.models.contracts.application_settings import (
+    AnnotationProfession,
+    AnnotationAcademicTitle,
+)
 from lx_dtypes.models.contracts.examination_revision import (
     CaseExaminationSelection,
     ExaminationClinicalContent,
     ExaminationEvidence,
+    ExaminationReportDocument,
     ExaminationRevisionCreate,
     ExaminationRevisionSnapshot,
     ExaminationRevisionUpdate,
@@ -35,6 +40,11 @@ from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.other.study_table_import import StudyTableImport
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.services.media.export_downloads import validate_video_download
+from endoreg_db.services.reports.persistence import (
+    ReportPersistenceValidationError,
+    report_media_identity,
+    validated_report_source_documents,
+)
 
 
 class ExaminationRevisionConflict(ValueError):
@@ -70,6 +80,41 @@ def _assert_version(record: ExaminationRevision, expected_version: int) -> None:
         raise ExaminationRevisionConflict(
             "The examination revision changed; reload before editing."
         )
+
+
+def _snapshot_documents(
+    examination: PatientExamination, document_ids: list[int]
+) -> list[ExaminationReportDocument]:
+    if not document_ids:
+        return []
+    try:
+        documents = validated_report_source_documents(examination, document_ids)
+    except ReportPersistenceValidationError as error:
+        raise ExaminationRevisionConflict(
+            "Source documents are no longer eligible for this examination."
+        ) from error
+    snapshots: list[ExaminationReportDocument] = []
+    for document in documents:
+        state = document.state
+        if state is None:
+            raise ExaminationRevisionConflict("Source document has no recorded state.")
+        snapshots.append(
+            ExaminationReportDocument(
+                document_id=document.pk,
+                document_uuid=document.uuid,
+                processed_sha256=state.processed_file_sha256,
+            )
+        )
+    return snapshots
+
+
+def _revision_video(
+    examination: PatientExamination, evidence: ExaminationEvidence
+) -> VideoFile | None:
+    videos = VideoFile.objects.filter(pk=evidence.video_id, examination=examination)
+    if evidence.report_documents:
+        videos = videos.filter(report_media_identity(examination))
+    return videos.select_related("state").first()
 
 
 @transaction.atomic
@@ -116,9 +161,28 @@ def capture_examination_revision(
             raise ExaminationRevisionConflict(
                 "Selected report has no examination-owned clinical snapshot."
             )
+        if (
+            selection.report_version is not None
+            and selection.report_version != report.version
+        ):
+            raise ExaminationRevisionConflict(
+                "The selected report changed; reload before capturing."
+            )
         clinical = report.dtypes_record
         evidence.report_id = int(report.pk)
         evidence.report_version = report.version
+        evidence.report_author_id = report.updated_by_id
+        evidence.report_author_profession = (
+            AnnotationProfession(report.author_profession)
+            if report.author_profession
+            else None
+        )
+        evidence.report_author_academic_titles = [
+            AnnotationAcademicTitle(title) for title in report.author_academic_titles
+        ]
+        evidence.report_documents = _snapshot_documents(
+            examination, list(report.source_documents.values_list("pk", flat=True))
+        )
         evidence.report_text = report.rendered_text
         evidence.report_template_name = report.template_name
         evidence.report_template_version = report.template_version
@@ -128,16 +192,12 @@ def capture_examination_revision(
             "Save the complete clinical examination before capturing a revision."
         )
     if selection.video_id is not None:
-        video = (
-            VideoFile.objects.filter(pk=selection.video_id, examination=examination)
-            .select_related("state")
-            .first()
-        )
+        evidence.video_id = selection.video_id
+        video = _revision_video(examination, evidence)
         if video is None:
             raise ExaminationRevisionConflict(
                 "Selected video does not belong to the examination."
             )
-        evidence.video_id = int(video.pk)
         evidence.processed_sha256 = video.processed_video_hash or None
         if selection.annotator is not None:
             validate_video_download(video)
@@ -281,10 +341,19 @@ def finalize_examination_revision(
         raise ExaminationRevisionConflict(
             "Finalizing descriptors and findings requires the recorded terminology module and version."
         )
+    documents = snapshot.evidence.report_documents
+    if (
+        documents
+        and _snapshot_documents(
+            record.patient_examination, [doc.document_id for doc in documents]
+        )
+        != documents
+    ):
+        raise ExaminationRevisionConflict(
+            "Source document generation changed; capture a new revision."
+        )
     if snapshot.evidence.video_id is not None:
-        video = VideoFile.objects.filter(
-            pk=snapshot.evidence.video_id, examination=record.patient_examination
-        ).first()
+        video = _revision_video(record.patient_examination, snapshot.evidence)
         if video is None:
             raise ExaminationRevisionConflict(
                 "Selected video is no longer available for this examination."

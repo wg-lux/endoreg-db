@@ -5,27 +5,12 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models.medical.medication.medication_intake_time import (
         MedicationIntakeTime,
     )
-
-
-class MedicationScheduleManager(models.Manager["MedicationSchedule"]):
-    """Manager for the medication schedule model."""
-
-    def get_by_natural_key(self, name: str) -> "MedicationSchedule":
-        """
-        Retrieve a MedicationSchedule instance by its name.
-
-        Parameters:
-            name (str): The name of the medication schedule to retrieve.
-
-        Returns:
-            MedicationSchedule: The matching medication schedule instance.
-        """
-        return self.get(name=name)
 
 
 class MedicationSchedule(models.Model):
@@ -49,8 +34,8 @@ class MedicationSchedule(models.Model):
         "MedicationIntakeTime", "MedicationIntakeTime"
     ] = models.ManyToManyField("MedicationIntakeTime")
 
-    objects: ClassVar[MedicationScheduleManager] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        MedicationScheduleManager()
+    objects: ClassVar[NameNaturalKeyManager["MedicationSchedule"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        NameNaturalKeyManager["MedicationSchedule"]()
     )
 
     def natural_key(self) -> tuple[str]:

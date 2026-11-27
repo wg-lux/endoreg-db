@@ -1,12 +1,13 @@
 # pyright: reportPrivateUsage=false, reportUnusedFunction=false, reportUnusedClass=false
 import logging
 from datetime import date
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING
 
 # --- End Fix ---
 from django.db import transaction
 from lx_dtypes.models.contracts.video_text_metadata import VideoTextMetaPayload
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.services.patient_identity.sensitive_meta_ingestion import (
     update_or_create_sensitive_meta_from_dict,
@@ -20,17 +21,6 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
     # SensitiveMeta is already imported above
-
-
-class _VideoTextMetaState(Protocol):
-    frames_extracted: bool
-    text_meta_extracted: bool
-
-    def refresh_from_db(self) -> None: ...
-
-    def save(self, *, update_fields: list[str]) -> None: ...
-
-    def mark_sensitive_meta_processed(self, *, save: bool = True) -> None: ...
 
 
 logger = logging.getLogger(__name__)
@@ -52,7 +42,7 @@ def _update_text_metadata(
         - Post-condition: Sets state.text_meta_extracted=True (even if no text found).
     """
     logger.debug(f"Updating text metadata for video {video.raw_video_hash}")
-    state = cast(_VideoTextMetaState, video.get_or_create_state())
+    state = video.get_or_create_state()
     state.refresh_from_db()
 
     if state.text_meta_extracted and not overwrite:
@@ -100,8 +90,7 @@ def _update_text_metadata(
                 )
                 # Mark state as retrieved even if no data found, to avoid re-running unless overwrite=True
                 if not state.text_meta_extracted:
-                    state.text_meta_extracted = True
-                    state.save(update_fields=["text_meta_extracted"])
+                    update_media_state(state, changes={"text_meta_extracted": True})
                 return sensitive_meta_instance  # Return existing meta if available
 
             # Add center info if not already present in extracted data
@@ -153,8 +142,7 @@ def _update_text_metadata(
 
             # Update state
             if not state.text_meta_extracted:
-                state.text_meta_extracted = True
-                state.save(update_fields=["text_meta_extracted"])
+                update_media_state(state, changes={"text_meta_extracted": True})
 
             # Mark sensitive meta as processed when updated via text metadata
             if sensitive_meta:

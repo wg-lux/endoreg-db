@@ -275,7 +275,7 @@ def test_model_training_task_delegates_to_runner():
 
 def test_upload_processing_task_delegates_to_hub_service():
     with patch(
-        "endoreg_db.services.hub.process_upload_job",
+        "endoreg_db.services.hub.ingest.process_upload_job",
         return_value=True,
     ) as processor:
         result = process_upload_job.run("123")

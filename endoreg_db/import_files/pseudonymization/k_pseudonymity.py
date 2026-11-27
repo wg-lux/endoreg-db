@@ -25,7 +25,7 @@ def k_pseudonymize(
     The old implementation changed a real row's name and date of birth and then
     treated a record-local count as evidence of k-pseudonymity. That operation
     cannot satisfy the paper's immutable-source-table and release-predicate
-    invariants. Call ``services.k_pseudonymity.build_k_pseudonymous_release``
+    invariants. Call ``services.privacy.k_pseudonymity.build_k_pseudonymous_release``
     with a governed de-identified release table instead.
     """
 

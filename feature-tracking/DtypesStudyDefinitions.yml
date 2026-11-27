@@ -257,8 +257,8 @@ definition_of_done:
   category: functionality
   title: Manage imported datasets, study links, combination, splitting and explicit deletion
   acceptance:
-  - Each committed Excel or CSV import creates or reuses one named clinical dataset; studies reference
-    its examination membership.
+  - Each committed Excel or CSV import creates or reuses one named clinical dataset. Receipt links identify
+    exactly the rows supplied by that upload, even when another upload references the same examination.
   - Authenticated authorized users can create, read, rename and delete datasets and studies and assign
     or unassign dataset-study relations.
   - Combining creates a deduplicated union and splitting creates disjoint patient-based datasets; source
@@ -322,6 +322,11 @@ definition_of_done:
     boolean and text descriptors through the existing shared mapping contract and importer. Unknown terms,
     incompatible descriptor types and invalid values fail without silently dropping fields. Existing mappings
     and repeated imports retain their identities.
+  - Multi-package cohorts require an explicit module and version matching the mapping. Package mismatches
+    and changed gender on replay fail atomically. Eligibility counts apply the same saved filters and
+    terminology criteria as the cohort preview, including for imported examinations without media.
+  - Application bootstrap uses endoreg_reference 2.0.0 with pinned terminology dependencies; clinical
+    copies and lint exceptions are prohibited, and genuine legacy clinical conflicts remain blocked.
   required: true
   verification:
     kind: manual
@@ -352,9 +357,15 @@ definition_of_done:
       All51 unique annotate cohort/Excel/table API tests and28 frontend tests passed. Final PostgreSQL
       DISTINCT-scope import/capture regressions2 passed; shared locking retains the authorized scope.
       Documentation describes0105 capture migration, full snapshot prerequisite, transactional import
-      and0106 hub transfer. Final deployment acceptance remains in progress; no production imports performed.'
-    assessed_by: codex-parser-warnings-20261020
-    assessed_at: '2026-10-20T09:46:33.279739Z'
+      and0106 hub transfer. Final deployment acceptance remains in progress; no production imports performed.
+      2026-11-23 source verification: 48 catalogue/setup cases, 41 clinical-reference/exchange/inspection
+      cases, 14 table API cases, and 7 UI cases passed across focused runs. Shared verification passed
+      69 ownership/lint cases, 70 adapter/package-snapshot cases, 22 catalogue cases and 33 deployment-contract
+      cases. Source Pyright, structure checks and tracker validation passed. Fresh bootstrap, per-package
+      clinical import, replay and rollback are verified; genuine legacy conflicts and coordinated production
+      delivery remain outstanding. Production databases were not changed.'
+    assessed_by: codex-hub-transfer-20261123
+    assessed_at: '2026-11-23T14:04:58.499983Z'
 - id: independent_local_center_defaults
   category: interoperability
   title: Local center provisioning remains independent of study and clinical fixture loading
@@ -836,6 +847,10 @@ definition_of_done:
   category: data_integrity
   title: Phase 5 - Replace clinical fixture loading without breaking installed databases
   acceptance:
+  - Application and clinical fixture loader identities have one settings module. Repeated commands reuse
+    persisted catalogue and clinical receipts when identities, content and bound rows match; changing
+    either module or version selects a new import. Missing receipts or rows cannot be hidden by a process-local
+    cache, and explicit verification still detects field drift.
   - Provide a single explicit reconciliation command for the seven colorectal indication expected_interventions
     changes in endoreg_reference@1.0.0 and their eight intervention plus histology_sampling dependencies.
     Optional dry-run leaves the database and registry unchanged; apply requires no review file or reviewer
@@ -913,62 +928,17 @@ definition_of_done:
       reference: endoreg_db/management/commands/load_base_db_data.py
     - kind: code
       reference: ../luxnix/modules/nixos/services/lx-annotate-local/config.nix
-    note: 'Klinische Loader-Umstellung einschließlich vom Nutzer freigegebener Green-Endoscopy- und Personal-/Schichtreferenzen
-      implementiert: 865 Datensätze (673 Bootstrap, 153 Green Endoscopy, 39 Workforce), 68 gemeinsame
-      Typverträge, 27 kompatible Teilkommandos plus load_base_db_data. Generische utils/dataloader.py,
-      Stub, yaml_model_loader-Fassade und verwaiste Typen/Exporte entfernt; keine produktiven Aufrufer
-      in endoreg-db oder den geprüften Nachbarrepos. Alte Engine-Tests durch Prüfungen der typisierten
-      Paketgrenze ersetzt; ungültige Quellen, Identitätskonflikte, FK/M2M-Parität, PK-Erhalt, Rollback
-      und Wiederholung abgedeckt. Die ursprünglich fehlerhafte Qualification-/Shift-Verzeichnisverdrahtung
-      wurde anhand der vorhandenen Definitionen migriert; NaN-Gewichte werden gemäß bestehender Domänensemantik
-      als fehlend abgebildet. Host-Integration: 154 bestanden, 70 übersprungen; lx-dtypes vollständig:
-      1091 bestanden, 1 übersprungen; isolierte Registry: 16 bestanden. Beide vollständigen Pyright-Läufe
-      fehlerfrei (Host 6 bestehende Warnungen); Report-Grenze zusätzlich fehlerfrei typgeprüft. Installiertes
-      lokales Wheel lädt alle 11 registrierten Paketversionen; Quellen und Wheel-Daten bytegleich. Keine
-      Produktivdaten verändert oder Pakete veröffentlicht. Gemeinsamer Paketrollout und PostgreSQL-/Produktivprobe
-      stehen aus. Alte Quelldateien ohne Runtime-Verbrauch und fremde gestagte Fixture-Änderungen bleiben
-      erhalten; die vollständige Fixture-Bereinigung ist daher noch kein verifiziertes DoD-Kriterium.
-
-
-      Zusätzlicher unabhängiger Upgrade-Nachweis: MigrationExecutor startet bei 0086 und erzeugt eine
-      repräsentative Kapselendoskopie aus den alten Host-YAML-Definitionen, inklusive Untersuchungsart,
-      Indikation, Patient, Untersuchungsinstanz und historischem Report. Anschließende Migration und Katalogimport
-      prüfen äquivalente Adoption, abweichende Bestandsdefinition und Rollback bei Belegfehler. Primärschlüssel,
-      Beziehungen und Berichtstext bleiben erhalten; der historische dtypes-Snapshot bleibt explizit unbekannt.
-      Dies ergänzt den Katalog-Roundtrip, ersetzt keine vollständige Bestands-/Produktivprobe. Verifikation
-      am 2026-09-29: vollständiges .devenv/state/venv/bin/pyright: 0 Fehler, 6 bestehende Warnungen. Ruff
-      und git diff --check bestanden. Fokussierter pytest-Lauf: 223 bestanden, 1 Fehler im neuen Pakettest
-      wegen relativem Test-Registry-Pfad; Test auf absoluten Pfad korrigiert. Anschließender Paket-/Integrationslauf:
-      74 bestanden, 2 Warnungen in 81.51s, einschließlich des korrigierten Tests. Insgesamt 297 unterschiedliche
-      Tests erfolgreich. Keine Produktivdaten oder Deployments geändert; PostgreSQL-/Produktivprobe bleibt
-      offen.
-
-
-      2026-09-29 simplification requested by user: replaced the persisted review-file, target-fingerprint
-      and reviewer workflow with one explicit migrate_reference_catalog command and optional --dry-run.
-      Retained pinned scope, strict adoption, row locks, atomic dependency creation/relationship updates/full
-      reconciliation, immutable receipts and structured commit logging. No model fields or catalogue records
-      deleted. Patient indication links and existing row identities verified. Full Pyright: 0 errors,
-      6 existing warnings. Migration and catalogue integration tests: 24 passed, 1 existing plugin rewrite
-      warning in 121.34s. Ruff, format checks, YAML parsing and git diff --check passed. The earlier deployment-setup
-      version-expectation failure is outside this simplification and was not changed. No production artifact
-      installed, database mutated or services restarted; privileged live gc-02 access remains unavailable.
-
-
-      2026-09-29 LuxNix startup integration: load_base_db_data --reconcile-legacy hydrates the governed
-      registry through the existing helper, validates the pinned catalogue selection, and invokes bounded
-      reconciliation. Dry-run neither hydrates nor writes. Conflict-free catalogues use the normal strict
-      importer, supporting fresh installations and exact legacy adoption; known seven-indication repair
-      and full reconciliation remain atomic and idempotent. Standard loading without the flag remains
-      strict. Full Pyright: 0 errors, 6 existing warnings. Initial migration/catalogue suite: 28 passed,
-      2 test-setup failures from duplicate registration with different metadata. CLI tests now use standard
-      hydration; final migration suite: 17 passed in 141.23s, including all six startup cases. The 13
-      unchanged catalogue-import tests passed in the combined run. LuxNix: 8 focused tests plus 2 existing
-      startup-order tests passed; application environment/config: 39 passed. gc-02 NixOS drvPath evaluation
-      and docs check passed. Both source changes require a coordinated backend release; no production
-      package installation, activation or database changes performed.'
-    assessed_by: codex-study-definitions-20260929
-    assessed_at: '2026-09-29T13:46:44.463115Z'
+    - kind: test
+      reference: '2026-11-24: Zentrale Paketidentitaeten in config/settings/dataloader.py; klinische Wiederverwendung
+        anhand validierter Inhaltsdigests und vorhandener Zeilen. Vollstaendiger Pyright: 0 Fehler, 2
+        bestehende Warnungen; abschliessender gezielter Pyright: 0 Fehler/Warnungen. pytest -n 0 tests/services/test_reference_catalog_receipt_reuse.py
+        -q --tb=short --show-capture=no -x: 14 passed. pytest -n 0 tests/dataloader/test_load_base_db_data_command.py
+        tests/dataloader/test_load_base_db_data_repeat.py -q --tb=short --show-capture=no -x: 20 passed.
+        Erster Integrationslauf: 49 passed, 4 neue Wiederverwendungstests fehlgeschlagen; Vergleich transienter
+        Modellidentitaeten durch validierte Inhaltsdigests ersetzt, alle vier danach bestanden. Ruff,
+        68 Strukturmanifeste und git diff --check bestanden. Keine Produktionsfreigabe.'
+    assessed_by: codex-loader-settings-20261124
+    assessed_at: '2026-11-24T09:46:09.988682Z'
 - id: authoring_and_access_boundaries
   category: security
   title: Researcher YAML is validated data within existing study and center permissions

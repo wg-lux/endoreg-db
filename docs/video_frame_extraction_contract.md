@@ -25,7 +25,7 @@ distinguishes current consumers from legacy rate-based decoder helpers.
 
 `read_video_file_frame_jpeg` in `endoreg_db/utils/frame_stream.py` asks
 `video.frame_number_to_s` for the authoritative timestamp before decoding.
-`endoreg_db/services/video_files/timeline.py` prefers persisted timestamps and
+`endoreg_db/utils/video/timeline.py` prefers persisted timestamps and
 rejects missing timestamps for variable-frame-rate media. Constant-frame-rate
 fallback includes the timeline origin. Terminal segment boundaries use origin
 plus duration; a terminal boundary is not a decodable frame.
@@ -41,6 +41,20 @@ an encoder. Transformation ancestry is recorded separately by
 `endoreg_db/services/video_storage/frame_provenance.py`, using actual decoder
 indices and complete source/output PTS sequences. Nearest-timestamp clinical
 boundary mapping must never be used to invent that ancestry.
+
+### Export without persisted presentation timestamps
+
+When requested export frames have persisted presentation timestamps, export
+selects each frame by exact timestamp. When they do not, a local plaintext
+source is decoded once by `extract_selected_frames` in
+`endoreg_db/utils/video/frame_extraction.py`. Its FFmpeg `select` filter keeps
+only the requested zero-based decode indices (`n`), with `-fps_mode passthrough`
+so variable-frame-rate media is neither duplicated nor dropped. Frames between
+requested indices are decoded but never encoded or written. The extractor fails
+if FFmpeg does not produce exactly one image per requested index. Images are
+still encoded by FFmpeg with the shared frame encoder options, and display
+rotation is applied as on every other FFmpeg frame path. An encrypted,
+seekable source still requires exact presentation timestamps.
 
 ## Retired materialization entry points
 

@@ -434,3 +434,65 @@ def test_report_submission_persists_first_class_language_and_kb_provenance() -> 
     assert result.report.knowledge_base_module == "report_template_examples"
     assert result.report.knowledge_base_version == "0.1.0"
     assert result.report.editor_payload == {"report_language": "de"}
+
+
+@pytest.mark.django_db
+def test_report_profession_is_snapshotted_and_source_rejections_preserve_version() -> (
+    None
+):
+    from django.contrib.auth.models import User
+    from endoreg_db.models.administration.person.user.portal_user_information import (
+        PortalUserInfo,
+    )
+
+    author = User.objects.create_user(username="source-report-author")
+    other = User.objects.create_user(username="other-source-report-author")
+    profile, _ = PortalUserInfo.objects.get_or_create(user=author)
+    profile.annotation_profession = "physician"
+    profile.annotation_academic_titles = ["doctorate"]
+    profile.save()
+    patient = Patient.objects.create(patient_hash="report-author-snapshot")
+    examination = PatientExamination.objects.create(patient=patient)
+    report = save_report_submission(
+        patient_examination_id=examination.pk,
+        template_name="source-report",
+        user=author,
+        source_document_ids=[],
+    ).report
+    profile.annotation_profession = "nurse"
+    profile.annotation_academic_titles = ["bsc"]
+    profile.save()
+    for submitter, documents, field in (
+        (author, [19623], "source_document_ids"),
+        (other, [], "report_id"),
+    ):
+        with pytest.raises(ReportPersistenceValidationError) as rejected:
+            save_report_submission(
+                patient_examination_id=examination.pk,
+                report_id=report.pk,
+                expected_version=1,
+                user=submitter,
+                template_name="source-report",
+                source_document_ids=documents,
+            )
+        assert field in rejected.value.detail
+    report.refresh_from_db()
+    assert (
+        report.version,
+        report.updated_by_id,
+        report.author_profession,
+        report.author_academic_titles,
+    ) == (1, author.pk, "physician", ["doctorate"])
+    saved = save_report_submission(
+        patient_examination_id=examination.pk,
+        report_id=report.pk,
+        expected_version=1,
+        user=author,
+        template_name="source-report",
+    ).report
+    assert (
+        saved.version,
+        saved.uuid,
+        saved.author_profession,
+        saved.author_academic_titles,
+    ) == (2, report.uuid, "nurse", ["bsc"])

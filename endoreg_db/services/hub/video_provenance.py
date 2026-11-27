@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from bisect import bisect_left
 from fractions import Fraction
 from typing import TYPE_CHECKING
@@ -11,29 +12,70 @@ from lx_dtypes.evaluation.electrical import recording_to_electrical_ticks
 from lx_dtypes.models.contracts.video_provenance import (
     RecordingSynchronization,
     ElectricalTimestampSeries,
+    VideoFrameTimeline,
     VideoProvenanceBundle,
     VideoProvenanceRecovery,
 )
 
+from endoreg_db.utils.structured_logging import emit_structured_event
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
-from endoreg_db.services.video_storage.frame_provenance import resolve_video_provenance
+from endoreg_db.services.video_storage.frame_provenance import (
+    MissingFrameAncestry,
+    resolve_video_provenance,
+)
 
 if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
+def _recorded_provenance(
+    video: VideoFile,
+) -> VideoProvenanceBundle | VideoProvenanceRecovery | None:
+    try:
+        return resolve_video_provenance(video)
+    except MissingFrameAncestry:
+        return None
+
+
 def export_video_provenance(
     video: VideoFile,
+    *,
+    require_hub_approval: bool = False,
 ) -> VideoProvenanceBundle | VideoProvenanceRecovery:
     from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.media.export_downloads import validate_video_download
     from endoreg_db.services.media.operation_gate import (
         assert_video_not_transcoding,
         create_video_stream_lease,
     )
 
+    # Optimistically read immutable generation bytes. Publication and approval
+    # are checked again on a fresh row before the reader lease is granted.
+    assert_video_not_transcoding(video.pk)
+    recorded = _recorded_provenance(video)
+    # Timestamp capture authenticates the decoded file and computes its content hash.
+    validate_video_download(video, verify_content=recorded is not None)
+    result = recorded
+    if result is None:
+        processed = _decode_processed_timeline(video)
+        if processed.content_hash != video.processed_video_hash:
+            raise ValueError("Decoded timeline belongs to another processed generation")
+        result = VideoProvenanceRecovery(
+            method="decoded_processed_timeline_v1",
+            recording_hash=video.raw_video_hash,
+            processed_timeline=processed,
+        )
+
     with transaction.atomic():
         current = VideoFile.objects.select_for_update().get(pk=video.pk)
-        if (current.processed_video_hash, current.processed_file.name) != (
+        if (
+            current.center_id,
+            current.raw_video_hash,
+            current.processed_video_hash,
+            current.processed_file.name,
+        ) != (
+            video.center_id,
+            video.raw_video_hash,
             video.processed_video_hash,
             video.processed_file.name,
         ):
@@ -41,22 +83,29 @@ def export_video_provenance(
                 "Processed generation changed while preparing provenance export"
             )
         assert_video_not_transcoding(current.pk)
-        result = _export_current_video_provenance(current)
+        if require_hub_approval:
+            from endoreg_db.services.hub.outbound_export_readiness import (
+                resolve_video_hub_export_state,
+            )
+            from endoreg_db.services.media.export_ready import ReadyForExportError
+
+            readiness = resolve_video_hub_export_state(current)
+            if not readiness.transfer_eligible:
+                raise ReadyForExportError(readiness.transfer_validation_error)
+        validate_video_download(current, verify_content=False)
+        if _recorded_provenance(current) != recorded:
+            raise ValueError("Frame evidence changed during transfer preparation")
         create_video_stream_lease(current, file_type="processed")
-        return result
-
-
-def _export_current_video_provenance(
-    video: VideoFile,
-) -> VideoProvenanceBundle | VideoProvenanceRecovery:
-    """Export only an approved, hash-verified processed artifact's ancestry."""
-    from endoreg_db.services.media.export_downloads import validate_video_download
-
-    provenance = resolve_video_provenance(video)
-    # The current bytes must match the proof's output hash. That identity permits
-    # reuse of persisted timestamps; the receiver still decodes uploaded media.
-    validate_video_download(video)
-    return provenance
+    if recorded is None and isinstance(result, VideoProvenanceRecovery):
+        emit_structured_event(
+            logging.getLogger(__name__),
+            "hub_transfer.processed_timeline_selected",
+            video_id=current.pk,
+            recording_hash=current.raw_video_hash,
+            processed_hash=current.processed_video_hash,
+            method=result.method,
+        )
+    return result
 
 
 def accept_video_provenance(video: VideoFile, payload: object) -> None:
@@ -91,15 +140,22 @@ def accept_video_provenance_recovery(video: VideoFile, payload: object) -> None:
     }
 
 
-def validate_received_video_timeline(
-    video: VideoFile, proof: VideoProvenanceBundle | None = None
-) -> None:
+def _decode_processed_timeline(video: VideoFile) -> VideoFrameTimeline:
     from endoreg_db.services.video_storage.canonical_timelines import (
         capture_canonical_timeline,
     )
     from endoreg_db.services.video_storage.probes import probe_video_artifact
     from endoreg_db.utils.storage import ensure_local_file
 
+    with ensure_local_file(video.processed_file) as path:
+        return capture_canonical_timeline(
+            path, probe_video_artifact(path), require_original_pts=True
+        )
+
+
+def validate_received_video_timeline(
+    video: VideoFile, proof: VideoProvenanceBundle | None = None
+) -> None:
     recovery = VideoFileMetaPayload.model_validate(
         video.meta or {}
     ).video_provenance_recovery
@@ -109,11 +165,7 @@ def validate_received_video_timeline(
             or recovery.processed_timeline.content_hash != video.processed_video_hash
         ):
             raise ValueError("Recovered provenance does not match received media")
-        with ensure_local_file(video.processed_file) as path:
-            actual = capture_canonical_timeline(
-                path, probe_video_artifact(path), require_original_pts=True
-            )
-        if actual != recovery.processed_timeline:
+        if _decode_processed_timeline(video) != recovery.processed_timeline:
             raise ValueError("Recovered timestamps disagree with received media")
         return
     if proof is None:
@@ -122,11 +174,7 @@ def validate_received_video_timeline(
         ).video_frame_provenance
     if proof is None:
         return  # Legacy transfers remain readable but cannot supply electrical alignment.
-    with ensure_local_file(video.processed_file) as path:
-        actual = capture_canonical_timeline(
-            path, probe_video_artifact(path), require_original_pts=True
-        )
-    if actual != proof.transformations[-1].output:
+    if _decode_processed_timeline(video) != proof.transformations[-1].output:
         raise ValueError(
             "Received frame provenance disagrees with decoded processed media"
         )

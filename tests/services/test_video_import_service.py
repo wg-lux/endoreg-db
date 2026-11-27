@@ -167,6 +167,7 @@ def _completed_video_file(
 ) -> VideoFile:
     return VideoFile(
         id=1,
+        center=Center(name="university_hospital_wuerzburg"),
         raw_video_hash=file_hash,
         original_file_name=original_file_name,
         raw_file="raw/completed-source.mp4",
@@ -1947,10 +1948,12 @@ def test_import_and_anonymize_success_history_unusable_processed_file_self_heals
         anonymization_validated = False
 
     class DummyVideo:
+        center = Center(name="university_hospital_wuerzburg")
         processed_file = None
         pk = 1
         state = DummyState()
         raw_video_hash = "video-hash"
+        raw_file = sensitive_path
         sensitive_meta = object()
         original_file_name = source_path.name
 
@@ -2156,6 +2159,7 @@ def test_same_content_imports_serialize_and_only_one_runs_heavy_work(
         anonymization_validated = False
 
     class DummyVideo:
+        center = Center(name="university_hospital_wuerzburg")
         processed_file = None
         pk = 1
         raw_video_hash = "video-hash"

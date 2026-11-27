@@ -10,7 +10,10 @@ from endoreg_db.schemas.video_jobs import (
     MAX_SEGMENTATION_FPS,
 )
 from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
-from endoreg_db.services.video_files import get_video_fps, require_persisted_video_fps
+from endoreg_db.services.video_files.metadata import (
+    get_video_fps,
+    require_persisted_video_fps,
+)
 from endoreg_db.services.video_storage.processed_transcode import (
     transcode_processed_video_for_storage_pressure,
 )

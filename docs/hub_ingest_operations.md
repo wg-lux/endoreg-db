@@ -5,8 +5,7 @@ Run commands in the installed environment. Start with
 or the [incident workflow](#incident-workflow).
 Readiness evidence belongs to [HubIngest](../feature-tracking/done/HubIngest.yml)
 and [ImportMonitoring](../feature-tracking/ImportMonitoring.yml).
-For sender implementation, use the [typed transfer contract](hub_transfer_typed_contract.md)
-and its [English version](hub_transfer_typed_contract.en.md).
+For sender implementation, use the [typed transfer contract](hub_transfer_typed_contract.md).
 HTTP Live Streaming (HLS) storage rules belong to the
 [video runbook](video_storage_normalization.md).
 
@@ -85,11 +84,11 @@ Import attempt, anonymization, HLS materialization, and cleanup are monitored se
 
 Allowed main transitions are `pending -> processing -> anonymized`, `processing -> retrying -> processing`, and `retrying -> error` once attempts are exhausted. `lost` is terminal. A quarantine entry has its own review lifecycle and does not overwrite an upload job status.
 
-Rust `lifecycle_state_v3` owns transitions. Python's
+Rust `status_transition_v2` owns upload transitions. Python's
 `endoreg_db/services/hub/upload_job_state_machine.py` validates through
 `validate_upload_job_status_transition` before persistence, including cancellation:
 
-| UploadJob status | Native operation state |
+| UploadJob status | Conceptual operation state |
 | --- | --- |
 | `pending` | `queued` |
 | `processing`, `cancel_requested` | `running` |
@@ -99,7 +98,7 @@ Rust `lifecycle_state_v3` owns transitions. Python's
 | `lost` | `lost` |
 | `cancelled` | `cancelled` |
 
-`cancel_requested` shares `running` with `processing`, so the state machine adds one rule: a cancellation request can only become `cancelled`, an interruption `error`, or `lost`. It can never return to `processing`, `retrying` or `pending`. A native `cancelled` state accepts no further transitions.
+The native upload table distinguishes `cancel_requested` from `processing`: a cancellation request can only become `cancelled`, an interruption `error`, or `lost`. It can never return to `processing`, `retrying` or `pending`. A native `cancelled` state accepts no further transitions.
 
 Anonymization has a separate native phase: `not_started`, `in_progress`,
 `awaiting_validation`, `validated` or `failed`. Filters, statistics, reconciliation,

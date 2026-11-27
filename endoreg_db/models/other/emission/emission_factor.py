@@ -2,18 +2,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from ...administration import ReferenceProduct
-
-
-class EmissionFactorManager(models.Manager["EmissionFactor"]):
-    """
-    Manager for EmissionFactor with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "EmissionFactor":
-        return self.get(name=name)
 
 
 # get debug from settings
@@ -31,7 +23,7 @@ class EmissionFactor(models.Model):
         value (float): The value of the emission factor.
     """
 
-    objects = EmissionFactorManager()
+    objects = NameNaturalKeyManager["EmissionFactor"]()
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255)
     # German display name; NULL when the catalogue carries none.

@@ -2,18 +2,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from .examination import Examination
-
-
-class ExaminationTimeTypeManager(models.Manager["ExaminationTimeType"]):
-    """
-    Manager for ExaminationTimeType with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ExaminationTimeType":
-        return self.get(name=name)
 
 
 class ExaminationTimeType(models.Model):
@@ -25,7 +17,7 @@ class ExaminationTimeType(models.Model):
         examinations: The examinations associated with this type.
     """
 
-    objects = ExaminationTimeTypeManager()
+    objects = NameNaturalKeyManager["ExaminationTimeType"]()
     name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
     # German display name; NULL when the catalogue carries none.
     name_de: models.CharField[Any, Any] = models.CharField(

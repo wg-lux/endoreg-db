@@ -35,14 +35,14 @@ from endoreg_db.serializers.hub import (
     TransferJobCreateSerializer,
     TransferJobStatusSerializer,
 )
-from endoreg_db.services.hub import (
-    HubMediaEnvelopeReplayConflict,
+from endoreg_db.services.hub.deployment import transfer_api_enabled
+from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeReplayConflict
+from endoreg_db.services.hub.transfers import (
     apply_transfer_metadata,
     attach_enveloped_transfer_media,
     authenticate_network_node,
     create_or_reuse_transfer_job,
     get_media_envelope_receipt,
-    transfer_api_enabled,
 )
 from endoreg_db.services.hub.transfer_envelope import HubMediaEnvelopeError
 from endoreg_db.services.hub.transfer_logging import (
@@ -417,7 +417,14 @@ class HubTransferCreateView(APIView):
         except ValueError as exc:
             if phase == "registration":
                 error("Transfer registration conflict")
-                return Response({"error": str(exc)}, status=status.HTTP_409_CONFLICT)
+                return Response(
+                    {
+                        "error": str(exc),
+                        "rejection_code": "transfer_registration_conflict",
+                        "rejection_phase": "registration",
+                    },
+                    status=status.HTTP_409_CONFLICT,
+                )
             details = {"non_field_errors": [str(exc)]}
             error("Receiver metadata application failed")
             _log_transfer_validation_failure(
@@ -487,7 +494,11 @@ class HubTransferStatusView(APIView):
                 verify_received_video_media(transfer_job)
             except (ValueError, OSError, ObjectDoesNotExist):
                 return Response(
-                    {"detail": "Received media could not be verified."},
+                    {
+                        "detail": "Received media could not be verified.",
+                        "rejection_code": "received_media_verification_failed",
+                        "rejection_phase": "verification",
+                    },
                     status=status.HTTP_409_CONFLICT,
                 )
             payload["media_verified"] = True
@@ -647,12 +658,16 @@ class HubTransferMediaUploadView(APIView):
             transfer_job.refresh_from_db()
             payload = _transfer_status_response_payload(transfer_job)
             payload["detail"] = "Transfer media attachment is already in progress."
+            payload["rejection_code"] = "transfer_operation_busy"
+            payload["rejection_phase"] = "media_attachment"
             return Response(payload, status=status.HTTP_409_CONFLICT)
         except HubMediaEnvelopeReplayConflict as exc:
             error("Conflicting replay of an applied media envelope was rejected")
             transfer_job.refresh_from_db()
             payload = _transfer_status_response_payload(transfer_job)
             payload["detail"] = str(exc)
+            payload["rejection_code"] = "media_envelope_replay_conflict"
+            payload["rejection_phase"] = "media_attachment"
             return Response(payload, status=status.HTTP_409_CONFLICT)
         except HubMediaEnvelopeError as exc:
             error("Encrypted media envelope was rejected")

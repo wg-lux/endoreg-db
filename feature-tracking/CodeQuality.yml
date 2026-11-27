@@ -306,6 +306,9 @@ definition_of_done:
   title: Test-Fixtures vermeiden unnötige Datenbank-, Datei- und Ausgabearbeit
   acceptance:
   - Reine Namen-, Datums-, Task-Konfigurations- und Runtime-Isolationstests laufen ohne Datenbank-Fixture.
+  - Wiederholte Datums- und Serializer-Prüfungen verwenden parametrisierte Fälle; unterschiedliche Eingaben
+    und Assertions sowie die gemessene Produktionscode-Abdeckung bleiben erhalten. Reine Serializer-Validierung
+    fordert keine Datenbank an.
   - Die automatische Video-Anonymizer-Fixture fordert temporäre Verzeichnisse nur für betroffene Tests
     an.
   - Produkt-Testdaten werden einmal pro TestCase-Klasse geladen; jede Testmethode bleibt durch Rollback
@@ -802,12 +805,35 @@ definition_of_done:
         Fokus-Pyright 0 Fehler/0 Warnungen; Dead-Code-/Boundary-Guards bestanden. Insgesamt 21 Produktionszeilen
         in Runde 2 entfernt. Native Frame-Fallback-Duplikation wegen abweichender Fehler-/Verfügbarkeitsverträge
         beibehalten; keine Rust-Migration, keine umfassende Python-/Rust-Suite oder Produktionsfreigabe.'
-    assessed_by: codex-opt-20261118-root
-    assessed_at: '2026-11-18T15:33:56.514593Z'
+    - kind: review
+      reference: '2026-11-24: Sechs überholte Smoke-Tests entfernt: TestDataLoader.test_load_base_db_data,
+        test_load_examination_data, test_load_finding_data und test_load_examination_indication_data werden
+        durch explizite Paketwahl, Bootstrap-Delegation und echte wiederholte Katalogimporte in test_load_base_db_data_command.py/test_load_base_db_data_repeat.py
+        ersetzt. AiModelTest.test_model_meta_creation druckte nur ein Objekt; aktive Version, fehlende
+        Gewichte und Reparatur bleiben in test_ai_model_get_latest_version.py/test_model_meta_from_hf.py
+        geprüft. LegacyImageDataTest.test_load_legacy_data prüfte nur eine nichtleere JSONL-Testdatei;
+        der echte load_legacy_data-Aufruf mit Video-Gruppierung, Frame-Koordinaten, Dataset-Mitgliedschaft
+        und Manifest bleibt erhalten. 17 eigenständige Anwendungskatalog-Loader-Smokes und der echte Hugging-Face-Downloadtest
+        bleiben bestehen. Kein Produktionscode geändert; drei Testdateien von 497 auf 389 Zeilen reduziert.
+        Keine Aussage über unveränderte gemessene Gesamt-Coverage.'
+    - kind: test
+      reference: '2026-11-24: Nach vollständigem Pyright (0 Fehler, 3 Warnungen außerhalb der Änderungen):
+        .devenv/state/venv/bin/pytest tests/dataloader/test_dataloader.py tests/dataloader/test_load_base_db_data_repeat.py
+        tests/dataloader/test_load_base_db_data_command.py tests/legacy/test_load_legacy_data.py tests/services/test_model_meta_from_hf.py
+        tests/ai/test_ai_model_get_latest_version.py -n 0 -q --tb=short: 45 bestanden, 2 Warnungen, 203.66
+        s. tests/administration/ai/test_create_model_meta.py --collect-only -n 0 -q: 1 Test gesammelt;
+        echter Netzwerkdownload nicht ausgeführt. Ruff und git diff --check für die Teständerungen bestanden;
+        devenv tasks run quality:dead-code Exit 0; lint_structure.py 68 Manifeste gültig; tracker validate
+        41 Definitionen gültig. Kein Gesamtlauf; code_quality bleibt insgesamt nicht produktionsreif (18/25).'
+    assessed_by: codex-test-prune-20261124
+    assessed_at: '2026-11-24T15:02:12.371045Z'
 - id: helper_class_boundaries
   category: maintainability
   title: Helper-, Klassen-, Modell- und Servicegrenzen sind konsistent
   acceptance:
+  - Radon-Kohorte Videoimport entfernt doppelte Außenintervall-Sammlung sowie wiederholte ROI- und
+    Zeitstempelprüfung; unveränderte Import-, Wiederholungs-, Streaming- und Sperrverträge werden
+    mit Pyright und fokussierten Regressionen geprüft. Produktive Codezeilen nehmen netto ab.
   - Exakt gleiche Intervallzusammenführung und Task-ID-Persistenz haben je einen fachlichen Service-Owner;
     private Kompatibilitätsnamen, Sortiermutation, angrenzende Intervalle, unterschiedliche Caller-Validierung
     und idempotente task_id-only Speicherung bleiben durch Regressionen erhalten.
@@ -851,6 +877,21 @@ definition_of_done:
   assessment:
     status: in_progress
     evidence:
+    - kind: code
+      reference: '2026-11-24, codex-complexity-20261124-a: _anonymization.py nutzt die gemeinsame
+        Außenintervall-Sammlung und den validierten ROI-Typ. timelines.py verwendet einmal geprüfte
+        Zeitstempelsekunden erneut; die identische zweite Längenprüfung entfällt. Netto -58 LOC/-51
+        SLOC gegenüber dem Arbeitsstand bei Aufgabenbeginn. Radon _anonymize_owned 23 -> 22;
+        persist_video_source_timeline 53 -> 54 durch Inline-Zählprüfung, separater Helper mit Wert 4
+        entfällt. Keine Freigabe-, Hash-, Generationen- oder Lease-Prüfung entfernt.'
+    - kind: test
+      reference: '2026-11-24: Pyright 0 Fehler/3 Warnungen; Ruff, 68 Strukturmanifeste und 41
+        Feature-Definitionen bestanden. Acht fokussierte Testsuiten für Normalisierung, Import,
+        Anonymisierung, Generationenbereinigung, Wiederaufnahme und Schreibsperren: 135 bestanden,
+        2 fehlgeschlagen. Beide Fehler mit dem vor Änderung gesicherten Anonymisierungsmodul im
+        separaten Testprozess identisch reproduziert: test_repeated_reanonymization_retires_transcoded_and_previous_generations
+        schreibt direkt in einen geschützten Zustand; test_cleanup_raw_assets_deletes_raw_paths_and_updates_state
+        erwartet die Mutation eines alten Fake-Zustands. Keine vollständig grüne Kohorte behauptet.'
     - kind: command
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_check_dead_code.py tests/app/test_model_import_boundaries.py
         tests/models/metadata/file_import/test_create_video_file.py tests/models/metadata/file_import/test_create_report_file.py

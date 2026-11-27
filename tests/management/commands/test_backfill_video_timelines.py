@@ -89,6 +89,27 @@ def test_apply_backfills_verified_media_and_is_idempotent(video: VideoFile) -> N
     assert payload.source_timeline.timestamp_mapping == "ffprobe_pts"
     assert video.frames.filter(timestamp__isnull=False).count() == 4
 
+
+def test_processed_rate_estimate_does_not_hide_missing_decoded_timestamps(
+    video: VideoFile,
+) -> None:
+    from tests.helpers.video_timeline import constant_rate_video_metadata
+
+    video.meta = constant_rate_video_metadata(fps_num=10, frame_count=4)
+    video.save(update_fields=["meta"])
+    assert _run("--video-id", str(video.pk))["counts"]["candidate"] == 1
+    assert _run("--apply", "--video-id", str(video.pk))["counts"]["backfilled"] == 1
+    video.refresh_from_db()
+    source = VideoFileMetaPayload.model_validate(video.meta).source_timeline
+    assert source is not None
+    assert (
+        source.timestamp_mapping == "ffprobe_pts"
+        and source.artifact_kind == "processed"
+    )
+    assert list(
+        video.frames.order_by("frame_number").values_list("timestamp", flat=True)
+    ) == [4.0, 4.15, 4.4, 4.75]
+
     again = _run("--apply", "--video-id", str(video.pk))
     assert _entry(again, video.pk) is None
     assert again["counts"]["ready"] == 1
@@ -198,3 +219,30 @@ def test_operator_preview_validates_before_explicit_apply(
         LabelVideoSegment.objects.filter(pk=segment.pk).values().get() == before_segment
     )
     assert _run(*args, "--apply")["counts"]["ready"] == 1
+
+
+def test_explicit_bounded_remapping_command_requires_confirmation_and_previews(
+    video: VideoFile,
+) -> None:
+    video.frame_count, video.duration = 4, 1.0
+    video.save(update_fields=["frame_count", "duration"])
+    Frame.objects.bulk_create(
+        [
+            Frame(video=video, frame_number=i, timestamp=t + 0.1)
+            for i, t in enumerate([4.0, 4.15, 4.4, 4.75])
+        ]
+    )
+    with pytest.raises(CommandError, match="requires"):
+        _run("--video-id", str(video.pk), "--remap-annotations")
+    args = (
+        "--video-id",
+        str(video.pk),
+        "--confirm-processed-ordinals",
+        "--operator",
+        "reviewer",
+        "--remap-annotations",
+    )
+    assert _run(*args)["counts"]["candidate"] == 1
+    assert video.frames.get(frame_number=0).timestamp == 4.1
+    assert _run(*args, "--apply")["counts"]["backfilled"] == 1
+    assert video.frames.get(frame_number=0).timestamp == 4.0

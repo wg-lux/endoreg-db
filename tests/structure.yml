@@ -10,6 +10,30 @@ boundaries:
 - Do not run expensive background suites through editor coverage commands.
 - Declare default Django database access during collection; no_db opts pure tests out.
 files:
+- file: dataloader/test_dataloader.py
+  role: Standalone application-catalogue compatibility-loader smoke tests; clinical package selection and bootstrap belong to test_load_base_db_data_command.py and test_load_base_db_data_repeat.py.
+- file: administration/ai/test_create_model_meta.py
+  role: Opt-in real Hugging Face weights acquisition; deterministic metadata selection and repair are covered by ai/test_ai_model_get_latest_version.py and services/test_model_meta_from_hf.py.
+- file: legacy/test_load_legacy_data.py
+  role: Real legacy import command backfills examination groups to video IDs, frame coordinates, dataset membership and a manifest.
+- file: dataloader/test_reference_command_rendering.py
+  role: Shared reconciliation CLI identity/format rejection and lossless Unicode conflict-plan output.
+- file: models/state/test_media_state_guard.py
+  role: Guarded video/report state writes, service transitions and concurrent stale-snapshot rejection.
+- file: helpers/media_states.py
+  role: Test media states initialized through default creation and the owning state service.
+- file: helpers/data_loader.py
+  role: Fixture loaders selecting the central clinical package through application helpers.
+- file: dataloader/test_load_base_db_data_command.py
+  role: Central package selection, explicit clinical command identity and bootstrap forwarding regressions.
+- file: services/test_ingest_idempotency_quarantine.py
+  role: Ingest idempotency and quarantine with per-test protected storage and thread-owned database connection cleanup.
+- file: services/test_electrosurgical_activation_storage.py
+  role: Encrypted activation imports, explicit wall-clock PTS bindings, rollback and access controls.
+- file: services/electrical_activation_export.yml
+  role: Synthetic activation starts, UTC+01:00 clock and zero-duration summary fixture.
+- file: services/test_electrosurgical_activation_import.py
+  role: CSV/XLSX summary decoding, exact decimals, explicit timestamp precision and malformed-input rejection.
 - file: services/test_electrosurgical_alignment.py
   role: Electrosurgical import idempotence, contract rejection, PTS-not-FPS windows, gaps, ranges, generation binding and API errors.
 - file: views/video/test_study_label_presentation.py
@@ -77,7 +101,7 @@ files:
 - file: services/test_recording_time.py
   role: Typed acquisition-time extraction before anonymization removes container metadata.
 - file: services/test_reference_catalog_receipt_reuse.py
-  role: Receipt-digest reuse, fallback on missing rows or changed content, --verify drift detection and reconcile startup.
+  role: Current application-subset receipt reuse, missing-row/content fallback, --verify drift detection and reconciliation without historical repair.
 - file: import_files/test_import_checkpoints.py
   role: Encrypted video/report checkpoint reuse, integrity and ownership rejection, cleanup, rollback and scoped retry.
 - file: import_files/test_import_checkpoint_duplicate_execution.py
@@ -139,7 +163,7 @@ files:
 - file: utils/test_image_content_hash.py
   role: Deterministic single-pixel generations, exact-copy controls and PNG metadata hash experiment.
 - file: services/test_report_completion.py
-  role: Canonical attempt task/API completion, explicit legacy reuse, and refusal without mutation or retry.
+  role: Canonical task/API completion, immutable published receipt replay after successful reuse, explicit legacy reuse and refusal without mutation.
 
 - file: test_model_worker_prefork.py
   role: Real billiard prefork recycling, task deadlines and detached OCR descendant cleanup.

@@ -350,7 +350,7 @@ class LabelVideoSegment(models.Model):
             self.get_or_create_state()
             video = getattr(self, "video_file", None)
             if video is not None:
-                from endoreg_db.models.state.video_segment_validation import (
+                from endoreg_db.services.media.state import (
                     mark_segment_annotations_stale,
                 )
 
@@ -365,7 +365,7 @@ class LabelVideoSegment(models.Model):
             video is not None
             and not label_video_segment_state_side_effects_suppressed()
         ):
-            from endoreg_db.models.state.video_segment_validation import (
+            from endoreg_db.services.media.state import (
                 mark_segment_annotations_stale,
             )
 

@@ -18,7 +18,7 @@ from endoreg_db.services.video_files.io import (
     ensure_local_processed_video_file,
     ensure_local_raw_video_file,
 )
-from endoreg_db.utils import delete_field_file
+from endoreg_db.utils.storage import delete_field_file
 
 pytestmark = pytest.mark.django_db
 

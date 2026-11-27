@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from endoreg_db.services.media.state import update_media_state
+
 from datetime import datetime
 import uuid
 from typing import Literal, cast
@@ -10,7 +12,6 @@ from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
 from endoreg_db.models.state import SegmentAnnotationStatus
-from endoreg_db.models.state import video_segment_validation as segment_state
 import endoreg_db.services.video_files.segment_blackening as blackening
 import endoreg_db.services.annotations.segment_validation_workflow as validation_workflow
 
@@ -84,10 +85,7 @@ def test_resolve_segment_annotation_status_states(
     video = _create_video()
     if state_values:
         state = video.get_or_create_state()
-        for field_name, value in state_values.items():
-            setattr(state, field_name, value)
-        update_fields: list[str] = [*state_values.keys(), "date_modified"]
-        state.save(update_fields=update_fields)
+        update_media_state(state, changes=state_values)
     if history_status is not None:
         _blackening_history(video, status=history_status)
 
@@ -172,25 +170,21 @@ def test_segment_state_mutators_clear_export_readiness(
 ) -> None:
     video = _create_video()
     state = video.get_or_create_state()
-    state.segment_annotations_created = True
-    state.segment_annotations_validated = True
-    state.outside_segments_removed = True
-    state.anonymization_validated = True
-    state.save(
-        update_fields=[
-            "segment_annotations_created",
-            "segment_annotations_validated",
-            "outside_segments_removed",
-            "anonymization_validated",
-            "date_modified",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "segment_annotations_created": True,
+            "segment_annotations_validated": True,
+            "outside_segments_removed": True,
+            "anonymization_validated": True,
+        },
     )
     state.mark_ready_for_export(
         processed_file_sha256="a" * 64,
         ready_for_export_by="validator",
     )
 
-    getattr(segment_state, mutator_name)(video)
+    getattr(validation_workflow, mutator_name)(video)
 
     state.refresh_from_db()
     for field_name, value in expected_values.items():

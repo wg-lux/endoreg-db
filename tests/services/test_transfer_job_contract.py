@@ -712,7 +712,9 @@ class TransferJobContractTests(TestCase):
         self.assertNotEqual(current_fence.owner_id, expired_fence.owner_id)
         self.assertGreater(current_fence.fencing_token, expired_fence.fencing_token)
         self.assertEqual(current_fence.orphaned_candidate_name, orphaned_candidate)
-        self.assertEqual(reclaimed.operation_candidate_name, "")
+        self.assertEqual(reclaimed.operation_candidate_name, orphaned_candidate)
+        reclaimed.refresh_from_db()
+        self.assertEqual(reclaimed.operation_candidate_name, orphaned_candidate)
 
     def test_expired_transfer_fence_cannot_be_renewed(self) -> None:
         # Arrange

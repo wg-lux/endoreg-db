@@ -38,6 +38,7 @@ from endoreg_db.services.cases.auto_resolution import (
 )
 from endoreg_db.services.patient_identity.hash_aliases import record_patient_hash_alias
 from endoreg_db.views.anonymization.validate import AnonymizationValidateView
+from endoreg_db.services.media.state import update_media_state
 
 MINIMAL_PDF_BYTES = b"%PDF-1.4\n1 0 obj<<>>endobj\ntrailer<<>>\n%%EOF\n"
 
@@ -893,10 +894,14 @@ class TestSensitiveMetadataEndpoints:
                 ),
             )
         state = pdf.get_or_create_state()
-        state.processing_started = True
-        state.anonymized = True
-        state.sensitive_meta_processed = True
-        state.save()
+        update_media_state(
+            state,
+            changes={
+                "processing_started": True,
+                "anonymized": True,
+                "sensitive_meta_processed": True,
+            },
+        )
         validation_payload = {
             "patient_first_name": "Max",
             "patient_last_name": "Mustermann",

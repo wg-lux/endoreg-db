@@ -95,9 +95,7 @@ def test_site_only_setup_needs_no_registry_or_study(tmp_path: Path) -> None:
     assert not service.registry_path.exists()
 
 
-@pytest.mark.parametrize(
-    "name,count", [("coloreg", 673), ("training", 712), ("green_endoscopy", 826)]
-)
+@pytest.mark.parametrize("name,count", [("training", 388), ("green_endoscopy", 502)])
 def test_templates_apply_idempotently_with_closed_catalogues(
     registry: TerminologyService, name: str, count: int
 ) -> None:
@@ -155,8 +153,8 @@ def test_dependency_edit_invalidates_reviewed_lock(
 ) -> None:
     setup = template("coloreg")
     resolved = validate_deployment(setup, registry)
-    root = registry.source_paths("endoreg_reference", "1.0.0")[0]
-    source = root / "terminology" / "endoreg_reference" / "unit.yml"
+    root = registry.source_paths("endoreg_reference", "2.0.0")[0]
+    source = root / "terminology" / "endoreg_reference" / "catalogues.yml"
     source.write_text(source.read_text() + "\n# changed after plan\n")
     with pytest.raises(ValueError, match="sources differ"):
         apply_deployment(setup, resolved.lock, registry)
@@ -279,13 +277,13 @@ def test_overlapping_catalogue_packages_reuse_shared_rows(
 
     setup = template("green_endoscopy")
     setup.reference_packages.insert(
-        0, DeploymentPackage(module="endoreg_reference", version="1.0.0")
+        0, DeploymentPackage(module="endoreg_reference", version="2.0.0")
     )
     resolved = validate_deployment(setup, registry)
     assert plan_deployment(resolved).can_apply
     apply_deployment(setup, resolved.lock, registry)
     assert ReferenceCatalogImport.objects.count() == 2
-    assert len(export_reference_catalog().records) == 827
+    assert len(export_reference_catalog().records) == 503
     assert all(
         p.unchanged
         for p in apply_deployment(setup, resolved.lock, registry).reference_plans
@@ -358,7 +356,7 @@ site:
   name: Local Center
 reference_packages:
 - module: endoreg_reference
-  version: 1.0.0
+  version: 2.0.0
 study_packages:
 - module: coloreg
   version: 0.3.0
@@ -448,6 +446,7 @@ def test_v1_migration_moves_study_selection_by_kind(
         ("coloreg", True)
     ]
     assert migrated.study_packages == []
+    assert migrated.reference_packages == original.reference_packages
     validate_deployment(migrated, registry)
 
 
@@ -525,3 +524,26 @@ def test_cli_refuses_v1_and_migrates_to_a_new_file(
         call_command(
             "setup_deployment", "validate", "--file", str(target), stdout=StringIO()
         )
+
+
+def test_coloreg_setup_uses_terminology_owned_references(
+    registry: TerminologyService,
+) -> None:
+    from lx_dtypes.packages import load_registered_package
+    from endoreg_db.services.reference_data.clinical_projection import (
+        import_clinical_package,
+    )
+
+    setup = template("coloreg")
+    assert setup.reference_packages[0].version == "2.0.0"
+    resolved = validate_deployment(setup, registry)
+    assert plan_deployment(resolved).can_apply
+    first = apply_deployment(setup, resolved.lock, registry)
+    assert first.reference_plans[0].clinical_plan is not None
+    assert import_clinical_package(
+        load_registered_package("coloreg", version="0.3.0")
+    ).can_import
+    assert all(
+        plan.unchanged
+        for plan in apply_deployment(setup, resolved.lock, registry).reference_plans
+    )

@@ -8,6 +8,7 @@ import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.db import models, transaction
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.import_files.context.import_context import ImportContext
 from endoreg_db.import_files.file_storage import state_management
 from endoreg_db.models import Center
@@ -74,11 +75,15 @@ def test_publication_preserves_previous_generation_across_failures(
     previous_path = Path(report.processed_file.path)
     previous_stored_bytes = previous_path.read_bytes()
     state = report.get_or_create_state()
-    state.processed_file_sha256 = get_file_hash(report.processed_file)
-    state.anonymized = True
-    state.anonymization_validated = True
-    state.sensitive_meta_processed = True
-    state.save()
+    update_media_state(
+        state,
+        changes={
+            "processed_file_sha256": get_file_hash(report.processed_file),
+            "anonymized": True,
+            "anonymization_validated": True,
+            "sensitive_meta_processed": True,
+        },
+    )
     previous_digest = state.processed_file_sha256
     candidate = tmp_path / "candidate.pdf"
     candidate.write_bytes(candidate_bytes)

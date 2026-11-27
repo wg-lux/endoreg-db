@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.classification_choice import (
@@ -18,11 +19,6 @@ if TYPE_CHECKING:
     )
 
 
-class FindingClassificationTypeManager(models.Manager["FindingClassificationType"]):
-    def get_by_natural_key(self, name: str) -> "FindingClassificationType":
-        return self.get(name=name)
-
-
 class FindingClassificationType(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     # German display name; NULL when the catalogue carries none.
@@ -30,18 +26,13 @@ class FindingClassificationType(models.Model):
         max_length=255, blank=True, null=True
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True)
-    objects = FindingClassificationTypeManager()
+    objects = NameNaturalKeyManager["FindingClassificationType"]()
 
     def natural_key(self) -> tuple[str]:
         return (str(self.name),)
 
     def __str__(self) -> str:
         return str(self.name)
-
-
-class FindingClassificationManager(models.Manager["FindingClassification"]):
-    def get_by_natural_key(self, name: str) -> "FindingClassification":
-        return self.get(name=name)
 
 
 class FindingClassification(models.Model):
@@ -76,7 +67,7 @@ class FindingClassification(models.Model):
 
         return Examination.objects.filter(findings__finding_classifications=self)
 
-    objects = FindingClassificationManager()
+    objects = NameNaturalKeyManager["FindingClassification"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import (
@@ -106,20 +97,6 @@ class FindingClassification(models.Model):
         return self.choices.all()
 
 
-class FindingClassificationChoiceManager(models.Manager["FindingClassificationChoice"]):
-    def get_by_natural_key(self, name: str) -> "FindingClassificationChoice":
-        """
-        Retrieve an instance by its unique name using the natural key.
-
-        Parameters:
-            name (str): The unique name identifying the instance.
-
-        Returns:
-            The model instance with the specified name.
-        """
-        return self.get(name=name)
-
-
 class FindingClassificationChoice(models.Model):
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
     # German display name; NULL when the catalogue carries none.
@@ -129,7 +106,7 @@ class FindingClassificationChoice(models.Model):
     description: models.TextField[Any, Any] = models.TextField(blank=True)
     subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
     numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
-    objects = FindingClassificationChoiceManager()
+    objects = NameNaturalKeyManager["FindingClassificationChoice"]()
 
     def clean(self) -> None:
         super().clean()

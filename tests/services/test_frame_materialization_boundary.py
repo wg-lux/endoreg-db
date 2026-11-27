@@ -14,13 +14,14 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.models.media.operation_lease import MediaOperationLease
-from endoreg_db.services.video_files import (
+from endoreg_db.services.video_files.frames import (
     extract_video_frames,
     extract_video_frame_range,
 )
 from endoreg_db.utils.frame_stream import EncodedFrameSample
 from endoreg_db.views.media.frame_media import FrameStreamView, DecodedFrameStreamView
 from tests.helpers.video_timeline import constant_rate_video_metadata
+from endoreg_db.services.media.state import update_media_state
 
 
 def test_frame_file_encoder_calls_are_export_owned() -> None:
@@ -89,8 +90,7 @@ def test_annotation_stream_decodes_processed_without_frame_files(
         processed_file="processed/video.mp4",
     )
     state = video.get_or_create_state()
-    state.anonymized = True
-    state.save(update_fields=["anonymized"])
+    update_media_state(state, changes={"anonymized": True})
     frame = Frame.objects.create(
         video=video, frame_number=7, timestamp=0.237, is_extracted=False
     )

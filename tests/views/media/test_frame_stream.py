@@ -16,6 +16,7 @@ from rest_framework.test import APIRequestFactory, force_authenticate
 
 from endoreg_db.models import Center, Frame, VideoFile
 from endoreg_db.utils.paths import protected_media_root
+from endoreg_db.services.media.state import update_media_state
 
 
 class FrameStreamViewTests(TestCase):
@@ -219,8 +220,7 @@ class FrameStreamViewTests(TestCase):
             save=True,
         )
         state = self.video.get_or_create_state()
-        state.anonymized = True
-        state.save(update_fields=["anonymized"])
+        update_media_state(state, changes={"anonymized": True})
         self.video.save(update_fields=["processed_file"])
 
         def fake_failing_read_video_file_frame_jpeg(
@@ -322,8 +322,7 @@ class FrameStreamViewTests(TestCase):
             save=True,
         )
         state = self.video.get_or_create_state()
-        state.anonymized = True
-        state.save(update_fields=["anonymized"])
+        update_media_state(state, changes={"anonymized": True})
 
         def resolve_other_center(_user: object) -> int:
             return int(self.center.pk) + 1

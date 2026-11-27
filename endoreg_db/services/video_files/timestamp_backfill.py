@@ -18,7 +18,7 @@ from endoreg_db.schemas.video_storage import (
     VideoSourceTimelineEvidence,
 )
 from endoreg_db.services.media.operation_gate import create_video_stream_lease
-from endoreg_db.services.video_files.timeline import VideoTimelineMappingError
+from endoreg_db.utils.video.timeline import VideoTimelineMappingError
 from endoreg_db.utils.video.timeline import validate_presentation_timestamp_seconds
 from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.video_storage.canonical_timelines import (
@@ -62,6 +62,31 @@ def has_reconciled_video_timeline(
             | Q(frame_number__gte=count)
         ).exists()
     )
+
+
+def prepare_video_timestamps_for_export(
+    video: VideoFile, *, operator: str | None
+) -> None:
+    """Repair legacy processed coordinates before entering export transactions.
+
+    Corrections commit independently of subsequent eligibility rejection. Export
+    callers must authorize the actor and resource before invoking this service.
+    """
+    if not video.processed_file or not video.frames.exists():
+        return
+    payload = VideoFileMetaPayload.model_validate(video.meta or {})
+    if has_reconciled_video_timeline(video, payload):
+        return
+    if not operator:
+        raise VideoTimelineMappingError(
+            "Export timestamp recovery requires an identified operator"
+        )
+    backfill_missing_video_timestamps(
+        video,
+        processed_ordinals_operator=operator if video.frame_count else None,
+        remap_annotations=bool(video.frame_count),
+    )
+    video.refresh_from_db()
 
 
 def _capture_generation(
@@ -141,15 +166,20 @@ def backfill_missing_video_timestamps(
     payload: VideoFileMetaPayload | None = None,
     processed_ordinals_operator: str | None = None,
     dry_run: bool = False,
+    remap_annotations: bool = False,
 ) -> None:
     """Fill absent coordinates, serialized with generation publication.
 
-    Existing coordinates must agree with decoded media and are never overwritten.
-    No import state, annotation boundary or transformation ancestry is created.
+    Ordinary recovery requires existing coordinates to agree. Explicit confirmed
+    processed-ordinal remapping permits bounded legacy corrections and clears review.
     """
     from endoreg_db.models.media.frame.frame import Frame
     from endoreg_db.models.media.video.video_file import VideoFile
 
+    if remap_annotations and processed_ordinals_operator is None:
+        raise ValueError(
+            "Annotation remapping requires explicit processed ordinal confirmation"
+        )
     if processed_ordinals_operator is not None and (
         not processed_ordinals_operator.strip()
         or len(processed_ordinals_operator) > 128
@@ -246,7 +276,7 @@ def backfill_missing_video_timestamps(
             ) in VideoSegmentationAnnotation.objects.select_for_update().filter(
                 video_file=current
             ):
-                if not (
+                if not remap_annotations and not (
                     math.isfinite(annotation.start_time)
                     and math.isfinite(annotation.stop_time)
                     and boundaries[0]
@@ -257,7 +287,54 @@ def backfill_missing_video_timestamps(
                     raise VideoTimelineMappingError(
                         "Saved time annotation exceeds the processed timeline"
                     )
-        for row in rows:
+        coordinates_changed = False
+        if remap_annotations:
+            from endoreg_db.models.media.video.video_processing import (
+                VideoProcessingHistory,
+            )
+            from endoreg_db.services.video_files.annotation_timeline_recovery import (
+                remap_processed_annotations,
+            )
+
+            if VideoProcessingHistory.objects.filter(
+                video=current, status__in=["pending", "running"]
+            ).exists():
+                raise VideoTimelineMappingError(
+                    "Wait for active processing before annotation remapping"
+                )
+            mappings, coordinates_changed = remap_processed_annotations(
+                current, rows, captured, boundaries, source
+            )
+            emit_structured_event(
+                logger,
+                "processed_annotation_recovery_plan",
+                video_id=current.pk,
+                operator=processed_ordinals_operator,
+                dry_run=dry_run,
+                annotation_coordinates_changed=coordinates_changed,
+                segment_mappings=[item.model_dump(mode="json") for item in mappings],
+            )
+            if coordinates_changed:
+                from endoreg_db.models.state.label_video_segment import (
+                    LabelVideoSegmentState,
+                )
+                from endoreg_db.services.annotations.segment_validation_workflow import (
+                    mark_segment_annotations_stale,
+                )
+
+                LabelVideoSegmentState.objects.filter(
+                    origin__video_file=current
+                ).update(is_validated=False)
+                mark_segment_annotations_stale(current)
+                for index, entry in enumerate(history):
+                    if entry.artifact_kind == kind.value and entry.after == captured:
+                        history[index] = entry.model_copy(
+                            update={
+                                "segment_mappings": [*entry.segment_mappings, *mappings]
+                            }
+                        )
+                        break
+        for row in [] if remap_annotations else rows:
             if row.timestamp is None and row.presentation_timestamp is None:
                 continue
             if not 0 <= row.frame_number < count:
@@ -320,9 +397,9 @@ def backfill_missing_video_timestamps(
             for index in range(count)
         ]
         for index, row in enumerate(rows):
-            if row.timestamp is None:
+            if row.timestamp is None or remap_annotations:
                 row.timestamp = boundaries[index]
-            if row.presentation_timestamp is None:
+            if row.presentation_timestamp is None or remap_annotations:
                 row.presentation_timestamp = captured.presentation_timestamps[index]
         existing_rows = [row for row in rows if row.pk is not None]
         Frame.objects.bulk_create(
@@ -368,6 +445,8 @@ def backfill_missing_video_timestamps(
                 frame_count=count,
                 retained_frames=len(by_number),
                 added_frames=count - len(by_number),
+                annotation_coordinates_changed=coordinates_changed,
+                annotation_error_limit_seconds=2.0 if remap_annotations else None,
             )
         emit_structured_event(
             logger,

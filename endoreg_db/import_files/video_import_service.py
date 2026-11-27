@@ -38,6 +38,7 @@ from endoreg_db.import_files.context.import_context import (
     SourceStreamData,
 )
 from endoreg_db.import_files.context.validate_directories import validate_directories
+from endoreg_db.import_files.context.ensure_center import ensure_center
 from endoreg_db.import_files.file_storage.cleanup import (
     cleanup_duplicate_import_staging,
     cleanup_staging_files,
@@ -64,13 +65,11 @@ from endoreg_db.services.hub.media_integrity import (
     require_reusable_video_raw_source,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
-from endoreg_db.services.video_files import (
-    ensure_local_raw_video_file,
-    get_or_create_video_state,
-    get_video_by_content_hash,
-    get_video_import_context_names,
-    initialize_video_file,
-)
+from endoreg_db.services.video_files.imports import initialize_video_file
+from endoreg_db.services.video_files.io import ensure_local_raw_video_file
+from endoreg_db.services.video_files.metadata import get_video_import_context_names
+from endoreg_db.services.video_files.queries import get_video_by_content_hash
+from endoreg_db.services.video_files.state import get_or_create_video_state
 from endoreg_db.services.video_storage.workflow import (
     normalize_video_file,
     probe_video_artifact,
@@ -327,10 +326,16 @@ class VideoImportService:
     def _run_owned_import(self, ctx: ImportContext) -> VideoFile | None:
         """Use the caller's fence to stage the source, prepare the row, and apply retry policy."""
         ctx.require_execution_ownership()
-        self._ensure_pipeline_storage_budget(ctx.file_path)
-        ctx.sensitive_path = create_sensitive_copy(
-            ctx.file_path, _sensitive_video_dir(), ctx
+        resuming_checkpoint = (
+            ctx.current_video is not None
+            and not ctx.force_reprocess
+            and has_pending_import_checkpoint(ctx.current_video)
         )
+        if not resuming_checkpoint:
+            self._ensure_pipeline_storage_budget(ctx.file_path)
+            ctx.sensitive_path = create_sensitive_copy(
+                ctx.file_path, _sensitive_video_dir(), ctx
+            )
 
         ctx.require_execution_ownership()
         ctx.current_video, _, needs_processing = create_or_retrieve_video_file(ctx)
@@ -549,6 +554,9 @@ class VideoImportService:
             existing_video = get_video_by_content_hash(file_hash)
         except VideoFile.DoesNotExist:
             existing_video = None
+
+        if existing_video is not None:
+            ensure_center(existing_video, ctx.center_name, center_key=ctx.center_key)
 
         if existing_video is not None and has_pending_import_checkpoint(existing_video):
             ctx.current_video = existing_video

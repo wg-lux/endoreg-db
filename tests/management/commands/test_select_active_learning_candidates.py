@@ -26,6 +26,8 @@ from endoreg_db.models import (
 )
 from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.utils.paths import get_runtime_paths
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 class ActiveLearningShortlistCommandTests(TestCase):
@@ -53,7 +55,8 @@ class ActiveLearningShortlistCommandTests(TestCase):
             fps=25.0,
             frame_count=200,
             processed_file="processed/shortlist.mp4",
-            state=VideoState.objects.create(
+            state=create_media_state(
+                VideoState,
                 anonymized=True,
                 anonymization_validated=True,
                 segment_annotations_validated=True,
@@ -118,13 +121,16 @@ class ActiveLearningShortlistCommandTests(TestCase):
         # explicitly so these tests isolate dataset membership, not stale approval.
         state = self.video.state
         assert state is not None
-        VideoState.objects.filter(pk=state.pk).update(
-            segment_annotations_validated=True,
-            outside_segments_removed=True,
-            ready_for_export=True,
-            ready_for_export_at=timezone.now(),
-            ready_for_export_by="test-suite",
-            processed_file_sha256="a" * 64,
+        update_media_state(
+            state,
+            changes={
+                "segment_annotations_validated": True,
+                "outside_segments_removed": True,
+                "ready_for_export": True,
+                "ready_for_export_at": timezone.now(),
+                "ready_for_export_by": "test-suite",
+                "processed_file_sha256": "a" * 64,
+            },
         )
 
     def test_shortlist_preserves_provenance_and_never_promotes_predictions(self):
@@ -201,7 +207,10 @@ class ActiveLearningShortlistCommandTests(TestCase):
                 assert not self.output_path.exists()
 
     def test_unsafe_processed_state_is_rejected_without_reading_raw_media(self):
-        VideoState.objects.filter(pk=self.video.state_id).update(ready_for_export=False)
+        update_media_state(
+            VideoState.objects.get(pk=self.video.state_id),
+            changes={"ready_for_export": False},
+        )
         with self.assertRaises(CommandError):
             self._run()
         assert not self.output_path.exists()

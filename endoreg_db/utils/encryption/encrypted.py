@@ -7,11 +7,13 @@ import os
 import tempfile
 from pathlib import Path
 from typing import BinaryIO, Protocol, TypeAlias, cast
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from contextlib import nullcontext
 
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import File
 from django.core.files.storage import FileSystemStorage, Storage
+from django.core.files.utils import validate_file_name
 from django.utils.deconstruct import deconstructible
 from endoreg_db.utils.encryption.rotation import storage_write_lock
 
@@ -212,8 +214,51 @@ class EncryptedStorage(FileSystemStorage):
         with storage_write_lock(Path(self.path(name))):
             return self._save_locked(name, content)
 
-    def _save_locked(self, name: str, content: object) -> str:
-        clean_name = self.get_available_name(name)
+    def save_with_intent(
+        self,
+        name: str,
+        content: object,
+        *,
+        before_write: Callable[[str], None],
+        max_length: int | None = None,
+    ) -> str:
+        """Record caller-owned durable intent for the exact name before writing.
+
+        The callback must commit its existing ownership record before returning.
+        It must not recursively save/delete this name. Callback failure creates
+        no artifact; a later failure leaves the recorded intent for recovery.
+        """
+        validate_file_name(name, allow_relative_path=True)
+        with storage_write_lock(Path(self.path(name))):
+            return self._save_locked(
+                name, content, before_write=before_write, max_length=max_length
+            )
+
+    def _save_locked(
+        self,
+        name: str,
+        content: object,
+        *,
+        before_write: Callable[[str], None] | None = None,
+        max_length: int | None = None,
+    ) -> str:
+        clean_name = self.get_available_name(name, max_length=max_length)
+        validate_file_name(clean_name, allow_relative_path=True)
+        full_path = Path(self.path(clean_name))
+        # The requested-name lock serializes name selection. A collision suffix
+        # is also locked so a caller targeting that exact name cannot race us.
+        with (
+            nullcontext()
+            if full_path == Path(self.path(name))
+            else storage_write_lock(full_path)
+        ):
+            if before_write is not None:
+                if full_path.exists():
+                    raise FileExistsError("Publication intent requires a new artifact")
+                before_write(clean_name)
+            return self._write_encrypted_file(clean_name, content)
+
+    def _write_encrypted_file(self, clean_name: str, content: object) -> str:
         full_path = Path(self.path(clean_name))
         ensure_directory(full_path.parent)
 
@@ -330,6 +375,18 @@ class LazyEncryptedStorage(Storage):
 
     def _save(self, name: str, content: object) -> str:
         return self.wrapped.save(name, cast(BinaryIO, content))
+
+    def save_with_intent(
+        self,
+        name: str,
+        content: object,
+        *,
+        before_write: Callable[[str], None],
+        max_length: int | None = None,
+    ) -> str:
+        return self.wrapped.save_with_intent(
+            name, content, before_write=before_write, max_length=max_length
+        )
 
     def delete(self, name: str) -> None:
         self.wrapped.delete(name)

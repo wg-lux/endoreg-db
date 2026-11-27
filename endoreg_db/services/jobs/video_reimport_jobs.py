@@ -21,6 +21,7 @@ from lx_dtypes.models.contracts.video_reimport import (
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.services.jobs.timeouts import is_processing_timeout
 from endoreg_db.services.jobs.processing_history import (
     set_history_task_id as _set_history_task_id,
@@ -59,8 +60,8 @@ from endoreg_db.services.hub.upload_job_state_machine import (
 )
 from endoreg_db.services.media.operation_gate import defer_if_video_media_busy
 from endoreg_db.services.video_files.direct_import import VideoImportService
-from endoreg_db.services.video_files import (
-    initialize_video_frames,
+from endoreg_db.services.video_files.frames import initialize_video_frames
+from endoreg_db.services.video_files.metadata import (
     initialize_video_specs as initialize_video_file_specs,
 )
 from endoreg_db.services.video_files.processor_resolution import (
@@ -245,6 +246,7 @@ def _update_reimport_upload_jobs(
             status=status,
             error_detail=error_detail,
             sensitive_meta_id=sensitive_meta_id,
+            published_media_id=video.pk,
         )
 
 
@@ -261,7 +263,7 @@ def _reset_reimport_state(video: VideoFile) -> int:
         # A processing failure is retryable when the durable integrity marker is
         # absent. Revoke every derived release flag before the new attempt; the
         # prior processing history, audit ledger, and quality metrics remain rows.
-        locked_state.processing_error = False
+        update_media_state(locked_state, changes={"processing_error": False})
         locked_state.mark_processing_not_started()
         video.state = locked_state
 
@@ -338,18 +340,14 @@ def _finalize_reimport_storage_failure(
                 else:
                     ready = True
             if ready:
-                state.processing_error = False
-                state.processing_started = False
-                state.was_created = False
-                state.anonymized = True
-                state.save(
-                    update_fields=[
-                        "processing_error",
-                        "processing_started",
-                        "was_created",
-                        "anonymized",
-                        "date_modified",
-                    ]
+                update_media_state(
+                    state,
+                    changes={
+                        "processing_error": False,
+                        "processing_started": False,
+                        "was_created": False,
+                        "anonymized": True,
+                    },
                 )
                 _mark_upload_jobs_anonymized(current_video)
             else:

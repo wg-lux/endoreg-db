@@ -20,6 +20,8 @@ from endoreg_db.models import (
 from endoreg_db.services.datasets.training_manifests import (
     build_frame_multilabel_training_manifest,
 )
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 
 class DatasetReadinessAAATests(TestCase):
@@ -30,7 +32,8 @@ class DatasetReadinessAAATests(TestCase):
         self.unknown = Label.objects.create(name="readiness-unknown")
         self.label_set = LabelSet.objects.create(name="readiness-label-set", version=1)
         self.label_set.labels.add(self.positive, self.unknown)
-        self.state = VideoState.objects.create(
+        self.state = create_media_state(
+            VideoState,
             anonymized=True,
             anonymization_validated=True,
             segment_annotations_validated=True,
@@ -129,8 +132,9 @@ class DatasetReadinessAAATests(TestCase):
 
     def test_attachment_cannot_bypass_pending_segment_validation(self) -> None:
         # Arrange: anonymization acceptance remains distinct from segment review.
-        VideoState.objects.filter(pk=self.state.pk).update(
-            segment_annotations_validated=False, ready_for_export=False
+        update_media_state(
+            self.state,
+            changes={"segment_annotations_validated": False, "ready_for_export": False},
         )
 
         # Act

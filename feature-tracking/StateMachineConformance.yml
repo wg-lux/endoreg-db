@@ -19,6 +19,41 @@ source_documents:
   note: UploadJob lifecycle operations; the authoritative reducers are rust/endoreg_rust_backend/src/lifecycle_state.rs
     (lifecycle_state_v3) and import_state.rs.
 definition_of_done:
+- id: model_state_write_guards
+  category: security
+  title: Model boundaries reject lifecycle writes outside their owning services
+  acceptance:
+  - UploadJob lifecycle status and processing stack, and VideoState/RawPdfState flags, reject unapproved
+    model saves and protected queryset or bulk updates.
+  - Authorized writes are bound to one instance, database, persisted snapshot and exact target values;
+    stale and deferred instances cannot overwrite concurrent transitions.
+  - New rows start from model defaults unless initialized explicitly by the owning service; inserting
+    an existing primary key cannot bypass the guard.
+  - Existing native transition decisions, media validation, import fencing and transaction boundaries
+    remain authoritative; model compatibility methods delegate to services or require service authorization.
+  - Focused tests cover direct methods, partial saves, deferred fields, bulk paths, failed writes, authorized
+    transitions and concurrent stale snapshots; Pyright runs before pytest.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run model guard, upload lifecycle, import lease/cancellation and affected media import/validation
+      tests, followed by structure and ownership checks.
+    timeout_seconds: 1800
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: '2026-11-24: first focused UploadJob/native-service/generic guard lane 151 passed; video/report
+        model guard and transition lane 43 passed including real two-connection stale-snapshot rejection.
+        Full Pyright 0 errors, 2 existing warnings. Import, lease/cancellation and application integration
+        lanes remain pending; metadata-only migration 0123 prepared but not applied.'
+    note: 'Umfang auf Nutzerentscheidung reduziert (2026-11-24): Laufzeit-Guard nur fuer VideoState/RawPdfState-Flags.
+      UploadJob-Guard entfernt, da Status bereits durch Rust-Validierung und statische Owner-Pruefung
+      (model_transition_method) einfach besessen ist; Akzeptanzpunkt 1 (UploadJob) entfaellt bzw. ist
+      durch diese Pfade abgedeckt. Generische Guard-Regressionstests (Primaerschluessel-Kollision, Save-Hook)
+      liefen nur ueber UploadJob und sind mit entfernt; Abdeckung ueber test_media_state_guard offen.'
+    assessed_by: claude-state-source
+    assessed_at: '2026-11-24T14:08:29.124464Z'
 - id: upload_job_cancellation_lifecycle
   category: functionality
   title: Cancellation statuses reduce through the native lifecycle
@@ -197,19 +232,19 @@ definition_of_done:
     results keep failure exactly on failed status and are idempotent under duplicate delivery, superseded
     acknowledgements other than applied are no-ops, receiver lost is a non-retryable integrity failure,
     and a stale worker cannot resume a transfer another writer failed or completed.
-  - Every VideoHlsArtifact.status change goes through endoreg_db.services.streaming.hls_artifact_state, whose
-    Rust table (hls_artifact_transition_v1) is exhaustively tested; ready is reachable only from validated
-    and superseded/failed artifacts are never revived.
+  - Every VideoHlsArtifact.status change goes through endoreg_db.services.streaming.hls_artifact_state,
+    whose Rust table (hls_artifact_transition_v1) is exhaustively tested; ready is reachable only from
+    validated and superseded/failed artifacts are never revived.
   - Every status/state/failure_class write in endoreg_db is listed in quality/state_mutation_owners.yml
     with a reviewed writer kind; scripts/check_state_mutation_owners.py (pre-commit and tests/scripts)
     fails on unlisted or stale writers and on a second writer of a field owned by a native single writer.
   - Every remaining lifecycle field (report LLM jobs, video processing history, quarantine items, frame
     annotation exports, AI dataset export artifacts, DICOM export jobs, patient examination reports, inbound
-    hub transfer and case resolution, upload source cleanup, outbound local cleanup) is written only by the
-    named functions in endoreg_db.services.runtime.status_writers, which read the persisted status under the
-    row lock and apply the Rust decide_status_transition table (status_transition_v1); the owner map has no
-    locked or unreviewed writers, and Rust tests prove final statuses never move and every non-legacy status
-    is reachable.
+    hub transfer and case resolution, upload source cleanup, outbound local cleanup) is written only by
+    the named functions in endoreg_db.services.runtime.status_writers, which read the persisted status
+    under the row lock and apply the Rust decide_status_transition table (status_transition_v1); the owner
+    map has no locked or unreviewed writers, and Rust tests prove final statuses never move and every
+    non-legacy status is reachable.
   - Each Python mirror enum is registered once; application startup refuses to run when any mirror differs
     from the Rust vocabulary in either direction, and a parametrized test covers every registered vocabulary.
   - utils/rust_backend.py keeps no duplicate token sets and no Python re-implementation of a native decision;
@@ -259,18 +294,19 @@ definition_of_done:
         by model and API; all three hub vocabularies are verified against Rust at startup. No production
         deployment.'
     - kind: test
-      reference: '2026-11-18 working tree: scripts/check_report_native_runtime.sh exit 0 (54 Rust tests incl.
-        exhaustive HLS artifact transition table, stub parity, isolated wheel). Project Pyright 0 errors, 2 pre-existing
-        warnings. HLS media/profile/timing/stream/materialize/readiness + tests/rust_backend => 499 passed; scripts,
-        vocabulary parity, HLS cleanup/rotation/transcode/reimport/tasks suites => 571 passed. check_state_mutation_owners
-        clean (2 native single writers, 14 unreviewed writers frozen). No production deployment.'
+      reference: '2026-11-18 working tree: scripts/check_report_native_runtime.sh exit 0 (54 Rust tests
+        incl. exhaustive HLS artifact transition table, stub parity, isolated wheel). Project Pyright
+        0 errors, 2 pre-existing warnings. HLS media/profile/timing/stream/materialize/readiness + tests/rust_backend
+        => 499 passed; scripts, vocabulary parity, HLS cleanup/rotation/transcode/reimport/tasks suites
+        => 571 passed. check_state_mutation_owners clean (2 native single writers, 14 unreviewed writers
+        frozen). No production deployment.'
     - kind: test
-      reference: '2026-11-18 working tree: scripts/check_report_native_runtime.sh exit 0 (57 Rust tests incl.
-        per-machine status tables, stub parity, isolated wheel with status_transition_v1). Project Pyright 0
-        errors, 2 pre-existing warnings. 135 affected endoreg-db test files + tests/rust_backend + tests/scripts
-        => 2735 passed, 4 skipped, 2 failed (inventory boundary drift, a SimpleNamespace transfer double); both
-        fixed and rerun => 72 passed. tests/models/metadata/file_import/test_create_video_file.py rerun alone
-        => 48 passed (an earlier segfault was an in-place .so overwrite during a running session).
+      reference: '2026-11-18 working tree: scripts/check_report_native_runtime.sh exit 0 (57 Rust tests
+        incl. per-machine status tables, stub parity, isolated wheel with status_transition_v1). Project
+        Pyright 0 errors, 2 pre-existing warnings. 135 affected endoreg-db test files + tests/rust_backend
+        + tests/scripts => 2735 passed, 4 skipped, 2 failed (inventory boundary drift, a SimpleNamespace
+        transfer double); both fixed and rerun => 72 passed. tests/models/metadata/file_import/test_create_video_file.py
+        rerun alone => 48 passed (an earlier segfault was an in-place .so overwrite during a running session).
         lx-annotate hub cleanup/audit/storage monitor against this checkout => 42 passed. Owner map clean
         with 0 locked and 0 unreviewed writers. No production deployment.'
     - kind: code

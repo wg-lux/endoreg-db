@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 import threading
 import uuid
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from functools import partial
@@ -30,6 +30,7 @@ from lx_dtypes.models.contracts.hub_media_envelope import (
     validate_hub_media_receipt_matches_envelope,
 )
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.hub.network_node import NetworkNode
 from endoreg_db.models.hub.transfer_job import TransferJob
@@ -61,6 +62,10 @@ from endoreg_db.models.state.processing_history.processing_history import (
     ProcessingHistory,
 )
 from endoreg_db.services.cases.auto_resolution import auto_resolve_media_case
+from endoreg_db.services.media.operation_gate import (
+    video_has_active_media_operation_leases,
+)
+from endoreg_db.schemas.hub_payloads import TransferPublicationPredecessor
 from endoreg_db.services.runtime.status_writers import (
     set_case_resolution_status,
     set_patient_examination_report_status,
@@ -68,9 +73,10 @@ from endoreg_db.services.runtime.status_writers import (
     update_transfer_status,
 )
 from endoreg_db.services.hub.audit import emit_hub_audit_event
+from endoreg_db.services.hub.cleanup import stored_media_name_referenced
 from endoreg_db.services.raw_pdf_files import get_or_create_raw_pdf_state
-from endoreg_db.services.video_files import get_or_create_video_state
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.services.video_files.state import get_or_create_video_state
+from endoreg_db.utils.video.timeline import (
     presentation_timestamp_seconds,
     validate_presentation_timestamp_seconds,
 )
@@ -78,6 +84,7 @@ from endoreg_db.services.video_storage.frame_provenance import resolve_video_pro
 from endoreg_db.utils.file_operations import (
     safe_delete_field_file,
 )
+from endoreg_db.utils.encryption.encrypted import EncryptedStorage, LazyEncryptedStorage
 from endoreg_db.services.hub.payloads import reject_transferred_identity_hashes
 from endoreg_db.utils.hashs import get_file_hash
 from lx_dtypes.models.contracts.hub_transfer import (
@@ -94,7 +101,6 @@ from endoreg_db.services.video_files.segment_coordinates import (
     segment_timeline_coordinates,
     wire_timeline_coordinates,
 )
-from endoreg_db.utils.storage import file_exists
 from endoreg_db.utils.structured_logging import hash_identifier
 from .hub_record_identity import (
     assert_examination_matches_identity,
@@ -173,7 +179,7 @@ def _claim_transfer_operation(
             transfer_job.operation_lease_expires_at = now + timedelta(
                 seconds=lease_seconds
             )
-            transfer_job.operation_candidate_name = ""
+            transfer_job.operation_candidate_name = orphaned_candidate_name
             transfer_job.save(
                 update_fields=[
                     "transfer_status",
@@ -317,6 +323,7 @@ class TransferProvenance(TypedDict, total=False):
     processing_policy: str
     cleanup_policy: str
     media_uploads: list[dict[str, JsonValue]]
+    publication_predecessor: JsonObject
     case_resolution: dict[str, JsonValue]
     custom_marker: NotRequired[str]
 
@@ -475,11 +482,48 @@ def _normalized_transfer_provenance(
     return normalized
 
 
+def _publication_predecessor(
+    target: VideoFile | RawPdfFile,
+) -> TransferPublicationPredecessor:
+    processed_hash = (
+        target.processed_video_hash
+        if isinstance(target, VideoFile)
+        else target.state.processed_file_sha256
+        if target.state is not None
+        else ""
+    )
+    return TransferPublicationPredecessor(
+        processed_file_name=str(target.processed_file.name or ""),
+        processed_content_hash=str(processed_hash or ""),
+    )
+
+
+def _require_transfer_publication_predecessor(
+    transfer_job: TransferJob, target: VideoFile | RawPdfFile
+) -> None:
+    current = _publication_predecessor(target)
+    previous = transfer_job.provenance.get("publication_predecessor")
+    if previous is None:
+        # Older pending registrations may initialize proof only for an empty target.
+        if current.processed_file_name or current.processed_content_hash:
+            raise ValueError(
+                "Receiver publication predecessor is missing for existing media"
+            )
+        _update_transfer_provenance(
+            transfer_job, publication_predecessor=current.model_dump(mode="json")
+        )
+    elif TransferPublicationPredecessor.model_validate(previous) != current:
+        raise ValueError(
+            "Receiver processed generation changed after transfer registration"
+        )
+
+
 def _canonical_sender_transfer_provenance(
     provenance: TransferProvenance,
 ) -> TransferProvenance:
     canonical = _transfer_provenance(provenance)
     canonical.pop("media_uploads", None)
+    canonical.pop("publication_predecessor", None)
     canonical.pop("case_resolution", None)
     return canonical
 
@@ -502,6 +546,8 @@ def create_or_reuse_transfer_job(
     provenance: TransferProvenance,
     created_by: object | None = None,
 ) -> tuple[TransferJob, bool]:
+    if "publication_predecessor" in provenance:
+        raise ValueError("Publication predecessor is owned by the receiver")
     reject_transferred_identity_hashes((resource_rows, processing_snapshot, provenance))
     if payload_schema_version != "7.0":
         raise ValueError("Only hub payload schema 7.0 is accepted")
@@ -890,9 +936,13 @@ def attach_enveloped_transfer_media(
     candidate_name = ""
     try:
         if operation_fence is not None and operation_fence.orphaned_candidate_name:
-            field_file.name = operation_fence.orphaned_candidate_name
-            safe_delete_field_file(field_file, missing_ok=True)
-            field_file.name = original_name
+            candidate_name = operation_fence.orphaned_candidate_name
+            _delete_unpublished_transfer_candidate(
+                target=target,
+                fence=operation_fence,
+                candidate_name=operation_fence.orphaned_candidate_name,
+            )
+            candidate_name = ""
         with prepare_inbound_hub_envelope(
             transfer_job=transfer_job,
             ciphertext_stream=ciphertext_stream,
@@ -944,6 +994,13 @@ def attach_enveloped_transfer_media(
             if operation_heartbeat is None:
                 raise RuntimeError("transfer operation heartbeat was not started")
             operation_heartbeat.guard()
+
+            def record_candidate(name: str) -> None:
+                nonlocal candidate_name
+                assert operation_fence is not None
+                _record_transfer_candidate(operation_fence, candidate_name=name)
+                candidate_name = name
+
             candidate_name = _store_model_stream(
                 instance=target,
                 field_name=field_name,
@@ -951,14 +1008,40 @@ def attach_enveloped_transfer_media(
                 stored_name=(
                     f"{expected_hash}.{operation_fence.attempt_id.hex}.candidate{suffix}"
                 ),
+                before_write=record_candidate,
             )
             prepared.require_verified()
-            _record_transfer_candidate(
-                operation_fence,
-                candidate_name=candidate_name,
-            )
             operation_heartbeat.guard()
             with transaction.atomic():
+                target = (
+                    VideoFile.objects.select_for_update(of=("self",))
+                    .select_related("state")
+                    .get(pk=target.pk)
+                    if isinstance(target, VideoFile)
+                    else RawPdfFile.objects.select_for_update(of=("self",))
+                    .select_related("state")
+                    .get(pk=target.pk)
+                )
+                _require_transfer_publication_predecessor(transfer_job, target)
+                if isinstance(
+                    target, VideoFile
+                ) and video_has_active_media_operation_leases(target.pk):
+                    raise TransferOperationBusy(
+                        "Video publication waits for active media operations"
+                    )
+                # Publish the generation's metadata under the same transaction as
+                # its authenticated bytes; registration must preserve an old master.
+                if isinstance(target, VideoFile):
+                    _apply_video_transfer_metadata(
+                        transfer_job, publishing_authenticated_media=True
+                    )
+                else:
+                    _apply_report_transfer_metadata(
+                        transfer_job, publishing_authenticated_media=True
+                    )
+                target.refresh_from_db()
+                original_name = str(target.processed_file.name or "")
+                target.processed_file.name = candidate_name
                 media_type: Literal["video", "pdf"]
                 if isinstance(target, VideoFile):
                     target.processed_video_hash = expected_hash
@@ -969,11 +1052,11 @@ def attach_enveloped_transfer_media(
                             "date_modified",
                         ]
                     )
-                    _mark_video_transfer_as_processed(target)
+                    _mark_video_transfer_as_processed(target, transfer_job)
                     media_type = "video"
                 else:
                     target.save(update_fields=["processed_file", "date_modified"])
-                    _mark_report_transfer_as_processed(target)
+                    _mark_report_transfer_as_processed(target, transfer_job)
                     media_type = "pdf"
 
                 processing_decision = (
@@ -1033,10 +1116,31 @@ def attach_enveloped_transfer_media(
                 return applied_transfer_job
     except Exception as exc:
         if candidate_name and candidate_name != original_name:
-            candidate_field = getattr(target, field_name)
-            candidate_field.name = candidate_name
-            safe_delete_field_file(candidate_field, missing_ok=True)
-            candidate_field.name = original_name
+            # Leaving the envelope context can fail after the transaction committed.
+            # A persisted reference, not this exception, decides candidate ownership.
+            published = (
+                VideoFile.objects.filter(pk=target.pk, processed_file=candidate_name)
+                if isinstance(target, VideoFile)
+                else RawPdfFile.objects.filter(
+                    pk=target.pk, processed_file=candidate_name
+                )
+            ).exists()
+            if published:
+                emit_hub_audit_event(
+                    "hub.transfer_post_publication_cleanup_failed",
+                    transfer_id=str(transfer_job.pk),
+                    exception_type=type(exc).__name__,
+                )
+                raise
+            if operation_fence is None:
+                raise RuntimeError(
+                    "Candidate cleanup requires transfer ownership"
+                ) from exc
+            _delete_unpublished_transfer_candidate(
+                target=target,
+                fence=operation_fence,
+                candidate_name=candidate_name,
+            )
         if operation_fence is not None:
             try:
                 _fail_transfer_operation(
@@ -1045,6 +1149,7 @@ def attach_enveloped_transfer_media(
                     target_object_id=target.pk,
                     processing_decision=transfer_job.processing_decision,
                     status_detail=str(exc),
+                    retryable=isinstance(exc, TransferOperationBusy),
                 )
             except RuntimeError:
                 logger.warning(
@@ -1057,22 +1162,15 @@ def attach_enveloped_transfer_media(
             operation_heartbeat.stop()
 
 
-def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
+def _apply_video_transfer_metadata(
+    transfer_job: TransferJob, *, publishing_authenticated_media: bool = False
+) -> TransferJob:
     resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
     _assert_privacy_preserving_resource_rows(resource_rows)
     video_file_payload = _json_object(
         resource_rows.get("video_file") or {},
         field_name="resource_rows.video_file",
     )
-    video_state_payload = _json_object(
-        resource_rows.get("video_state") or {},
-        field_name="resource_rows.video_state",
-    )
-    processing_history_payload = _json_object(
-        resource_rows.get("processing_history") or {},
-        field_name="resource_rows.processing_history",
-    )
-    processing_snapshot = cast(JsonObject, transfer_job.processing_snapshot or {})
     source_center = transfer_job.source_center
 
     if source_center is None:
@@ -1119,6 +1217,23 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                     status_detail=ownership_conflict,
                 )
 
+        if not publishing_authenticated_media:
+            _update_transfer_provenance(
+                transfer_job,
+                publication_predecessor=_publication_predecessor(video).model_dump(
+                    mode="json"
+                ),
+            )
+        if video.pk and video.processed_file and not publishing_authenticated_media:
+            decision, status, detail = _await_transfer_media(transfer_job)
+            return _save_transfer_job_state(
+                transfer_job=transfer_job,
+                target_object_id=video.pk,
+                transfer_status=status,
+                processing_decision=decision,
+                status_detail=detail,
+            )
+
         sensitive_meta_payload = resource_rows.get("sensitive_meta") or {}
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
             sensitive_meta = _upsert_sensitive_meta(
@@ -1130,6 +1245,7 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             video.sensitive_meta = sensitive_meta
 
         video.center = source_center
+        previous_processed_hash = video.processed_video_hash
         _sync_payload_fields(video, video_file_payload, _VIDEO_FILE_SYNC_FIELDS)
         video_segments = _verified_video_segments(
             video=video,
@@ -1143,19 +1259,8 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
         )
 
         video.save()
-        video_state = get_or_create_video_state(video)
-        _save_synced_payload_fields(
-            video_state, video_state_payload, _VIDEO_STATE_SYNC_FIELDS
-        )
-
-        processing_success = _coerce_optional_bool(
-            processing_history_payload.get("success")
-        )
-        ProcessingHistory.get_or_create_for_hash(
-            file_hash=transfer_job.resource_hash,
-            obj=video,
-            success=processing_success,
-        )
+        get_or_create_video_state(video)
+        # Sender state remains a claim in resource_rows until media authentication.
 
         _apply_case_resolution_for_media(
             transfer_job=transfer_job,
@@ -1184,16 +1289,14 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                 field_name="resource_rows.reports",
             ),
         )
-        _reconcile_segment_annotations_validated(
-            video_state=video_state,
-            sender_state_payload=video_state_payload,
-        )
+        if publishing_authenticated_media:
+            transfer_job.target_object_id = video.pk
+            return transfer_job
 
-        processing_decision, transfer_status, status_detail = _decide_video_processing(
-            transfer_job=transfer_job,
-            video=video,
-            processing_success=processing_success,
-            processing_snapshot=processing_snapshot,
+        video.processed_video_hash = previous_processed_hash
+        video.save(update_fields=["processed_video_hash", "date_modified"])
+        processing_decision, transfer_status, status_detail = _await_transfer_media(
+            transfer_job
         )
 
         transfer_job.target_object_id = video.pk
@@ -1218,20 +1321,14 @@ def _apply_video_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
     return transfer_job
 
 
-def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
+def _apply_report_transfer_metadata(
+    transfer_job: TransferJob, *, publishing_authenticated_media: bool = False
+) -> TransferJob:
     resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
     _assert_privacy_preserving_resource_rows(resource_rows)
     report_payload = _json_object(
         resource_rows.get("raw_pdf_file") or {},
         field_name="resource_rows.raw_pdf_file",
-    )
-    report_state_payload = _json_object(
-        resource_rows.get("raw_pdf_state") or {},
-        field_name="resource_rows.raw_pdf_state",
-    )
-    processing_history_payload = _json_object(
-        resource_rows.get("processing_history") or {},
-        field_name="resource_rows.processing_history",
     )
     source_center = transfer_job.source_center
 
@@ -1278,6 +1375,23 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
                     status_detail=ownership_conflict,
                 )
 
+        if not publishing_authenticated_media:
+            _update_transfer_provenance(
+                transfer_job,
+                publication_predecessor=_publication_predecessor(report).model_dump(
+                    mode="json"
+                ),
+            )
+        if report.pk and report.processed_file and not publishing_authenticated_media:
+            decision, status, detail = _await_transfer_media(transfer_job)
+            return _save_transfer_job_state(
+                transfer_job=transfer_job,
+                target_object_id=report.pk,
+                transfer_status=status,
+                processing_decision=decision,
+                status_detail=detail,
+            )
+
         sensitive_meta_payload = resource_rows.get("sensitive_meta") or {}
         if isinstance(sensitive_meta_payload, dict) and sensitive_meta_payload:
             sensitive_meta = _upsert_sensitive_meta(
@@ -1289,22 +1403,17 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             report.sensitive_meta = sensitive_meta
 
         report.center = source_center
-        _sync_payload_fields(report, report_payload, _REPORT_FILE_SYNC_FIELDS)
+        _sync_payload_fields(
+            report,
+            report_payload,
+            _REPORT_FILE_SYNC_FIELDS
+            if publishing_authenticated_media
+            else ("anonymized_text",),
+        )
 
         report.save()
-        report_state = get_or_create_raw_pdf_state(report)
-        _save_synced_payload_fields(
-            report_state, report_state_payload, _REPORT_STATE_SYNC_FIELDS
-        )
-
-        processing_success = _coerce_optional_bool(
-            processing_history_payload.get("success")
-        )
-        ProcessingHistory.get_or_create_for_hash(
-            file_hash=transfer_job.resource_hash,
-            obj=report,
-            success=processing_success,
-        )
+        get_or_create_raw_pdf_state(report)
+        # Sender state remains a claim in resource_rows until media authentication.
 
         _apply_case_resolution_for_media(
             transfer_job=transfer_job,
@@ -1319,10 +1428,12 @@ def _apply_report_transfer_metadata(transfer_job: TransferJob) -> TransferJob:
             ),
         )
 
-        processing_decision, transfer_status, status_detail = _decide_report_processing(
-            transfer_job=transfer_job,
-            report=report,
-            processing_success=processing_success,
+        if publishing_authenticated_media:
+            transfer_job.target_object_id = report.pk
+            return transfer_job
+
+        processing_decision, transfer_status, status_detail = _await_transfer_media(
+            transfer_job
         )
 
         transfer_job.target_object_id = report.pk
@@ -1421,11 +1532,16 @@ def _fail_transfer_operation(
     target_object_id: int | None,
     processing_decision: str,
     status_detail: str,
+    retryable: bool = False,
 ) -> TransferJob:
     updated = update_transfer_status(
         _fenced_transfer(operation_fence),
         expected=TransferJob.TransferStatus.RUNNING,
-        target=TransferJob.TransferStatus.FAILED,
+        target=(
+            TransferJob.TransferStatus.AWAITING_MEDIA
+            if retryable
+            else TransferJob.TransferStatus.FAILED
+        ),
         case_resolution_status=transfer_job.case_resolution_status,
         target_object_id=target_object_id,
         processing_decision=processing_decision,
@@ -1446,19 +1562,62 @@ def _fail_transfer_operation(
     return transfer_job
 
 
+def _delete_unpublished_transfer_candidate(
+    *,
+    target: VideoFile | RawPdfFile,
+    fence: TransferOperationFence,
+    candidate_name: str,
+) -> None:
+    """Delete only the fenced staging artifact, retaining intent if deletion fails."""
+    field_file = cast(FieldFile, target.processed_file)
+    storage = field_file.storage
+    if not isinstance(storage, (EncryptedStorage, LazyEncryptedStorage)):
+        raise ValueError("Candidate cleanup requires encrypted storage")
+    with transaction.atomic():
+        # Match publication's resource-before-transfer lock order.
+        if isinstance(target, VideoFile):
+            VideoFile.objects.select_for_update().get(pk=target.pk)
+        else:
+            RawPdfFile.objects.select_for_update().get(pk=target.pk)
+        owned = (
+            _fenced_transfer(fence)
+            .select_for_update()
+            .filter(
+                operation_candidate_name=candidate_name,
+            )
+            .first()
+        )
+        if owned is None:
+            raise RuntimeError("Candidate cleanup rejected by ownership fence")
+        if stored_media_name_referenced(candidate_name):
+            raise RuntimeError("Candidate cleanup cannot delete published media")
+        # This is staging, not the canonical FieldFile: encrypted storage owns
+        # its path lock and audited safe_unlink_file operation.
+        storage.delete(candidate_name)
+        _fenced_transfer(fence).update(operation_candidate_name="", updated_at=Now())
+
+
 def _store_model_stream(
     *,
-    instance: Any,
+    instance: VideoFile | RawPdfFile,
     field_name: str,
     source: BinaryIO,
     stored_name: str,
+    before_write: Callable[[str], None],
 ) -> str:
     """Publish a stream as a new storage generation without deleting the old one."""
 
-    field_file = getattr(instance, field_name)
+    field_file = cast(FieldFile, getattr(instance, field_name))
     storage_name = field_file.field.generate_filename(instance, stored_name)
     django_file = File(source, name=stored_name)
-    saved_name = str(field_file.storage.save(storage_name, django_file))
+    storage = field_file.storage
+    if not isinstance(storage, (EncryptedStorage, LazyEncryptedStorage)):
+        raise ValueError(
+            "Hub media publication requires intent-aware encrypted storage"
+        )
+    saved_name = storage.save_with_intent(
+        storage_name, django_file, before_write=before_write
+    )
     field_file.name = saved_name
     return saved_name
 
@@ -1568,48 +1727,55 @@ def _expected_processed_report_hash(*, transfer_job: TransferJob) -> str:
     return str(state_payload.get("processed_file_sha256", "") or "").strip()
 
 
-def _mark_video_transfer_as_processed(video: VideoFile) -> None:
+def _mark_video_transfer_as_processed(
+    video: VideoFile, transfer_job: TransferJob
+) -> None:
     from endoreg_db.services.hub.video_provenance import (
         validate_received_video_timeline,
     )
 
     validate_received_video_timeline(video)
     state = get_or_create_video_state(video)
-    state.processing_started = True
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.anonymization_validated = True
-    state.processed_file_sha256 = str(video.processed_video_hash or "").strip()
-    state.save(
-        update_fields=[
-            "processing_started",
-            "anonymized",
-            "sensitive_meta_processed",
-            "anonymization_validated",
-            "processed_file_sha256",
-            "date_modified",
-        ]
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
+    payload = _json_object(
+        resource_rows.get("video_state") or {}, field_name="video_state"
+    )
+    _save_synced_payload_fields(state, payload, _VIDEO_STATE_SYNC_FIELDS)
+    _reconcile_segment_annotations_validated(
+        video_state=state, sender_state_payload=payload
+    )
+    update_media_state(
+        state,
+        changes={
+            "processing_started": True,
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+            "anonymization_validated": True,
+            "processed_file_sha256": str(video.processed_video_hash or "").strip(),
+        },
     )
     ProcessingHistory.mark_success(file_hash=video.raw_video_hash, obj=video)
 
 
-def _mark_report_transfer_as_processed(report: RawPdfFile) -> None:
+def _mark_report_transfer_as_processed(
+    report: RawPdfFile, transfer_job: TransferJob
+) -> None:
     state = get_or_create_raw_pdf_state(report)
     actual_hash = get_file_hash(report.processed_file)
-    state.processing_started = True
-    state.anonymized = True
-    state.sensitive_meta_processed = True
-    state.anonymization_validated = True
-    state.processed_file_sha256 = actual_hash
-    state.save(
-        update_fields=[
-            "processing_started",
-            "anonymized",
-            "sensitive_meta_processed",
-            "anonymization_validated",
-            "processed_file_sha256",
-            "date_modified",
-        ]
+    resource_rows = cast(JsonObject, transfer_job.resource_rows or {})
+    payload = _json_object(
+        resource_rows.get("raw_pdf_state") or {}, field_name="raw_pdf_state"
+    )
+    _save_synced_payload_fields(state, payload, _REPORT_STATE_SYNC_FIELDS)
+    update_media_state(
+        state,
+        changes={
+            "processing_started": True,
+            "anonymized": True,
+            "sensitive_meta_processed": True,
+            "anonymization_validated": True,
+            "processed_file_sha256": actual_hash,
+        },
     )
     ProcessingHistory.mark_success(file_hash=report.pdf_hash, obj=report)
 
@@ -1723,8 +1889,7 @@ def _apply_frame_annotation_rows(
 
     video_state = get_or_create_video_state(video)
     if not video_state.frame_annotations_generated:
-        video_state.frame_annotations_generated = True
-        video_state.save(update_fields=["frame_annotations_generated", "date_modified"])
+        update_media_state(video_state, changes={"frame_annotations_generated": True})
 
 
 def _processed_timeline(
@@ -1913,11 +2078,15 @@ def _reconcile_segment_annotations_validated(
 ) -> None:
     if "segment_annotations_validated" not in sender_state_payload:
         return
-    video_state.segment_annotations_validated = _json_bool(
-        sender_state_payload["segment_annotations_validated"],
-        field_name="resource_rows.video_state.segment_annotations_validated",
+    update_media_state(
+        video_state,
+        changes={
+            "segment_annotations_validated": _json_bool(
+                sender_state_payload["segment_annotations_validated"],
+                field_name="resource_rows.video_state.segment_annotations_validated",
+            ),
+        },
     )
-    video_state.save(update_fields=["segment_annotations_validated", "date_modified"])
 
 
 def _transfer_annotation_external_id(
@@ -2014,6 +2183,7 @@ def _apply_patient_examination_report_rows(
         )
 
 
+@transaction.atomic
 def _upsert_patient_examination_report(
     *,
     patient_examination: PatientExamination,
@@ -2028,6 +2198,9 @@ def _upsert_patient_examination_report(
         default=1,
     )
 
+    PatientExamination.objects.select_for_update().get(pk=patient_examination.pk)
+    # A transfer row carries template/version metadata only. It cannot identify
+    # a local author's examination report, even if those fields happen to match.
     report = (
         PatientExaminationReport.objects.filter(
             patient_examination=patient_examination,
@@ -2035,10 +2208,20 @@ def _upsert_patient_examination_report(
             template_version=template_version,
             template_hash=template_hash,
             version=version,
+            status=PatientExaminationReport.Status.FINAL,
+            created_by__isnull=True,
+            updated_by__isnull=True,
+            finalized_by__isnull=True,
+            dtypes_record__isnull=True,
+            source_documents__isnull=True,
+            rendered_text="",
+            editor_payload={},
         )
         .order_by("-id")
         .first()
     )
+    if report is not None and report.is_active:
+        return
     if report is None:
         report = PatientExaminationReport(
             patient_examination=patient_examination,
@@ -2048,12 +2231,11 @@ def _upsert_patient_examination_report(
             version=version,
         )
 
-    with transaction.atomic():
-        set_patient_examination_report_status(
-            report, PatientExaminationReport.Status.FINAL.value
-        )
-        report.is_active = True
-        report.save()
+    set_patient_examination_report_status(
+        report, PatientExaminationReport.Status.FINAL.value
+    )
+    report.is_active = True
+    report.save()
 
 
 # Sender-declared columns mirrored verbatim; frame_count is then bound to the
@@ -2120,9 +2302,10 @@ def _save_synced_payload_fields(
     payload: JsonObject,
     field_names: tuple[str, ...],
 ) -> None:
-    copied = _sync_payload_fields(instance, payload, field_names)
-    if copied:
-        instance.save(update_fields=[*copied, "date_modified"])
+    update_media_state(
+        instance,
+        changes={name: payload[name] for name in field_names if name in payload},
+    )
 
 
 @transaction.atomic
@@ -2302,101 +2485,14 @@ def _apply_case_resolution_for_media(
     )
 
 
-def _decide_video_processing(
-    *,
-    transfer_job: TransferJob,
-    video: VideoFile,
-    processing_success: bool | None,
-    processing_snapshot: JsonObject,
-) -> tuple[str, str, str]:
-    local_history_success = ProcessingHistory.has_history_for_hash(
-        file_hash=transfer_job.resource_hash,
-        success=True,
-    )
-    local_raw_present = file_exists(video.raw_file)
-    local_processed_present = file_exists(video.processed_file)
-    sender_processing_success = _coerce_optional_bool(
-        processing_snapshot.get("sender_processing_success")
-    )
-    if sender_processing_success is None:
-        sender_processing_success = processing_success
-
-    if local_history_success and (local_processed_present or local_raw_present):
-        return (
-            TransferJob.ProcessingDecision.SKIP_EXISTING_SUCCESS,
-            TransferJob.TransferStatus.APPLIED,
-            "Existing local processing history and artifacts allow replay suppression",
-        )
-
-    if transfer_job.transfer_mode == TransferJob.TransferMode.METADATA_ONLY.value:
-        if (
-            transfer_job.processing_policy
-            == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
-            and sender_processing_success
-            and not local_processed_present
-            and not local_raw_present
-        ):
-            return (
-                TransferJob.ProcessingDecision.MARK_INCONSISTENT,
-                TransferJob.TransferStatus.INCONSISTENT,
-                "Sender claims completed processing but no local artifacts are available yet",
-            )
-        return (
-            TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
-            TransferJob.TransferStatus.AWAITING_MEDIA,
-            "Metadata synchronized; media transfer is still required before processing can start",
-        )
-
+def _await_transfer_media(transfer_job: TransferJob) -> tuple[str, str, str]:
+    # Registration cannot attest receipt of this envelope, even if another
+    # transfer or local import has already produced an artifact for this resource.
+    # Exact registration replay returns its existing job before metadata application.
     return (
         TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
         TransferJob.TransferStatus.AWAITING_MEDIA,
-        "Metadata synchronized; awaiting uploaded video media for the transfer job",
-    )
-
-
-def _decide_report_processing(
-    *,
-    transfer_job: TransferJob,
-    report: RawPdfFile,
-    processing_success: bool | None,
-) -> tuple[str, str, str]:
-    local_history_success = ProcessingHistory.has_history_for_hash(
-        file_hash=transfer_job.resource_hash,
-        success=True,
-    )
-    local_raw_present = file_exists(report.file)
-    local_processed_present = file_exists(report.processed_file)
-
-    if local_history_success and (local_raw_present or local_processed_present):
-        return (
-            TransferJob.ProcessingDecision.SKIP_EXISTING_SUCCESS,
-            TransferJob.TransferStatus.APPLIED,
-            "Existing local processing history and artifacts allow replay suppression",
-        )
-
-    if transfer_job.transfer_mode == TransferJob.TransferMode.METADATA_ONLY.value:
-        if (
-            transfer_job.processing_policy
-            == TransferJob.ProcessingPolicy.PRESERVE_PROCESSING_STATE.value
-            and processing_success
-            and not local_raw_present
-            and not local_processed_present
-        ):
-            return (
-                TransferJob.ProcessingDecision.MARK_INCONSISTENT,
-                TransferJob.TransferStatus.INCONSISTENT,
-                "Sender claims completed processing but no local report artifacts are available yet",
-            )
-        return (
-            TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
-            TransferJob.TransferStatus.AWAITING_MEDIA,
-            "Metadata synchronized; media transfer is still required before processing can start",
-        )
-
-    return (
-        TransferJob.ProcessingDecision.WAIT_FOR_MISSING_MEDIA,
-        TransferJob.TransferStatus.AWAITING_MEDIA,
-        "Metadata synchronized; awaiting uploaded report media for the transfer job",
+        f"Metadata synchronized; awaiting authenticated {transfer_job.resource_kind} media",
     )
 
 

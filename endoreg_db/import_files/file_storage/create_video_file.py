@@ -16,10 +16,8 @@ from endoreg_db.services.hub.media_integrity import (
     require_reusable_video_raw_source,
     video_integrity_failure_allows_existing_video_reprocessing,
 )
-from endoreg_db.services.video_files import (
-    get_video_by_content_hash,
-    get_video_import_processor,
-)
+from endoreg_db.services.video_files.metadata import get_video_import_processor
+from endoreg_db.services.video_files.queries import get_video_by_content_hash
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +52,7 @@ def _load_current_video(
     ctx: ImportContext, file_hash: str, *, require_raw_source: bool = True
 ) -> VideoFile | None:
     if isinstance(ctx.current_video, VideoFile):
+        ensure_center(ctx.current_video, ctx.center_name, center_key=ctx.center_key)
         if require_raw_source:
             require_reusable_video_raw_source(ctx.current_video)
         _bind_video_processor(
@@ -64,6 +63,8 @@ def _load_current_video(
         ctx.current_video = get_video_by_content_hash(file_hash)
     except VideoFile.DoesNotExist:
         ctx.current_video = None
+    if isinstance(ctx.current_video, VideoFile):
+        ensure_center(ctx.current_video, ctx.center_name, center_key=ctx.center_key)
     if require_raw_source and isinstance(ctx.current_video, VideoFile):
         require_reusable_video_raw_source(ctx.current_video)
     if isinstance(ctx.current_video, VideoFile):
@@ -137,6 +138,7 @@ def _get_or_create_video_instance(
 ) -> VideoFile:
     if isinstance(ctx.current_video, VideoFile):
         video = ctx.current_video
+        ensure_center(video, ctx.center_name, center_key=ctx.center_key)
         require_reusable_video_raw_source(video)
         _bind_video_processor(ctx, video)
         logger.info("Using existing VideoFile from context: pk=%s", video.pk)

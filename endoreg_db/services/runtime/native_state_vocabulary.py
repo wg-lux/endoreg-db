@@ -26,11 +26,22 @@ def _choice_tokens(choices: Iterable[tuple[str, str]]) -> frozenset[str]:
 
 def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
     """Python mirror tokens keyed by native vocabulary name."""
+    from endoreg_db.services.clinical_lifecycle.state_machine import (
+        AnnotationStage,
+        ClinicalLifecycleEvent,
+        ExportApproval,
+        LifecycleInvariantViolation,
+        PrivacyStage,
+        ReleaseStage,
+        TransitionRejection,
+    )
     from endoreg_db.models.hub.outbound_hub_transfer_job import OutboundHubTransferJob
     from endoreg_db.models.hub.transfer_job import TransferJob
     from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
     from endoreg_db.models import (
         AIDataSetExportArtifact,
+        AIModelTrainingRun,
+        ReportImportAttempt,
         DicomExportJob,
         FrameAnnotationExportJob,
         PatientExaminationReport,
@@ -38,6 +49,9 @@ def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
         ReportLlmInferenceJob,
         UploadJob,
         VideoProcessingHistory,
+    )
+    from endoreg_db.services.hub.outbound_export_readiness import (
+        HubExportIntegrityStatus,
     )
     from endoreg_db.services.runtime.status_writers import StatusMachine
     from endoreg_db.models.state.hub_transfer import HubExportFailureClass
@@ -73,6 +87,14 @@ def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
     )
 
     return {
+        "clinical_privacy": _enum_tokens(PrivacyStage),
+        "clinical_annotation": _enum_tokens(AnnotationStage),
+        "clinical_release": _enum_tokens(ReleaseStage),
+        "clinical_event": _enum_tokens(ClinicalLifecycleEvent),
+        "clinical_approval": _enum_tokens(ExportApproval),
+        "clinical_rejection": _enum_tokens(TransitionRejection),
+        "clinical_violation": _enum_tokens(LifecycleInvariantViolation),
+        "hub_export_integrity": _enum_tokens(HubExportIntegrityStatus),
         "hub_local_status": _enum_tokens(OutboundHubTransferJob.LocalStatus),
         "hub_remote_status": _enum_tokens(TransferJob.TransferStatus),
         "hub_failure_class": _enum_tokens(HubExportFailureClass),
@@ -88,6 +110,11 @@ def native_vocabulary_mirrors() -> dict[str, frozenset[str]]:
         "operation_lifecycle_event": _enum_tokens(OperationLifecycleEvent),
         "hls_artifact_status": _enum_tokens(VideoHlsArtifact.Status),
         "status_machine": _enum_tokens(StatusMachine),
+        "upload_job_status": _enum_tokens(UploadJob.Status),
+        "model_training_run_status": _choice_tokens(AIModelTrainingRun.STATUS_CHOICES),
+        "report_import_attempt_status": _choice_tokens(
+            ReportImportAttempt.STATUS_CHOICES
+        ),
         "report_llm_inference_job_status": _choice_tokens(
             ReportLlmInferenceJob.STATUS_CHOICES
         ),

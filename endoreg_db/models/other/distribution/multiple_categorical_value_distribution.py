@@ -3,18 +3,12 @@ from typing import Any, Unpack, cast
 
 import numpy as np
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.anonymization import normalize_categorical_distribution
 
 from .base_value_distribution import BaseValueDistribution
-
-
-class MultipleCategoricalValueDistributionManager(
-    models.Manager["MultipleCategoricalValueDistribution"]
-):
-    def get_by_natural_key(self, name: str) -> "MultipleCategoricalValueDistribution":
-        return self.get(name=name)
 
 
 class MultipleCategoricalValueDistribution(BaseValueDistribution):
@@ -23,7 +17,7 @@ class MultipleCategoricalValueDistribution(BaseValueDistribution):
     Assigns a specific number or varying number of values based on probabilities.
     """
 
-    objects = MultipleCategoricalValueDistributionManager()
+    objects = NameNaturalKeyManager["MultipleCategoricalValueDistribution"]()
     categories: models.JSONField[dict[str, float]] = models.JSONField()
     min_count: models.IntegerField[int, Any] = models.IntegerField()
     max_count: models.IntegerField[int, Any] = models.IntegerField()

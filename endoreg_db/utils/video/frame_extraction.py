@@ -3,22 +3,23 @@ import logging
 import subprocess
 from fractions import Fraction
 from pathlib import Path
-import numpy as np
-from PIL import Image
 
-from ..transcode_execution import get_stream_info
 import cv2
 from tqdm import tqdm
 
 from endoreg_db.utils.file_operations import (
+    atomic_move_file,
     ensure_directory,
+    safe_rmtree,
     safe_unlink_file,
 )
 
 from .command_construction import (
     _build_extract_frame_range_command,
     _build_extract_frames_command,
+    _build_extract_selected_frames_command,
     _frame_image_encoder_args,
+    _selected_frame_runs,
 )
 from .executable_discovery import (
     _resolve_ffmpeg_executable,
@@ -314,6 +315,129 @@ def extract_frame_range(
     return extracted_files
 
 
+# Bounds one ``select`` expression so the FFmpeg argument stays far below the
+# operating-system argument-length limit for highly fragmented selections.
+_MAX_SELECTED_RUNS_PER_PASS = 256
+
+
+def extract_selected_frames(
+    video_path: Path,
+    output_dir: Path,
+    *,
+    frame_numbers: list[int],
+    quality: int,
+    ext: str = "jpg",
+) -> list[Path]:
+    """Extract only the requested zero-based decode indices.
+
+    Unlike ``extract_frame_range``, frames between the requested indices are
+    decoded but never encoded or written. Each output is named
+    ``frame_<decode index>.<ext>`` so callers keep the frame-number mapping.
+    Contiguous indices are grouped into ``between`` runs; very fragmented
+    selections are split into several bounded decode passes.
+
+    Raises:
+        ValueError: If ``frame_numbers`` is empty or contains negative values.
+        FileNotFoundError: If the FFmpeg executable is not found.
+        RuntimeError: If FFmpeg fails or does not produce every requested frame.
+    """
+    if not frame_numbers:
+        raise ValueError("extract_selected_frames requires at least one frame")
+    requested = sorted(set(frame_numbers))
+    runs = _selected_frame_runs(requested)
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+
+    ensure_directory(output_dir)
+    extracted: list[Path] = []
+    for pass_index in range(0, len(runs), _MAX_SELECTED_RUNS_PER_PASS):
+        pass_runs = runs[pass_index : pass_index + _MAX_SELECTED_RUNS_PER_PASS]
+        pass_frame_numbers = [
+            frame_number
+            for start, end in pass_runs
+            for frame_number in range(start, end + 1)
+        ]
+        staging_dir = ensure_directory(output_dir / f"selected_pass_{pass_index:07d}")
+        try:
+            extracted.extend(
+                _run_selected_frames_pass(
+                    ffmpeg_executable,
+                    video_path,
+                    staging_dir=staging_dir,
+                    output_dir=output_dir,
+                    runs=pass_runs,
+                    frame_numbers=pass_frame_numbers,
+                    quality=quality,
+                    ext=ext,
+                )
+            )
+        finally:
+            safe_rmtree(staging_dir, missing_ok=True)
+
+    logger.info(
+        "Selected frame extraction wrote %d frames in %d pass(es) for %s",
+        len(extracted),
+        -(-len(runs) // _MAX_SELECTED_RUNS_PER_PASS),
+        video_path.name,
+    )
+    return extracted
+
+
+def _run_selected_frames_pass(
+    ffmpeg_executable: str,
+    video_path: Path,
+    *,
+    staging_dir: Path,
+    output_dir: Path,
+    runs: list[tuple[int, int]],
+    frame_numbers: list[int],
+    quality: int,
+    ext: str,
+) -> list[Path]:
+    command = _build_extract_selected_frames_command(
+        ffmpeg_executable=ffmpeg_executable,
+        video_path=video_path,
+        output_pattern=staging_dir / f"selected_%07d.{ext}",
+        runs=runs,
+        quality=quality,
+        ext=ext,
+    )
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = str(exc.stderr or "").strip()[-8000:] or "<empty>"
+        raise RuntimeError(
+            f"FFmpeg selected frame extraction failed for {video_path}; "
+            f"exit_code={exc.returncode}.\nFFmpeg stderr:\n{stderr}"
+        ) from exc
+
+    # FFmpeg writes selected frames in decode order, numbered from zero, so
+    # the n-th staged image is the n-th requested decode index.
+    staged = sorted(staging_dir.glob(f"selected_*.{ext}"))
+    if len(staged) != len(frame_numbers):
+        raise RuntimeError(
+            "Selected frame extraction did not produce every requested frame for "
+            f"{video_path}: expected={len(frame_numbers)} actual={len(staged)}"
+        )
+
+    moved: list[Path] = []
+    for staged_path, frame_number in zip(staged, frame_numbers, strict=True):
+        target = output_dir / f"frame_{frame_number:07d}.{ext}"
+        atomic_move_file(source=staged_path, destination=target)
+        moved.append(target)
+    return moved
+
+
 def _probe_container_start_seconds(video_path: Path | str) -> Fraction:
     """Return the container start time FFmpeg adds to every input ``-ss`` value."""
     ffprobe_executable = _resolve_ffprobe_executable()
@@ -440,171 +564,3 @@ def extract_frames_by_presentation_timestamp(
             f"frame: expected={len(timestamps)} actual={len(extracted_files)}"
         )
     return extracted_files
-
-
-def extract_selected_frames_streamed(
-    video_path: Path,
-    output_dir: Path,
-    *,
-    frame_numbers: list[int],
-    quality: int,
-    ext: str = "jpg",
-    fps: float | None = None,
-) -> dict[int, Path]:
-    """
-    Extract selected sampled frame numbers in one FFmpeg pass.
-
-    Frame indices correspond to the output of the fps filter,
-    preserving the previous frame-number mapping.
-    """
-    ffmpeg_executable = _resolve_ffmpeg_executable()
-    if not ffmpeg_executable:
-        raise FileNotFoundError(
-            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
-        )
-
-    requested_numbers = sorted({int(n) for n in frame_numbers if int(n) >= 0})
-    if not requested_numbers:
-        return {}
-
-    ensure_directory(output_dir)
-
-    requested_set = set(requested_numbers)
-    max_requested = requested_numbers[-1]
-
-    stream_info = get_stream_info(video_path)
-    if not stream_info or "streams" not in stream_info:
-        raise RuntimeError(f"Could not read video stream info for {video_path}")
-
-    video_stream = next(
-        (
-            stream
-            for stream in stream_info["streams"]
-            if stream.get("codec_type") == "video"
-        ),
-        None,
-    )
-    if not video_stream:
-        raise RuntimeError(f"No video stream found in {video_path}")
-
-    width = int(video_stream["width"])
-    height = int(video_stream["height"])
-    frame_size = width * height * 3
-
-    filters = []
-    if fps is not None:
-        filters.append(f"fps={fps}")
-    filters.append("format=rgb24")
-
-    command = [
-        ffmpeg_executable,
-        "-hide_banner",
-        "-loglevel",
-        "error",
-        "-i",
-        str(video_path),
-        "-vf",
-        ",".join(filters),
-        "-an",
-        "-f",
-        "rawvideo",
-        "-pix_fmt",
-        "rgb24",
-        "pipe:1",
-    ]
-
-    logger.info(
-        "Running streamed extraction: video=%s requested=%d fps=%s",
-        video_path,
-        len(requested_numbers),
-        fps,
-    )
-
-    process = subprocess.Popen(
-        command,
-        stdin=subprocess.DEVNULL,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        bufsize=10**8,
-    )
-
-    if process.stdout is None:
-        process.kill()
-        process.wait()
-        raise RuntimeError("FFmpeg stdout pipe was not created")
-
-    extracted: dict[int, Path] = {}
-    sampled_index = 0
-
-    try:
-        while True:
-            raw = process.stdout.read(frame_size)
-
-            if not raw:
-                break
-
-            if len(raw) != frame_size:
-                raise RuntimeError(
-                    f"Incomplete raw frame: expected={frame_size}, got={len(raw)}"
-                )
-
-            if sampled_index in requested_set:
-                array = np.frombuffer(raw, dtype=np.uint8).reshape((height, width, 3))
-
-                image = Image.fromarray(array, mode="RGB")
-
-                output_path = output_dir / f"selected_{sampled_index:07d}.{ext}"
-
-                save_kwargs = {}
-
-                if ext.lower() in {"jpg", "jpeg"}:
-                    save_kwargs["quality"] = max(
-                        1, min(95, int((32 - quality) / 31 * 95))
-                    )
-                    save_kwargs["subsampling"] = 0
-
-                image.save(output_path, **save_kwargs)
-                extracted[sampled_index] = output_path
-
-                if len(extracted) == len(requested_set):
-                    break
-
-            sampled_index += 1
-
-            if sampled_index > max_requested:
-                break
-
-        if process.poll() is None:
-            process.terminate()
-
-        try:
-            _, stderr_bytes = process.communicate(timeout=5)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            _, stderr_bytes = process.communicate()
-
-        stderr = (stderr_bytes or b"").decode("utf-8", errors="replace")
-
-        if process.returncode not in (0, -15, -9):
-            raise RuntimeError(f"FFmpeg streamed extraction failed: {stderr}")
-
-    finally:
-        if process.poll() is None:
-            process.kill()
-            process.wait()
-
-    missing = sorted(requested_set - set(extracted))
-
-    if missing:
-        raise RuntimeError(
-            f"Streamed extraction missing {len(missing)} frames. "
-            f"First missing: {missing[:20]}"
-        )
-
-    logger.info(
-        "Streamed extraction completed: %d/%d frames",
-        len(extracted),
-        len(requested_set),
-    )
-
-    return extracted

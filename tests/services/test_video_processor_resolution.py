@@ -12,7 +12,7 @@ from endoreg_db.services.jobs.video_reimport_jobs import _processor_name  # pyri
 from endoreg_db.services.video_files.processor_resolution import (
     resolve_processor_name_for_import,
 )
-from endoreg_db.services.video_files import get_video_import_context_names
+from endoreg_db.services.video_files.metadata import get_video_import_context_names
 
 pytestmark = pytest.mark.django_db
 

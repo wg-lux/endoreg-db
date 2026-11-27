@@ -8,7 +8,7 @@ boundaries:
 - Renew operation leases; preserve presentation timestamp identity and reject unsafe raw media export.
 files:
 - file: electrical_measurements.py
-  role: Read-only center-scoped electrosurgical series listing and bounded PTS-aligned frame windows.
+  role: Read-only center-scoped electrosurgical series and activation-log listing, bounded PTS frame windows and activation coverage.
 - file: ai/label.py
   role: Label and label-set APIs plus reloadable optional study presentation catalog.
 - file: ai/frame_annotations.py

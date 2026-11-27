@@ -19,12 +19,6 @@ tracking:
     note: Prüfaufruf verweist auf entfernten test_model_import_boundaries.py; auf aktuelle Schicht- und
       Inventartests umstellen und erneut ausführen.
 source_documents:
-- path: docs/pydantic_django_hardening_plan.md
-  disposition: migrated
-  note: Hardening-Phasen und Feldownership werden hier bewertet.
-- path: docs/video_typing_integration_plan.md
-  disposition: migrated
-  note: Video-, Segment- und Sensitive-Meta-Typisierung wurde in diese DoD überführt.
 - path: docs/model_layer_map_for_agents.md
   disposition: reference
   note: Aktuelle Abhängigkeiten und bevorzugte Refactor-Reihenfolge.
@@ -151,8 +145,6 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_lx_video_contracts.py
         tests/models/test_dataset_export_scope.py tests/services/application_settings/test_ai_dataset_export.py
         -q (18 passed)
-    - kind: document
-      reference: docs/video_typing_integration_plan.md#implementierter-kanonischer-boundary-pfad
     note: VideoState, LabelVideoSegment and SensitiveMeta use one lx_dtypes adapter path shared by AI
       dataset export. IDs are deterministic, persisted segment state is retained, invalid segments and
       contradictory dates fail loudly, and only processed file references enter the video contract.
@@ -218,8 +210,6 @@ definition_of_done:
       reference: devenv shell -- .devenv/state/venv/bin/pytest tests/services/test_lx_video_contracts.py
         tests/models/test_dataset_export_scope.py tests/services/application_settings/test_ai_dataset_export.py
         -q (20 passed)
-    - kind: document
-      reference: docs/video_typing_integration_plan.md#implementierter-kanonischer-boundary-pfad
     note: The AI dataset JSON artifact excludes PatientVideoFile.sensitive_meta at the central serialization
       boundary. Regression coverage proves direct identifiers, birth date, case number, external ID, and
       raw text are absent, while the strict payload model rejects unknown top-level fields.

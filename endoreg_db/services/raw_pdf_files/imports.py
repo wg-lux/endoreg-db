@@ -66,6 +66,8 @@ def create_raw_pdf_file_from_path(
 
     existing_pdf_file = model.objects.filter(pdf_hash=pdf_hash).first()
     if existing_pdf_file:
+        if existing_pdf_file.center_id != center.pk:
+            raise ValueError("Imported report belongs to a different center")
         logger.warning(
             "RawPdfFile with hash %s already exists (ID: %s)",
             pdf_hash,

@@ -12,6 +12,9 @@ from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.finding.finding import Finding
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
+from lx_dtypes.models.contracts.dtypes_record_persistence import (
+    parse_dtypes_record_persistence_payload,
+)
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.patient_examination import (
     PatientExaminationPatientDataPayload,
@@ -56,6 +59,7 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             allow_null=True,
         ),
     )
+    examination_id = serializers.IntegerField(read_only=True, allow_null=True)
     patient_name = serializers.SerializerMethodField()
     examination_name = serializers.SerializerMethodField()
     # German display name; null when the catalogue carries none.
@@ -68,6 +72,7 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
             "patient",
             "patient_data",
             "examination",
+            "examination_id",
             "date_start",
             "date_end",
             "knowledge_base_module",
@@ -213,3 +218,52 @@ class PatientExaminationSerializer(serializers.ModelSerializer[PatientExaminatio
         if instance is None:
             return []
         return instance.get_available_findings()
+
+
+class _SelectedIndicationSerializer(serializers.Serializer[dict[str, object]]):
+    examination_indication_id = serializers.IntegerField(read_only=True)
+    indication_choice_id = serializers.IntegerField(read_only=True, allow_null=True)
+
+
+class PatientExaminationDetailSerializer(PatientExaminationSerializer):
+    indications = _SelectedIndicationSerializer(many=True, read_only=True)
+    examiners = serializers.SerializerMethodField()
+
+    class Meta(PatientExaminationSerializer.Meta):
+        fields = [*PatientExaminationSerializer.Meta.fields, "indications", "examiners"]
+
+    def get_examiners(self, obj: PatientExamination) -> list[str]:
+        if obj.dtypes_record == {}:
+            return []
+        examiners = parse_dtypes_record_persistence_payload(obj.dtypes_record).examiners
+        return [examiners] if isinstance(examiners, str) else examiners
+
+
+class PatientExaminationDetailsSerializer(serializers.Serializer[PatientExamination]):
+    examination = PatientExaminationDetailSerializer(source="*", read_only=True)
+    findings = serializers.IntegerField(source="patient_findings.count", read_only=True)
+    indications = serializers.IntegerField(source="indications.count", read_only=True)
+    patient_age_at_examination = serializers.SerializerMethodField()
+
+    def get_patient_age_at_examination(self, obj: PatientExamination) -> int | None:
+        if obj.date_start is None or obj.patient.get_dob() is None:
+            return None
+        return obj.get_patient_age_at_examination()
+
+
+class PatientExaminationPageSerializer(serializers.Serializer[dict[str, object]]):
+    results = PatientExaminationSerializer(many=True, read_only=True)
+    total_count = serializers.IntegerField(read_only=True)
+    limit = serializers.IntegerField(read_only=True)
+    offset = serializers.IntegerField(read_only=True)
+    has_more = serializers.BooleanField(read_only=True)
+
+
+class PatientExaminationPatchResponseSerializer(PatientExaminationDetailSerializer):
+    message = serializers.SerializerMethodField()
+
+    def get_message(self, obj: PatientExamination) -> str:
+        return "Examination updated successfully"
+
+    class Meta(PatientExaminationDetailSerializer.Meta):
+        fields = [*PatientExaminationDetailSerializer.Meta.fields, "message"]

@@ -14,8 +14,7 @@ tracking:
 source_documents:
 - path: docs/human_validation_workflow.md
   disposition: reference
-  note: Bestehende Validierungsachsen; die Projektion clinical_lifecycle bleibt Referenz bis der Rust-Reducer
-    existiert.
+  note: Validierungsachsen und Aufrufgrenzen des nativen Reducers für Berichte und Videos.
 definition_of_done:
 - id: contract_in_lx_dtypes
   category: requirements
@@ -57,8 +56,21 @@ definition_of_done:
     instructions: Rust-Tests je Übergang und Python-/TypeScript-Enum-Paritätstests prüfen.
     timeout_seconds: 300
   assessment:
-    status: not_assessed
-    evidence: []
+    status: verified
+    evidence:
+    - kind: code
+      reference: rust/endoreg_rust_backend/src/clinical_workflow.rs
+    - kind: test
+      reference: tests/services/test_clinical_lifecycle_state_machine.py
+    - kind: test
+      reference: tests/rust_backend/test_state_enum_parity.py
+    note: '2026-11-24: 59 Rust-Tests und 970 fokussierte Backendtests bestanden, 3 medienspezifische Fälle
+      übersprungen. Alle 52 Einzelspur-Übergänge entsprechen dem lx-dtypes-Vertrag. Vergleich mit der
+      vorherigen Implementierung: 2052 Zustands-/Ereignispaare und 12288 Faktenkombinationen identisch.
+      35 TypeScript-Tokens entsprechen Rust; 4 Frontend-Vertragstests bestanden. Pyright: 0 Fehler, 3
+      Warnungen. Wheel-Laufzeitprüfung bestanden.'
+    assessed_by: codex-state-6c49
+    assessed_at: '2026-11-24T15:40:10.879218Z'
 - id: persistence_and_api
   category: functionality
   title: Persistierter Zustand mit bedingtem Schreiben, Idempotenzschlüsseln und Audit
@@ -77,11 +89,21 @@ definition_of_done:
       reference: endoreg_db/services/clinical_lifecycle/persistence.py
     - kind: test
       reference: tests/views/media/test_clinical_workflow_endpoint.py
-    note: 'First slice by claude-status-review: ClinicalWorkflowRecord (CAS version), transition rows,
-      apply_workflow_event, GET media/videos|pdfs/<pk>/workflow/. Open: write endpoint, wiring, concurrency
-      tests, DB token choices.'
-    assessed_by: claude-media-workflow-20261022
-    assessed_at: '2026-10-22T15:59:28.959001Z'
+    - kind: test
+      reference: tests/services/test_clinical_workflow_persistence.py
+    - kind: test
+      reference: tests/services/test_clinical_workflow_worklist.py
+    - kind: code
+      reference: endoreg_db/services/datasets/membership.py
+    - kind: test
+      reference: tests/services/test_clinical_lifecycle_facts.py
+    - kind: test
+      reference: tests/services/test_report_artifact_integrity.py
+    note: Zwei PostgreSQL-Verbindungen fügen dasselbe freigegebene Video gleichzeitig hinzu. Eine Mitgliedschaft
+      und genau eine Journalversion bleiben erhalten. Die PDF-Bereinigung prüft Freigabe und Inhaltsdigest
+      nach Commit erneut.
+    assessed_by: codex-state-6c49
+    assessed_at: '2026-11-24T16:16:58.611910Z'
 - id: read_only_projection
   category: operations
   title: Read-only-Projektion bildet jedes bestehende Objekt auf genau einen Zustand ab

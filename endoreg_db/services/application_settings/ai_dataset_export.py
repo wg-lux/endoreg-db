@@ -24,9 +24,7 @@ from endoreg_db.services.datasets.exports import export_to_standardized_structur
 from endoreg_db.services.runtime.status_writers import (
     set_ai_dataset_export_artifact_status,
 )
-from endoreg_db.services.hub import (
-    local_study_server_mode_enabled,
-)
+from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
 from endoreg_db.utils.paths import get_runtime_paths
 from endoreg_db.utils.api_urls import endoreg_api_path

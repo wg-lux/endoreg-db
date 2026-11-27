@@ -719,3 +719,192 @@ def test_missing_canonical_media_raises_timeline_error_without_writes(
         == before
     )
     probe.assert_not_called()
+
+
+@pytest.mark.parametrize("shift", [-2.0, 0.1, 2.0])
+def test_bounded_processed_annotation_recovery_preserves_labels_and_clears_review(
+    video: VideoFile, shift: float
+) -> None:
+    from endoreg_db.models import VideoSegmentationAnnotation, VideoSegmentationLabel
+    from endoreg_db.models.state.label_video_segment import LabelVideoSegmentState
+    from endoreg_db.services.annotations.segment_validation_workflow import (
+        mark_segment_annotations_complete_without_cleanup,
+    )
+
+    video.frame_count, video.duration = 4, 1.0
+    video.save(update_fields=["frame_count", "duration"])
+    old_times = [4.0 + shift, 4.15 + shift, 4.4 + shift, 4.75 + shift]
+    frames = Frame.objects.bulk_create(
+        [
+            Frame(video=video, frame_number=i, timestamp=value)
+            for i, value in enumerate(old_times)
+        ]
+    )
+    label = Label.objects.create(name="retained-recovery-label")
+    segment = LabelVideoSegment.objects.create(
+        video_file=video, label=label, start_frame_number=1, end_frame_number=3
+    )
+    LabelVideoSegmentState.objects.update_or_create(
+        origin=segment, defaults={"is_validated": True}
+    )
+    annotation = ImageClassificationAnnotation.objects.create(
+        frame=frames[1], label=label, value=True
+    )
+    timed = VideoSegmentationAnnotation.objects.create(
+        video_file=video,
+        label=VideoSegmentationLabel.objects.create(name="retained-recovery-time"),
+        start_time=old_times[1],
+        stop_time=old_times[3],
+    )
+    mark_segment_annotations_complete_without_cleanup(video)
+    state = video.get_or_create_state()
+    state.mark_anonymization_validated()
+    assert video.processed_video_hash is not None
+    state.mark_ready_for_export(
+        processed_file_sha256=video.processed_video_hash, ready_for_export_by="reviewer"
+    )
+    before = list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+    service.backfill_missing_video_timestamps(
+        video,
+        processed_ordinals_operator="reviewer",
+        remap_annotations=True,
+        dry_run=True,
+    )
+    state.refresh_from_db()
+    timed.refresh_from_db()
+    assert state.ready_for_export and state.segment_annotations_validated
+    assert timed.start_time == old_times[1]
+    assert (
+        list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+        == before
+    )
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+
+    service.prepare_video_timestamps_for_export(video, operator="reviewer")
+    state.refresh_from_db()
+    segment.refresh_from_db()
+    annotation.refresh_from_db()
+    timed.refresh_from_db()
+    assert not state.ready_for_export and not state.segment_annotations_validated
+    assert state.anonymization_validated
+    assert not LabelVideoSegmentState.objects.get(origin=segment).is_validated
+    assert annotation.frame == frames[1] and annotation.label == label
+    assert (segment.start_frame_number, segment.end_frame_number, segment.label) == (
+        1,
+        3,
+        label,
+    )
+    assert (timed.start_time, timed.stop_time) == (4.15, 4.75)
+    assert list(
+        video.frames.order_by("frame_number").values_list("timestamp", flat=True)
+    ) == [4, 4.15, 4.4, 4.75]
+    payload = VideoFileMetaPayload.model_validate(video.meta)
+    assert payload.canonical_timeline_history
+    assert len(payload.canonical_timeline_history[-1].segment_mappings) == 2
+    snapshot = video.meta
+    service.backfill_missing_video_timestamps(
+        video, processed_ordinals_operator="reviewer", remap_annotations=True
+    )
+    assert (
+        VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+        == payload.canonical_timeline_history
+    )
+    assert snapshot is not None
+
+
+@pytest.mark.parametrize(
+    "failure",
+    ["over_limit", "ambiguous", "collapsed", "count", "processing", "unknown_ticks"],
+)
+def test_bounded_annotation_recovery_rolls_back_unsafe_mapping(
+    video: VideoFile, failure: str
+) -> None:
+    from endoreg_db.models import VideoSegmentationAnnotation, VideoSegmentationLabel
+    from endoreg_db.models.media.video.video_processing import VideoProcessingHistory
+
+    shift = 2.001 if failure == "over_limit" else 0.1
+    old_times = [4.0 + shift, 4.15 + shift, 4.4 + shift, 4.75 + shift]
+    video.frame_count, video.duration = (5 if failure == "count" else 4), 1.0
+    video.save(update_fields=["frame_count", "duration"])
+    Frame.objects.bulk_create(
+        [
+            Frame(video=video, frame_number=i, timestamp=t)
+            for i, t in enumerate(old_times)
+        ]
+    )
+    start = (
+        (old_times[0] + old_times[1]) / 2 if failure == "ambiguous" else old_times[1]
+    )
+    stop = start + 0.001 if failure == "collapsed" else old_times[3]
+    annotation = VideoSegmentationAnnotation.objects.create(
+        video_file=video,
+        label=VideoSegmentationLabel.objects.create(name="unsafe-recovery"),
+        start_time=start,
+        stop_time=stop,
+    )
+    if failure == "processing":
+        VideoProcessingHistory.objects.create(
+            video=video, operation="reprocessing", status="running"
+        )
+    if failure == "unknown_ticks":
+        video.frames.filter(frame_number=0).update(presentation_timestamp=1000000)
+    before = list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+    meta = video.meta
+    with pytest.raises(service.VideoTimelineMappingError):
+        service.backfill_missing_video_timestamps(
+            video, processed_ordinals_operator="reviewer", remap_annotations=True
+        )
+    video.refresh_from_db()
+    annotation.refresh_from_db()
+    assert video.meta == meta
+    assert annotation.start_time == start and annotation.stop_time == stop
+    assert (
+        list(video.frames.values_list("pk", "timestamp", "presentation_timestamp"))
+        == before
+    )
+    assert not MediaOperationLease.objects.filter(video=video).exists()
+
+
+@pytest.mark.parametrize("offset_ticks", [100, 2000, 2001])
+def test_bounded_integer_timestamp_recovery_uses_original_rational_time_base(
+    video: VideoFile, offset_ticks: int
+) -> None:
+    source = VideoFileMetaPayload.model_validate(
+        constant_rate_video_metadata(fps_num=10, frame_count=4, duration_seconds=1.0)
+    ).source_timeline
+    assert source is not None
+    source = source.model_copy(
+        update={
+            "source": source.source.model_copy(
+                update={
+                    "timeline": source.source.timeline.model_copy(
+                        update={"time_base_num": 1, "time_base_den": 1000}
+                    )
+                }
+            )
+        }
+    )
+    video.meta = {"source_timeline": source.model_dump(mode="json")}
+    video.frame_count, video.duration = 4, 1.0
+    video.save()
+    Frame.objects.bulk_create(
+        [
+            Frame(
+                video=video, frame_number=i, presentation_timestamp=tick + offset_ticks
+            )
+            for i, tick in enumerate([4000, 4150, 4400, 4750])
+        ]
+    )
+    if offset_ticks > 2000:
+        with pytest.raises(service.VideoTimelineMappingError, match="two seconds"):
+            service.backfill_missing_video_timestamps(
+                video, processed_ordinals_operator="reviewer", remap_annotations=True
+            )
+        assert video.frames.get(frame_number=0).timestamp is None
+    else:
+        service.backfill_missing_video_timestamps(
+            video, processed_ordinals_operator="reviewer", remap_annotations=True
+        )
+        assert list(
+            video.frames.order_by("frame_number").values_list("timestamp", flat=True)
+        ) == [4.0, 4.15, 4.4, 4.75]

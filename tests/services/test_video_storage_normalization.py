@@ -15,6 +15,7 @@ from endoreg_db.models import (
     Label,
     ImageClassificationAnnotation,
 )
+from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
     MeasuredAverageFrameRate,
@@ -29,8 +30,11 @@ from endoreg_db.services.video_storage.validation import (
     assert_normalization_source_supported,
 )
 from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
+from endoreg_db.utils.hashs import get_file_hash
+from endoreg_db.utils.file_operations import atomic_write_file
 from endoreg_db.services.video_storage import canonical_timelines
 from tests.helpers.canonical_timestamps import decoded_test_timestamps
+from tests.helpers.video_timeline import constant_rate_video_metadata
 
 
 def _timeline(
@@ -1066,6 +1070,12 @@ def test_probe_video_frame_timestamps_rejects_empty_frame_list(
         (2, False, "published"),
         (2, False, "gap"),
         (2, False, "annotation"),
+        (3, False, "legacy_timestamp"),
+        (3, False, "legacy_tick"),
+        (3, False, "legacy_cfr"),
+        (3, False, "annotated_conflict"),
+        (3, False, "extracted_conflict"),
+        (3, False, "source_changed"),
     ],
 )
 @pytest.mark.parametrize("variable_frame_rate", [False, True])
@@ -1102,6 +1112,12 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
     elif protected == "published":
         video.processed_file.name = "processed.mp4"
         video.save(update_fields=["processed_file"])
+        video.frames.filter(frame_number=0).update(
+            timestamp=4.0, presentation_timestamp=4000
+        )
+        video.frames.filter(frame_number=1).update(
+            timestamp=4.15, presentation_timestamp=4150
+        )
     elif protected == "gap":
         video.frames.filter(frame_number=1).update(frame_number=2)
     elif protected == "annotation":
@@ -1110,6 +1126,31 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
             label=Label.objects.create(name="protected-frame"),
             value=True,
         )
+    elif protected in {
+        "legacy_timestamp",
+        "legacy_tick",
+        "legacy_cfr",
+        "annotated_conflict",
+        "extracted_conflict",
+    }:
+        video.frames.filter(frame_number=1).update(
+            **{
+                "presentation_timestamp"
+                if protected == "legacy_tick"
+                else "timestamp": 9,
+            }
+        )
+        if protected == "annotated_conflict":
+            ImageClassificationAnnotation.objects.create(
+                frame=video.frames.get(frame_number=1),
+                label=Label.objects.create(name="protected-conflicting-frame"),
+                value=True,
+            )
+        elif protected == "extracted_conflict":
+            video.frames.filter(frame_number=1).update(is_extracted=True)
+        elif protected == "legacy_cfr":
+            video.meta = constant_rate_video_metadata(fps_num=25, frame_count=3)
+            video.save(update_fields=["meta"])
     original_rows = list(video.frames.values_list("pk", "frame_number", "timestamp"))
     source_probe = _probe(
         timeline=_timeline(
@@ -1119,6 +1160,9 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
             time_base_num=1,
             time_base_den=90_000,
         )
+    )
+    atomic_write_file(
+        destination=tmp_path / "source.mp4", content=[b"source-timeline-test"]
     )
 
     def fake_probe_video_artifact(_path: Path) -> VideoArtifactProbe:
@@ -1130,6 +1174,10 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
     def fake_probe_video_frame_timestamps(
         _path: Path,
     ) -> list[FramePresentationTimestamp]:
+        if protected == "source_changed":
+            atomic_write_file(
+                destination=_path, content=[b"changed-source-during-capture"]
+            )
         return [
             FramePresentationTimestamp(
                 presentation_timestamp=0,
@@ -1161,7 +1209,31 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
         fake_probe_video_frame_timestamps,
     )
 
-    if has_segments or existing_frames == 4 or protected:
+    if protected == "published":
+        normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
+        video.refresh_from_db()
+        assert (
+            list(video.frames.values_list("pk", "frame_number", "timestamp"))
+            == original_rows
+        )
+        assert video.frame_count == 4
+        assert "source_timeline" not in (video.meta or {})
+        assert (
+            len(
+                VideoFileMetaPayload.model_validate(
+                    video.meta
+                ).canonical_timeline_history
+                or []
+            )
+            == 1
+        )
+        return
+
+    if (
+        has_segments
+        or existing_frames == 4
+        or protected not in {"", "legacy_timestamp", "legacy_tick", "legacy_cfr"}
+    ):
         with pytest.raises(normalization.VideoStorageNormalizationError):
             normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
         video.refresh_from_db()
@@ -1202,6 +1274,40 @@ def test_persist_video_source_timeline_uses_decoded_frame_count(
     assert evidence.source.timeline.frame_count == 3
     assert evidence.timeline_version == "pts_v1"
     assert evidence.timestamp_mapping == "ffprobe_pts"
+    assert evidence.artifact_kind == "raw"
+    assert evidence.content_hash == get_file_hash(tmp_path / "source.mp4")
+    history_entries = VideoFileMetaPayload.model_validate(
+        meta
+    ).canonical_timeline_history
+    assert history_entries
+    history = history_entries[0]
+    assert history.after.presentation_timestamps == [0, 2970, 8190]
+    assert history.after.content_hash == evidence.content_hash
+    identities = list(video.frames.values_list("pk", flat=True))
+    video.frames.filter(frame_number=1).update(
+        timestamp=None, presentation_timestamp=None
+    )
+    normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
+    assert list(video.frames.values_list("pk", flat=True)) == identities
+    assert video.frames.get(frame_number=1).timestamp == 0.033
+    assert video.frames.get(frame_number=1).presentation_timestamp == 2970
+    assert (
+        len(
+            VideoFileMetaPayload.model_validate(video.meta).canonical_timeline_history
+            or []
+        )
+        == 1
+    )
+
+    for field in ("timestamp", "presentation_timestamp"):
+        original = getattr(video.frames.get(frame_number=1), field)
+        video.frames.filter(frame_number=1).update(**{field: 9})
+        with pytest.raises(
+            normalization.VideoStorageNormalizationError, match="coordinates conflict"
+        ):
+            normalization.persist_video_source_timeline(video, tmp_path / "source.mp4")
+        assert getattr(video.frames.get(frame_number=1), field) == 9
+        video.frames.filter(frame_number=1).update(**{field: original})
 
     def fake_inconsistent_frame_timestamps(
         _path: Path,

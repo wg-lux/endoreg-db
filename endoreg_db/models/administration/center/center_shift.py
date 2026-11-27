@@ -10,20 +10,6 @@ if TYPE_CHECKING:
     from ..shift.scheduled_days import ScheduledDays
 
 
-class CenterShiftManager(models.Manager["CenterShift"]):
-    def get_by_natural_key(self, name: str) -> "CenterShift":
-        """
-        Retrieves a CenterShift instance by its unique name.
-
-        Args:
-            name: The unique identifier of the CenterShift.
-
-        Returns:
-            The CenterShift instance with the specified name.
-        """
-        return self.get(name=name)
-
-
 class CenterShift(models.Model):
     """
     Model representing a center shift.

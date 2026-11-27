@@ -39,6 +39,11 @@ class Command(BaseCommand):
             "--operator",
             help="Identified operator responsible for processed ordinal confirmation.",
         )
+        parser.add_argument(
+            "--remap-annotations",
+            action="store_true",
+            help="Repair confirmed processed ordinal timestamps within two seconds, preserve labels and clear segment/export validation; requires --confirm-processed-ordinals.",
+        )
 
     def handle(self, *args: object, **options: object) -> None:
         apply = options.get("apply")
@@ -56,6 +61,11 @@ class Command(BaseCommand):
                 video_ids.append(video_id)
         confirmed = options.get("confirm_processed_ordinals", False)
         operator = options.get("operator")
+        remap = options.get("remap_annotations", False)
+        if not isinstance(remap, bool) or (remap and not confirmed):
+            raise CommandError(
+                "--remap-annotations requires --confirm-processed-ordinals"
+            )
         if (
             not isinstance(confirmed, bool)
             or (
@@ -78,6 +88,7 @@ class Command(BaseCommand):
                 processed_ordinals_operator=operator
                 if isinstance(operator, str)
                 else None,
+                remap_annotations=remap,
             )
         except ValueError as exc:
             raise CommandError(str(exc)) from exc

@@ -7,6 +7,10 @@ responsibilities:
 boundaries:
 - Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
 files:
+- file: encryption/encrypted.py
+  role: Encrypted storage with collision-resolved publication intent before artifact creation; callers own durable attempt inventory and recovery.
+- file: storage/files.py
+  role: Canonical FileField materialization and save helpers with explicit publication intent and no unsupported-backend fallback.
 - file: rust_backend.py
   role: Fail-closed typed native adapters, including hub acknowledgement/failure decisions and retry classification; no Python reducer fallback.
 - file: video/timeline.py
@@ -26,7 +30,7 @@ files:
 - file: frame_stream.py
   role: Shared exact-timestamp JPEG and lossless pixel decoding, including persisted-frame identity validation and authenticated ranges.
 - file: video/frame_extraction.py
-  role: Sparse exact-timestamp frame extraction using shared rational timeline validation and container-relative seek translation.
+  role: Sparse exact-timestamp frame extraction using shared rational timeline validation and container-relative seek translation, plus single-decode selected-frame extraction by zero-based decode index.
 - file: profiling.py
   role: Opt-in function profiling.
 - file: encryption/__init__.py

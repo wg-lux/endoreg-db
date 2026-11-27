@@ -2,19 +2,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from .ai_model import AiModel
-
-
-class ModelTypeManager(models.Manager["ModelType"]):
-    """
-    Custom manager for ModelType with additional query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ModelType":
-        """Get the model type by its natural key"""
-        return self.get(name=name)
 
 
 class ModelType(models.Model):
@@ -34,7 +25,7 @@ class ModelType(models.Model):
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = ModelTypeManager()
+    objects = NameNaturalKeyManager["ModelType"]()
 
     if TYPE_CHECKING:
         ai_models: models.QuerySet["AiModel"]

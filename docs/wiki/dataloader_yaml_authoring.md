@@ -1,5 +1,17 @@
 # Dataloader YAML Authoring Guide
 
+Die zentralen Loader-Identitäten stehen in
+`endoreg_db/config/settings/dataloader.py`: `APPLICATION_PACKAGE` für die
+Anwendungsdaten und `CLINICAL_PACKAGE` für die klinischen Testhelfer.
+Modul und Version werden gemeinsam über `KnowledgeBaseIdentity` validiert.
+Wiederholte Aufrufe prüfen Paketinhalt und persistierte Importbelege; bei
+unverändertem Paket und vorhandenen gebundenen Zeilen entfällt die erneute
+Projektion. Ein neues Modul oder eine neue Version wird separat importiert.
+Fehlende Belege oder Zeilen erzwingen die reguläre Prüfung; `--verify` prüft
+auch lokale Feldänderungen. Änderungen am Inhalt benötigen eine neue Version.
+Klinische CLI-Aufrufe benötigen weiterhin eine explizite Paketauswahl.
+Abnahmekriterien: `DtypesStudyDefinitions.yml`, `legacy_migration`.
+
 ## Configure a deployment with one setup file
 
 `setup_deployment` is the operator entry point for a site and its exact package
@@ -173,23 +185,33 @@ then reconcile an exact identity:
 
 ```sh
 python manage.py migrate
-python manage.py import_reference_catalog --module endoreg_reference --module-version 1.0.0 --dry-run --format yml --adopt-existing
-python manage.py import_reference_catalog --module endoreg_reference --module-version 1.0.0 --adopt-existing
+python manage.py import_reference_catalog --module endoreg_reference --module-version 2.0.0 --dry-run --format yml --adopt-existing
+python manage.py import_reference_catalog --module endoreg_reference --module-version 2.0.0 --adopt-existing
 ```
 
 The import command requires an already registered package. Registry provisioning
 uses the existing `hydrate_shipped_terminology()` / `TerminologyService` workflow;
 it does not activate a study. `load_base_db_data` is the compatibility bootstrap:
 it explicitly provisions shipped registry entries before importing the pinned
-catalogue. Its `--dry-run` variant never provisions registry files. Both module
+`endoreg_reference@2.0.0` catalogue. This application package references units
+and information sources owned by terminology dependencies; it carries no parallel
+clinical definitions. Its complete dependency snapshot and catalogue are projected
+in one transaction. Historical 1.x package bytes remain available for receipt
+verification. Existing conflicting clinical rows require explicit review.
+Its `--dry-run` variant never provisions registry files. Both module
 and version can be selected explicitly. No command imports patient data, creates
 user-owned cohorts or changes study activation.
 
-Unchanged startup imports reuse a receipt with the same catalogue digest when
-all bound rows still exist; they do not compare persisted fields or relations.
+Historical catalogues without terminology dependency snapshots reuse a receipt
+with the same catalogue digest when all bound rows still exist; they do not
+compare persisted fields or relations. Dependency-backed catalogues, including
+2.0.0, always reconcile both dependency and application rows before reuse.
+Their catalogue digest uses the validated package snapshot ID, excluding runtime
+UUIDs while pinning clinical content.
 Use `--verify` for a full comparison, or `--dry-run` for a full write-free plan.
-This also applies to `load_base_db_data --reconcile-legacy` and the individual
-bootstrap commands. Scope remains in [DataLoading.yml](../../feature-tracking/DataLoading.yml).
+`load_base_db_data --reconcile-legacy` and `migrate_reference_catalog` now
+use the same strict 2.0.0 reconciliation as ordinary bootstrap. Neither command
+replays the historical colorectal relationship repair. Scope remains in [DataLoading.yml](../../feature-tracking/DataLoading.yml).
 
 The full plan distinguishes creation, equivalent legacy adoption, reuse and conflict.
 Adoption retains primary keys and records `legacy_equivalent`; it does not claim
@@ -209,14 +231,20 @@ its changes; restoring a deployment must restore captured records and their
 original receipts together.
 
 The existing `load_unit_data`, `load_disease_data`, `load_medication_data`,
-`load_examination_data` and other bootstrap subcommands delegate to catalogue
-projections with their complete dependency closure. They preserve public command
+`load_examination_data` and other bootstrap subcommands use current package
+sources. Application loaders default to `endoreg_reference@2.0.0`; unit and
+information-source loaders import its complete dependency closure. Examination,
+indication and finding loaders require explicit `--module` and `--module-version`
+arguments and import that selected graph and its application dependencies atomically.
+Select or upload terminology in the reporting or study setup workflow first;
+application bootstrap does not select clinical definitions for users. Nonclinical subsets
+retain only the terminology dependencies their selected records require. They preserve public command
 names and adopt only equivalent rows. `--source yaml`, `--source hybrid` and the
 unpinned indication overlay are removed. Use `--module` and `--module-version`.
 For a configurable subset, use the typed catalogue selector:
 
 ```sh
-python manage.py import_reference_catalog --module endoreg_reference --module-version 1.0.0 --record-type medication --dry-run --format yml --adopt-existing
+python manage.py import_reference_catalog --module endoreg_reference --module-version 2.0.0 --record-type medication --dry-run --format yml --adopt-existing
 ```
 
 For the canonical clinical graph, use `import_clinical_reference_data` with the

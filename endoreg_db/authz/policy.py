@@ -77,12 +77,24 @@ ROUTE_RESOURCE: RouteResourceMap = {
     # Patients
     "patient-list": "patient",  # /api/patients/
     "patient-detail": "patient",  # /api/patients/{id}/
+    "patient_examination_detail": "patient",
+    "patient_examination_list": "patient",
+    "patientexamination-list": "patient",
+    "patientexamination-detail": "patient",
+    "patientexamination-recent": "patient",
+    "patientexamination-details": "patient",
+    "patientexamination-patients-dropdown": "patient",
     "patient-medical-ledger": "patient",
     "patient-medical-terminology": "patient",
     "patient-create-medication": "patient",
     "patient-update-medication": "patient",
     "patient-create-medication-schedule": "patient",
     "patient-update-medication-schedule": "patient",
+    # Read-only FHIR R4 API: pseudonymized patient-level clinical resources.
+    "fhir-r4-metadata": "patient",
+    "fhir-r4-search": "patient",
+    "fhir-r4-read": "patient",
+    "fhir-r4-patient-everything": "patient",
     # Clinical cases are patient-owned resources.
     "case-list": "patient",
     "case-detail": "patient",

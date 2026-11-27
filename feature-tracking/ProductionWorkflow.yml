@@ -8,10 +8,6 @@ production_critical: true
 tracking:
   state: active
   history: []
-source_documents:
-- path: docs/production_workflow_hardening_plan.md
-  disposition: migrated
-  note: Phasen, Backlog und Done Criteria wurden in die verbindliche DoD übernommen.
 definition_of_done:
 - id: human_validation_identity_failure
   category: functionality

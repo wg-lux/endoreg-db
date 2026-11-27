@@ -48,7 +48,6 @@ from .risk import (
 
 from .medication import (
     Medication,
-    MedicationManager,
     MedicationSchedule,
     MedicationIntakeTime,
     MedicationIndicationType,
@@ -125,7 +124,6 @@ __all__ = [
     "RiskType",
     # Medication
     "Medication",
-    "MedicationManager",
     "MedicationSchedule",
     "MedicationIntakeTime",
     "MedicationIndicationType",

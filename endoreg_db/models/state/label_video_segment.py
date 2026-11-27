@@ -37,7 +37,7 @@ class LabelVideoSegmentState(AbstractState):
         origin = getattr(self, "origin", None)
         video = getattr(origin, "video_file", None) if origin is not None else None
         if video is not None:
-            from endoreg_db.models.state.video_segment_validation import (
+            from endoreg_db.services.media.state import (
                 mark_segment_annotations_stale,
             )
 

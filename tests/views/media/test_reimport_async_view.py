@@ -10,6 +10,7 @@ from pytest import MonkeyPatch
 
 from endoreg_db.models import Center, VideoFile, VideoProcessingHistory, VideoState
 from endoreg_db.services.video_files.direct_import import VideoImportService
+from tests.helpers.media_states import create_media_state
 
 pytestmark = pytest.mark.django_db
 
@@ -21,7 +22,8 @@ def center():
 
 def _make_source_record(center: Center) -> VideoFile:
     token = uuid4().hex
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         frames_extracted=False,
         frames_initialized=False,
         frame_count=1,

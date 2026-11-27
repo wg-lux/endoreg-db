@@ -1,117 +1,15 @@
 from __future__ import annotations
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable
 
 from django.db import transaction, IntegrityError
 from django.db.models import F, Q, Field, UniqueConstraint
 
 from endoreg_db.models.hub.upload_job import UploadJob, UploadJobSensitiveMeta
-from endoreg_db.services.runtime.lifecycle_state_machine import (
-    OperationClaimPath,
-    OperationLifecycleEvent,
-    OperationLifecycleState,
-    reduce_operation_lifecycle,
+from endoreg_db.services.runtime.status_writers import (
+    StatusMachine,
+    validate_status_transition,
 )
-
-
-_UPLOAD_JOB_STATES: dict[str, OperationLifecycleState] = {
-    UploadJob.Status.PENDING.value: OperationLifecycleState.QUEUED,
-    UploadJob.Status.PROCESSING.value: OperationLifecycleState.RUNNING,
-    UploadJob.Status.RETRYING.value: OperationLifecycleState.RETRY_WAIT,
-    UploadJob.Status.ANONYMIZED.value: OperationLifecycleState.SUCCEEDED,
-    UploadJob.Status.ERROR.value: OperationLifecycleState.FAILED,
-    UploadJob.Status.LOST.value: OperationLifecycleState.LOST,
-    # Execution continues until its owner unwinds; the intent itself is irreversible.
-    UploadJob.Status.CANCEL_REQUESTED.value: OperationLifecycleState.RUNNING,
-    UploadJob.Status.CANCELLED.value: OperationLifecycleState.CANCELLED,
-}
-
-_CANCEL_REQUESTED_EXITS = frozenset(
-    {
-        UploadJob.Status.CANCEL_REQUESTED.value,
-        UploadJob.Status.CANCELLED.value,
-        UploadJob.Status.ERROR.value,
-        UploadJob.Status.LOST.value,
-    }
-)
-
-_UPLOAD_JOB_EVENTS: dict[
-    tuple[OperationLifecycleState, OperationLifecycleState],
-    Sequence[OperationLifecycleEvent],
-] = {
-    (
-        OperationLifecycleState.QUEUED,
-        OperationLifecycleState.RUNNING,
-    ): OperationClaimPath.INITIAL.events,
-    (
-        OperationLifecycleState.RETRY_WAIT,
-        OperationLifecycleState.RUNNING,
-    ): OperationClaimPath.RETRY_READY.events,
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.RETRY_WAIT): (
-        OperationLifecycleEvent.RETRY_SCHEDULED,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.RETRY_WAIT): (
-        OperationLifecycleEvent.RETRY_SCHEDULED,
-    ),
-    (OperationLifecycleState.FAILED, OperationLifecycleState.RETRY_WAIT): (
-        OperationLifecycleEvent.RETRY_REQUESTED,
-    ),
-    (
-        OperationLifecycleState.FAILED,
-        OperationLifecycleState.RUNNING,
-    ): OperationClaimPath.RETRY_REQUESTED.events,
-    (
-        OperationLifecycleState.SUCCEEDED,
-        OperationLifecycleState.RUNNING,
-    ): OperationClaimPath.RETRY_REQUESTED.events,
-    (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.FAILED): (
-        *OperationClaimPath.RETRY_REQUESTED.events,
-        OperationLifecycleEvent.FAIL,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.SUCCEEDED): (
-        OperationLifecycleEvent.SUCCEED,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.FAIL,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.FAIL,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.FAILED): (
-        OperationLifecycleEvent.FAIL,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.INTEGRITY_LOST,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.INTEGRITY_LOST,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.INTEGRITY_LOST,
-    ),
-    (OperationLifecycleState.SUCCEEDED, OperationLifecycleState.LOST): (
-        OperationLifecycleEvent.INTEGRITY_LOST,
-    ),
-    (OperationLifecycleState.QUEUED, OperationLifecycleState.CANCELLED): (
-        OperationLifecycleEvent.CANCEL,
-    ),
-    (OperationLifecycleState.RUNNING, OperationLifecycleState.CANCELLED): (
-        OperationLifecycleEvent.CANCEL,
-    ),
-    (OperationLifecycleState.RETRY_WAIT, OperationLifecycleState.CANCELLED): (
-        OperationLifecycleEvent.CANCEL,
-    ),
-}
-
-_IDEMPOTENT_EVENTS: dict[OperationLifecycleState, OperationLifecycleEvent] = {
-    OperationLifecycleState.QUEUED: OperationLifecycleEvent.RETRY_READY,
-    OperationLifecycleState.RUNNING: OperationLifecycleEvent.START,
-    OperationLifecycleState.RETRY_WAIT: OperationLifecycleEvent.RETRY_SCHEDULED,
-    OperationLifecycleState.SUCCEEDED: OperationLifecycleEvent.SUCCEED,
-    OperationLifecycleState.FAILED: OperationLifecycleEvent.FAIL,
-    OperationLifecycleState.LOST: OperationLifecycleEvent.INTEGRITY_LOST,
-    OperationLifecycleState.CANCELLED: OperationLifecycleEvent.CANCEL,
-}
 
 
 def validate_upload_job_status_transition(
@@ -119,37 +17,18 @@ def validate_upload_job_status_transition(
     current_status: str,
     target_status: str,
 ) -> None:
-    """Validate an UploadJob mutation without performing persistence effects."""
+    """Validate an existing upload through the authoritative native table."""
     try:
-        current_state = _UPLOAD_JOB_STATES[current_status]
-        target_state = _UPLOAD_JOB_STATES[target_status]
-    except KeyError as exc:
-        raise ValueError(f"unknown UploadJob status: {exc.args[0]}") from exc
-    if (
-        current_status == UploadJob.Status.CANCEL_REQUESTED.value
-        and target_status not in _CANCEL_REQUESTED_EXITS
-    ):
-        raise ValueError(
-            f"invalid UploadJob status transition: {current_status} -> {target_status}"
-        )
-
-    if current_state is target_state:
-        events: Sequence[OperationLifecycleEvent] = (_IDEMPOTENT_EVENTS[current_state],)
-    else:
-        try:
-            events = _UPLOAD_JOB_EVENTS[(current_state, target_state)]
-        except KeyError as exc:
-            raise ValueError(
-                "invalid UploadJob status transition: "
-                f"{current_status} -> {target_status}"
-            ) from exc
-
-    reduced_state = reduce_operation_lifecycle(current_state, events)
-    if reduced_state is not target_state:
-        raise RuntimeError(
-            "native UploadJob lifecycle reduction produced unexpected state: "
-            f"{reduced_state.value}"
-        )
+        UploadJob.Status(current_status)
+        UploadJob.Status(target_status)
+    except ValueError as exc:
+        raise ValueError(f"unknown UploadJob status: {exc}") from exc
+    validate_status_transition(
+        StatusMachine.UPLOAD_JOB,
+        current_status,
+        target_status,
+        error_message=f"invalid UploadJob status transition: {current_status} -> {target_status}",
+    )
 
 
 def _guard_interrupted_upload_job(
@@ -232,46 +111,30 @@ def mark_upload_job_integrity_lost(
 
 
 def validate_upload_job_interruption(*, current_status: str) -> None:
-    """Authorize expired execution interruption through the native lifecycle."""
-    try:
-        current_state = _UPLOAD_JOB_STATES[current_status]
-    except KeyError as exc:
-        raise ValueError(
-            f"UploadJob has no active execution to interrupt: {current_status}"
-        ) from exc
-    if current_state is not OperationLifecycleState.RUNNING:
-        raise ValueError(
-            f"UploadJob has no active execution to interrupt: {current_status}"
-        )
-    # Cancellation intent does not prove execution or cleanup finished.
-    interrupted_state = reduce_operation_lifecycle(
-        current_state,
-        (
-            OperationLifecycleEvent.OWNERSHIP_LOST,
-            OperationLifecycleEvent.RECONCILE_FAIL,
-        ),
+    """Authorize expired execution interruption through the native table."""
+    applied = validate_status_transition(
+        StatusMachine.UPLOAD_JOB_LEASE_RECOVERY,
+        current_status,
+        UploadJob.Status.ERROR,
+        error_message=f"UploadJob has no active execution to interrupt: {current_status}",
     )
-    if interrupted_state is not OperationLifecycleState.FAILED:
-        raise RuntimeError(
-            "native UploadJob interruption reduction produced unexpected state: "
-            f"{interrupted_state.value}"
-        )
+
+    if applied is not True:
+        raise RuntimeError("native UploadJob interruption returned an unexpected no-op")
 
 
 def validate_upload_job_interrupted_retry(*, current_status: str) -> None:
     """Validate immediate fenced recovery after an expired import owner."""
-    try:
-        current_state = _UPLOAD_JOB_STATES[current_status]
-    except KeyError as exc:
-        raise ValueError(f"unknown UploadJob status: {exc.args[0]}") from exc
-    recovered_state = reduce_operation_lifecycle(
-        current_state,
-        OperationClaimPath.INTERRUPTED.events,
+    applied = validate_status_transition(
+        StatusMachine.UPLOAD_JOB_LEASE_RECOVERY,
+        current_status,
+        UploadJob.Status.PROCESSING,
+        error_message=f"invalid operation lifecycle transition: {current_status} -> processing",
     )
-    if recovered_state is not OperationLifecycleState.RUNNING:
+
+    if applied is not True:
         raise RuntimeError(
-            "native UploadJob interrupted-retry reduction produced unexpected "
-            f"state: {recovered_state.value}"
+            "native UploadJob interrupted retry returned an unexpected no-op"
         )
 
 
@@ -285,6 +148,32 @@ def idle_upload_job_recovery_filter() -> Q:
             UploadJob.CleanupStatus.PENDING,
             UploadJob.CleanupStatus.SKIPPED,
         ],
+    )
+
+
+def retained_source_recovery_filter() -> Q:
+    """Shared admission for automatic recovery from a job's own retained source."""
+    return (
+        idle_upload_job_recovery_filter()
+        & Q(
+            source_center__isnull=False,
+            source_file_persisted=True,
+            overview_dismissed_at__isnull=True,
+        )
+        & ~Q(file="")
+        & ~Q(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
+    )
+
+
+def retained_video_source_recovery_filter() -> Q:
+    """Video jobs fenced by the upload-job lease with a verifiable source hash.
+
+    Report execution is owned by ``ReportImportAttempt`` leases instead and is
+    recovered only through ``recover_persisted_import_stacks``.
+    """
+    return retained_source_recovery_filter() & Q(
+        content_type__startswith="video/",
+        content_hash__regex=r"^[0-9a-f]{64}$",
     )
 
 
@@ -404,6 +293,7 @@ def transition_reimport_upload_jobs(
     status: UploadJob.Status,
     error_detail: str = "",
     sensitive_meta_id: int | None = None,
+    published_media_id: int | None = None,
 ) -> int:
     """Transition locked reimport jobs through the canonical model operations."""
     if status not in {
@@ -425,7 +315,21 @@ def transition_reimport_upload_jobs(
             mark_upload_job_processing(job)
         elif status == UploadJob.Status.ANONYMIZED:
             job.sensitive_meta_id = sensitive_meta_id
-            job.mark_completed()
+            if published_media_id is None:
+                raise ValueError(
+                    "Reimport completion requires the published media identifier"
+                )
+            from endoreg_db.services.imports.processing import record_published_import
+
+            # Callers selected these locked jobs by the published media source hash.
+            # Legacy jobs without a durable stack retain their original representation.
+            if UploadJob.objects.filter(
+                pk=job.pk, processing_stack__isnull=False
+            ).exists():
+                record_published_import(
+                    job.pk, media_id=published_media_id, source_sha256=job.content_hash
+                )
+            mark_upload_job_completed(job)
         elif status == UploadJob.Status.ERROR:
             job.mark_error(error_detail)
         else:

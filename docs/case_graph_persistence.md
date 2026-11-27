@@ -17,7 +17,10 @@ An `ExaminationRevision` is a persisted, editable clinical snapshot. It may
 originate from an Excel/table import, a saved clinical examination, an authored
 report, a video, or a report/video combination. Evidence is optional. Multiple
 alternatives may reference the same examination and media. Report identity,
-version, template provenance and source text are captured; video evidence pins
+version, template provenance, source text, author account and self-declared
+profession and academic degrees or titles are captured. A report may cite several validated source PDFs, and
+several authors may cite the same PDF. Capture freezes each selected PDF ID
+and processed artifact digest. Video evidence pins
 the processed SHA-256 generation. An optional annotator selection freezes the
 frame annotations, integer presentation timestamps, rational time base and
 annotation source/model identifiers. Medication periods and lab measurements
@@ -29,13 +32,17 @@ are copied into the snapshot; later changes to live rows do not rewrite it.
 `content` and title using `expected_version`, supporting addition, editing and
 removal of nested findings, descriptors, medications and measurements. DELETE
 also requires `expected_version` and only removes drafts. Patient/center scope,
-examination identity and recorded terminology identity are enforced.
+examination identity and recorded terminology identity are enforced. A caller
+selecting a displayed report can submit its `selection.report_version` alongside
+`report_id`. A concurrent change rejects capture and lets the caller reload.
+Older examination snapshots can have unknown authorship or no document list.
 
 `POST /api/examination-revisions/{id}/finalize/` validates references, semantic
 admissibility and selected report-template requirements against the recorded KB
 version. Selected video evidence must pass the existing media integrity and
 anonymization export gate and still match its captured generation. Finalized
-revisions are immutable; corrections create another draft. Captured report text
+revisions are immutable; corrections create another draft. Supporting PDFs must
+still be eligible and their processed content must match the captured digests. Captured report text
 is source evidence, not a regenerated rendering of subsequent snapshot edits.
 
 `GET/POST /api/cases/{case_id}/select-examination/` reads or assigns one finalized
@@ -44,6 +51,25 @@ revision per case examination. POST requires `revision_id` and
 every examination. Closed cases reject graph/selection changes; reopening
 clears the leave date and permits follow-ups. Adding a follow-up requires its
 own finalized selection before closing or exporting the complete case again.
+
+## Annotator profiles and study selection
+
+In LX-Annotate, open **Einstellungen → Mein Annotationsprofil** to choose a
+profession and any applicable academic degrees or titles, then save the profile.
+The selection belongs to the signed-in account. Report saves record the author's
+selection at that time. Academic titles describe authorship and do not confer
+a clinical role or change a study's profession preference.
+
+A cohort owner can choose a preferred author profession under **Studienprotokoll**.
+Independent studies can select different reports for the same examination and
+source document. For an explicit case examination revision, select the individual
+report and its displayed version before capturing the evidence.
+
+Developers extend the supported choices in
+`lx_dtypes.models.contracts.application_settings.AnnotationProfession` and
+`AnnotationAcademicTitle`. Keep persisted codes stable, add the German labels
+in the application's presentation and update the database constraints through
+a migration when extending the supported values.
 
 ## Selected research exports
 

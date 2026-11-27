@@ -10,7 +10,7 @@ import numpy.typing as npt
 
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.video_storage import CanonicalFrameTimeline
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     VideoTimelineMappingError,
     frame_number_to_seconds,
     presentation_timestamp_seconds,

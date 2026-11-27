@@ -86,5 +86,4 @@ procedures.
 | `workflow/` | Reusable workflow profiles |
 
 Further reading: [AI model setup](setup/AI_MODEL_SETUP.md),
-[companion tools](docs/companion_tools.md),
-[historical Wiki references](docs/legacy_wiki_index.md), and [license](LICENSE).
+[companion tools](docs/companion_tools.md), and [license](LICENSE).

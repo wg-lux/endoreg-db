@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.classification_choice import (
@@ -19,24 +20,6 @@ if TYPE_CHECKING:
         InformationSource,
     )
     from endoreg_db.utils.links import ModelLinks
-
-
-class ExaminationIndicationManager(models.Manager["ExaminationIndication"]):
-    """
-    Manager for ExaminationIndication with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ExaminationIndication":
-        """
-        Retrieves an ExaminationIndication instance by its natural key.
-
-        Args:
-            name: The unique name identifying the examination indication.
-
-        Returns:
-            The ExaminationIndication instance corresponding to the specified name.
-        """
-        return self.get(name=name)
 
 
 class ExaminationIndication(models.Model):
@@ -75,7 +58,7 @@ class ExaminationIndication(models.Model):
         blank=True,
     )
 
-    objects = ExaminationIndicationManager()
+    objects = NameNaturalKeyManager["ExaminationIndication"]()
 
     if TYPE_CHECKING:
 
@@ -114,26 +97,6 @@ class ExaminationIndication(models.Model):
         return str(self.name)
 
 
-class ExaminationIndicationClassificationManager(
-    models.Manager["ExaminationIndicationClassification"]
-):
-    """
-    Manager for ExaminationIndicationClassification with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ExaminationIndicationClassification":
-        """
-        Retrieves an ExaminationIndicationClassification by its natural key.
-
-        Args:
-            name: The unique name identifying the classification.
-
-        Returns:
-            The ExaminationIndicationClassification instance corresponding to the given name.
-        """
-        return self.get(name=name)
-
-
 class ExaminationIndicationClassification(models.Model):
     """
     Represents a classification for examination indications.
@@ -156,7 +119,7 @@ class ExaminationIndicationClassification(models.Model):
         blank=True,
     )
 
-    objects = ExaminationIndicationClassificationManager()
+    objects = NameNaturalKeyManager["ExaminationIndicationClassification"]()
 
     def natural_key(self) -> tuple[str]:
         """
@@ -175,28 +138,6 @@ class ExaminationIndicationClassification(models.Model):
             str: The name of the classification.
         """
         return str(self.name)
-
-
-class ExaminationIndicationClassificationChoiceManager(
-    models.Manager["ExaminationIndicationClassificationChoice"]
-):
-    """
-    Manager for ExaminationIndicationClassificationChoice with custom query methods.
-    """
-
-    def get_by_natural_key(
-        self, name: str
-    ) -> "ExaminationIndicationClassificationChoice":
-        """
-        Retrieves an ExaminationIndicationClassificationChoice instance by its natural key.
-
-        Args:
-            name: The unique name serving as the natural key for the classification choice.
-
-        Returns:
-            An ExaminationIndicationClassificationChoice instance corresponding to the given name.
-        """
-        return self.get(name=name)
 
 
 class ExaminationIndicationClassificationChoice(models.Model):
@@ -218,7 +159,7 @@ class ExaminationIndicationClassificationChoice(models.Model):
     subcategories: models.JSONField[Any, Any] = models.JSONField(default=dict)
     numerical_descriptors: models.JSONField[Any, Any] = models.JSONField(default=dict)
 
-    objects = ExaminationIndicationClassificationChoiceManager()
+    objects = NameNaturalKeyManager["ExaminationIndicationClassificationChoice"]()
 
     def clean(self) -> None:
         super().clean()

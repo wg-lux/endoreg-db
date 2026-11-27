@@ -171,11 +171,13 @@ def test_ensure_video_hls_wait_fails_closed(
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("failure_boundary", ["hls", "history"])
+@pytest.mark.parametrize("failure_boundary", ["hls", "history", "none"])
+@pytest.mark.parametrize("previous_name", ["anonymized_videos/previous.mp4", ""])
 def test_failed_video_finalization_preserves_previous_generation(
     tmp_path: Path,
     monkeypatch: MonkeyPatch,
     failure_boundary: str,
+    previous_name: str,
 ) -> None:
     import endoreg_db.import_files.file_storage.state_management as state_management_module
 
@@ -197,6 +199,11 @@ def test_failed_video_finalization_preserves_previous_generation(
         processing_started = True
         anonymized = False
         sensitive_meta_processed = False
+        anonymization_validated = True
+
+        def mark_processing_not_started(self) -> None:
+            self.processing_started = False
+            self.anonymization_validated = False
 
         def mark_processing_started(self) -> None:
             self.processing_started = True
@@ -214,7 +221,7 @@ def test_failed_video_finalization_preserves_previous_generation(
         pk = 1
         raw_video_hash = "video-hash"
         processed_video_hash: str | None = "a" * 64
-        processed_file = SimpleNamespace(name="anonymized_videos/previous.mp4")
+        processed_file = SimpleNamespace(name=previous_name)
         meta: dict[str, object] = {"generation": "previous"}
         state = DummyState()
 
@@ -315,6 +322,12 @@ def test_failed_video_finalization_preserves_previous_generation(
         source_path, anonymized_path
     )
 
+    if failure_boundary == "none":
+        finalize_video_success(ctx)
+        assert video.state.anonymization_validated is False
+        assert video.state.anonymized is True
+        assert video.processed_video_hash == sha256(b"anonymized").hexdigest()
+        return
     with pytest.raises(RuntimeError, match=f"{failure_boundary} unavailable"):
         finalize_video_success(ctx)
 
@@ -324,9 +337,10 @@ def test_failed_video_finalization_preserves_previous_generation(
     assert sensitive_path.exists()
     assert anonymized_path.exists()
     assert video.processed_video_hash == "a" * 64
-    assert video.processed_file.name == "anonymized_videos/previous.mp4"
+    assert video.processed_file.name == previous_name
     assert video.meta == {"generation": "previous"}
     assert cleanup_calls == []
+    assert video.state.anonymization_validated is False
 
 
 @pytest.mark.unit
@@ -359,6 +373,7 @@ def test_finalize_video_success_keeps_only_canonical_raw_and_anonymized(
 
     class DummyState:
         processing_started = False
+        anonymization_validated = False
 
         def mark_processing_started(self) -> None:
             self.processing_started = True

@@ -8,6 +8,18 @@ boundaries:
 - Clinical workflow ownership belongs to services and import_files; preserve encrypted media and typed
   boundaries.
 files:
+- file: migrations/0126_report_source_documents.py
+  role: Stable report UUIDs, examination-scoped document links and saved author profession.
+- file: migrations/0125_annotator_profile.py
+  role: Per-account self-declared annotation profession with a database constraint.
+- file: migrations/0124_reconcile_study_import_receipts.py
+  role: Retire ambiguous historical receipt links while preserving clinical data.
+- file: migrations/0123_guarded_state_managers.py
+  role: Metadata-only default and base manager selection for guarded upload and media state persistence.
+- file: migrations/0122_outbound_transfer_generation.py
+  role: Immutable outbound processed-generation and source-node snapshots with receipt-only legacy backfill.
+- file: migrations/0121_electrosurgical_activation_log.py
+  role: Encrypted activation-export records with immutable typed recording metadata and source uniqueness.
 - file: migrations/max_migration.txt
   role: Declared canonical migration graph leaf checked against the executable graph.
 - file: endoreg_rust_backend.pyi
@@ -65,7 +77,7 @@ files:
 - file: export/frames/export_frames_with_labels.py
   role: Frame export workflow with one annotation selection, central generation-bound timeline and exact-coordinate validation, strict asset delivery and shared media integrity and CSV encoding services.
 - file: helpers/data_loader.py
-  role: Reference-data loader helpers.
+  role: Current application bootstrap and explicit clinical-package loader helpers.
 - file: factories/__init__.py
   role: Test fixture factories.
 - file: admin.py
@@ -73,7 +85,7 @@ files:
 entrypoints:
 - name: EndoregDbConfig
   file: apps.py
-  purpose: Application startup registration.
+  purpose: Application startup registration, including explicit dataset membership admission.
 - name: urlpatterns
   file: urls/__init__.py
   purpose: Application API routes.

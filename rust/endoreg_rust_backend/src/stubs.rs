@@ -544,3 +544,137 @@ inventory::submit! {
         module: None,
     }
 }
+
+fn stub_type_clinical_state() -> TypeInfo {
+    TypeInfo::builtin("tuple[str, str, str]")
+}
+
+fn stub_type_clinical_projection() -> TypeInfo {
+    TypeInfo::builtin("tuple[tuple[str, str, str], list[str]]")
+}
+
+fn stub_type_object() -> TypeInfo {
+    TypeInfo::builtin("object")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "reduce_clinical_workflow",
+        args: &[
+            ArgInfo { name: "privacy", r#type: stub_type_str },
+            ArgInfo { name: "annotation", r#type: stub_type_str },
+            ArgInfo { name: "release", r#type: stub_type_str },
+            ArgInfo { name: "event", r#type: stub_type_str },
+        ],
+        r#return: stub_type_clinical_state,
+        doc: "Decide a clinical workflow event.",
+        signature: Some("privacy: str, annotation: str, release: str, event: str"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "clinical_evidence_rejection",
+        args: &[
+            ArgInfo { name: "event", r#type: stub_type_str },
+            ArgInfo { name: "identity_verified", r#type: stub_type_bool },
+            ArgInfo { name: "report", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_optional_str,
+        doc: "Return the rejection token for missing event evidence.",
+        signature: Some("event: str, identity_verified: bool, report: bool = False"),
+        module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "project_clinical_workflow",
+        args: &[
+            ArgInfo { name: "facts", r#type: stub_type_object },
+        ],
+        r#return: stub_type_clinical_projection,
+        doc: "Project persisted clinical facts and report all invariant violations.",
+        signature: Some("facts: object"),
+        module: None,
+    }
+}
+
+fn stub_type_clinical_tables() -> TypeInfo {
+    TypeInfo::builtin("tuple[list[tuple[str, str, str]], list[tuple[str, str, str]], list[tuple[str, str, str]]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "clinical_workflow_tables",
+        args: &[],
+        r#return: stub_type_clinical_tables,
+        doc: "Enumerate the single-track edges accepted by the clinical reducer.",
+        signature: Some(""), module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "hub_export_integrity",
+        args: &[
+            ArgInfo { name: "present", r#type: stub_type_bool },
+            ArgInfo { name: "approved", r#type: stub_type_bool },
+            ArgInfo { name: "media_digest", r#type: stub_type_str },
+            ArgInfo { name: "approval_digest", r#type: stub_type_str },
+            ArgInfo { name: "verify", r#type: stub_type_bool },
+            ArgInfo { name: "actual", r#type: stub_type_optional_str },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: None, module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "raw_video_cleanup_blockers",
+        args: &[
+            ArgInfo { name: "active_lease", r#type: stub_type_bool },
+            ArgInfo { name: "normalization_profile", r#type: stub_type_optional_str },
+            ArgInfo { name: "source_timeline_present", r#type: stub_type_bool },
+            ArgInfo { name: "quality_profile", r#type: stub_type_optional_str },
+            ArgInfo { name: "hls_source", r#type: stub_type_optional_str },
+            ArgInfo { name: "processed_source", r#type: stub_type_str },
+            ArgInfo { name: "segment_timeline_valid", r#type: stub_type_bool },
+        ],
+        r#return: stub_type_list_str,
+        doc: "",
+        signature: None, module: None,
+    }
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "segment_status_with_history",
+        args: &[
+            ArgInfo { name: "created", r#type: stub_type_bool },
+            ArgInfo { name: "validated", r#type: stub_type_bool },
+            ArgInfo { name: "outside_removed", r#type: stub_type_bool },
+            ArgInfo { name: "history", r#type: stub_type_optional_str },
+        ],
+        r#return: stub_type_str,
+        doc: "",
+        signature: None, module: None,
+    }
+}
+
+fn stub_type_identifier_clear_values() -> TypeInfo {
+    TypeInfo::builtin("list[tuple[str, str | None]]")
+}
+
+inventory::submit! {
+    PyFunctionInfo {
+        name: "direct_identifier_clear_values",
+        args: &[ArgInfo { name: "record", r#type: stub_type_object }],
+        r#return: stub_type_identifier_clear_values,
+        doc: "Return the schema fields that still contain direct identifiers and their cleared representations.",
+        signature: None, module: None,
+    }
+}

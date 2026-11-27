@@ -26,7 +26,7 @@ from endoreg_db.import_files.processing.report_processing.report_anonymization i
     ReportAnonymizer,
 )
 from endoreg_db.models import RawPdfFile
-from endoreg_db.services.reports.import_service import ReportImportService
+from endoreg_db.import_files.report_import_service import ReportImportService
 from endoreg_db.services.raw_pdf_files.types import PdfDocument
 from endoreg_db.utils.hashs import get_file_hash
 from endoreg_db.utils.file_operations import atomic_write_file
@@ -85,9 +85,7 @@ class PdfMediaTextVisibilityTests(TransactionTestCase):
         txt_path.write_text(txt_content, encoding="utf-8")
 
         try:
-            converted_path = ReportImportService()._create_temp_pdf_from_txt(  # pyright: ignore[reportPrivateUsage]
-                txt_path
-            )
+            converted_path = ReportImportService.create_pdf_from_text(txt_path)
             try:
                 self.assertEqual(converted_path.suffix, ".pdf")
                 document = cast(PdfDocument, pymupdf.open(filename=str(converted_path)))

@@ -236,6 +236,16 @@ definition_of_done:
   category: functionality
   title: Supported report formats reach their existing import workers continuously
   acceptance:
+  - Hashing, persistence and deletion refer to the same owned intake identity; replacing the original
+    pathname never deletes a later arrival. Duplicate intake deletion requires a verified retained source
+    or usable committed artifact, including while an existing upload is active.
+  - Preanonymized inputs publish through authenticated encrypted storage, retain immutable center ownership,
+    require content-bound approval evidence and render TXT as valid PDF before publication. Existing target
+    paths are reused only after integrity verification; failed publication preserves a recoverable source.
+  - Successful report reuse preserves earlier immutable completion evidence and verifies required local
+    artifacts; identical content submitted by another center never reassigns clinical ownership.
+  - Video import completion cannot discard required prediction dispatch or explicit producer reprocessing
+    evidence; redelivery resumes outstanding work through existing fenced workflow ownership.
   - Raw and preanonymized watcher jobs share cancellation-safe processing transitions and duplicate-drop
     handling; cancellation observed after job lookup preserves the incoming source and sidecar.
   - A settled source is revalidated before and after hashing without repeating the settling wait; replacement,
@@ -299,8 +309,40 @@ definition_of_done:
         USE_STUB_MODEL_META=true .devenv/state/venv/bin/python -m pytest tests/services/test_video_storage_normalization.py
         -q: 91 passed. Native 0.5/59.8/240/1000 FPS accepted with legacy cap 1.0; annotation resampling
         and integrity guards preserved. Full .devenv/state/venv/bin/pyright: 0 errors, 19 warnings.'
-    assessed_by: codex-endoreg-durable-01a1398f
-    assessed_at: '2026-10-15T07:41:34.219397Z'
+    - kind: test
+      reference: '2026-11-24 final combined watcher/prediction lane: tests/services/test_watcher_storage_import.py
+        tests/services/test_preanonymized_watcher_ingest.py tests/services/test_video_temporal_inference.py
+        tests/services/test_hub_ingest_import_job_contract.py, -n0 -x -q: 174 passed and 4 subtests in
+        48.29s. Covers immutable source/sidecar claims, malformed-sidecar replacement preservation, encrypted
+        preanonymized publication/replay, actual TXT conversion, approval reset, pinned prediction handoff
+        and fenced inline fallback. Full Pyright 0 errors and 2 existing warnings.'
+    - kind: test
+      reference: '2026-11-24 report narrow lane: 16 parametrized cases passed in 308.22s, covering authenticated
+        artifact reuse/repair, legacy raw alias approval, pending and reviewed byte integrity, cross-center
+        isolation, stable published completion receipts and actual inline report completion. Broader report/cleanup
+        regression lane remains pending; no complete production-readiness claim.'
+    - kind: test
+      reference: '2026-11-24 final report validation: all five original report test files passed across
+        combined lane and final remainder. tests/services/test_report_import_service_unit.py: 74 passed
+        in 58.93s. Completion, artifact integrity, report LLM jobs and PDF visibility passed in combined
+        lane; its only failure was an independent cleanup-test wrapper signature, handled separately.
+        Earlier two report failures are not reproducible in final code.'
+    - kind: test
+      reference: '2026-11-24 final follow-up: 58 passed in 48.65s across hub_ingest_import_job_contract.py,
+        report_llm_jobs.py and test_end_to_end_topology_ingest.py. Actual inline invalid-PDF and broker
+        failures preserve authoritative worker results; locked post-dispatch merge preserves provenance
+        and refuses changed epochs for processing/error/completed states. Topology stub now records actual
+        PDF digest. Full Pyright 0 errors, 2 existing warnings.'
+    - kind: test
+      reference: tests/services/test_watcher_storage_import.py::test_matching_watcher_key_reuses_job_with_one_locked_lookup
+    - kind: test
+      reference: tests/services/test_preanonymized_watcher_ingest.py::test_pdf_publication_hashes_each_artifact_once
+    note: 'Watcher-Regressionslauf mit beiden Quellständen: 142 Backendtests und 4 Untertests bestanden.
+      Gleicher aktiver Schlüssel belegt eine Sperrabfrage. Voranonymisierte PDF-Veröffentlichung prüft
+      Quelle und Ziel je einmal. Gleich große Ersatzdatei mit identischer mtime bleibt zur erneuten Aufnahme
+      erhalten.'
+    assessed_by: codex-state-6c49
+    assessed_at: '2026-11-25T07:35:56.258643Z'
 - id: pseudonym_identity_resolution
   category: data_integrity
   title: Import pseudonym resolution rejects ambiguous or conflicting identities
@@ -722,23 +764,18 @@ definition_of_done:
         und git diff --check bestanden. Globaler Pyright weiterhin 4 fremde Dataloader-Fehler/2 Warnungen.
         quality:boundaries weiterhin vorhandener Drift (351 broad_exception, 73 type_suppression); HLS-Befunde
         unverändert zum Stand vor diesem Refactoring. Keine Baseline aufgeweicht.
-    note: 'Existing publication guards/history failure propagation retained. Inline queued HLS takeover
-      changes the attempt key under row lock; delayed deliveries cannot overwrite it, active encoder stays
-      protected, and completed reservations are idempotent. Active join polls only fenced DB state with
-      execution guard and bounded wait while enclosing heartbeat continues, avoiding repeated source hashing.
-      Both raw and processed readiness remain required. Focused materialization/finalization tests and
-      full Pyright pass; expanded process-level PostgreSQL/concurrent recovery acceptance remains outstanding.
-      2026-11-02: Importabschluss erzwingt keinen Neuaufbau unveränderter HTTP-Live-Streaming-Ableitungen
-      mehr. Quellidentität entscheidet über Wiederverwendung; Cleanup-Zulassung greift erst vor neuem
-      Encoding. Eine gemeinsame Ausnahmeklasse-Menge vereinheitlicht Phasen-/Gesamtmessung und persistierte
-      Validierungsfehler inklusive ValueError aus Provenienzprüfung. Kein neuer Zustandsautomat, keine
-      gelockerten Integritätsprüfungen. Produktivbereitstellung und Wiederanlauf auf gc-10 bleiben ungeprüft.
-      Boolesche Wiederaufnahme: fehlgeschlagene Ownership-Prüfung verhindert Stale-Cleanup; zweite Wiederaufnahme
-      ist wirkungslos. Fehlende Streaming-Ableitungen werden unter bestehenden Zulassungen im selben Aufruf
-      erneuert. Metadaten- und Inhaltsabgleich teilen ein Prädikat; Metadatenpfad liest keine Medienbytes.
-      Produktionsmodul 30 Zeilen und sechs except-Zweige kürzer; echte Fehler propagieren weiter.'
-    assessed_by: codex-gc10-video61-20261102
-    assessed_at: '2026-11-02T10:15:40.871070Z'
+    - kind: test
+      reference: '2026-11-24: Canonical video scoped Pyright 0 errors/0 warnings; service-unit and finalization
+        rerun 90 passed after center fixture repair. Changed processed content revokes prior approval
+        including empty old file reference; explicit typed model reprocessing evidence fails before publication.
+        Raw storage intent integration is verified separately; no production approval.'
+    - kind: test
+      reference: '2026-11-24: both test_raw_candidate_is_owned_before_database_publication_failure parameters
+        passed in the combined report/cleanup lane using actual encrypted storage and durable retained
+        ownership before DB publication. A later cleanup concurrency test fixture failed independently;
+        raw runtime verification completed.'
+    assessed_by: codex-flow-audit-20261124
+    assessed_at: '2026-11-24T11:17:21.702150Z'
 - id: preanonymized_streamability_fail_closed
   category: security
   title: Voranonymisierte Videos melden Streamable-Fehler nicht als Erfolg
@@ -1194,9 +1231,8 @@ definition_of_done:
         37 transaktionale Vorher-/Nachher-Belege bestätigen unveränderte klinische Daten und Master; aktiver
         Import 58 unberührt. Rohdateibereinigung nach Validierung ist kein Verlust; selbst gesetzte Warnung
         für gc-10 Video 12 zurückgenommen. Abschlussprüfung aller 38 Videos: mindestens eine Mediendatei
-        vorhanden. Details und verschlüsselte hostlokale Belegpfade: docs/video_datenerhalt_gc02_gc10_20260923.md.
-        Treiberkonflikt, unvollständige Ausgaben und nicht belegbare historische Stream-Zuordnungen bleiben
-        offen; keine allgemeine Produktionsfreigabe.'
+        vorhanden. Treiberkonflikt, unvollständige Ausgaben und nicht belegbare historische Stream-Zuordnungen
+        bleiben offen; keine allgemeine Produktionsfreigabe.'
     - kind: code
       reference: endoreg_db/services/reconciliation.py::ReconciliationService.relink_broken_video_raw_files;
         endoreg_db/serializers/misc/file_overview.py::current_overview_hls_artifacts
@@ -1207,8 +1243,7 @@ definition_of_done:
         0 Fehler/0 Warnungen; Ruff check und format bestanden. Gesamter Pyright meldete zusätzlich einen
         fremden Report-Serializer-Typfehler; keine saubere Gesamtprüfung behauptet. Testfälle decken klinisch
         validierte Rohbereinigung, Validierung/Quellwechsel während Kandidatensuche und sichtbare echte
-        Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Dokumentation: docs/video_datenerhalt_gc02_gc10_20260923.md.
-        Kein Rollout.'
+        Streaming-Fehler ab. SQLite-Lauf ist kein PostgreSQL-Sperrkonkurrenznachweis. Kein Rollout.'
     - kind: test
       reference: '2026-10-15: lease unit/process, cancellation, monitoring, state-machine and ingest dispatch
         suites79 passed; sole existing fake-object test corrected and targeted rerun1 passed, all80 selected

@@ -17,6 +17,7 @@ from endoreg_db.views.patient_report import patient_examination_report
 from .anonymization import url_patterns as anonymization_url_patterns
 from .auth import urlpatterns as auth_url_patterns
 from .examination import urlpatterns as examination_url_patterns
+from .interoperability import urlpatterns as interoperability_url_patterns
 from .media import urlpatterns as media_url_patterns
 from .patient import urlpatterns as patient_url_patterns
 from .settings import urlpatterns as settings_url_patterns
@@ -58,6 +59,7 @@ api_urls: list[URLPattern | URLResolver] = []
 api_urls += _typed_url_patterns(anonymization_url_patterns)
 api_urls += _typed_url_patterns(auth_url_patterns)
 api_urls += _typed_url_patterns(examination_url_patterns)
+api_urls += _typed_url_patterns(interoperability_url_patterns)
 api_urls += _typed_url_patterns(media_url_patterns)
 api_urls += _typed_url_patterns(upload_url_patterns)
 api_urls += _typed_url_patterns(patient_url_patterns)

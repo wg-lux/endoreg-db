@@ -13,11 +13,8 @@ from rest_framework.request import Request
 from endoreg_db.models.media.video.video_file import VideoFile
 
 from endoreg_db.services.centers.access import resolve_allowed_center_ids
-from endoreg_db.services.hub import (
-    get_deployment_role,
-    hub_mode_enabled,
-    resolve_allowed_center_id,
-)
+from endoreg_db.services.hub.deployment import get_deployment_role
+from endoreg_db.services.hub.ingest import hub_mode_enabled, resolve_allowed_center_id
 from endoreg_db.utils.permissions import is_debug_mode
 
 logger = logging.getLogger(__name__)

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -11,11 +12,6 @@ if TYPE_CHECKING:
         FindingType,
         InformationSource,
     )
-
-
-class FindingManager(models.Manager["Finding"]):
-    def get_by_natural_key(self, name: str) -> "Finding":
-        return self.get(name=name)
 
 
 class Finding(models.Model):
@@ -40,7 +36,7 @@ class Finding(models.Model):
     information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
         "InformationSource", blank=True, related_name="findings"
     )
-    objects = FindingManager()
+    objects = NameNaturalKeyManager["Finding"]()
 
     if TYPE_CHECKING:
         from endoreg_db.models import FindingClassification

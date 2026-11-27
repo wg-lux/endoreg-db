@@ -32,6 +32,7 @@ from endoreg_db.models.metadata.video_prediction_meta import VideoPredictionMeta
 from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from tests.helpers.video_timeline import constant_rate_video_metadata
+from endoreg_db.services.media.state import update_media_state
 
 jobs = import_module("endoreg_db.services.video_files.temporal_inference")
 from lx_dtypes.models.contracts.video_temporal_inference import (
@@ -966,15 +967,13 @@ def test_dispatch_video_temporal_inference_expires_stale_running_history_and_rol
         },
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
     )
     monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "thread")
     stale_history = VideoProcessingHistory.objects.create(
@@ -1039,15 +1038,13 @@ def testrun_video_temporal_inference_redelivered_stream_success_preserves_frames
         },
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
     )
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -1538,15 +1535,13 @@ def testrun_video_temporal_inference_cleans_frames_for_redelivered_success(
         },
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(
-        update_fields=[
-            "frames_initialized",
-            "frame_count",
-            "frames_extracted",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
     )
     history = VideoProcessingHistory.objects.create(
         video=video,
@@ -1580,3 +1575,206 @@ def testrun_video_temporal_inference_cleans_frames_for_redelivered_success(
 def test_temporal_inference_rejects_retired_frame_cache() -> None:
     with pytest.raises(ValueError, match="Frame file caches are retired"):
         jobs._resolve_temporal_frame_source_mode(VideoFile(), "cache")
+
+
+def _mock_durable_prediction_queue(monkeypatch: MonkeyPatch) -> None:
+    def queued(*, task_id: str, **_kwargs: object) -> types.SimpleNamespace:
+        return types.SimpleNamespace(id=task_id)
+
+    monkeypatch.setattr(jobs, "get_video_temporal_inference_job_mode", lambda: "celery")
+    monkeypatch.setattr(
+        "endoreg_db.tasks.run_video_temporal_inference_task",
+        types.SimpleNamespace(apply_async=queued),
+        raising=False,
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("history_status", ["PENDING", "RUNNING", "SUCCESS"])
+def test_upload_prediction_reuses_exact_durable_operation(
+    tmp_path: Path, monkeypatch: MonkeyPatch, history_status: str
+):
+    video = _create_video(tmp_path)
+    video.raw_video_hash = "a" * 64
+    video.processed_video_hash = "b" * 64
+    video.save(update_fields=["raw_video_hash", "processed_video_hash"])
+    model_meta, _, _ = _create_model_meta()
+    _mock_durable_prediction_queue(monkeypatch)
+    upload_id = str(uuid.uuid4())
+    first = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+    )
+    history = VideoProcessingHistory.objects.get(pk=first.history_id)
+    history.status = getattr(VideoProcessingHistory, "STATUS_" + history_status)
+    history.save(update_fields=["status"])
+    second = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+    )
+    assert second.history_id == first.history_id
+    assert second.task_id == first.task_id
+    assert VideoProcessingHistory.objects.filter(video=video).count() == 1
+    if history_status == "SUCCESS":
+        assert second.status == "completed"
+        manual = jobs.dispatch_video_temporal_inference(
+            video_id=video.pk, model_meta_id=model_meta.pk
+        )
+        assert manual.history_id != first.history_id
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("changed", ["generation", "options", "model"])
+def test_upload_prediction_rejects_changed_intent(
+    tmp_path: Path, monkeypatch: MonkeyPatch, changed: str
+):
+    video = _create_video(tmp_path)
+    video.raw_video_hash = "a" * 64
+    video.processed_video_hash = "b" * 64
+    video.save(update_fields=["raw_video_hash", "processed_video_hash"])
+    model_meta, _, _ = _create_model_meta()
+    _mock_durable_prediction_queue(monkeypatch)
+    upload_id = str(uuid.uuid4())
+    jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+    )
+    if changed == "generation":
+        video.processed_video_hash = "c" * 64
+        video.save(update_fields=["processed_video_hash"])
+    if changed == "model":
+        model_meta, _, _ = _create_model_meta()
+    with pytest.raises(jobs.TemporalInferenceConfigError, match="intent changed"):
+        jobs.dispatch_video_temporal_inference(
+            video_id=video.pk,
+            model_meta_id=model_meta.pk,
+            upload_job_id=upload_id,
+            delete_frames_after=changed != "options",
+        )
+
+
+@pytest.mark.django_db
+def test_upload_prediction_recovers_crash_before_dispatch(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    video = _create_video(tmp_path)
+    video.raw_video_hash = "a" * 64
+    video.processed_video_hash = "b" * 64
+    video.save(update_fields=["raw_video_hash", "processed_video_hash"])
+    model_meta, _, _ = _create_model_meta()
+    upload_id = str(uuid.uuid4())
+    _mock_durable_prediction_queue(monkeypatch)
+    dispatch = jobs._dispatch_temporal_inference_history
+    interrupted = Mock(side_effect=SystemExit("worker terminated"))
+    monkeypatch.setattr(jobs, "_dispatch_temporal_inference_history", interrupted)
+    with pytest.raises(SystemExit):
+        jobs.dispatch_video_temporal_inference(
+            video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+        )
+    history = VideoProcessingHistory.objects.get(video=video)
+    task_id = history.task_id
+    monkeypatch.setattr(jobs, "_dispatch_temporal_inference_history", dispatch)
+    _mock_durable_prediction_queue(monkeypatch)
+    result = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+    )
+    assert result.history_id == history.pk
+    assert result.task_id == task_id
+    assert (
+        jobs._prepare_temporal_history(
+            history,
+            video_id=video.pk,
+            model_meta_id=model_meta.pk,
+            delete_frames_after=False,
+        )
+        is False
+    )
+    with pytest.raises(RuntimeError, match="running execution"):
+        jobs._prepare_temporal_history(
+            history,
+            video_id=video.pk,
+            model_meta_id=model_meta.pk,
+            delete_frames_after=False,
+        )
+    video.processed_video_hash = "c" * 64
+    video.save(update_fields=["processed_video_hash"])
+    with pytest.raises(jobs.TemporalInferenceConfigError, match="generation"):
+        jobs._prepare_temporal_history(
+            history,
+            video_id=video.pk,
+            model_meta_id=model_meta.pk,
+            delete_frames_after=False,
+        )
+
+
+@pytest.mark.django_db
+def test_upload_prediction_broker_failure_keeps_same_pending_operation(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    video = _create_video(tmp_path)
+    video.raw_video_hash = "a" * 64
+    video.processed_video_hash = "b" * 64
+    video.save(update_fields=["raw_video_hash", "processed_video_hash"])
+    model_meta, _, _ = _create_model_meta()
+    monkeypatch.setenv("VIDEO_TEMPORAL_INFERENCE_JOB_MODE", "celery")
+    broker = Mock(side_effect=RuntimeError("broker down"))
+    monkeypatch.setattr(
+        "endoreg_db.tasks.run_video_temporal_inference_task",
+        types.SimpleNamespace(apply_async=broker),
+        raising=False,
+    )
+    upload_id = str(uuid.uuid4())
+    result = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+    )
+    assert result.status == "failed"
+    history = VideoProcessingHistory.objects.get(pk=result.history_id)
+    assert history.status == VideoProcessingHistory.STATUS_PENDING
+    broker.side_effect = None
+    broker.return_value.id = history.task_id
+    retry = jobs.dispatch_video_temporal_inference(
+        video_id=video.pk, model_meta_id=model_meta.pk, upload_job_id=upload_id
+    )
+    assert retry.history_id == history.pk
+    assert retry.task_id == history.task_id
+    assert broker.call_args.kwargs["task_id"] == history.task_id
+
+
+@pytest.mark.parametrize(
+    "invalid_field", ["model_meta_id", "processed_video_hash", "unexpected"]
+)
+def test_upload_prediction_identity_is_validated_at_persistence_boundary(
+    invalid_field: str,
+) -> None:
+    from endoreg_db.schemas.video_processing_history import (
+        validate_video_processing_history_config,
+    )
+
+    identity = {
+        "upload_job_id": str(uuid.uuid4()),
+        "model_meta_id": 3,
+        "raw_video_hash": "a" * 64,
+        "processed_video_hash": "b" * 64,
+    }
+    identity[invalid_field] = "invalid"
+    with pytest.raises(ValueError):
+        validate_video_processing_history_config(
+            {
+                "kind": "lx_ai_core_temporal_inference",
+                "model_meta_id": 3,
+                "upload_prediction": identity,
+            }
+        )
+
+
+@pytest.mark.django_db
+def test_required_upload_prediction_rejects_thread_before_reservation(
+    tmp_path: Path, monkeypatch: MonkeyPatch
+) -> None:
+    video = _create_video(tmp_path)
+    model_meta, _, _ = _create_model_meta()
+    monkeypatch.setattr(jobs, "get_video_temporal_inference_job_mode", lambda: "thread")
+    with pytest.raises(jobs.TemporalInferenceConfigError, match="durable handoff"):
+        jobs.dispatch_video_temporal_inference(
+            video_id=video.pk,
+            model_meta_id=model_meta.pk,
+            upload_job_id=str(uuid.uuid4()),
+        )
+    assert not VideoProcessingHistory.objects.filter(video=video).exists()

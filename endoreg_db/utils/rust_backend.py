@@ -760,9 +760,10 @@ def decide_status_transition(*, machine: str, current: str, target: str) -> bool
     An empty ``current`` is an unsaved row. Unknown machines, unknown statuses
     and illegal transitions raise ``ValueError``.
     """
-    if not has_native_capability("status_transition", "status_transition_v1"):
+
+    if not has_native_capability("status_transition", "status_transition_v2"):
         raise RuntimeError(
-            "Required Rust status_transition_v1 capability is unavailable"
+            "Required Rust status_transition_v2 capability is unavailable"
         )
     decide = cast(
         Callable[[str, str, str], bool],

@@ -17,7 +17,7 @@ class TimelineIndex:
     Generation-bound frame/time resolver loaded once per video and request.
 
     It never mutates coordinates; it only answers boundary lookups using the
-    same rules as `endoreg_db.services.video_files.timeline`.
+    same rules as `endoreg_db.utils.video.timeline`.
     """
 
     content_hash: typing.Optional[str]
@@ -58,6 +58,22 @@ def build_expected_frame_records(
 def build_frame_records(
     paths: list[str], *, relative_to: str | None = ..., zero_based: bool = ...
 ) -> list[tuple[int, str]]: ...
+def clinical_evidence_rejection(
+    event: str, identity_verified: bool, report: bool = False
+) -> str | None:
+    r"""
+    Return the rejection token for missing event evidence.
+    """
+    ...
+
+def clinical_workflow_tables() -> tuple[
+    list[tuple[str, str, str]], list[tuple[str, str, str]], list[tuple[str, str, str]]
+]:
+    r"""
+    Enumerate the single-track edges accepted by the clinical reducer.
+    """
+    ...
+
 def compose_frame_ancestry(
     source_frame_counts: list[int], source_frame_indices: list[list[int]]
 ) -> list[int]:
@@ -112,6 +128,13 @@ def derive_segment_annotation_status(
     segment_annotations_validated: bool,
     outside_segments_removed: bool,
 ) -> str: ...
+def direct_identifier_clear_values(record: object) -> list[tuple[str, str | None]]:
+    r"""
+    Return the schema fields that still contain direct identifiers and their cleared representations.
+    """
+    ...
+
+def direct_identifier_fields() -> list[str]: ...
 def encrypted_chunk_context(
     data: bytes, counter: int, ciphertext_length: int, final: bool
 ) -> tuple[bytes, bytes]:
@@ -121,6 +144,15 @@ def encrypted_chunk_context(
     ...
 
 def encryption_status(path: pathlib.Path) -> str: ...
+def hub_export_integrity(
+    present: bool,
+    approved: bool,
+    media_digest: str,
+    approval_digest: str,
+    verify: bool,
+    actual: str | None,
+) -> str: ...
+def hub_export_integrity_blocker(integrity: str) -> str: ...
 def hub_failure_is_retryable(failure_class: str) -> bool:
     r"""
     Native retry classification; unknown failure categories raise.
@@ -128,6 +160,9 @@ def hub_failure_is_retryable(failure_class: str) -> bool:
     ...
 
 def is_lx_encrypted_file(path: pathlib.Path) -> bool: ...
+def media_validation_available(
+    processing_error: bool, integrity_status: str
+) -> bool: ...
 def native_capabilities() -> list[tuple[str, str, str]]: ...
 def native_state_vocabularies() -> list[tuple[str, list[str]]]:
     r"""
@@ -158,6 +193,29 @@ def parse_encrypted_header_metadata(
     ...
 
 def parse_extracted_frame_numbers(paths: list[str]) -> list[int]: ...
+def project_clinical_workflow(facts: object) -> tuple[tuple[str, str, str], list[str]]:
+    r"""
+    Project persisted clinical facts and report all invariant violations.
+    """
+    ...
+
+def raw_video_cleanup_blockers(
+    active_lease: bool,
+    normalization_profile: str | None,
+    source_timeline_present: bool,
+    quality_profile: str | None,
+    hls_source: str | None,
+    processed_source: str,
+    segment_timeline_valid: bool,
+) -> list[str]: ...
+def reduce_clinical_workflow(
+    privacy: str, annotation: str, release: str, event: str
+) -> tuple[str, str, str]:
+    r"""
+    Decide a clinical workflow event.
+    """
+    ...
+
 def reduce_hub_transfer_event(
     current_state: str,
     current_failure_class: str | None,
@@ -171,6 +229,9 @@ def reduce_hub_transfer_event(
     ...
 
 def render_single_page_pdf(text: str) -> bytes: ...
+def segment_status_with_history(
+    created: bool, validated: bool, outside_removed: bool, history: str | None
+) -> str: ...
 def stable_file_identity(
     path: pathlib.Path, chunk_size: int = ..., master_keys: list[bytes] = ...
 ) -> tuple[int, int, str]: ...
@@ -188,3 +249,11 @@ def transition_import_processing_stack(
 
 def transition_operation_lifecycle(current_state: str, event: str) -> str: ...
 def transition_service_lifecycle(current_state: str, event: str) -> str: ...
+def video_hub_export_blocker(
+    state_present: bool,
+    anonymization_ready: bool,
+    segment: str,
+    present: bool,
+    approved: bool,
+    integrity: str,
+) -> str: ...

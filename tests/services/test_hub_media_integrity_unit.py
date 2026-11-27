@@ -2,7 +2,7 @@ from __future__ import annotations
 
 # pyright: reportPrivateUsage=false
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from typing import Any, cast
 
 import pytest
@@ -334,7 +334,9 @@ def test_check_upload_job_media_integrity_dispatches_report(
                         pk=7,
                         pdf_hash="report-1",
                         processed_file=_FakeFieldFile("report.pdf"),
-                        state=SimpleNamespace(anonymization_validated=True),
+                        state=SimpleNamespace(
+                            anonymization_validated=True, processed_file_sha256="a" * 64
+                        ),
                     ),
                 )
             )
@@ -343,6 +345,11 @@ def test_check_upload_job_media_integrity_dispatches_report(
     monkeypatch.setattr(media_integrity, "file_exists", _always_exists)
     monkeypatch.setattr(media_integrity, "field_file_is_readable", _always_true)
 
+    verify = Mock()
+    monkeypatch.setattr(
+        "endoreg_db.services.raw_pdf_files.integrity.verify_processed_report_artifact",
+        verify,
+    )
     result = check_upload_job_media_integrity(
         cast(
             UploadJob,
@@ -354,6 +361,8 @@ def test_check_upload_job_media_integrity_dispatches_report(
             ),
         )
     )
+    verify.assert_called_once()
+    assert verify.call_args.kwargs == {"expected_sha256": "a" * 64}
     assert result.ok is True
     assert result.status == MediaIntegrityStatus.OK
 

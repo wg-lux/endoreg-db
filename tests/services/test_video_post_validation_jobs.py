@@ -35,6 +35,7 @@ import endoreg_db.services.video_files.segment_blackening as blackening
 from endoreg_db.services.annotations.segment_validation_workflow import (
     resolve_segment_annotation_status,
 )
+from endoreg_db.services.media.state import update_media_state
 
 
 def _create_video_for_post_validation(tmp_path: Path) -> VideoFile:
@@ -67,10 +68,14 @@ def _existing_extracted_frame(video: VideoFile) -> Frame:
         is_extracted=True,
     )
     state = video.get_or_create_state()
-    state.frames_initialized = True
-    state.frame_count = 1
-    state.frames_extracted = True
-    state.save(update_fields=["frames_initialized", "frame_count", "frames_extracted"])
+    update_media_state(
+        state,
+        changes={
+            "frames_initialized": True,
+            "frame_count": 1,
+            "frames_extracted": True,
+        },
+    )
     return frame
 
 
@@ -235,16 +240,13 @@ def test_dispatch_video_post_validation_rebuild_celery_failure_does_not_fall_bac
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
     state = video.get_or_create_state()
-    state.segment_annotations_created = True
-    state.segment_annotations_validated = True
-    state.outside_segments_removed = True
-    state.save(
-        update_fields=[
-            "segment_annotations_created",
-            "segment_annotations_validated",
-            "outside_segments_removed",
-            "date_modified",
-        ]
+    update_media_state(
+        state,
+        changes={
+            "segment_annotations_created": True,
+            "segment_annotations_validated": True,
+            "outside_segments_removed": True,
+        },
     )
     monkeypatch.setenv("VIDEO_POST_VALIDATION_JOB_MODE", "celery")
 
@@ -704,6 +706,7 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
         raise_on_error: bool = False,
+        verify_output: Callable[[VideoFile], None] | None = None,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals == [(0, 1)]
@@ -746,9 +749,9 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
                 },
             )
         extracted_state = video_obj.get_or_create_state()
-        extracted_state.frame_count = 2
-        extracted_state.frames_extracted = True
-        extracted_state.save(update_fields=["frame_count", "frames_extracted"])
+        update_media_state(
+            extracted_state, changes={"frame_count": 2, "frames_extracted": True}
+        )
         return True
 
     def fake_capture_frame(_video: VideoFile, frame_number: int) -> FrameSample:
@@ -808,10 +811,9 @@ def test_run_video_post_validation_rebuild_preserves_unmaterialized_frames(
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("sample_value", [0, 8, 9, 255])
-def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
+def test_run_video_post_validation_rebuild_requires_black_processed_output(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
-    caplog: pytest.LogCaptureFixture,
     sample_value: int,
 ) -> None:
     video = _create_video_for_post_validation(tmp_path)
@@ -836,6 +838,7 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
         raise_on_error: bool = False,
+        verify_output: Callable[[VideoFile], None] | None = None,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals == [(0, 1)]
@@ -919,19 +922,22 @@ def test_run_video_post_validation_rebuild_accepts_valid_processed_output(
         config=blackening.blackening_history_config(only_validated=False),
     )
 
-    assert (
-        jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk) is True
-    )
-    assert sampled_frame_numbers == [0]
-    assert ("continuing validation" in caplog.text) is (sample_value > 8)
     if sample_value > 8:
-        assert f"maximum_channel_value={sample_value} tolerance=8" in caplog.text
+        with pytest.raises(RuntimeError, match="blackness tolerance"):
+            jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
+    else:
+        assert jobs._run_video_post_validation_rebuild(video.pk, history_id=history.pk)
+    assert sampled_frame_numbers == [0]
     history.refresh_from_db()
-    assert history.status == VideoProcessingHistory.STATUS_SUCCESS
+    assert history.status == (
+        VideoProcessingHistory.STATUS_FAILURE
+        if sample_value > 8
+        else VideoProcessingHistory.STATUS_SUCCESS
+    )
     video.refresh_from_db()
     state = video.get_or_create_state()
-    assert state.outside_segments_removed is True
-    assert state.segment_annotations_validated is True
+    assert state.outside_segments_removed is (sample_value <= 8)
+    assert state.segment_annotations_validated is (sample_value <= 8)
 
 
 @pytest.mark.django_db
@@ -960,6 +966,7 @@ def test_run_video_post_validation_rebuild_reuses_merged_intervals(
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
         raise_on_error: bool = False,
+        verify_output: Callable[[VideoFile], None] | None = None,
     ) -> bool:
         create_calls.append((only_validated, outside_intervals))
         return True
@@ -1055,6 +1062,7 @@ def test_run_video_post_validation_rebuild_queues_deferred_temporal_inference(
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
         raise_on_error: bool = False,
+        verify_output: Callable[[VideoFile], None] | None = None,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals is None
@@ -1151,6 +1159,7 @@ def test_run_video_post_validation_rebuild_failure_fails_deferred_temporal_infer
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
         raise_on_error: bool = False,
+        verify_output: Callable[[VideoFile], None] | None = None,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals is None
@@ -1212,6 +1221,7 @@ def test_run_video_post_validation_rebuild_rejects_processed_output_without_vide
         only_validated: bool = False,
         outside_intervals: Sequence[tuple[int, int]] | None = None,
         raise_on_error: bool = False,
+        verify_output: Callable[[VideoFile], None] | None = None,
     ) -> bool:
         assert only_validated is False
         assert outside_intervals is None

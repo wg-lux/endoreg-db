@@ -11,6 +11,7 @@ import shutil as shutil
 import subprocess as subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING
+from endoreg_db.services.video_files.types import VideoArtifactKind
 
 from endoreg_db.schemas.video_storage import (
     FramePresentationTimestamp,
@@ -68,7 +69,12 @@ if TYPE_CHECKING:
     from endoreg_db.models.media.video.video_file import VideoFile
 
 
-def persist_video_source_timeline(video: "VideoFile", path: Path) -> None:
+def persist_video_source_timeline(
+    video: "VideoFile",
+    path: Path,
+    *,
+    artifact_kind: VideoArtifactKind = VideoArtifactKind.RAW,
+) -> None:
     """Persist PTS using facade dependencies to retain patch compatibility."""
     _persist_video_source_timeline(
         video,
@@ -76,6 +82,7 @@ def persist_video_source_timeline(video: "VideoFile", path: Path) -> None:
         probe_artifact=probe_video_artifact,
         probe_frame_pts=probe_video_frame_pts,
         probe_frame_timestamps=probe_video_frame_timestamps,
+        artifact_kind=artifact_kind,
     )
 
 

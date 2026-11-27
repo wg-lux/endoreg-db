@@ -22,10 +22,10 @@ def ensure_center(
     center_carrier = cast(_CenterCarrier, instance)
     instance_center = center_carrier.center
     if instance_center is None:
-        raise AssertionError
+        raise ValueError("Imported media has no assigned center")
     named_center = cast(_NamedCenter, instance_center)
-    if center is not None and named_center.name != center:
-        raise AssertionError
-    if center_key is not None and instance_center.center_key != center_key:
+    if (center is not None and named_center.name != center) or (
+        center_key is not None and instance_center.center_key != center_key
+    ):
         raise ValueError("Imported media belongs to a different center")
     return instance_center

@@ -3,23 +3,10 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models.administration.center.center_shift import CenterShift
-
-
-class ScheduledDaysManager(models.Manager["ScheduledDays"]):
-    def get_by_natural_key(self, name: str) -> "ScheduledDays":
-        """
-        Retrieves a ScheduledDays instance by its unique name.
-
-        Args:
-            name: The unique name of the ScheduledDays instance to retrieve.
-
-        Returns:
-            The ScheduledDays instance matching the given name.
-        """
-        return self.get(name=name)
 
 
 class ScheduledDays(models.Model):
@@ -60,7 +47,7 @@ class ScheduledDays(models.Model):
         blank=True,
     )
 
-    objects = ScheduledDaysManager()
+    objects = NameNaturalKeyManager["ScheduledDays"]()
 
     if TYPE_CHECKING:
         center_shifts: models.QuerySet["CenterShift"]

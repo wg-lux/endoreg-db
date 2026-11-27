@@ -19,6 +19,8 @@ files:
   role: Patient routes.
 - file: auth.py
   role: Authentication routes.
+- file: interoperability.py
+  role: Read-only FHIR R4 API routes under fhir/r4/ (metadata, search, read, Patient $everything).
 dependencies:
   internal:
   - endoreg_db/views

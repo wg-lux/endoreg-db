@@ -212,7 +212,7 @@ def import_electrosurgical_measurement(
             electrosurgical_measurement_upload_to(
                 measurement, f"{payload_sha256}.json"
             ),
-            ContentFile[bytes](series_payload),
+            ContentFile(series_payload),
         )
         try:
             with transaction.atomic():

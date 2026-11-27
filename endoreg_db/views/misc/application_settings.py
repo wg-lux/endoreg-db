@@ -11,15 +11,24 @@ from uuid import uuid4
 
 from django.db import models
 from lx_dtypes.models.contracts.application_settings import (
+    ANNOTATION_PROFESSION_LABELS_DE,
+    ANNOTATION_ACADEMIC_TITLE_LABELS_DE,
+    validated_annotation_academic_titles,
     ApplicationSettingsPayload,
 )
-from rest_framework import status
+from pydantic import ValidationError as SchemaError
+from rest_framework import serializers, status
+from rest_framework.generics import GenericAPIView
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.decorators import permission_classes
 from endoreg_db.openapi import api_view
 from rest_framework.request import Request
 from rest_framework.response import Response
 
 from endoreg_db.helpers.model_ids import model_pk
+from endoreg_db.models.administration.person.user.portal_user_information import (
+    PortalUserInfo,
+)
 from endoreg_db.models.administration.center.center import Center
 from endoreg_db.models.aidataset.aidataset import AIDataSet
 from endoreg_db.models.label.annotation.image_classification import (
@@ -27,7 +36,7 @@ from endoreg_db.models.label.annotation.image_classification import (
 )
 from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProcessor
 from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
-from endoreg_db.services.hub import deployment_profile_payload
+from endoreg_db.services.hub.deployment import deployment_profile_payload
 from endoreg_db.services.video_storage.dimension_backfill import (
     VideoDimensionBackfillResult,
     backfill_anonymized_video_dimensions,
@@ -80,6 +89,61 @@ mark_lost_model_training_runs = _mark_lost_model_training_runs
 model_training_run_payload = _model_training_run_payload
 _required_backup_sources = _backup_required_backup_sources
 required_backup_sources = _backup_required_backup_sources_public
+
+
+class AnnotatorProfileSerializer(serializers.Serializer[PortalUserInfo]):
+    profession = serializers.ChoiceField(
+        choices=list(ANNOTATION_PROFESSION_LABELS_DE.items()), allow_null=True
+    )
+    academic_titles = serializers.ListField(
+        child=serializers.ChoiceField(
+            choices=list(ANNOTATION_ACADEMIC_TITLE_LABELS_DE.items())
+        )
+    )
+
+    def validate_academic_titles(self, value: list[str]) -> list[str]:
+        try:
+            return validated_annotation_academic_titles(value)
+        except SchemaError as exc:
+            raise serializers.ValidationError(
+                "Invalid or duplicate academic titles."
+            ) from exc
+
+
+class PersonalAnnotatorProfileView(GenericAPIView[PortalUserInfo]):
+    """Read or replace the authenticated user's professional self-description."""
+
+    permission_classes = [IsAuthenticated]
+    serializer_class = AnnotatorProfileSerializer
+
+    def get(self, request: Request) -> Response:
+        profile = PortalUserInfo.objects.filter(user_id=request.user.pk).first()
+        return Response(
+            {
+                "profession": profile.annotation_profession if profile else None,
+                "academic_titles": profile.annotation_academic_titles
+                if profile
+                else [],
+            },
+            headers={"Cache-Control": "private, no-store"},
+        )
+
+    def put(self, request: Request) -> Response:
+        if set(_request_payload(request.data)) != {"profession", "academic_titles"}:
+            return Response(
+                {"detail": "Supply only profession and academic_titles."}, status=400
+            )
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        data = serializer.validated_data
+        PortalUserInfo.objects.update_or_create(
+            user_id=request.user.pk,
+            defaults={
+                "annotation_profession": data["profession"],
+                "annotation_academic_titles": data["academic_titles"],
+            },
+        )
+        return Response(data, headers={"Cache-Control": "private, no-store"})
 
 
 class _RequestUserWithUsername(Protocol):

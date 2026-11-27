@@ -1,7 +1,7 @@
 # Electrosurgical measurements on the video timeline
 
 Scope, acceptance criteria and production readiness are tracked only in
-`feature-tracking/backlog/ElectricalToVideoMapping.yml`. This document describes
+`feature-tracking/ElectricalToVideoMapping.yml`. This document describes
 the current host implementation; it carries no completion status. The canonical
 algorithm, frame statuses and contracts are defined by lx_dtypes in
 `lx-data-models/docs/guides/electrosurgical-video-alignment.md`.
@@ -191,7 +191,79 @@ own line with a minimum/maximum band, shades non-complete frames by status and
 never connects values across gaps. The lane always shows the full video at
 zoom 1; it does not follow the segment timeline zoom.
 
-## Open questions
+## Activation-summary CSV and XLSX imports
+
+`VideoElectrosurgicalActivationLog` (migration `0121_electrosurgical_activation_log`)
+stores the original export through encrypted storage. Its immutable, validated
+metadata binds the original hash, normalized contract hash, timezone, parser,
+recording synchronization and operator-supplied timing tolerance. Reimporting the
+same file with a different binding or tolerance is rejected. Protected electrical
+rows are checked before full video deletion can remove any media files.
+
+For the supplied Activations export, the operator confirmed that `t` marks the
+activation start and the device uses the laptop's fixed UTC+01:00 clock. Use
+`Etc/GMT-1` for that clock, not a region with daylight-saving transitions.
+`P_avg_W` and `E_tot_J` remain **per-activation** average power and energy.
+They are not converted into a sampled power curve or cumulative energy.
+
+```text
+python manage.py import_electrosurgical_activations --video-id VIDEO_ID \
+  --source Activations.csv --source-format csv --source-timezone Etc/GMT-1 \
+  --synchronization VERIFIED_SYNC_JSON --max-timing-error-seconds APPROVED_TOLERANCE
+```
+
+For XLSX use `--source-format xlsx`. Both formats require the ten-column export
+including its unnamed index column. The bounded XLSX reader accepts one declared
+worksheet with a matching internal relationship, preserves decimal cell lexemes,
+and rejects formulas and external worksheet references. Excel fractional-day
+timestamps are rounded to microseconds using half-even rounding. The recorded
+conversion error does not estimate device accuracy or the spreadsheet exporter's
+earlier rounding; CSV and XLSX exports are not assumed numerically identical.
+
+The synchronization JSON uses `RecordingSynchronization`: recording PTS ticks on
+the video side and UTC Unix microseconds on the electrical side
+(`electrical_time_base_num=1`, `electrical_time_base_den=1000000`). Its recording
+hash, session and clock identifiers must identify the actual recording. At least
+two measured anchors and their uncertainty are required. Timestamp conversion
+error plus synchronization uncertainty must fit the supplied tolerance. Examples
+in tests are synthetic and must not be reused as real recording anchors.
+
+The measurements overview includes `activation_logs` and
+`max_activations_per_request=500`. Authenticated center members can request
+`media/videos/<pk>/electrical-activations/<activation_log_id>/` with required
+`generation_content_hash`, `first_activation` (default 0), and `activation_count`
+(1–500). Each page carries file and generation identities, continuation bounds,
+and `activation_frame_coverage_v1` results. Every read authenticates and verifies
+the encrypted original and its normalized identity. Wrong keys, tampering and
+identity mismatches fail closed without returning summaries.
+
+Mapped intervals cover whole output-frame windows derived from verified ancestry;
+the displayed frame boundaries are not estimates of sub-frame activation timing.
+Zero-duration activations are point markers. Intervals outside synchronization or
+recording bounds, or beyond the final known frame boundary, carry a status and
+no summary values. No timing extrapolation is performed. The frontend displays
+bounded pages of summaries, preserves decimal text and seeks only verified PTS.
+An older backend without activation support is reported explicitly.
+
+Run synthetic and optional supplied-export acceptance with:
+
+```text
+ACTIVATION_ACCEPTANCE_DIRECTORY=/path/to/supplied/exports RUN_VIDEO_TESTS=true \
+  python -m pytest tests/services/test_electrosurgical_activation_import.py \
+  tests/services/test_electrosurgical_activation_storage.py \
+  tests/services/test_video_owned_deletion.py
+```
+
+The optional supplied-file tests expect the two 868-row Activations exports and
+create synthetic video timelines and anchors in the isolated test database. They
+verify encrypted persistence, preserved summary values and complete pagination,
+not clinical alignment or device approval. Without the directory setting those
+two tests are explicitly skipped. The normal suite covers wrong-key and tamper
+rejection, rollback cleanup, protected-media deletion, API scope and generation
+checks. Deployment requires the new backend migration and a reviewed release;
+the installed 1.8.9 package does not contain this importer.
+
+## Remaining release questions
 
 - Device support matrix, approved aggregation profiles and clinically
   meaningful default channels (the lane defaults to `power`).

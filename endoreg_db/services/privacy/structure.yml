@@ -31,7 +31,7 @@ files:
 - file: patient_pseudonyms.py
   role: Service for generating patient pseudonyms using SensitiveMeta sensitive_meta_logic.
 - file: quality_evaluation.py
-  role: Exports evaluate_anonymization_quality, evaluate_media_object, parse_quality_datetime.
+  role: Anonymization quality audit and locked identifier erasure using the native field selection shared with clinical release checks.
 - file: workflow.py
   role: Exports AnonymizationService.
 dependencies:

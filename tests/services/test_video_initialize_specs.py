@@ -4,7 +4,7 @@ from uuid import uuid4
 import pytest
 
 from endoreg_db.models import Center, VideoFile
-from endoreg_db.services.video_files import initialize_video_specs
+from endoreg_db.services.video_files.metadata import initialize_video_specs
 
 
 def _observed_probe(path: Path):

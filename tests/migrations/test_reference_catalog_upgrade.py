@@ -1,7 +1,6 @@
 """Upgrade a pre-catalogue database using independently authored legacy seeds."""
 
 from importlib.resources import files
-from pathlib import Path
 from typing import cast
 from unittest.mock import patch
 
@@ -11,6 +10,7 @@ from django.db import connection
 from django.db.migrations.executor import MigrationExecutor
 from lx_dtypes.models.contracts.json_types import JsonObject
 from lx_dtypes.models.interface.DataLoader import DataLoader
+from lx_dtypes.knowledge_bases import get_packaged_knowledge_base
 from pydantic import TypeAdapter
 
 from endoreg_db.models.administration.person.patient.patient import Patient
@@ -104,7 +104,11 @@ def test_pre_catalogue_upgrade_preserves_clinical_history(outcome: str) -> None:
         executor.migrate(executor.loader.graph.leaf_nodes())
         assert not ReferenceCatalogImport.objects.exists()
         kb = DataLoader(
-            input_dirs=[Path(str(files("lx_dtypes").joinpath("data")))]
+            input_dirs=[
+                get_packaged_knowledge_base(
+                    "endoreg_reference", "1.0.0"
+                ).installed_data_root()
+            ]
         ).load_knowledge_base("endoreg_reference")
         source = catalog_snapshot(kb)
         plan = plan_reference_catalog(source, adopt_existing=True)

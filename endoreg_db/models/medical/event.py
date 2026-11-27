@@ -3,6 +3,7 @@ from typing import TYPE_CHECKING, Any, Unpack
 
 from django.core.exceptions import ValidationError
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from endoreg_db.helpers.typing import DjangoModelSaveKwargs
 from endoreg_db.schemas.classification_choice import (
@@ -12,28 +13,6 @@ from endoreg_db.schemas.classification_choice import (
 
 if TYPE_CHECKING:
     from endoreg_db.models import PatientEvent
-
-
-class EventManager(models.Manager["Event"]):
-    """
-    Manager for Event with custom query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "Event":
-        """
-        Retrieves an Event instance using its natural key.
-
-        This method returns the event whose name matches the provided natural key.
-        It is primarily used to support Django's natural key serialization during
-        data import/export and deserialization processes.
-
-        Args:
-            name: The unique event name serving as the natural key.
-
-        Returns:
-            The Event object corresponding to the given name.
-        """
-        return self.get(name=name)
 
 
 class Event(models.Model):
@@ -52,7 +31,7 @@ class Event(models.Model):
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = EventManager()
+    objects = NameNaturalKeyManager["Event"]()
 
     if TYPE_CHECKING:
 
@@ -82,14 +61,6 @@ class Event(models.Model):
         return str(self.name)
 
 
-class EventClassificationManager(models.Manager["EventClassification"]):
-    """Manager for EventClassification with natural key support."""
-
-    def get_by_natural_key(self, name: str) -> "EventClassification":
-        """Retrieves an EventClassification instance by its natural key (name)."""
-        return self.get(name=name)
-
-
 class EventClassification(models.Model):
     """
     Represents a classification system for events (e.g., TNM staging for cancer).
@@ -97,7 +68,7 @@ class EventClassification(models.Model):
 
     name: models.CharField[Any, Any] = models.CharField(max_length=255, unique=True)
 
-    objects = EventClassificationManager()
+    objects = NameNaturalKeyManager["EventClassification"]()
 
     event: models.ForeignKey[Any] = models.ForeignKey(
         Event,
@@ -125,14 +96,6 @@ class EventClassification(models.Model):
         return [choice for choice in self.event_classification_choices.all()]
 
 
-class EventClassificationChoiceManager(models.Manager["EventClassificationChoice"]):
-    """Manager for EventClassificationChoice with natural key support."""
-
-    def get_by_natural_key(self, name: str) -> "EventClassificationChoice":
-        """Retrieves an EventClassificationChoice instance by its natural key (name)."""
-        return self.get(name=name)
-
-
 class EventClassificationChoice(models.Model):
     """
     Represents a specific choice within an event classification system (e.g., T1, N0, M0).
@@ -150,7 +113,7 @@ class EventClassificationChoice(models.Model):
         related_name="event_classification_choices",
     )
 
-    objects = EventClassificationChoiceManager()
+    objects = NameNaturalKeyManager["EventClassificationChoice"]()
 
     def clean(self) -> None:
         super().clean()

@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from tests.helpers.media_states import create_media_state
+
+
 # pyright: reportPrivateUsage=false
 
 from datetime import timedelta
@@ -11,6 +14,7 @@ from django.db import transaction
 from django.utils import timezone
 from lx_dtypes.models.contracts.video_reimport import VideoReimportHistoryConfig
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.management.commands.check_system_health import (
     _anonymization_processing_stats,
 )
@@ -50,7 +54,8 @@ def test_recoverable_video_failure_can_be_retried_without_erasing_evidence(
         name="anonymization-recovery-center",
         display_name="Anonymization Recovery Center",
     )
-    state = VideoState.objects.create(
+    state = create_media_state(
+        VideoState,
         anonymized=True,
         anonymization_validated=True,
         outside_segments_removed=True,
@@ -150,7 +155,7 @@ def test_recoverable_video_failure_can_be_retried_without_erasing_evidence(
     state.mark_anonymized()
     state.mark_sensitive_meta_processed()
     state.mark_anonymization_validated()
-    state.mark_outside_segments_removed()
+    update_media_state(state, changes={"outside_segments_removed": True})
     replacement_metric = AnonymizationValidationMetric.objects.create(
         media_type="video",
         video=video,

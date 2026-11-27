@@ -681,9 +681,11 @@ def test_verify_anonymizer_source_aborts_on_validated_hash_mismatch(
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize("requires_reprocessing", [False, True])
 def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
+    requires_reprocessing: bool,
 ) -> None:
     center = Center.objects.create(
         name="phi-anonymize-video-center",
@@ -720,6 +722,7 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
             assert source_frame_rate == Fraction(30000, 1001)
             output_path.write_bytes(b"anonymized-video")
             return output_path, {
+                "model_execution": {"reprocessing_required": requires_reprocessing},
                 "frame_observations": [_phi_observation()],
                 "paper_evaluation_metrics": {
                     "runtime": {
@@ -761,6 +764,14 @@ def test_anonymize_video_persists_phi_region_proposals_from_frame_cleaner(
         processor_name=processor.name,
     )
     anonymizer = RealVideoAnonymizer.__new__(RealVideoAnonymizer)
+
+    if requires_reprocessing:
+        with pytest.raises(RuntimeError, match="requires reprocessing"):
+            anonymizer.anonymize_video(ctx)
+        assert FrameBoxAnnotation.objects.count() == 0
+        video.refresh_from_db()
+        assert video.sensitive_meta_id is None
+        return
 
     result_ctx = anonymizer.anonymize_video(ctx)
 

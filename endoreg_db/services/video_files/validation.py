@@ -5,6 +5,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from django.db import transaction
+from endoreg_db import endoreg_rust_backend as native
 from endoreg_db.services.secret_rotation.identity import identity_rotation_transaction
 
 if TYPE_CHECKING:
@@ -30,9 +31,8 @@ def validate_video_metadata_annotation(
     state = get_or_create_video_state(video)
     meta = video.meta if video.meta is not None else {}
 
-    if (
-        getattr(state, "processing_error", False)
-        or meta.get("integrity_status") == "lost"
+    if not native.media_validation_available(
+        bool(state.processing_error), str(meta.get("integrity_status", ""))
     ):
         raise ValueError(
             f"Video {video.raw_video_hash} is marked failed/lost and cannot be validated."

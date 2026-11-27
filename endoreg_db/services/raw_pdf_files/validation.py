@@ -4,6 +4,7 @@ import logging
 from typing import TYPE_CHECKING, Protocol, cast
 
 from django.db import transaction
+from endoreg_db import endoreg_rust_backend as native
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
 from endoreg_db.services.secret_rotation.identity import identity_rotation_transaction
 
@@ -12,7 +13,16 @@ from endoreg_db.services.patient_identity.external_ids import (
     split_patient_external_id,
 )
 
-from .integrity import require_usable_completed_report
+from endoreg_db.services.clinical_lifecycle.persistence import (
+    advance_workflow_if_journaled,
+    require_workflow_transition,
+)
+from endoreg_db.services.clinical_lifecycle.state_machine import (
+    ClinicalLifecycleEvent,
+    ClinicalRecordKind,
+)
+from endoreg_db.services.clinical_lifecycle.facts import report_record_facts
+from .integrity import require_usable_completed_report, verify_processed_report_artifact
 from .io import delete_raw_pdf_raw_file
 from .state import (
     get_or_create_raw_pdf_state,
@@ -32,18 +42,6 @@ class _ValidatedSensitiveMeta(Protocol):
     def save(self) -> None: ...
 
 
-def _report_is_failed_or_lost(report: "RawPdfFile") -> bool:
-    state = report.state
-    raw_meta: dict[str, object]
-    if isinstance(report.raw_meta, dict):
-        raw_meta = cast(dict[str, object], report.raw_meta)
-    else:
-        raw_meta = cast(dict[str, object], {})
-    return bool(getattr(state, "processing_error", False)) or (
-        raw_meta.get("integrity_status") == "lost"
-    )
-
-
 @identity_rotation_transaction
 def validate_report_metadata_annotation(
     report: "RawPdfFile",
@@ -54,7 +52,12 @@ def validate_report_metadata_annotation(
 ) -> bool:
     from endoreg_db.services.cases.auto_resolution import correct_inferred_case_identity
 
-    if _report_is_failed_or_lost(report):
+    report.refresh_from_db(from_queryset=type(report).objects.select_for_update())
+    raw_meta = report.raw_meta or {}
+    if not native.media_validation_available(
+        bool(getattr(report.state, "processing_error", False)),
+        str(raw_meta.get("integrity_status", "")),
+    ):
         raise ValueError(
             f"RawPdfFile {report.pdf_hash} is marked failed/lost and cannot be validated."
         )
@@ -89,16 +92,56 @@ def validate_report_metadata_annotation(
 
     logger.info("Metadata for report %s validated and updated successfully.", report.pk)
 
-    get_or_create_raw_pdf_state(report).mark_anonymization_validated()
-
     mark_report_sensitive_meta_processed(report)
     mark_report_sensitive_meta_verified(report)
+    if enforce_processed_artifact:
+        advance_workflow_if_journaled(
+            ClinicalRecordKind.REPORT,
+            int(report.pk),
+            ClinicalLifecycleEvent.ANONYMIZATION_VALIDATED,
+        )
+    get_or_create_raw_pdf_state(report).mark_anonymization_validated()
 
-    if delete_original_raw:
+    if delete_original_raw and processed_file_sha256:
         report_id = report.pk
+        approved_names = (report.file.name, report.processed_file.name)
 
+        @transaction.atomic
         def _delete_raw_after_commit() -> None:
-            deleted = delete_raw_pdf_raw_file(report, save=True)
+            current = type(report).objects.select_for_update().get(pk=report_id)
+            if (
+                not current.file
+                or (current.file.name, current.processed_file.name) != approved_names
+            ):
+                return
+            current_state = current.state
+            if current_state is None:
+                raise ValueError(
+                    "Raw PDF cleanup requires a persisted validation state"
+                )
+            current_state.refresh_from_db(
+                from_queryset=type(current_state).objects.select_for_update()
+            )
+            if current_state.processed_file_sha256 != processed_file_sha256:
+                raise ValueError("Processed report approval changed before raw cleanup")
+            facts = report_record_facts(current)
+            verify_processed_report_artifact(
+                current, expected_sha256=processed_file_sha256
+            )
+            if facts.direct_identifiers_erased:
+                advance_workflow_if_journaled(
+                    ClinicalRecordKind.REPORT,
+                    int(report_id),
+                    ClinicalLifecycleEvent.RAW_PURGED,
+                )
+            else:
+                require_workflow_transition(
+                    ClinicalRecordKind.REPORT,
+                    int(report_id),
+                    facts,
+                    ClinicalLifecycleEvent.RAW_PURGED,
+                )
+            deleted = delete_raw_pdf_raw_file(current, save=True)
             if deleted:
                 logger.info(
                     "Deleted raw PDF after report validation commit: report=%s",

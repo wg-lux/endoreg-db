@@ -18,7 +18,10 @@ from endoreg_db.models.media.frame.frame import Frame
 pytestmark = pytest.mark.no_db
 
 INTERVAL_CALLERS = [
-    ("endoreg_db.services.video_files._anonymization", "_merge_half_open_intervals"),
+    (
+        "endoreg_db.services.video_files.post_validation_blackening",
+        "merge_half_open_frame_intervals",
+    ),
     ("endoreg_db.services.jobs.model_training_jobs", "_merge_frame_intervals"),
     ("endoreg_db.services.datasets.training_selection", "_merge_frame_intervals"),
 ]

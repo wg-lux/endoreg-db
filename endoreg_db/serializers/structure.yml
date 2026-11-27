@@ -16,7 +16,7 @@ files:
 - file: label_video_segment/label_video_segment.py
   role: Typed segment representation and frame/time mutation validation; missing clinical timeline mappings become request validation errors.
 - file: patient_examination/patient_examination.py
-  role: Hash-free examination representation and local patient ID validation within authorized centers.
+  role: Hash-free examination identity, detail-only examiner and selected indication evidence, and local patient ID validation within authorized centers.
 - file: __init__.py
   role: Serializer exports.
 - file: hub/transfer_job.py

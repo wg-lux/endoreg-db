@@ -12,6 +12,7 @@ from django.utils import timezone
 from pydantic import ValidationError
 
 from endoreg_db.models import Center, VideoFile, VideoState
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.models.metadata.sensitive_meta import SensitiveMeta
 from endoreg_db.models.other.gender import Gender
 from endoreg_db.models.state.audit_ledger import AuditLedger
@@ -25,9 +26,11 @@ from endoreg_db.services.clinical_lifecycle import (
     PrivacyStage,
     TransitionRejection,
     derive_clinical_record_state,
-    require_clinical_transition,
 )
 from endoreg_db.services.clinical_lifecycle.facts import video_record_facts
+from endoreg_db.services.clinical_lifecycle.state_machine import (
+    require_clinical_transition,  # projection-only, tests only
+)
 from endoreg_db.services.clinical_lifecycle.legacy_exemption import (
     LEGACY_IDENTITY_EXEMPTION_ACTION,
     has_legacy_identity_exemption,
@@ -77,11 +80,14 @@ def _video(
     video.processed_file.name = "videos/processed/legacy.mp4"
     video.save()
     # Written after the artifact exists; date_created is set on insert only.
-    VideoState.objects.filter(pk=state.pk).update(
-        anonymized=True,
-        anonymization_validated=validated,
-        date_created=imported_at,
+    update_media_state(
+        VideoState.objects.get(pk=state.pk),
+        changes=dict(
+            anonymized=True,
+            anonymization_validated=validated,
+        ),
     )
+    VideoState.objects.filter(pk=state.pk).update(date_created=imported_at)
     return VideoFile.objects.get(pk=video.pk)
 
 

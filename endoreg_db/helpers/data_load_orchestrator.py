@@ -35,7 +35,7 @@ from endoreg_db.helpers.data_loader import (
 
 
 def load_all_reference_data():
-    """Preferred explicit name for loading the full predefined reference set."""
+    """Preferred explicit name for loading application data without choosing clinical terminology."""
     return load_data()
 
 

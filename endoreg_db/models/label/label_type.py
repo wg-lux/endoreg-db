@@ -3,11 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from django.db import models
-
-
-class LabelTypeManager(models.Manager["LabelType"]):
-    def get_by_natural_key(self, name: str) -> "LabelType":
-        return self.get(name=name)
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 
 class LabelType(models.Model):
@@ -27,7 +23,7 @@ class LabelType(models.Model):
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = LabelTypeManager()
+    objects = NameNaturalKeyManager["LabelType"]()
 
     def natural_key(self) -> tuple[str]:
         """Return the natural key of this label type"""

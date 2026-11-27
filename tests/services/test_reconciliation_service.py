@@ -13,6 +13,8 @@ from _pytest.monkeypatch import MonkeyPatch
 
 from endoreg_db.import_files.context.file_lock import STALE_LOCK_SECONDS
 from endoreg_db.services.runtime.reconciliation import ReconciliationService
+from endoreg_db.services.media.state import update_media_state
+from tests.helpers.media_states import create_media_state
 
 T = TypeVar("T")
 
@@ -776,10 +778,10 @@ def test_reconciliation_retains_incomplete_states_without_generation_link(
     from endoreg_db.models.state.video import VideoState
     from endoreg_db.models.state.raw_pdf import RawPdfState
 
-    video = VideoState.objects.create(processing_started=True, was_created=False)
-    report = RawPdfState.objects.create(processing_started=True)
-    failed_report = RawPdfState.objects.create(
-        processing_error=True, processing_started=True
+    video = create_media_state(VideoState, processing_started=True, was_created=False)
+    report = create_media_state(RawPdfState, processing_started=True)
+    failed_report = create_media_state(
+        RawPdfState, processing_error=True, processing_started=True
     )
     before = (list(VideoState.objects.values()), list(RawPdfState.objects.values()))
     assert ReconciliationService().reset_incomplete_processing_states() == 0
@@ -809,8 +811,9 @@ def test_reconciliation_does_not_resurrect_validated_raw_media(
         processed_file="processed_videos_final/accepted.mp4",
     )
     state = video.get_or_create_state()
-    state.anonymization_validated = change == "already_validated"
-    state.save(update_fields=["anonymization_validated"])
+    update_media_state(
+        state, changes={"anonymization_validated": change == "already_validated"}
+    )
     original_reference = video.raw_file.name
 
     def scan(
@@ -822,8 +825,7 @@ def test_reconciliation_does_not_resurrect_validated_raw_media(
                 raw_file="sensitive_videos/new-source.mp4"
             )
         else:
-            state.anonymization_validated = True
-            state.save(update_fields=["anonymization_validated"])
+            update_media_state(state, changes={"anonymization_validated": True})
         return {}
 
     def forbidden(*args: object, **kwargs: object) -> None:

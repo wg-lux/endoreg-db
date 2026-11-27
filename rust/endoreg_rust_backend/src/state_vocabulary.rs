@@ -8,6 +8,8 @@ use pyo3::prelude::*;
 
 fn all_vocabularies() -> Vec<Vocabulary> {
     [
+        crate::clinical_workflow::vocabularies(),
+        crate::media_decisions::vocabularies(),
         import_processing::vocabularies(),
         import_state::vocabularies(),
         lifecycle_state::vocabularies(),

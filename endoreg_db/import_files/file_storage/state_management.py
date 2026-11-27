@@ -1,4 +1,5 @@
 import logging
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.utils.profiling import profiled_function
 from endoreg_db.utils.storage.files import canonical_media_name
 import time
@@ -238,7 +239,7 @@ def mark_instance_processing_started(
         if ctx.retry:
             if isinstance(instance, VideoFile):
                 require_reusable_video_raw_source(instance)
-            state.processing_error = False
+            update_media_state(state, changes={"processing_error": False})
             state.mark_processing_not_started()
         state.mark_processing_started()
 
@@ -291,13 +292,15 @@ def finalize_report_success(
             )
             instance.save()
             state = get_or_create_raw_pdf_state(instance)
+            changes: dict[str, object] = {
+                "processed_file_sha256": processed_file_sha256
+            }
             if state.processed_file_sha256 != processed_file_sha256:
-                state.anonymization_validated = False
-            state.processed_file_sha256 = processed_file_sha256
+                changes["anonymization_validated"] = False
+            update_media_state(state, changes=changes)
             state.mark_processing_started()
             state.mark_anonymized()
             state.mark_sensitive_meta_processed()
-            state.save()
             file_hash = ensure_context_file_hash(ctx)
             ProcessingHistory.get_or_create_for_hash(
                 obj=instance, file_hash=file_hash, success=True
@@ -383,6 +386,13 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
         next_meta["processed_generation"] = saved_name
         instance.meta = next_meta
         with ctx.owned_mutation():
+            state = _ensure_instance_state(instance)
+            if previous_hash != instance.processed_video_hash and (
+                previous_name or previous_hash or state.anonymization_validated
+            ):
+                # Human review belongs to the previous content, including repairs
+                # entered without the explicit retry flag.
+                state.mark_processing_not_started()
             record_processed_replacement(
                 instance, previous_name=previous_name, previous_hash=previous_hash
             )
@@ -399,7 +409,6 @@ def _finalize_video_success_owned(ctx: ImportContext, instance: VideoFile) -> No
                 state.mark_processing_started()
             state.mark_anonymized()
             state.mark_sensitive_meta_processed()
-            state.save()
             cleanup_pending = commit_processed_replacements(instance)
             instance.save()
     except Exception:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
-from enum import Enum, StrEnum
+from enum import StrEnum
 
 from endoreg_db.utils.rust_backend import (
     transition_operation_lifecycle as transition_operation_lifecycle_native,
@@ -61,24 +60,6 @@ class OperationLifecycleEvent(StrEnum):
     RECONCILE_FAIL = "reconcile_fail"
 
 
-class OperationClaimPath(Enum):
-    """Shared claim orchestration; native transitions remain authoritative.
-
-    Callers select a path only after checking their domain policy and ownership
-    under the existing database lock. These paths do not acquire a lease.
-    """
-
-    INITIAL = (OperationLifecycleEvent.CLAIM, OperationLifecycleEvent.START)
-    RETRY_READY = (OperationLifecycleEvent.RETRY_READY, *INITIAL)
-    RETRY_REQUESTED = (OperationLifecycleEvent.RETRY_REQUESTED, *RETRY_READY)
-    RECONCILE = (OperationLifecycleEvent.RECONCILE_RETRY, *RETRY_READY)
-    INTERRUPTED = (OperationLifecycleEvent.OWNERSHIP_LOST, *RECONCILE)
-
-    @property
-    def events(self) -> tuple[OperationLifecycleEvent, ...]:
-        return self.value
-
-
 def transition_service_lifecycle(
     current_state: ServiceLifecycleState,
     event: ServiceLifecycleEvent,
@@ -101,14 +82,3 @@ def transition_operation_lifecycle(
         event=event.value,
     )
     return OperationLifecycleState(target)
-
-
-def reduce_operation_lifecycle(
-    current_state: OperationLifecycleState,
-    events: Iterable[OperationLifecycleEvent],
-) -> OperationLifecycleState:
-    """Apply an ordered domain-event path through the native reducer."""
-    state = current_state
-    for event in events:
-        state = transition_operation_lifecycle(state, event)
-    return state

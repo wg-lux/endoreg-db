@@ -4,6 +4,7 @@ from datetime import timezone
 from typing import TYPE_CHECKING, ClassVar, Any
 
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from endoreg_db.models import (
@@ -15,14 +16,6 @@ if TYPE_CHECKING:
     from endoreg_db.utils.links import ModelLinks  # Added import
 
 DEFAULT_PATIENT_LAB_SAMPLE_TYPE_NAME = "generic"
-
-
-class PatientLabSampleTypeManager(models.Manager["PatientLabSampleType"]):
-    """Manager for PatientLabSampleType with natural key support."""
-
-    def get_by_natural_key(self, name: str) -> "PatientLabSampleType":
-        """Retrieves a PatientLabSampleType instance by its natural key (name)."""
-        return self.get(name=name)
 
 
 class PatientLabSampleType(models.Model):
@@ -41,8 +34,8 @@ class PatientLabSampleType(models.Model):
     )
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects: ClassVar[PatientLabSampleTypeManager] = (  # pyright: ignore[reportIncompatibleVariableOverride]
-        PatientLabSampleTypeManager()
+    objects: ClassVar[NameNaturalKeyManager["PatientLabSampleType"]] = (  # pyright: ignore[reportIncompatibleVariableOverride]
+        NameNaturalKeyManager["PatientLabSampleType"]()
     )
 
     def natural_key(self) -> tuple[str]:

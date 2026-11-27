@@ -12,6 +12,8 @@ The supported import orchestrators are:
 
 Local file-watcher ingestion and authenticated API upload both converge on shared ingest services and persisted upload jobs. The watcher implementation lives in the `lx-annotate` repository; this package owns the import and media-persistence services.
 
+For durable upload stages, expired-lease recovery and the clinical lifecycle after publication, see [state mutation ownership](../../docs/state_mutation_ownership.md#import-and-clinical-workflow).
+
 ## Current safety contract
 
 - Raw media remains inside the approved protected storage boundary and must never be exported.

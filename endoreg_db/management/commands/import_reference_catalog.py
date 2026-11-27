@@ -2,15 +2,15 @@
 
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError
-from django.core.management.base import BaseCommand, CommandError, CommandParser
+from django.core.management.base import CommandError, CommandParser
 from lx_dtypes.terminology.terminology_loader import get_terminology_service
 from lx_dtypes.terminology.terminology_service import TerminologyError
 from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
 from pydantic import TypeAdapter
-import yaml
+
+from endoreg_db.management.reference_catalog_command import ReconciliationCommand
 
 from endoreg_db.services.reference_data.catalog import (
-    CatalogPlan,
     catalog_snapshot,
     import_reference_catalog,
     plan_reference_catalog,
@@ -20,25 +20,17 @@ from endoreg_db.services.reference_data.catalog import (
 )
 
 
-class Command(BaseCommand):
+class Command(ReconciliationCommand):
     help = "Project an exact registered reference catalogue package; dry-run reports legacy conflicts."
 
     def add_arguments(self, parser: CommandParser) -> None:
-        parser.add_argument("--module", required=True)
-        parser.add_argument("--module-version", required=True)
+        super().add_arguments(parser)
         parser.add_argument(
             "--record-type",
             dest="record_types",
             action="append",
             choices=[kind.value for kind in ReferenceKind],
             default=[],
-        )
-        parser.add_argument("--dry-run", action="store_true")
-        parser.add_argument("--format", choices=("json", "yml"), default="json")
-        parser.add_argument(
-            "--adopt-existing",
-            action="store_true",
-            help="Bind equivalent legacy rows without rewriting their clinical meaning.",
         )
         parser.add_argument(
             "--verify",
@@ -63,29 +55,17 @@ class Command(BaseCommand):
                 catalog_snapshot(package), {ReferenceKind(kind) for kind in kinds}
             )
 
-            def render(plan: CatalogPlan) -> None:
-                if options["format"] == "yml":
-                    self.stdout.write(
-                        yaml.safe_dump(
-                            plan.model_dump(mode="json"),
-                            allow_unicode=True,
-                            sort_keys=False,
-                        )
-                    )
-                else:
-                    self.stdout.write(plan.model_dump_json(indent=2))
-
             if options["dry_run"] is not True and options["verify"] is not True:
                 with reference_catalog_transaction():
                     reused = reuse_current_catalog(snapshot)
                 if reused is not None:
-                    render(reused)
+                    self.render_plan(reused, as_yaml=options["format"] == "yml")
                     return
             plan = plan_reference_catalog(
                 snapshot, adopt_existing=options["adopt_existing"] is True
             )
             if not plan.can_import:
-                render(plan)
+                self.render_plan(plan, as_yaml=options["format"] == "yml")
                 raise CommandError(
                     "Reference catalogue reconciliation has conflicts; no rows were changed"
                 )
@@ -93,7 +73,7 @@ class Command(BaseCommand):
                 plan = import_reference_catalog(
                     snapshot, adopt_existing=options["adopt_existing"] is True
                 )
-            render(plan)
+            self.render_plan(plan, as_yaml=options["format"] == "yml")
         except DatabaseError as exc:
             raise CommandError(
                 "Reference catalogue database operation failed; verify database migrations before retrying"

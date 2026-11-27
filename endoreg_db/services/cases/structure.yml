@@ -36,6 +36,7 @@ dependencies:
   - endoreg_db/models
   - endoreg_db/schemas
   - endoreg_db/services/interoperability
+  - endoreg_db/services/reports
   - endoreg_db/services/media
   - endoreg_db/utils
   external:

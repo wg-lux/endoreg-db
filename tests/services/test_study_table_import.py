@@ -12,6 +12,7 @@ import yaml
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.db import close_old_connections
+from django.test import Client
 from lx_dtypes.models.contracts.table_import import TableExtractionError, TableMapping
 from openpyxl import Workbook
 from pytest import MonkeyPatch
@@ -242,6 +243,7 @@ def test_atomic_import_replay_and_conflict(
     owner, center, mapping, source = import_context
     result = import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert result.created_count == 1
+    assert result.receipt_ids == [StudyTableImport.objects.get().pk]
     examination = PatientExamination.objects.get(pk=result.patient_examination_ids[0])
     assert examination.patient.is_real_person is False
     assert len(examination.patient.patient_hash or "") == 64
@@ -250,6 +252,7 @@ def test_atomic_import_replay_and_conflict(
     meta_count = SensitiveMeta.objects.count()
     replay = import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert replay.replayed_count == 1
+    assert replay.receipt_ids == result.receipt_ids
     assert StudyTableImport.objects.count() == receipt_count
     assert SensitiveMeta.objects.count() == meta_count
     assert PatientFinding.objects.filter(patient_examination=examination).count() == 1
@@ -259,6 +262,31 @@ def test_atomic_import_replay_and_conflict(
     with pytest.raises(TableExtractionError):
         import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert StudyTableImport.objects.count() == receipt_count
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("legacy", [False, True])
+def test_replay_checks_gender_including_historical_receipts(
+    import_context: tuple[User, Center, Path, Path],
+    legacy: bool,
+) -> None:
+    owner, center, mapping, source = import_context
+    Gender.objects.get_or_create(name="male")
+    first = import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    receipt = StudyTableImport.objects.get()
+    assert receipt.payload["gender"] == "female"
+    if legacy:
+        historical = dict(receipt.payload)
+        del historical["gender"]
+        StudyTableImport.objects.filter(pk=receipt.pk).update(payload=historical)
+    replay = import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    assert replay.receipt_ids == first.receipt_ids
+    atomic_write_file(
+        destination=source, content=[(HEADER + ROW.replace("female", "male")).encode()]
+    )
+    with pytest.raises(TableExtractionError, match="reimport_conflict"):
+        import_table(mapping, source, owner=owner, center=center, dry_run=False)
+    assert StudyTableImport.objects.count() == 1
 
 
 @pytest.mark.django_db
@@ -273,6 +301,7 @@ def test_dry_run_and_late_failure_rollback(
     )
     result = import_table(mapping, source, owner=owner, center=center)
     assert result.dry_run and not result.patient_examination_ids
+    assert result.receipt_ids == []
     assert (
         Patient.objects.count(),
         SensitiveMeta.objects.count(),
@@ -387,6 +416,9 @@ def test_documented_mapping_validates() -> None:
     example = Path(endoreg_db.__file__).parent / "data/study_import/colonoscopy.yml"
     spec = TableMapping.model_validate(yaml.safe_load(example.read_text()))
     assert spec.first_name.columns == ["Patient.Vorname"]
+    assert spec.finding is None
+    assert spec.findings == {}
+    assert spec.examination.value is None
 
 
 @pytest.mark.django_db(transaction=True)
@@ -514,6 +546,7 @@ def test_descriptors_survive_import_replay_and_host_rebuild(
         FindingClassification,
         FindingClassificationChoice,
     )
+    from endoreg_db.services.reports.finding_sync import sync_report_findings
     from endoreg_db.services.reports.structured_records import (
         persist_patient_examination_dtypes_record_from_ledger,
     )
@@ -533,24 +566,74 @@ def test_descriptors_survive_import_replay_and_host_rebuild(
     raw = DESCRIPTOR_SPEC.replace(
         "aea05eec-5f48-4b1a-8a75-744e2c7deebf", "aea05eec-5f48-4b1a-8a75-744e2c7deeb0"
     )
-    spec = save_table_mapping(cast(int, owner.pk), raw)
+    # The two columns describe different occurrences of the same canonical finding.
+    second_lesion = (
+        raw[raw.index("  lesion_1:") :]
+        .replace("lesion_1:", "lesion_2:")
+        .replace("{columns: [Durchmesser], values: {'zwölf': '12.5'}}", "Durchmesser_2")
+    )
+    spec = save_table_mapping(cast(int, owner.pk), raw + second_lesion)
     mapping = mapping_path(cast(int, owner.pk), spec.mapping_id)
-    content = HEADER.rstrip() + ",Durchmesser\n" + ROW.rstrip() + ",zwölf\n"
+    content = (
+        HEADER.rstrip() + ",Durchmesser,Durchmesser_2\n" + ROW.rstrip() + ",zwölf,23\n"
+    )
     atomic_write_file(destination=source, content=[content.encode()])
     result = import_table(mapping, source, owner=owner, center=center, dry_run=False)
     examination = PatientExamination.objects.get(pk=result.patient_examination_ids[0])
-    for payload in (
-        examination.dtypes_record,
-        persist_patient_examination_dtypes_record_from_ledger(examination),
-    ):
+
+    def observations(payload: object) -> dict[str, object]:
         record = DtypesRecordPersistencePayload.model_validate(payload)
-        descriptor = (
-            record.patient_findings[0]
-            .patient_finding_classifications[0]
+        return {
+            str(finding.uuid): finding.patient_finding_classifications[0]
             .patient_finding_classification_choices[0]
             .patient_finding_classification_choice_descriptors[0]
+            .descriptor_value
+            for finding in record.patient_findings
+        }
+
+    imported = observations(examination.dtypes_record)
+    assert set(imported.values()) == {12.5, 23}
+    client = Client()
+    client.force_login(owner)
+    response = client.get(
+        "/dtypes-api/patient-findings/",
+        {"patient_examination": examination.pk, "reporting_fields": True},
+        secure=True,
+    )
+    assert response.status_code == 200, response.content
+    findings = response.json()
+    assert len(findings) == 2
+    submission: list[dict[str, object]] = []
+    for finding in reversed(findings):
+        [saved_choice] = finding["classifications"]
+        [saved_descriptor] = saved_choice["stored_descriptors"]
+        assert (
+            saved_descriptor["classification_choice_descriptor"]
+            == "lesion_size_mm_value"
         )
-        assert descriptor.descriptor_value == 12.5
+        assert saved_descriptor["descriptor_value"] == imported[finding["instance_id"]]
+        assert finding["interventions"] == []
+        submission.append(
+            {
+                "finding": "colon_polyp",
+                "instance_id": finding["instance_id"],
+                "patient_finding_id": finding["id"],
+                "classifications": [
+                    {
+                        "classification": saved_choice["classification_name"],
+                        "classification_choice": saved_choice[
+                            "classification_choice_name"
+                        ],
+                    }
+                ],
+                "interventions": [],
+            }
+        )
+    sync_report_findings(examination, submission, user=owner)
+    assert (
+        observations(persist_patient_examination_dtypes_record_from_ledger(examination))
+        == imported
+    )
     replay = import_table(mapping, source, owner=owner, center=center, dry_run=False)
     assert replay.replayed_count == 1
 

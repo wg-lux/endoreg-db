@@ -192,6 +192,7 @@ class UploadProvenancePayload(BaseModel):
     llm_task_id: str | None = None
     llm_queue: str | None = None
     prediction_model_name: str | None = None
+    prediction_model_meta_id: int | None = Field(default=None, gt=0, strict=True)
     prediction_task_id: str | None = None
     prediction_history_id: int | None = None
     prediction_queue: str | None = None
@@ -230,6 +231,15 @@ class TransferCaseResolutionPayload(BaseModel):
     linked_patient_id: int | None = None
 
 
+class TransferPublicationPredecessor(BaseModel):
+    """Receiver-local identity of the master observed during registration."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    processed_file_name: str
+    processed_content_hash: str
+
+
 class TransferProvenancePayload(BaseModel):
     video_frame_provenance: VideoProvenanceBundle | None = None
     video_provenance_recovery: VideoProvenanceRecovery | None = None
@@ -243,6 +253,7 @@ class TransferProvenancePayload(BaseModel):
     processing_policy: str | None = None
     cleanup_policy: str | None = None
     media_uploads: list[TransferMediaUploadPayload] | None = None
+    publication_predecessor: TransferPublicationPredecessor | None = None
     case_resolution: TransferCaseResolutionPayload | None = None
     custom_marker: str | None = None
 

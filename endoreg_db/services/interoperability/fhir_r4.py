@@ -45,6 +45,8 @@ FHIR_BASE_URL = "https://wg-lux.de/fhir"
 ENDOREG_IDENTIFIER_SYSTEM = f"{FHIR_BASE_URL}/sid/endoreg-db"
 EXAMINATION_CODE_SYSTEM = f"{FHIR_BASE_URL}/CodeSystem/lx-examination-cs"
 FINDING_CODE_SYSTEM = f"{FHIR_BASE_URL}/CodeSystem/lx-finding-cs"
+# Published by the lx-dtypes terminology FHIR export from 0.7.2 on.
+INDICATION_CODE_SYSTEM = f"{FHIR_BASE_URL}/CodeSystem/lx-indication-cs"
 CLASSIFICATION_CODE_SYSTEM = f"{FHIR_BASE_URL}/CodeSystem/lx-classification-cs"
 CLASSIFICATION_CHOICE_CODE_SYSTEM = (
     f"{FHIR_BASE_URL}/CodeSystem/lx-classification-choice-cs"
@@ -137,6 +139,7 @@ def _procedure_resource(examination: PatientExamination) -> FhirProcedure:
         if examination_definition is not None
         else FhirCodeableConcept(text="Unspecified endoscopic examination")
     )
+    reasons = _indication_reasons(examination)
     return FhirProcedure(
         id=_procedure_resource_id(examination),
         status="completed" if examination.date_end is not None else "unknown",
@@ -148,7 +151,43 @@ def _procedure_resource(examination: PatientExamination) -> FhirProcedure:
         )
         if examination.date_start is not None or examination.date_end is not None
         else None,
+        reasonCode=reasons or None,
     )
+
+
+def _indication_reasons(examination: PatientExamination) -> list[FhirCodeableConcept]:
+    """Code each saved examination indication; a chosen option is named in text.
+
+    Indication choices have no published CodeSystem, so the option is carried
+    as human-readable text rather than an invented coding.
+    """
+
+    rows = examination.indications.select_related(
+        "examination_indication", "indication_choice"
+    ).order_by("pk")
+    reasons: list[FhirCodeableConcept] = []
+    for row in rows:
+        indication = row.examination_indication
+        if indication is None or not indication.name:
+            raise ValueError("examination indication row requires an indication name")
+        choice = row.indication_choice
+        reasons.append(
+            FhirCodeableConcept(
+                coding=[
+                    FhirCoding(
+                        system=INDICATION_CODE_SYSTEM,
+                        code=_code(indication.name),
+                        display=indication.name,
+                    )
+                ],
+                text=(
+                    f"{indication.name}: {choice.name}"
+                    if choice is not None
+                    else indication.name
+                ),
+            )
+        )
+    return reasons
 
 
 def _observation_resources(examination: PatientExamination) -> list[FhirObservation]:
@@ -401,4 +440,18 @@ def build_patient_examination_fhir_bundle(
     return bundle
 
 
-__all__ = ["FhirExportProfile", "build_patient_examination_fhir_bundle"]
+def fhir_resource_id(prefix: str, source_identity: object) -> str:
+    """Return the deterministic resource id this exporter assigns.
+
+    The read-only FHIR API resolves ids with the same scheme, so a resource read
+    through the API is identical to the one in the examination Bundle.
+    """
+
+    return _fhir_id(prefix, source_identity)
+
+
+__all__ = [
+    "FhirExportProfile",
+    "build_patient_examination_fhir_bundle",
+    "fhir_resource_id",
+]

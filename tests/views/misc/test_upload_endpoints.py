@@ -107,7 +107,8 @@ class UploadEndpointTests(TestCase):
         ):
             for available, result, expected_error in cases:
                 with (
-                    self.subTest(result=result),
+                    # xdist/execnet can only serialize primitive subTest params.
+                    self.subTest(result=repr(result)),
                     patch.object(upload_views, "MAGIC_AVAILABLE", available),
                     patch.object(upload_views, "_magic") as detector,
                 ):

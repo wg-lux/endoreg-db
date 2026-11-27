@@ -204,7 +204,7 @@ def test_default_rules_are_packaged_and_valid() -> None:
 def test_packaged_gender_identifiers_exist_in_reference_catalogue(
     packaged_registry: Path,
 ) -> None:
-    knowledge_base = load_module_kb("endoreg_reference", version="1.0.0")
+    knowledge_base = load_module_kb("endoreg_reference", version="2.0.0")
     catalogue_genders = {
         record.key[1]
         for catalog in knowledge_base.reference_catalog.values()

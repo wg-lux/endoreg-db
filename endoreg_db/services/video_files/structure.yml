@@ -18,18 +18,17 @@ entrypoints:
 - name: VideoReimportOrchestrator
   file: reimport_orchestrator.py
   purpose: Coordinate explicit video reimport after source availability and integrity checks.
-- name: frame_number_to_seconds
-  file: timeline.py
-  purpose: Resolve a frame boundary, preferring its persisted presentation time.
 files:
+- file: annotation_timeline_recovery.py
+  role: Explicit two-second processed-ordinal correction preserving labels and recording typed segment mappings; the backfill transaction clears review/export validation.
 - file: __init__.py
-  role: Package imports and compatibility exports.
+  role: Package marker only; callers import the owning module directly.
 - file: _ai.py
   role: Streaming frame scores with observed exclusive score boundaries and canonical raw-frame metadata recognition.
 - file: _anonymization.py
-  role: 'Internal helpers: _LocalRawFileProvider, _video_integrity_failure_detail, _video_has_integrity_failure.'
+  role: Streamed raw anonymization using the shared outside-interval collector and typed region-of-interest validation.
 - file: _imports.py
-  role: Exports check_storage_capacity, atomic_copy_with_fallback.
+  role: Raw import and capacity helpers; register the actual raw storage name as retained UploadJob intent before writing, preserving ownership across ambiguous publication without automatic orphan reclamation.
 - file: _segments.py
   role: Exports get_outside_frames, get_outside_segments, convert_sequences_to_db_segments.
 - file: _time.py
@@ -55,7 +54,7 @@ files:
 - file: metadata.py
   role: Exports get_video_ffmpeg_meta, update_video_meta, initialize_video_specs.
 - file: post_validation_blackening.py
-  role: Exports merge_outside_frame_intervals, rebuild_processed_video_without_outside_frames.
+  role: Merged outside intervals and generation-bound blackening publication; verified output checkpoints resume streaming and cleanup without re-encoding.
 - file: processor_resolution.py
   role: Resolve explicit video processor names or the configured application default; missing configuration fails closed.
 - file: queries.py
@@ -76,11 +75,9 @@ files:
 - file: streaming.py
   role: Exports get_active_raw_video_file, get_active_video_file, get_active_video_file_path.
 - file: temporal_inference.py
-  role: Generation-bound clinical score timelines, presentation-time windows and fenced prediction publication.
-- file: timeline.py
-  role: Identity-preserving compatibility imports for the pure canonical rules in utils/video/timeline.py.
+  role: Generation-bound clinical score timelines, fenced prediction publication and durable upload prediction replay.
 - file: timestamp_backfill.py
-  role: Reconcile missing frame coordinates under publication locking and an owned read lease; explicit operator-confirmed processed ordinals require verified media, matching counts and unchanged annotations, with rollback-only preview.
+  role: Reconcile missing frame coordinates under publication locking; explicit operator-confirmed processed ordinals support two-second legacy annotation correction with cleared review/export validation and rollback-only preview.
 - file: timeline_backfill.py
   role: Read-only classification of video timelines plus operator-applied recovery through timestamp_backfill; unverifiable media is reported, never estimated.
 - file: timeline_index.py
@@ -89,7 +86,7 @@ files:
 - file: types.py
   role: Exports parse_video_artifact_kind.
 - file: validation.py
-  role: Validates annotated metadata with checked correction of inferred case identity.
+  role: Native integrity admission and checked correction of inferred video identity.
 - file: video_masks.py
   role: Host persistence for immutable masks validated and loaded by lx-dtypes.
 dependencies:

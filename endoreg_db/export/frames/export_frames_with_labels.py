@@ -60,7 +60,7 @@ from endoreg_db.services.video_files.frame_coordinates import (
     artifact_frame_timeline,
     validate_frame_timeline_coordinate,
 )
-from endoreg_db.services.video_files.timeline import (
+from endoreg_db.utils.video.timeline import (
     validate_presentation_timestamp_seconds,
     validate_stream_time_base,
 )
@@ -73,10 +73,19 @@ from endoreg_db.services.streaming.seekable_media_input import (
     SeekableFieldFile,
     serve_seekable_media_input,
 )
-from endoreg_db.services.video_files import get_video_frame_dir_path
-from endoreg_db.utils import ensure_local_file
+from endoreg_db.services.video_files.io import get_video_frame_dir_path
+from endoreg_db.utils.storage import ensure_local_file
 from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
+)
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_selected_frames as ffmpeg_extract_selected_frames,
+)
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frames as ffmpeg_extract_frames,
+)
+from endoreg_db.utils.ffmpeg_wrapper import (
+    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
 )
 from endoreg_db.utils.file_operations import (
     atomic_copy_file,
@@ -95,12 +104,6 @@ from endoreg_db.utils.storage_streaming import (
     field_file_has_decrypted_range_storage,
     local_plaintext_path_from_name,
     maybe_local_plaintext_path,
-)
-from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frame_range as ffmpeg_extract_frame_range,
-    extract_frames as ffmpeg_extract_frames,
-    extract_frames_by_presentation_timestamp as ffmpeg_extract_frames_by_pts,
-    extract_selected_frames_streamed as ffmpeg_extract_selected_frames_streamed,
 )
 
 logger = logging.getLogger(__name__)
@@ -1247,7 +1250,6 @@ def _extract_and_move_transcoded_frames(
         coordinates = _requested_frame_coordinates(video, frame_pks=frame_pks)
         if not coordinates.requested_frame_numbers:
             return
-
         moved_frame_pks = _extract_requested_frames(
             video,
             source_path=source_path,
@@ -1278,10 +1280,8 @@ def _requested_frame_coordinates(
             "pk", "frame_number", "presentation_timestamp", "timestamp"
         )
     }
-
     all_frame_pks = set(persisted_coordinates)
     requested_frame_pks = all_frame_pks if frame_pks is None else set(frame_pks)
-
     missing_pks = requested_frame_pks - all_frame_pks
     if missing_pks:
         raise ValueError(
@@ -1292,14 +1292,12 @@ def _requested_frame_coordinates(
     requested_frame_numbers = sorted(
         persisted_coordinates[frame_pk][0] for frame_pk in requested_frame_pks
     )
-
     frames_by_presentation_timestamp = _ordered_presentation_timestamps(
         video,
         frame_pks=frame_pks,
         requested_frame_pks=requested_frame_pks,
         persisted_coordinates=persisted_coordinates,
     )
-
     return _RequestedFrameCoordinates(
         requested_frame_pks=requested_frame_pks,
         requested_frame_numbers=requested_frame_numbers,
@@ -1318,11 +1316,9 @@ def _ordered_presentation_timestamps(
 ) -> list[tuple[int, int]] | None:
     if frame_pks is None:
         return None
-
     timestamps = [
         persisted_coordinates[frame_pk][1] for frame_pk in requested_frame_pks
     ]
-
     if any(timestamp is None for timestamp in timestamps):
         return None
 
@@ -1330,10 +1326,8 @@ def _ordered_presentation_timestamps(
         (cast(int, persisted_coordinates[frame_pk][1]), frame_pk)
         for frame_pk in requested_frame_pks
     )
-
     if len({timestamp for timestamp, _ in ordered}) != len(ordered):
         raise ValueError(f"Duplicate presentation timestamps for video {video.pk}")
-
     return ordered
 
 
@@ -1348,8 +1342,6 @@ def _extract_requested_frames(
     ext: str,
     overwrite: bool,
 ) -> set[int]:
-    # Prototype path: when persisted presentation timestamps are available,
-    # preserve frame identity using exact PTS coordinates.
     if coordinates.frames_by_presentation_timestamp is not None:
         return _extract_sparse_presentation_timestamp_frames(
             video,
@@ -1364,97 +1356,10 @@ def _extract_requested_frames(
             ext=ext,
             overwrite=overwrite,
         )
-
-    # The prototype deliberately does not attempt frame-number seeking against
-    # an encrypted/non-seekable source when exact PTS coordinates are absent.
     if isinstance(source_path, str):
         raise ValueError(
             "Seekable encrypted export requires exact presentation timestamps"
         )
-
-    # LX-AI optimization:
-    #
-    # Use streamed selected-frame extraction only for the local frame-number
-    # path. This must NOT replace the prototype PTS path above.
-    #
-    # When extracting all frames, or when frame numbers are duplicated, use
-    # the prototype local extraction path instead.
-    if not coordinates.extract_all_frames and coordinates.requested_frame_numbers:
-        requested_frames = list(
-            video.frames.only("pk", "frame_number")
-            .filter(pk__in=coordinates.requested_frame_pks)
-            .order_by("frame_number", "pk")
-        )
-
-        missing_requested_frames = [
-            frame
-            for frame in requested_frames
-            if overwrite or not (frame_dir / _frame_pk_filename(frame.pk, ext)).exists()
-        ]
-
-        if not missing_requested_frames:
-            return set(coordinates.requested_frame_pks)
-
-        frame_numbers = [int(frame.frame_number) for frame in missing_requested_frames]
-
-        duplicate_frame_numbers = len(frame_numbers) != len(set(frame_numbers))
-
-        if not duplicate_frame_numbers:
-            try:
-                selected_paths = ffmpeg_extract_selected_frames_streamed(
-                    source_path,
-                    tmp_dir,
-                    frame_numbers=frame_numbers,
-                    quality=quality,
-                    ext=ext,
-                    fps=None,
-                )
-
-                moved_frame_pks: set[int] = set()
-
-                for frame in missing_requested_frames:
-                    frame_number = int(frame.frame_number)
-                    extracted_path = selected_paths.get(frame_number)
-
-                    if extracted_path is None:
-                        raise FileNotFoundError(
-                            "Streamed extraction missing expected frame "
-                            f"video={video.pk}, frame_pk={frame.pk}, "
-                            f"frame_number={frame_number}"
-                        )
-
-                    target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
-
-                    if target_path.exists() and not overwrite:
-                        safe_unlink_file(
-                            extracted_path,
-                            missing_ok=True,
-                        )
-                        moved_frame_pks.add(int(frame.pk))
-                        continue
-
-                    atomic_move_file(
-                        source=extracted_path,
-                        destination=target_path,
-                    )
-                    moved_frame_pks.add(int(frame.pk))
-
-                return moved_frame_pks
-
-            except Exception:
-                logger.warning(
-                    "Streamed selected extraction failed for video %s; "
-                    "falling back to prototype local extraction.",
-                    video.pk,
-                    exc_info=True,
-                )
-
-                # The streamed optimization is only an optimization.
-                # Prototype extraction remains the correctness fallback.
-                #
-                # Any temporary files produced by the failed streamed
-                # extraction are cleaned below by the caller's tmp_dir
-                # cleanup.
 
     extracted_paths = _extract_local_frame_paths(
         source_path,
@@ -1464,7 +1369,6 @@ def _extract_requested_frames(
         quality=quality,
         ext=ext,
     )
-
     return _move_extracted_frames_to_pk_names(
         video,
         extracted_paths,
@@ -1514,7 +1418,6 @@ def _extract_sparse_presentation_timestamp_frames(
         quality=quality,
         ext=ext,
     )
-
     return _move_sparse_pts_frames_to_pk_names(
         extracted_paths,
         frame_dir,
@@ -1543,12 +1446,12 @@ def _extract_local_frame_paths(
             ext=ext,
             fps=None,
         )
-
-    return ffmpeg_extract_frame_range(
+    # Encode only the requested decode indices instead of every frame between
+    # the first and last request.
+    return ffmpeg_extract_selected_frames(
         source_path,
         tmp_dir,
-        start_frame=requested_frame_numbers[0],
-        end_frame=requested_frame_numbers[-1] + 1,
+        frame_numbers=requested_frame_numbers,
         quality=quality,
         ext=ext,
     )
@@ -1560,10 +1463,9 @@ def _require_all_requested_frames(
     moved_frame_pks: set[int],
 ) -> None:
     missing_outputs = sorted(coordinates.requested_frame_pks - moved_frame_pks)
-
     if missing_outputs:
         raise RuntimeError(
-            "Identity-preserving extraction did not produce requested frames "
+            f"Identity-preserving extraction did not produce requested frames "
             f"for video {video.pk}: {missing_outputs[:10]}"
         )
 
@@ -1578,41 +1480,25 @@ def _move_sparse_pts_frames_to_pk_names(
 ) -> set[int]:
     if len(extracted_paths) != len(ordered_frame_pks):
         raise RuntimeError("Sparse presentation-timestamp frame count mismatch")
-
     moved: set[int] = set()
-
     for extracted_path, frame_pk in zip(
-        sorted(extracted_paths),
-        ordered_frame_pks,
-        strict=True,
+        sorted(extracted_paths), ordered_frame_pks, strict=True
     ):
         target_path = frame_dir / _frame_pk_filename(frame_pk, ext)
-
         if target_path.exists() and not overwrite:
-            safe_unlink_file(
-                extracted_path,
-                missing_ok=True,
-            )
+            safe_unlink_file(extracted_path, missing_ok=True)
         else:
-            atomic_move_file(
-                source=extracted_path,
-                destination=target_path,
-            )
-
+            atomic_move_file(source=extracted_path, destination=target_path)
         moved.add(frame_pk)
-
     return moved
 
 
 def _required_video_time_base(video: VideoFile) -> tuple[int, int]:
     evidence = _video_timeline_evidence(cast(_VideoHashExportModel, video))
-
     if evidence is None:
         raise ValueError(f"Video {video.pk} has no pts_v1 timeline evidence")
-
     numerator = evidence.source.timeline.time_base_num
     denominator = evidence.source.timeline.time_base_den
-
     if numerator is None or denominator is None:
         raise ValueError(f"Video {video.pk} has no stream time base")
     validate_stream_time_base(numerator, denominator)
@@ -1629,65 +1515,37 @@ def _move_extracted_frames_to_pk_names(
     overwrite: bool,
 ) -> set[int]:
     video_export = cast(_VideoFramesExportModel, video)
-
     frames_by_number = {
         frame.frame_number: frame
-        for frame in video_export.frames.only(
-            "pk",
-            "frame_number",
-        )
+        for frame in video_export.frames.only("pk", "frame_number")
     }
-
     if not frames_by_number:
         raise ValueError(f"No persisted frames available for video {video.pk}")
 
     moved_frame_pks: set[int] = set()
-
     for extracted_path in sorted(extracted_paths):
         frame_number = _parse_extracted_frame_number(extracted_path)
-
         if frame_number is None:
-            safe_unlink_file(
-                extracted_path,
-                missing_ok=True,
-            )
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         frame = frames_by_number.get(frame_number)
-
         if frame is None:
-            safe_unlink_file(
-                extracted_path,
-                missing_ok=True,
-            )
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
         if frame_pks is not None and frame.pk not in frame_pks:
-            safe_unlink_file(
-                extracted_path,
-                missing_ok=True,
-            )
+            safe_unlink_file(extracted_path, missing_ok=True)
             continue
 
-        target_path = frame_dir / _frame_pk_filename(
-            frame.pk,
-            ext,
-        )
-
+        target_path = frame_dir / _frame_pk_filename(frame.pk, ext)
         if target_path.exists() and not overwrite:
-            safe_unlink_file(
-                extracted_path,
-                missing_ok=True,
-            )
+            safe_unlink_file(extracted_path, missing_ok=True)
             moved_frame_pks.add(int(frame.pk))
             continue
 
-        atomic_move_file(
-            source=extracted_path,
-            destination=target_path,
-        )
+        atomic_move_file(source=extracted_path, destination=target_path)
         moved_frame_pks.add(int(frame.pk))
-
     return moved_frame_pks
 
 

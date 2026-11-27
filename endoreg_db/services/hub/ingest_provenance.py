@@ -40,6 +40,7 @@ class UploadProvenance(TypedDict, total=False):
     llm_task_id: str
     llm_queue: str
     prediction_model_name: str | None
+    prediction_model_meta_id: int
     prediction_task_id: str
     prediction_history_id: int | None
     prediction_queue: str

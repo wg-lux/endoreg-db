@@ -7,6 +7,7 @@ from endoreg_db.services.reports.import_state_machine import (
     validate_report_import_claim,
     validate_report_import_failure,
     validate_report_import_success,
+    validate_report_import_ownership_lost,
 )
 
 pytestmark = pytest.mark.no_db
@@ -66,3 +67,50 @@ def test_report_import_ownership_loss_has_durable_lost_state() -> None:
     # Assert
     assert lost_status == "lost"
     assert lost_status in status_values
+
+
+@pytest.mark.parametrize(
+    "current_status", ["idle", "active", "succeeded", "failed", "lost", "", "unknown"]
+)
+@pytest.mark.parametrize("interrupted", [False, True])
+def test_report_claim_contract_is_exhaustive(
+    current_status: str, interrupted: bool
+) -> None:
+    permitted = current_status in {"idle", "succeeded", "failed", "lost"} or (
+        current_status == "active" and interrupted
+    )
+    if permitted:
+        validate_report_import_claim(
+            current_status=current_status, interrupted=interrupted
+        )
+    else:
+        with pytest.raises(ValueError):
+            validate_report_import_claim(
+                current_status=current_status, interrupted=interrupted
+            )
+
+
+@pytest.mark.parametrize(
+    "current_status", ["idle", "active", "succeeded", "failed", "lost", "", "unknown"]
+)
+@pytest.mark.parametrize("outcome", ["succeeded", "failed", "lost"])
+def test_report_outcome_contract_is_exhaustive(
+    current_status: str, outcome: str
+) -> None:
+    validators = {
+        "succeeded": validate_report_import_success,
+        "failed": validate_report_import_failure,
+        "lost": validate_report_import_ownership_lost,
+    }
+    allowed = {
+        "idle": {"failed", "lost"},
+        "active": {"succeeded", "failed", "lost"},
+        "succeeded": {"succeeded"},
+        "failed": {"failed"},
+        "lost": {"lost"},
+    }
+    if outcome in allowed.get(current_status, set()):
+        validators[outcome](current_status=current_status)
+    else:
+        with pytest.raises(ValueError):
+            validators[outcome](current_status=current_status)

@@ -12,6 +12,10 @@ New typing helpers are only allowed if they unify typing usage across various fi
 
 You are working in an existing codebase. Do not guess architecture from filenames alone.
 
+States of all Import stages are only owned by the Rust State Machine for memory safety. Dont duplicate that.
+
+If an agent doesnt answer to a request for five minutes its lock can be overwritten. This is not meant to harm your workflow but to encourage message reading.
+
 ## Source of Truth Hierarchy & Agent Context Protocol
 
 `structure.yml` is the authoritative directory navigation and ownership map.
@@ -207,9 +211,6 @@ You are acting as the Lead Security and Systems Architect for `endoreg_db` and
 architectural invariants and roadmap for all code generation, refactoring, and
 system design. Use lx-data-models/lx_dtypes/models wherever handy for strict pydantic validation.
 
-States of all Import stages are only owned by the Rust State Machine for memory safety. Dont duplicate that.
-
-If an agent doesnt answer to a request for five minutes its lock can be overwritten. This is not meant to harm your workflow but to encourage message reading.
 ## Mandatory Report Rules For All Agents
 
 Reports are used to describe imported report Texts that can come from PDF, TXT or CSV and FHIR exports from Databases like SAP or Meona. They can also describe LXDM structured reports built through a report template using lx_dtypes reporting.
@@ -289,10 +290,12 @@ While the model language is english, keep generated reports in german. lx-data-m
 - Assume all internal node-to-node communication traverses a hostile network.
 - Physical disk access must not imply data access. Local media must remain
   encrypted at rest.
-- This is a clinical environment. Fail safe over fallback. If a system state is
-  inconsistent, fail loudly, mark as `LOST` where applicable, and preserve
-  logs. Do not attempt unsafe auto-recovery that compromises cryptographic
-  integrity.
+- This is a clinical environment. Recover idempotently. If a system state is
+  inconsistent, run a recovery that can be repeated any number of times with
+  the same result, derives its target state from persisted authoritative data,
+  and emits structured logs for every step. If a state cannot be recovered
+  without compromising cryptographic integrity, fail loudly, mark as `LOST`
+  where applicable, and preserve logs.
 
 ### Prime Cryptographic Directives
 

@@ -6,7 +6,11 @@ from pathlib import Path
 from uuid import UUID
 
 import yaml
-from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
+from lx_dtypes.models.contracts.knowledge_base import (
+    KnowledgeBaseIdentity,
+    validate_optional_knowledge_base_identity,
+)
+from lx_dtypes.models.contracts.study_metadata import StudyMetadata
 from lx_dtypes.models.contracts.table_import import TableMapping
 from lx_dtypes.packages import load_registered_package
 from lx_dtypes.serialization import parse_str_list
@@ -18,6 +22,41 @@ from endoreg_db.services.studies.table_parser import (
 )
 from endoreg_db.utils.file_operations import atomic_create_file, ensure_directory
 from endoreg_db.utils.paths import ensure_within_storage_root, get_runtime_paths
+
+
+def cohort_table_packages(owner_id: int, cohort_id: int) -> list[KnowledgeBaseIdentity]:
+    """Only an owned cohort defines which package identities a table may use."""
+    from endoreg_db.models.other.study_cohort import StudyCohort
+
+    try:
+        cohort = StudyCohort.objects.get(pk=cohort_id, created_by_id=owner_id)
+    except StudyCohort.DoesNotExist as error:
+        raise PermissionError("Cohort access denied") from error
+    return table_packages_from_metadata(
+        StudyMetadata.model_validate(cohort.study_metadata)
+    )
+
+
+def table_packages_from_metadata(
+    metadata: StudyMetadata,
+) -> list[KnowledgeBaseIdentity]:
+    return [
+        KnowledgeBaseIdentity(
+            knowledge_base_module=item.module, knowledge_base_version=item.version
+        )
+        for item in metadata.terminology_requirements
+    ]
+
+
+def select_cohort_table_package(
+    packages: list[KnowledgeBaseIdentity], module: str | None, version: str | None
+) -> KnowledgeBaseIdentity | None:
+    selected = validate_optional_knowledge_base_identity(module, version)
+    if selected is None:
+        return packages[0] if len(packages) == 1 else None
+    if selected not in packages:
+        raise ValueError("Mapping package must match the cohort requirements")
+    return selected
 
 
 def mapping_directory(owner_id: int) -> Path:

@@ -310,6 +310,10 @@ def run_segment_annotation_expansion_task(
 ) -> dict[str, int]:
     from endoreg_db.services.annotations.segment_annotations import (
         ensure_segment_annotations,
+        segment_annotation_integrity_errors,
+    )
+    from endoreg_db.models.label.label_video_segment.label_video_segment import (
+        LabelVideoSegment,
     )
     from endoreg_db.models.media.video.video_file import VideoFile
     from endoreg_db.services.annotations.segment_validation_workflow import (
@@ -319,6 +323,15 @@ def run_segment_annotation_expansion_task(
         dispatch_video_post_validation_rebuild,
     )
 
+    segments = LabelVideoSegment.objects.filter(video_file_id=video_id)
+    if segment_ids:
+        segments = segments.filter(pk__in=segment_ids)
+    if dispatch_post_validation_rebuild or mark_complete_without_rebuild:
+        selected_ids = set(segments.values_list("pk", flat=True))
+        if not selected_ids or (segment_ids and selected_ids != set(segment_ids)):
+            raise ValueError(
+                "Segment validation selection is missing or belongs to another video."
+            )
     stats = ensure_segment_annotations(
         video_ids=[int(video_id)] if not segment_ids else None,
         segment_ids=[int(segment_id) for segment_id in segment_ids],
@@ -326,6 +339,21 @@ def run_segment_annotation_expansion_task(
         annotator=annotator,
         commit=True,
     )
+    if dispatch_post_validation_rebuild or mark_complete_without_rebuild:
+        selected = list(
+            segments.select_related("label", "source", "prediction_meta__model_meta")
+        )
+        if (
+            segment_ids
+            and {int(segment.pk) for segment in selected} != set(segment_ids)
+        ) or not selected:
+            raise ValueError(
+                "Segment validation selection is missing or belongs to another video."
+            )
+        if segment_annotation_integrity_errors(selected, annotator=annotator):
+            raise ValueError(
+                "Segment validation did not create complete frame annotations."
+            )
     if dispatch_post_validation_rebuild:
         dispatch_video_post_validation_rebuild(
             video_id=int(video_id),
@@ -481,7 +509,7 @@ def run_report_llm_import_task(_task: Task[[str], bool], job_id: str) -> bool:
     track_started=True,
 )
 def process_upload_job(_task: Task[[str], bool], job_id: str) -> bool:
-    from endoreg_db.services.hub import process_upload_job as _process_upload_job
+    from endoreg_db.services.hub.ingest import process_upload_job as _process_upload_job
 
     return _process_upload_job(str(job_id))
 

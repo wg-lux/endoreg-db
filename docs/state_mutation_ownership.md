@@ -54,11 +54,11 @@ Current native single writers:
 - HTTP Live Streaming (HLS) artifacts:
   [`hls_artifact_state.py`](../endoreg_db/services/streaming/hls_artifact_state.py)
   ([transition table](video_hls_permissions_and_streaming.md#artifact-materialization)).
-- Every other lifecycle with its own table:
+- Shared status writers and validation for the remaining tables:
   [`status_writers.py`](../endoreg_db/services/runtime/status_writers.py), backed
   by the Rust tables in
   [`status_transition.rs`](../rust/endoreg_rust_backend/src/status_transition.rs)
-  (capability `status_transition_v1`).
+  (capability `status_transition_v2`).
 
 ## Native status tables
 
@@ -75,6 +75,11 @@ arguments.
 
 | Machine | Field | Final statuses | Notable rules |
 | --- | --- | --- | --- |
+| `upload_job` | `status` | `lost`, `cancelled` | Only a processing upload may complete. Cancellation intent prevents resumption. |
+| `upload_job_lease_recovery` | `status` | — | Separate admission for reclaiming or interrupting expired execution. |
+| `report_import_attempt` | `status` | none | A claim creates a new fenced attempt. Only an active attempt may succeed. |
+| `report_import_lease_recovery` | `status` | — | Expired ownership permits reclaiming an active attempt. |
+| `model_training_run` | `status` | `failed` | Dataset integrity loss invalidates a completed run. |
 | `report_llm_inference_job` | `status` | `success`, `cancelled` | Redelivery restarts `failure`/`lost` as `running`; late failures after success are ignored. |
 | `video_processing_history` | `status` | `success`, `failure`, `cancelled` | Late outcomes after a final status are ignored. |
 | `quarantine_item` | `status` | none | Only `approved_for_deletion` items are deleted; a reappearing file returns to `pending_review`. |
@@ -90,6 +95,32 @@ arguments.
 Rust tests check every table for final statuses that never move, defined
 re-application of every applied target, and reachability of every non-legacy
 status from a new row.
+
+## Import and clinical workflow
+
+Video and report imports share the [import entry points](../endoreg_db/import_files/import_service.md).
+For uploads, Rust owns the remaining preparation, publication and completion
+stages and their checkpoint identity in
+[`import_processing.rs`](../rust/endoreg_rust_backend/src/import_processing.rs).
+Reimport completion adopts the published media identity and completes an existing stack in the same transaction as the upload status. The upload job and report attempt tables in `status_transition.rs` govern
+execution ownership. Lease recovery permits a new processing claim from
+pending, processing or retrying. A cancellation request can still be recorded
+as interrupted when its owner expires.
+
+The clinical workflow follows the media beyond import. Its [Rust reducer](../rust/endoreg_rust_backend/src/clinical_workflow.rs)
+projects persisted media, identity and approval facts onto the privacy,
+annotation and release tracks. It checks identity evidence before validation
+and requires raw-source purge and validated annotations before export approval.
+The Django [persistence service](../endoreg_db/services/clinical_lifecycle/persistence.py)
+resolves the stored state against those facts, compares the read version on write,
+and journals the accepted transition. The feature definition is
+[MediaWorkflowStateMachine.yml](../feature-tracking/MediaWorkflowStateMachine.yml).
+
+The [native media decisions](../rust/endoreg_rust_backend/src/media_decisions.rs)
+evaluate validation eligibility, identifier erasure, video cleanup evidence and
+hub transfer integrity. The [human validation workflow](human_validation_workflow.md)
+describes where Django obtains evidence, locks records and applies those decisions,
+including explicit dataset membership.
 
 ## Changing a writer
 

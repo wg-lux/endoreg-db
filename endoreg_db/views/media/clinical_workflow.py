@@ -6,6 +6,7 @@ Wire contract: lx-annotate ``docs/guides/media-workflow-frontend-contract.md``.
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
+from lx_dtypes.models.contracts.media_workflow_api import WorkflowInconsistency
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.request import Request
@@ -20,7 +21,10 @@ from endoreg_db.services.clinical_lifecycle.facts import (
     report_record_facts,
     video_record_facts,
 )
-from endoreg_db.services.clinical_lifecycle.persistence import read_workflow_state
+from endoreg_db.services.clinical_lifecycle.persistence import (
+    WorkflowStateDriftError,
+    read_workflow_state,
+)
 from endoreg_db.services.clinical_lifecycle.state_machine import (
     ClinicalLifecycleInvariantError,
     ClinicalRecordFacts,
@@ -34,6 +38,10 @@ from endoreg_db.views.access_control import (
     assert_center_scope_allowed,
     filter_video_read_queryset,
 )
+
+
+# 409 violation token for a stored workflow row that disagrees with the facts.
+STORED_STATE_DRIFT = "stored_state_drift"
 
 
 class ClinicalWorkflowView(APIView):
@@ -63,20 +71,27 @@ class ClinicalWorkflowView(APIView):
                 assert_center_scope_allowed(request=request, obj=report)
                 return report_record_facts(report)
 
+    def _conflict(self, pk: int, violations: tuple[str, ...]) -> Response:
+        body = WorkflowInconsistency(
+            kind=self.record_kind, record_id=pk, violations=violations
+        )
+        return Response(body.model_dump(mode="json"), status=status.HTTP_409_CONFLICT)
+
     def get(self, request: Request, pk: int) -> Response:
         facts = self._facts(request, pk)
         try:
             snapshot = read_workflow_state(self.record_kind, pk, facts)
         except ClinicalLifecycleInvariantError as exc:
             # Inconsistent persisted facts are surfaced, never mapped to a state.
-            return Response(
-                {
-                    "kind": self.record_kind.value,
-                    "record_id": pk,
-                    "violations": [violation.value for violation in exc.violations],
-                },
-                status=status.HTTP_409_CONFLICT,
+            return self._conflict(
+                pk, tuple(violation.value for violation in exc.violations)
             )
+        except WorkflowStateDriftError:
+            # A stored row that disagrees with the facts is equally inconsistent.
+            return self._conflict(pk, (STORED_STATE_DRIFT,))
+        # Hand-built: the frontend contract lists reducer-accepted event tokens,
+        # while lx-dtypes MediaWorkflowItem requires export_approval and offers
+        # user-origin AllowedEvent objects only; adopting it changes the wire.
         return Response(
             {
                 "kind": snapshot.kind.value,
@@ -114,14 +129,7 @@ class ClinicalWorkflowStagesView(APIView):
         counts = stage_counts(videos, reports)
         return Response(
             {
-                "stages": [
-                    {
-                        "stage": entry.stage.value,
-                        "count": entry.count,
-                        "transient": entry.transient,
-                    }
-                    for entry in counts.stages
-                ],
+                **counts.stages.model_dump(mode="json"),
                 "unmappable": counts.unmappable,
             }
         )

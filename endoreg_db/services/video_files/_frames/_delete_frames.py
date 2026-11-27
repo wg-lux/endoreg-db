@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 
+from endoreg_db.services.media.state import update_media_state
 from endoreg_db.services.video_files.io import (
     get_video_frame_dir_path,
     get_temp_anonymized_video_frame_dir,
@@ -122,16 +123,10 @@ def _delete_frames(video: "VideoFile") -> str:
 
     try:
         state: "VideoState" = video.get_or_create_state()
-        update_fields_state: list[str] = []
         if state.frames_extracted:
-            state.frames_extracted = False
-            update_fields_state.append("frames_extracted")
-
-        if update_fields_state:
-            state.save(update_fields=update_fields_state)
+            update_media_state(state, changes={"frames_extracted": False})
             logger.info(
-                "Reset frame state flags (%s) for video %s.",
-                ", ".join(update_fields_state),
+                "Reset frames_extracted for video %s.",
                 video.raw_video_hash,
             )
             state_updated = True

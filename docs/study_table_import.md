@@ -2,6 +2,44 @@
 
 Responsible: endoreg_db, lx_dtypes, and lx-annotate. Scope and audit trails are exclusively located in [DtypesStudyDefinitions.yml](../feature-tracking/DtypesStudyDefinitions.yml), criteria `researcher_table_import`, `dataset_lifecycle`, and `study_persistence`.
 
+## Reference-data prerequisites and cohort compatibility
+
+The selected mapping's exact package must be installed as **clinical reference
+data**, including its complete package snapshot. Registration or a successful
+mapping upload alone is insufficient. Missing prerequisites return HTTP 409 with
+`clinical_reference_package_required`, the package module/version, and an operator
+action. The UI displays that cause. Rejections are logged with safe identifiers
+and error types, never spreadsheet cells or patient identities.
+
+Fresh bootstrap uses `endoreg_reference@2.0.0`. This application-data package
+contains no clinical copies: its external references resolve through pinned
+`lx_units` and `endoreg_information_sources` dependency snapshots, projected atomically
+with the application catalogue. Historical 1.x releases remain immutable.
+
+An operator reviews `import_clinical_reference_data --module MODULE
+--module-version VERSION --adopt-existing --dry-run` for the selected reporting
+package. Equivalent legacy rows may be adopted explicitly; genuine differences
+remain blocked for review in lx-dtypes. The shared missing-text rule treats empty
+and `unknown` descriptions alike without rewriting stored descriptions or receipts.
+An examination's finding membership is additive across packages; reading remains
+scoped to the active package. Different clinical meanings are never merged.
+Existing databases containing legacy definitions still require conflict review.
+
+The import template and inspection vocabulary take their package from the cohort's
+`terminology_requirements`. Multiple requirements require an explicit selection;
+a mapping outside those requirements is rejected before import. Users must choose
+source-value-to-finding mappings explicitly. The generic `colonoscopy.yml` example
+has no study-specific finding defaults; a generic polyp is not evidence of resection.
+Existing saved mappings keep their immutable identities.
+
+Validation and import return `eligible_examinations` and `warnings`. Eligibility
+uses the same study criteria as statistics, so a successful import with no
+matching examinations is reported explicitly. Warnings show the required packages
+and findings; they do not rewrite imported observations. Draft analyses also
+produce a warning and remain skipped until their protocol requirements are
+resolved by the study owner. The template alone does not supply lesion linkage,
+measurements or approved protocol identifiers required for analysis.
+
 ## Persisted Studies
 
 `endoreg_db.models.other.study.Study` stores studies independently of lx-annotate: UUID, name, hypothesis, description, owner, and timestamp. The shared contract `lx_dtypes.models.contracts.study.StudyDefinition` validates the fields at the API and model boundaries.
@@ -228,7 +266,7 @@ The following routes are located under the existing `endoreg-api/` mount; additi
 | `POST media/studies/table-mappings/` | JSON `{"yaml": "…"}`; validates and saves an immutable mapping |
 | `POST media/studies/table-mappings/inspect/` | Multipart: `file` and optional JSON `options` `{"source": {…}, "value_columns": […], "prefill": false}`; returns `prefill` (field suggestions, gender spellings, `patient_line_column`, `patient_line_detection`) when requested, and `sheets`, `sheet_required`, `columns`, `row_count`, `values` as a list of `{column, values, truncated}`, and the template KB `vocabulary` (examinations with findings, findings with classifications, classifications with choices, genders). Nothing is stored |
 | `GET media/studies/table-mappings/{uuid}/` | JSON with the YAML text in the `yaml` key |
-| `POST media/studies/cohorts/{id}/table-import/` | Multipart: `file`, `mapping_id`, `center_id`, `mode=validate` or `mode=import` |
+| `POST media/studies/cohorts/{id}/table-import/` | Multipart upload with `file`, `mapping_id`, `center_id`, selected package `module` and `version`, and `mode=validate` or `mode=import`. Clients may omit both package fields when the cohort declares exactly one package. |
 | `POST media/studies/cohorts/preview/` | Existing cohort definition; optional `cohort_id` for the imported examination scope |
 
 Authentication is required even in debug mode. Reading requires `patient:read`, writing requires `patient:write`; superusers are permitted. Mapping owner and cohort owner are derived from the logged-in user. Center rights are re-verified on every import and preview.
@@ -245,9 +283,9 @@ The existing SensitiveMeta service maps the complete identity from first name, l
 
 Media are assigned via patient **and** examination hash within the same center. A matching patient identity alone is insufficient to assign a video to a specific examination. Existing contradictory patient or examination links block the import. Media files, anonymization releases, streaming, and frame coordinates are not altered by this. A repetition can assign appropriate media that have arrived in the meantime.
 
-Immutable `StudyTableImport` receipts store the source and mapping hash, mapping identity, and a validated pseudonymous LX snapshot. An identical source identity with differing content is a conflict; corrections require a separate, verified correction workflow. New source identities append findings; existing, unaffected findings remain active. Import writers are serialized at the center level, finding writers at the examination level. Unique database constraints provide additional protection for receipt identity.
+Immutable `StudyTableImport` receipts store the source and mapping hash, mapping identity, and a validated pseudonymous LX snapshot. An identical source identity with differing content is a conflict; corrections require a separate, verified correction workflow. New receipts also record the mapped gender identifier. A historical receipt without gender can confirm a replay only when the complete source file has its original hash. New source identities append findings; existing, unaffected findings remain active. Import writers are serialized at the center level, finding writers at the examination level. Unique database constraints provide additional protection for receipt identity.
 
-The selected cohort receives a reference to the import dataset. Its examination memberships determine the imported scope. During the preview, these are unified with examinations from linked datasets; study filters, eligibility criteria, and current center rights still apply. Imported examinations may appear without media. Without imported references, the existing preview semantics remain intact. References do not create annotations and do not expand permissions.
+The dataset links the receipts for rows in this upload, including exact replays. Migration 0124 removes historical links when multiple rows share an examination, owner, center and mapping and the dataset identity cannot prove the receipt came from its source file. Affected derived datasets retain their examinations but lose the unproven clinical deletion rights. The eligibility count applies the saved cohort filters and study metadata to the imported examinations before the preview limit. The selected cohort receives a reference to the import dataset. Its examination memberships determine the imported scope. During the preview, these are unified with examinations from linked datasets; study filters, eligibility criteria, and current center rights still apply. Imported examinations may appear without media. Without imported references, the existing preview semantics remain intact. References do not create annotations and do not expand permissions.
 
 The baseline mapped-table workflow requires the shared lx-dtypes contract, `xlrd`,
 EndoReg migration `0096_studycohort`, and lx-annotate migration

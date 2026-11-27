@@ -198,6 +198,81 @@ def _build_extract_frame_range_command(
     ]
 
 
+def _selected_frame_runs(frame_numbers: list[int]) -> list[tuple[int, int]]:
+    """Collapse strictly ascending decode indices into inclusive runs."""
+    if not frame_numbers:
+        raise ValueError("At least one frame number is required")
+    if frame_numbers[0] < 0:
+        raise ValueError("Frame numbers must be zero-based and non-negative")
+    if any(
+        later <= earlier for earlier, later in zip(frame_numbers, frame_numbers[1:])
+    ):
+        raise ValueError("Frame numbers must be strictly ascending and unique")
+
+    runs: list[tuple[int, int]] = []
+    run_start = run_end = frame_numbers[0]
+    for frame_number in frame_numbers[1:]:
+        if frame_number == run_end + 1:
+            run_end = frame_number
+            continue
+        runs.append((run_start, run_end))
+        run_start = run_end = frame_number
+    runs.append((run_start, run_end))
+    return runs
+
+
+def _selected_frame_select_expression(runs: list[tuple[int, int]]) -> str:
+    """Return an FFmpeg ``select`` expression matching decode index ``n``."""
+    if not runs:
+        raise ValueError("At least one frame run is required")
+    return "+".join(
+        f"eq(n,{start})" if start == end else f"between(n,{start},{end})"
+        for start, end in runs
+    )
+
+
+def _build_extract_selected_frames_command(
+    *,
+    ffmpeg_executable: str,
+    video_path: Path,
+    output_pattern: Path,
+    runs: list[tuple[int, int]],
+    quality: int,
+    ext: str,
+) -> list[str]:
+    """Decode once and encode only the selected zero-based decode indices.
+
+    ``-fps_mode passthrough`` keeps one output image per selected decoded
+    frame, so variable-frame-rate media is neither duplicated nor dropped.
+    ``-frames:v`` stops decoding after the last selected frame.
+    """
+    selected_count = sum(end - start + 1 for start, end in runs)
+    return [
+        ffmpeg_executable,
+        *_COMMON_FFMPEG_ARGS,
+        "-v",
+        "error",
+        "-i",
+        str(video_path),
+        "-map",
+        "0:v:0",
+        "-an",
+        "-sn",
+        "-dn",
+        "-vf",
+        f"select='{_selected_frame_select_expression(runs)}'",
+        "-fps_mode",
+        "passthrough",
+        "-frames:v",
+        str(selected_count),
+        *_frame_image_encoder_args(ext=ext, quality=quality),
+        "-start_number",
+        "0",
+        "-y",
+        str(output_pattern),
+    ]
+
+
 def _update_or_append_ffmpeg_arg(args: list[str], key: str, value: str) -> None:
     """Set an FFmpeg key/value option without assuming the value already exists."""
     try:

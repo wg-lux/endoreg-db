@@ -9,6 +9,7 @@ Tests cover:
 - Center name handling
 """
 
+from endoreg_db.services.media.state import update_media_state
 import json
 import logging
 from datetime import date, datetime
@@ -147,8 +148,7 @@ def test_validation_rechecks_center_scope_on_every_request(
     )
     if isinstance(media, VideoFile):
         state = media.get_or_create_state()
-        state.processing_error = True
-        state.save(update_fields=["processing_error"])
+        update_media_state(state, changes={"processing_error": True})
     client.force_login(user)
     path = f"/api/anonymization/{media.pk}/validate/"
     payload = {

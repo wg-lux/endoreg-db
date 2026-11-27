@@ -6,6 +6,8 @@ from pathlib import Path
 
 
 from django.core.management import call_command
+from endoreg_db.config.settings import dataloader
+from endoreg_db.helpers import data_loader as application_loader
 from endoreg_db.models import Label, LabelSet
 from endoreg_db.models.label import LabelType
 
@@ -143,9 +145,7 @@ def load_contraindication_data():
 
 
 def load_examination_data():
-    call_command(
-        "load_examination_data",
-    )
+    application_loader.load_examination_data(dataloader.CLINICAL_PACKAGE)
 
 
 def load_lab_value_data():
@@ -155,15 +155,11 @@ def load_lab_value_data():
 
 
 def load_finding_data():
-    call_command(
-        "load_finding_data",
-    )
+    application_loader.load_finding_data(dataloader.CLINICAL_PACKAGE)
 
 
 def load_examination_indication_data():
-    call_command(
-        "load_examination_indication_data",
-    )
+    application_loader.load_examination_indication_data(dataloader.CLINICAL_PACKAGE)
 
 
 def load_medication_data():

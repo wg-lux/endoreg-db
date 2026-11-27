@@ -8,6 +8,8 @@ boundaries:
 - HLS is a derivative, not a canonical generation; preserve authoritative presentation timestamps and
   leases.
 files:
+- file: electrosurgical_activation.py
+  role: Immutable encrypted original activation exports with validated source and recording bindings.
 - file: electrosurgical_measurement.py
   role: Immutable encrypted-source record of one imported electrosurgical series bound to the recording.
 - file: video_file.py

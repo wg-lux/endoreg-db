@@ -20,6 +20,7 @@ from endoreg_db.models.hub.upload_job import UploadJob
 from endoreg_db.services.runtime.status_writers import set_upload_job_cleanup_status
 from endoreg_db.services.hub.upload_job_state_machine import (
     admit_upload_job_recovery,
+    retained_video_source_recovery_filter,
     upload_job_recovery_filter,
     validate_upload_job_interrupted_retry,
     validate_upload_job_interruption,
@@ -418,19 +419,11 @@ def recover_interrupted_upload_jobs(*, limit: int = 100) -> int:
 
     if limit < 1:
         raise ValueError("limit must be positive")
-    eligible = (
-        UploadJob.objects.filter(
-            upload_job_recovery_filter(),
-            error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
-            content_type__startswith="video/",
-            content_hash__regex=r"^[0-9a-f]{64}$",
-            source_center__isnull=False,
-            source_file_persisted=True,
-            overview_dismissed_at__isnull=True,
-            processing_fencing_token__gt=0,
-        )
-        .exclude(storage_tier=UploadJob.StorageTier.UPLOAD_PREANONYMIZED)
-        .exclude(file="")
+    eligible = UploadJob.objects.filter(
+        upload_job_recovery_filter(),
+        retained_video_source_recovery_filter(),
+        error_code=UploadJob.ErrorCode.IMPORT_INTERRUPTED,
+        processing_fencing_token__gt=0,
     )
     candidates = tuple(
         eligible.order_by("updated_at", "pk").values_list("pk", flat=True)[:limit]

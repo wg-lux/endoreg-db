@@ -11,7 +11,7 @@ from django.db.models import Case, IntegerField, Q, QuerySet, Value, When
 from endoreg_db.config.env import get_protected_media_url, nginx_offload_enabled
 from endoreg_db.models.media.video.hls_artifact import VideoHlsArtifact
 from endoreg_db.models.media.video.video_file import VideoFile
-from endoreg_db.services.video_files import VideoArtifactKind
+from endoreg_db.services.video_files.types import VideoArtifactKind
 from endoreg_db.services.streaming.hls_media import (
     coerce_hls_artifact_kind,
     dispatch_video_hls_materialization,

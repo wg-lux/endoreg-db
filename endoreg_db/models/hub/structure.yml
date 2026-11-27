@@ -11,7 +11,7 @@ boundaries:
   prohibited.
 files:
 - file: outbound_hub_transfer_job.py
-  role: Sender transfer identity, validated envelope receipts and separate processed-only/full-file cleanup evidence.
+  role: Immutable sender and processed-generation snapshots, validated historical envelope receipts and separate processed-only/full-file cleanup evidence.
 - file: patient_matching.py
   role: Matching budgets, one-use worker claims, validated receipts and explicit UUID relationships.
 - file: network_node.py

@@ -221,7 +221,7 @@ class TestTextAndPdfHelpers:
         source.write_text("hello", encoding="utf-8")
 
         # Act
-        result = service._create_temp_pdf_from_txt(source)
+        result = service.create_pdf_from_text(source)
 
         # Assert
         assert result.parent == sensitive_dir
@@ -376,7 +376,7 @@ class TestPublicImportEntryPoint:
         converted.touch()
         pipeline = Mock(side_effect=RuntimeError("import failed"))
         monkeypatch.setattr(
-            service, "_create_temp_pdf_from_txt", Mock(return_value=converted)
+            service, "create_pdf_from_text", Mock(return_value=converted)
         )
         monkeypatch.setattr(service, "_process_import_pipeline", pipeline)
 
@@ -528,6 +528,45 @@ def test_failure_cleanup_rechecks_owner_after_renewal(
 
 
 class TestCompletedReportLookup:
+    @pytest.mark.parametrize("entrypoint", ["completed", "existing"])
+    @pytest.mark.parametrize("mismatch", ["name", "key"])
+    def test_reuse_rejects_another_center_before_mutation(
+        self,
+        service: ReportImportService,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+        entrypoint: str,
+        mismatch: str,
+    ) -> None:
+        from endoreg_db.import_files.file_storage.create_report_file import (
+            create_or_retrieve_report_file,
+        )
+        from endoreg_db.models.administration.center.center import Center
+
+        center = Center(pk=10, name=CENTER_NAME, center_key="owner-center")
+        report = RawPdfFile(center=center, pdf_hash=CONTENT_HASH)
+        context = _context(tmp_path / "report.pdf")
+        context.current_report = report
+        context.center_name = "other-center" if mismatch == "name" else CENTER_NAME
+        context.center_key = "other-key" if mismatch == "key" else "owner-center"
+        self._patch_success_history(monkeypatch)
+        monkeypatch.setattr(
+            report_import_module,
+            "get_raw_pdf_by_content_hash",
+            Mock(return_value=report),
+        )
+        verify = Mock()
+        monkeypatch.setattr(
+            report_import_module, "require_reusable_completed_report", verify
+        )
+        with pytest.raises((AssertionError, ValueError)):
+            if entrypoint == "completed":
+                service._get_existing_completed_report(context)
+            else:
+                create_or_retrieve_report_file(context)
+        assert report.center_id == center.pk
+        verify.assert_not_called()
+
     @pytest.mark.parametrize(
         ("file_hash", "has_history"), [(None, True), (CONTENT_HASH, False)]
     )
@@ -587,6 +626,7 @@ class TestCompletedReportLookup:
         # Arrange
         context = _context(tmp_path / "report.pdf")
         existing = Mock(spec=RawPdfFile)
+        existing.center.name = CENTER_NAME
         self._patch_success_history(monkeypatch)
         monkeypatch.setattr(
             report_import_module,
@@ -595,7 +635,7 @@ class TestCompletedReportLookup:
         )
         monkeypatch.setattr(
             report_import_module,
-            "require_usable_completed_report",
+            "require_reusable_completed_report",
             Mock(side_effect=ProcessedReportIntegrityError("missing output")),
         )
 
@@ -615,6 +655,7 @@ class TestCompletedReportLookup:
         # Arrange
         context = _context(tmp_path / "report.pdf")
         existing = Mock(spec=RawPdfFile)
+        existing.center.name = CENTER_NAME
         require_usable = Mock(return_value="b" * 64)
         self._patch_success_history(monkeypatch)
         monkeypatch.setattr(
@@ -623,7 +664,7 @@ class TestCompletedReportLookup:
             Mock(return_value=existing),
         )
         monkeypatch.setattr(
-            report_import_module, "require_usable_completed_report", require_usable
+            report_import_module, "require_reusable_completed_report", require_usable
         )
 
         # Act
@@ -631,9 +672,7 @@ class TestCompletedReportLookup:
 
         # Assert
         assert result is existing
-        require_usable.assert_called_once_with(
-            existing, source_sha256=CONTENT_HASH, require_artifact=False
-        )
+        require_usable.assert_called_once_with(existing, source_sha256=CONTENT_HASH)
 
     @staticmethod
     def _patch_success_history(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -736,9 +775,10 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
     service.lifecycle = lifecycle if with_lifecycle else None
     require_completed = Mock()
     monkeypatch.setattr(
-        report_import_module, "require_usable_completed_report", require_completed
+        report_import_module, "require_reusable_completed_report", require_completed
     )
     report = Mock(spec=RawPdfFile)
+    report.center.name = CENTER_NAME
     fence = _fence()
     calls = Mock()
     create = Mock(
@@ -825,7 +865,6 @@ def test_current_pipeline_preserves_fencing_retry_and_reuse_contracts(
                     require_completed.assert_called_once_with(
                         report,
                         source_sha256=CONTENT_HASH,
-                        require_artifact=False,
                     )
                 else:
                     acquire.assert_not_called()
@@ -867,6 +906,7 @@ def test_invalid_runtime_or_superseded_import_cannot_create_or_reset_report(
 
     context = _context(pdf_path)
     report = Mock(spec=RawPdfFile)
+    report.center.name = CENTER_NAME
     snapshot = SourceSnapshot(
         path=pdf_path,
         sha256=CONTENT_HASH,
@@ -936,8 +976,8 @@ def test_txt_conversion_preserves_complete_text_and_source(
 ) -> None:
     source = tmp_path / "full-report.txt"
     source.write_text(text, encoding="utf-8")
-    first = service._create_temp_pdf_from_txt(source)
-    second = service._create_temp_pdf_from_txt(source)
+    first = service.create_pdf_from_text(source)
+    second = service.create_pdf_from_text(source)
     assert source.read_text(encoding="utf-8") == text
     assert first.read_bytes() == second.read_bytes()
     document = cast(PdfDocument, pymupdf.open(filename=str(first)))
@@ -975,7 +1015,7 @@ def test_txt_conversion_rejects_unrenderable_content_without_deleting_source(
     payload = b"Befund vor\x00Befund nach"
     source.write_bytes(payload)
     with pytest.raises(InvalidReportDocumentError, match="complete report text"):
-        service._create_temp_pdf_from_txt(source)
+        service.create_pdf_from_text(source)
     assert source.read_bytes() == payload
 
 
@@ -985,11 +1025,11 @@ def test_txt_conversion_rejects_empty_text_and_omits_source_digest(
     empty = tmp_path / "empty.txt"
     empty.write_text(" \n\t", encoding="utf-8")
     with pytest.raises(InvalidReportDocumentError, match="empty"):
-        service._create_temp_pdf_from_txt(empty)
+        service.create_pdf_from_text(empty)
 
     source = tmp_path / "report.txt"
     source.write_text("Befund ohne Prüfsumme", encoding="utf-8")
-    converted = service._create_temp_pdf_from_txt(source)
+    converted = service.create_pdf_from_text(source)
     try:
         document = cast(PdfDocument, pymupdf.open(filename=str(converted)))
         try:

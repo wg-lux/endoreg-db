@@ -26,6 +26,7 @@ from endoreg_db.services.hub.ingest import (
 from endoreg_db.services.hub.upload_job_import_lease import (
     UploadJobImportLease,
     UploadJobImportLeaseBusy,
+    UploadJobImportLeaseLost,
     acquire_upload_job_import_lease,
 )
 from endoreg_db.services.hub.media_integrity import (
@@ -226,6 +227,92 @@ class TestReportImportJobHandoff:
         assert upload_job.status == UploadJob.Status.ERROR
 
 
+@pytest.mark.django_db
+def test_report_inline_failure_preserves_worker_error(
+    ingest_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_upload_job(
+        center=ingest_center, content_type="application/pdf", filename="invalid.pdf"
+    )
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "inline")
+    assert process_upload_job(str(job.pk)) is False
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.ERROR
+    assert job.error_code == UploadJob.ErrorCode.INVALID_INPUT
+    assert job.storage_class == UploadJob.StorageClass.QUARANTINE
+    assert job.retryable is False
+    assert job.error_detail
+
+
+@pytest.mark.django_db
+def test_report_broker_failure_marks_original_upload_snapshot(
+    ingest_center: Center, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_upload_job(
+        center=ingest_center, content_type="application/pdf", filename="broker.pdf"
+    )
+    monkeypatch.setenv("REPORT_LLM_JOB_MODE", "celery")
+    with patch(
+        "endoreg_db.tasks.run_report_llm_import_task.apply_async",
+        side_effect=ConnectionError("report broker unavailable"),
+    ):
+        assert process_upload_job(str(job.pk)) is False
+    job.refresh_from_db()
+    assert job.status == UploadJob.Status.ERROR
+    assert "report broker unavailable" in job.error_detail
+    assert job.processing_provenance["processing_handoff"] == "llm_inference"
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("new_epoch", [False, True])
+@pytest.mark.parametrize("worker_status", ["processing", "error", "anonymized"])
+def test_report_handoff_preserves_concurrent_provenance_and_epoch(
+    ingest_center: Center, new_epoch: bool, worker_status: str
+) -> None:
+    job = _create_upload_job(
+        center=ingest_center, content_type="application/pdf", filename="handoff.pdf"
+    )
+
+    def dispatch(**_kwargs: object) -> ReportLlmDispatchResult:
+        current = UploadJob.objects.get(pk=job.pk)
+        current.processing_provenance = {
+            "entrypoint": "api",
+            "media_integrity_reason": "retained",
+        }
+        if worker_status == "error":
+            current.mark_error("worker failed")
+        elif worker_status == "anonymized":
+            current.mark_completed()
+        if new_epoch:
+            current.processing_fencing_token += 1
+        current.save(
+            update_fields=[
+                "processing_provenance",
+                "status",
+                "processing_fencing_token",
+            ]
+        )
+        return _report_dispatch_result("queued")
+
+    with patch(
+        "endoreg_db.services.jobs.report_llm_jobs.dispatch_report_llm_import",
+        side_effect=dispatch,
+    ):
+        if new_epoch:
+            with pytest.raises(
+                UploadJobImportLeaseLost, match="superseded import epoch"
+            ):
+                process_upload_job(str(job.pk))
+        else:
+            assert process_upload_job(str(job.pk)) is (worker_status != "error")
+    job.refresh_from_db()
+    assert job.status == worker_status
+    assert job.processing_provenance["media_integrity_reason"] == "retained"
+    assert ("llm_job_id" in job.processing_provenance) is (
+        not new_epoch and worker_status == "processing"
+    )
+
+
 class TestVideoImportJobHandoff:
     @pytest.mark.django_db
     def test_database_outage_preserves_import_source_lease_and_retry_budget(
@@ -300,7 +387,7 @@ class TestVideoImportJobHandoff:
         )
         with (
             patch(
-                "endoreg_db.services.hub.ingest.check_upload_job_media_integrity",
+                "endoreg_db.services.hub.ingest.check_upload_job_import_completion",
                 return_value=MediaIntegrityResult(
                     ok=True,
                     status=MediaIntegrityStatus.OK,
@@ -509,10 +596,12 @@ class TestVideoImportJobHandoff:
         heartbeat.guard.assert_called_once_with()
 
     @pytest.mark.django_db
+    @pytest.mark.parametrize("dispatch_fails", [False, True])
     def test_releases_video_lease_before_source_cleanup(
         self,
         ingest_center: Center,
         tmp_path: Path,
+        dispatch_fails: bool,
     ) -> None:
         upload_job = _create_upload_job(
             center=ingest_center,
@@ -547,8 +636,14 @@ class TestVideoImportJobHandoff:
         def record_source_cleanup(_job: UploadJob) -> None:
             events.append("source_cleaned")
 
+        def record_completion(**_kwargs: object) -> UploadJob:
+            events.append("upload_completed")
+            return upload_job
+
         def record_prediction_dispatch(**_kwargs: object) -> None:
             events.append("prediction_dispatched")
+            if dispatch_fails:
+                raise RuntimeError("Required prediction broker unavailable")
 
         heartbeat_manager.__exit__.side_effect = record_heartbeat_exit
 
@@ -575,7 +670,7 @@ class TestVideoImportJobHandoff:
             ),
             patch(
                 "endoreg_db.services.hub.ingest._complete_fenced_video_upload",
-                return_value=upload_job,
+                side_effect=record_completion,
             ),
             patch(
                 "endoreg_db.services.hub.ingest.release_upload_job_import_lease",
@@ -590,14 +685,21 @@ class TestVideoImportJobHandoff:
                 side_effect=record_prediction_dispatch,
             ),
         ):
+            if dispatch_fails:
+                with pytest.raises(RuntimeError, match="broker unavailable"):
+                    _execute_video_upload_import_attempt(attempt)
+                assert events == ["prediction_dispatched", "heartbeat_stopped"]
+                assert source_path.exists()
+                return
             result = _execute_video_upload_import_attempt(attempt)
 
         assert result is True
         assert events == [
+            "prediction_dispatched",
+            "upload_completed",
             "heartbeat_stopped",
             "lease_released",
             "source_cleaned",
-            "prediction_dispatched",
         ]
 
 
@@ -693,3 +795,125 @@ class TestCeleryImportTaskAdapters:
         # Assert
         assert result is True
         run_import.assert_called_once_with("123")
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("first_status", ["failed", "busy", "completed"])
+def test_required_prediction_pins_model_before_handoff_and_replays(
+    ingest_center: Center, first_status: str
+) -> None:
+    from endoreg_db.models.media.video.video_file import VideoFile
+    from endoreg_db.services.hub.ingest import _dispatch_video_upload_prediction
+
+    job = _create_upload_job(
+        center=ingest_center, content_type="video/mp4", filename="prediction.mp4"
+    )
+    job.processing_provenance = {"prediction_model_name": "configured-model"}
+    job.save(update_fields=["processing_provenance"])
+    video = VideoFile.objects.create(
+        center=ingest_center, raw_video_hash="d" * 64, processed_video_hash="e" * 64
+    )
+    lease = acquire_upload_job_import_lease(
+        upload_job_id=str(job.pk), owner="prediction-contract-owner"
+    )
+    model = Mock()
+    model.get_latest_version.return_value.pk = 73
+    dispatch = Mock(
+        return_value=Mock(
+            status=first_status,
+            task_id="prediction-task",
+            history_id=None,
+            queue="inference",
+        )
+    )
+    with (
+        patch(
+            "endoreg_db.services.hub.ingest.AiModel.objects.get", return_value=model
+        ) as lookup,
+        patch(
+            "endoreg_db.services.video_files.temporal_inference.dispatch_video_temporal_inference",
+            dispatch,
+        ),
+    ):
+
+        def replay() -> None:
+            _dispatch_video_upload_prediction(
+                job_id=str(job.pk),
+                video=video,
+                provenance={"prediction_model_name": "configured-model"},
+                lease=lease,
+            )
+
+        if first_status in {"failed", "busy"}:
+            with pytest.raises(RuntimeError, match="handoff failed"):
+                replay()
+        else:
+            replay()
+        job.refresh_from_db()
+        assert job.processing_provenance["prediction_model_meta_id"] == 73
+        model.get_latest_version.side_effect = AssertionError(
+            "must retain pinned model"
+        )
+        dispatch.return_value.status = "completed"
+        replay()
+        assert lookup.call_count == 1
+        assert dispatch.call_count == 2
+        assert dispatch.call_args.kwargs["model_meta_id"] == 73
+        assert dispatch.call_args.kwargs["upload_job_id"] == str(job.pk)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("outcome", ["failed", "incomplete", "completed"])
+def test_video_watcher_inline_fallback_uses_fenced_worker_without_broker(
+    ingest_center: Center, tmp_path: Path, outcome: str
+) -> None:
+    from endoreg_db.services.hub.ingest import _run_watcher_upload_job_inline
+    from endoreg_db.utils.hashs import get_file_hash
+
+    job = _create_upload_job(
+        center=ingest_center, content_type="video/mp4", filename="inline.mp4"
+    )
+    source = tmp_path / "inline.mp4"
+    atomic_write_file(destination=source, content=(b"contract-source",))
+    job.content_hash = get_file_hash(source)
+    job.save(update_fields=["content_hash"])
+
+    def execute(job_id: str) -> bool:
+        assert job_id == str(job.pk)
+        if outcome == "completed":
+            job.mark_completed()
+        return outcome != "failed"
+
+    with (
+        patch(
+            "endoreg_db.services.hub.ingest.run_video_upload_import_job",
+            side_effect=execute,
+        ) as worker,
+        patch(
+            "endoreg_db.services.hub.ingest.process_upload_job",
+            side_effect=AssertionError("inline fallback must not requeue"),
+        ),
+    ):
+        if outcome == "completed":
+            result = _run_watcher_upload_job_inline(
+                upload_job=job,
+                watched_path=source,
+                normalized_type="video",
+                source_center=ingest_center,
+                processor_name="configured-processor",
+            )
+            assert result.is_successful
+            assert not source.exists()
+        else:
+            with pytest.raises(
+                RuntimeError, match="Fenced inline watcher video import"
+            ):
+                _run_watcher_upload_job_inline(
+                    upload_job=job,
+                    watched_path=source,
+                    normalized_type="video",
+                    source_center=ingest_center,
+                    processor_name="configured-processor",
+                )
+            assert source.exists()
+        worker.assert_called_once_with(str(job.pk))

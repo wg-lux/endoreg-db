@@ -7,16 +7,9 @@ from datetime import date, timedelta
 
 import numpy as np
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 from .base_value_distribution import BaseValueDistribution
-
-
-class DateValueDistributionManager(models.Manager["DateValueDistribution"]):
-    """Object manager for DateValueDistribution"""
-
-    def get_by_natural_key(self, name: str) -> "DateValueDistribution":
-        """Retrieve a DateValueDistribution by its natural key."""
-        return self.get(name=name)
 
 
 class DateValueDistribution(BaseValueDistribution):
@@ -27,7 +20,7 @@ class DateValueDistribution(BaseValueDistribution):
     timedelta_days_min, timedelta_days_max, timedelta_days_mean, timedelta_days_std_dev
     """
 
-    objects = DateValueDistributionManager()
+    objects = NameNaturalKeyManager["DateValueDistribution"]()
     description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
     DISTRIBUTION_CHOICES = [
         ("uniform", "Uniform"),

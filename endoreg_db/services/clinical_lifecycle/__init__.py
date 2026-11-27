@@ -1,4 +1,7 @@
-"""End-to-end clinical record lifecycle (derived finite state machine)."""
+"""End-to-end clinical record lifecycle (derived finite state machine).
+
+Service gates resolve the state through ``persistence.require_workflow_transition``.
+"""
 
 from .state_machine import (
     AnnotationStage,
@@ -16,7 +19,6 @@ from .state_machine import (
     derive_clinical_record_state,
     evidence_rejection,
     lifecycle_invariant_violations,
-    require_clinical_transition,
     transition_clinical_record,
     transition_tables,
 )
@@ -37,7 +39,6 @@ __all__ = [
     "derive_clinical_record_state",
     "evidence_rejection",
     "lifecycle_invariant_violations",
-    "require_clinical_transition",
     "transition_clinical_record",
     "transition_tables",
 ]

@@ -16,6 +16,7 @@ from endoreg_db.models import (
     VideoState,
 )
 from endoreg_db.views.video.correction import update_segments_after_frame_removal
+from tests.helpers.media_states import create_media_state
 
 
 class SegmentUpdateAfterFrameRemovalTest(TestCase):
@@ -64,7 +65,7 @@ class SegmentUpdateAfterFrameRemovalTest(TestCase):
         )
 
         # Create video state and associate with the video
-        self.video_state = VideoState.objects.create(frames_extracted=True)
+        self.video_state = create_media_state(VideoState, frames_extracted=True)
         self.video.state = self.video_state
         self.video.save(update_fields=["state"])
 
