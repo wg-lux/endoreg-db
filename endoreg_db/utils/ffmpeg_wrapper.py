@@ -52,6 +52,7 @@ from .video.frame_extraction import (
     extract_frame_range,
     extract_frames,
     extract_frames_by_presentation_timestamp,
+    extract_selected_frames,
 )
 from .video.masking_filters import (
     _blacken_filter_args,
@@ -107,6 +108,7 @@ __all__ = [
     "blacken_video_frame_intervals",
     "check_ffmpeg_availability",
     "extract_frame_range",
+    "extract_selected_frames",
     "extract_frames",
     "extract_frames_by_presentation_timestamp",
     "get_stream_info",

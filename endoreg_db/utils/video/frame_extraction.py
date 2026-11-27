@@ -8,14 +8,18 @@ import cv2
 from tqdm import tqdm
 
 from endoreg_db.utils.file_operations import (
+    atomic_move_file,
     ensure_directory,
+    safe_rmtree,
     safe_unlink_file,
 )
 
 from .command_construction import (
     _build_extract_frame_range_command,
     _build_extract_frames_command,
+    _build_extract_selected_frames_command,
     _frame_image_encoder_args,
+    _selected_frame_runs,
 )
 from .executable_discovery import (
     _resolve_ffmpeg_executable,
@@ -309,6 +313,129 @@ def extract_frame_range(
         video_path.name,
     )
     return extracted_files
+
+
+# Bounds one ``select`` expression so the FFmpeg argument stays far below the
+# operating-system argument-length limit for highly fragmented selections.
+_MAX_SELECTED_RUNS_PER_PASS = 256
+
+
+def extract_selected_frames(
+    video_path: Path,
+    output_dir: Path,
+    *,
+    frame_numbers: list[int],
+    quality: int,
+    ext: str = "jpg",
+) -> list[Path]:
+    """Extract only the requested zero-based decode indices.
+
+    Unlike ``extract_frame_range``, frames between the requested indices are
+    decoded but never encoded or written. Each output is named
+    ``frame_<decode index>.<ext>`` so callers keep the frame-number mapping.
+    Contiguous indices are grouped into ``between`` runs; very fragmented
+    selections are split into several bounded decode passes.
+
+    Raises:
+        ValueError: If ``frame_numbers`` is empty or contains negative values.
+        FileNotFoundError: If the FFmpeg executable is not found.
+        RuntimeError: If FFmpeg fails or does not produce every requested frame.
+    """
+    if not frame_numbers:
+        raise ValueError("extract_selected_frames requires at least one frame")
+    requested = sorted(set(frame_numbers))
+    runs = _selected_frame_runs(requested)
+
+    ffmpeg_executable = _resolve_ffmpeg_executable()
+    if not ffmpeg_executable:
+        raise FileNotFoundError(
+            "ffmpeg command not found. Ensure FFmpeg is installed and in PATH."
+        )
+
+    ensure_directory(output_dir)
+    extracted: list[Path] = []
+    for pass_index in range(0, len(runs), _MAX_SELECTED_RUNS_PER_PASS):
+        pass_runs = runs[pass_index : pass_index + _MAX_SELECTED_RUNS_PER_PASS]
+        pass_frame_numbers = [
+            frame_number
+            for start, end in pass_runs
+            for frame_number in range(start, end + 1)
+        ]
+        staging_dir = ensure_directory(output_dir / f"selected_pass_{pass_index:07d}")
+        try:
+            extracted.extend(
+                _run_selected_frames_pass(
+                    ffmpeg_executable,
+                    video_path,
+                    staging_dir=staging_dir,
+                    output_dir=output_dir,
+                    runs=pass_runs,
+                    frame_numbers=pass_frame_numbers,
+                    quality=quality,
+                    ext=ext,
+                )
+            )
+        finally:
+            safe_rmtree(staging_dir, missing_ok=True)
+
+    logger.info(
+        "Selected frame extraction wrote %d frames in %d pass(es) for %s",
+        len(extracted),
+        -(-len(runs) // _MAX_SELECTED_RUNS_PER_PASS),
+        video_path.name,
+    )
+    return extracted
+
+
+def _run_selected_frames_pass(
+    ffmpeg_executable: str,
+    video_path: Path,
+    *,
+    staging_dir: Path,
+    output_dir: Path,
+    runs: list[tuple[int, int]],
+    frame_numbers: list[int],
+    quality: int,
+    ext: str,
+) -> list[Path]:
+    command = _build_extract_selected_frames_command(
+        ffmpeg_executable=ffmpeg_executable,
+        video_path=video_path,
+        output_pattern=staging_dir / f"selected_%07d.{ext}",
+        runs=runs,
+        quality=quality,
+        ext=ext,
+    )
+    try:
+        subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            stdin=subprocess.DEVNULL,
+        )
+    except subprocess.CalledProcessError as exc:
+        stderr = str(exc.stderr or "").strip()[-8000:] or "<empty>"
+        raise RuntimeError(
+            f"FFmpeg selected frame extraction failed for {video_path}; "
+            f"exit_code={exc.returncode}.\nFFmpeg stderr:\n{stderr}"
+        ) from exc
+
+    # FFmpeg writes selected frames in decode order, numbered from zero, so
+    # the n-th staged image is the n-th requested decode index.
+    staged = sorted(staging_dir.glob(f"selected_*.{ext}"))
+    if len(staged) != len(frame_numbers):
+        raise RuntimeError(
+            "Selected frame extraction did not produce every requested frame for "
+            f"{video_path}: expected={len(frame_numbers)} actual={len(staged)}"
+        )
+
+    moved: list[Path] = []
+    for staged_path, frame_number in zip(staged, frame_numbers, strict=True):
+        target = output_dir / f"frame_{frame_number:07d}.{ext}"
+        atomic_move_file(source=staged_path, destination=target)
+        moved.append(target)
+    return moved
 
 
 def _probe_container_start_seconds(video_path: Path | str) -> Fraction:

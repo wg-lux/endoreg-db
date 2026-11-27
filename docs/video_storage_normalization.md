@@ -611,6 +611,9 @@ use the existing validated generation-publication workflow with fresh content ke
 - **Container start time:** the earliest presentation time across all streams
   of a media container, as reported by ffprobe `format=start_time`. FFmpeg
   offsets every input seek by this value; it is not the video stream origin.
+- **Decode index:** the zero-based position of a frame in decoder output order
+  (FFmpeg `select` variable `n`). It equals the persisted frame number only for
+  the generation that was decoded; it is not derived from a frame rate.
 - **MP4 track timescale:** the number of ticks per second stored for an MP4
   track. It must equal the source time-base denominator for recorded
   presentation timestamps to survive transcoding unchanged.

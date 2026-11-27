@@ -30,7 +30,7 @@ files:
 - file: frame_stream.py
   role: Shared exact-timestamp JPEG and lossless pixel decoding, including persisted-frame identity validation and authenticated ranges.
 - file: video/frame_extraction.py
-  role: Sparse exact-timestamp frame extraction using shared rational timeline validation and container-relative seek translation.
+  role: Sparse exact-timestamp frame extraction using shared rational timeline validation and container-relative seek translation, plus single-decode selected-frame extraction by zero-based decode index.
 - file: profiling.py
   role: Opt-in function profiling.
 - file: encryption/__init__.py

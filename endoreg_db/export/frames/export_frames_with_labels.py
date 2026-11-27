@@ -79,7 +79,7 @@ from endoreg_db.utils.encryption.storage_materialization import (
     materialized_plaintext_field_file,
 )
 from endoreg_db.utils.ffmpeg_wrapper import (
-    extract_frame_range as ffmpeg_extract_frame_range,
+    extract_selected_frames as ffmpeg_extract_selected_frames,
 )
 from endoreg_db.utils.ffmpeg_wrapper import (
     extract_frames as ffmpeg_extract_frames,
@@ -1446,11 +1446,12 @@ def _extract_local_frame_paths(
             ext=ext,
             fps=None,
         )
-    return ffmpeg_extract_frame_range(
+    # Encode only the requested decode indices instead of every frame between
+    # the first and last request.
+    return ffmpeg_extract_selected_frames(
         source_path,
         tmp_dir,
-        start_frame=requested_frame_numbers[0],
-        end_frame=requested_frame_numbers[-1] + 1,
+        frame_numbers=requested_frame_numbers,
         quality=quality,
         ext=ext,
     )

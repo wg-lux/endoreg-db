@@ -730,27 +730,29 @@ def test_legacy_transcode_fps_cannot_reindex_annotation_frames(
         timestamp=0.417,
     )
     video = _VideoDouble(pk=21, frames=_FakeFrameRows([frame]))
-    captured: dict[str, int] = {}
+    captured: dict[str, list[int]] = {}
 
-    def fake_extract_range(
+    def fake_extract_selected(
         video_path: Path,
         output_dir: Path,
-        start_frame: int,
-        end_frame: int,
+        *,
+        frame_numbers: list[int],
         quality: int,
         ext: str,
     ) -> list[Path]:
         assert video_path == source_path
         assert quality == 2
-        captured.update(start_frame=start_frame, end_frame=end_frame)
-        output = output_dir / f"frame_{start_frame:07d}.{ext}"
+        captured["frame_numbers"] = list(frame_numbers)
+        output = output_dir / f"frame_{frame_numbers[0]:07d}.{ext}"
         output.write_bytes(b"frame-10")
         return [output]
 
     def reject_fps_resample(*args: object, **kwargs: object) -> list[Path]:
         raise AssertionError("legacy transcode_fps must not resample source frames")
 
-    monkeypatch.setattr(export_module, "ffmpeg_extract_frame_range", fake_extract_range)
+    monkeypatch.setattr(
+        export_module, "ffmpeg_extract_selected_frames", fake_extract_selected
+    )
     monkeypatch.setattr(export_module, "ffmpeg_extract_frames", reject_fps_resample)
 
     export_module._extract_and_move_transcoded_frames(
@@ -764,7 +766,7 @@ def test_legacy_transcode_fps_cannot_reindex_annotation_frames(
         overwrite=True,
     )
 
-    assert captured == {"start_frame": 10, "end_frame": 11}
+    assert captured == {"frame_numbers": [10]}
     assert (tmp_path / "frames" / "frame_41.jpg").read_bytes() == b"frame-10"
 
 
@@ -902,7 +904,7 @@ def test_transcode_extracts_sparse_frames_by_exact_presentation_timestamp(
     monkeypatch.setattr(
         export_module, "ffmpeg_extract_frames_by_pts", fake_extract_by_pts
     )
-    monkeypatch.setattr(export_module, "ffmpeg_extract_frame_range", reject_range)
+    monkeypatch.setattr(export_module, "ffmpeg_extract_selected_frames", reject_range)
 
     if corruption is not None:
         with pytest.raises(ValueError, match="[Tt]ime base|[Tt]imestamp"):
