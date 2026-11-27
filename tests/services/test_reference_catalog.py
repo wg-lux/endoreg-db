@@ -3,6 +3,7 @@ from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 from concurrent.futures import ThreadPoolExecutor
+import json
 
 import pytest
 from django.core.management import call_command
@@ -16,9 +17,16 @@ from lx_dtypes.models.contracts.reference_catalog_snapshot import (
     ReferenceCatalogSnapshot,
     ReferenceCatalogReceipt,
 )
+from lx_dtypes.models.contracts.reference_migration import (
+    ReferenceMigrationCatalog,
+    ReferenceMigrationRule,
+    ReferenceMigrationTarget,
+)
 from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 
 from endoreg_db.models.other.reference_catalog_import import ReferenceCatalogImport
+from endoreg_db.models.other.information_source import InformationSource
 from endoreg_db.services.reference_data.catalog import (
     catalog_snapshot,
     import_reference_catalog,
@@ -128,6 +136,99 @@ def test_bootstrap_uses_registered_catalog_without_legacy_loader() -> None:
         ).snapshot.clinical_package
         is not None
     )
+
+
+def test_bootstrap_records_legacy_source_migration_once(
+    packaged_registry: Path,
+) -> None:
+    row = InformationSource.objects.create(name="unknown", description=None)
+    dry_run = StringIO()
+    call_command("load_base_db_data", dry_run=True, stdout=dry_run)
+    row.refresh_from_db()
+    assert row.description is None
+    assert not ReferenceCatalogImport.objects.exists()
+
+    output = StringIO()
+    call_command("load_base_db_data", stdout=output)
+    history = json.loads(output.getvalue())["clinical_plan"]["applied_migrations"]
+    assert len(history) == 1
+    assert history[0]["changes"][0]["decision"] == "fill_missing"
+    row.refresh_from_db()
+    assert row.description == "Data source is unknown."
+
+    repeated = StringIO()
+    call_command("load_base_db_data", stdout=repeated)
+    result = json.loads(repeated.getvalue())
+    assert result["unchanged"]
+    assert result["clinical_plan"]["applied_migrations"] == history
+    assert InformationSource.objects.get(name="unknown").pk == row.pk
+
+
+def test_catalogue_migration_and_history_commit_together() -> None:
+    kind = ReferenceKind.GENDER
+    old = _with_record_field(
+        select_catalog(snapshot(), {kind}), kind, "unknown", "description", "Old text."
+    )
+    import_reference_catalog(old)
+    changed = _with_record_field(old, kind, "unknown", "description", "Unspecified.")
+    identity = KnowledgeBaseIdentity(
+        knowledge_base_module=old.identity.knowledge_base_module,
+        knowledge_base_version="2.1.0",
+    )
+    updated = ReferenceCatalogSnapshot(
+        identity=identity,
+        payload=changed.payload,
+        projection=changed.projection,
+        snapshot_id=ReferenceCatalogSnapshot.content_digest(
+            identity, changed.payload, changed.projection
+        ),
+    )
+    rule = ReferenceMigrationRule(
+        kind=kind,
+        identity=next(
+            record.identity
+            for record in old.payload.records
+            if record.identity.name == "unknown"
+        ),
+        field="description",
+        existing="Old text.",
+        proposed="Unspecified.",
+        reason="Reviewed wording correction.",
+    )
+    rules = ReferenceMigrationCatalog(
+        schema_version=1,
+        targets=[
+            ReferenceMigrationTarget(
+                module=identity.knowledge_base_module,
+                version=identity.knowledge_base_version,
+                rules=[rule],
+            )
+        ],
+    )
+    with patch(
+        "endoreg_db.services.reference_data.catalog.load_reference_migrations",
+        return_value=rules,
+    ):
+        proposed = plan_reference_catalog(updated)
+        assert proposed.can_import
+        assert [change.action for change in proposed.changes].count("migrate") == 1
+        assert not proposed.applied_migrations
+        with patch.object(
+            ReferenceCatalogImport, "save", side_effect=ValueError("receipt failed")
+        ):
+            with pytest.raises(ValueError, match="receipt failed"):
+                import_reference_catalog(updated)
+        assert plan_reference_catalog(updated) == proposed
+        assert ReferenceCatalogImport.objects.count() == 1
+
+        applied = import_reference_catalog(updated)
+        replay = import_reference_catalog(updated)
+    (migration,) = applied.applied_migrations
+    assert migration.updates == {"description": "Unspecified."}
+    assert migration.changes[0].reason == rule.reason
+    assert replay.unchanged
+    assert replay.applied_migrations == [migration]
+    assert not plan_reference_catalog(old).can_import
 
 
 def test_selected_catalogue_closes_dependencies_and_full_import_reuses_rows() -> None:

@@ -22,6 +22,10 @@ from django.utils import timezone
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.json_types import JsonValue
 from lx_dtypes.models.contracts.pdf_file import PdfFileMetaJsonObject
+from lx_dtypes.models.contracts.patient_examination_report import (
+    report_json_safe,
+    validate_segment_selection_map,
+)
 from lx_dtypes.terminology.terminology_loader import load_module_kb
 from lx_dtypes.terminology.terminology_service import TerminologyError
 
@@ -59,6 +63,7 @@ from endoreg_db.services.runtime.status_writers import (
 from endoreg_db.services.reports.structured_records import (
     persist_patient_examination_dtypes_record_from_ledger,
 )
+from endoreg_db.services.reports.frame_selection import SEGMENT_FRAME_SELECTIONS_KEY
 from endoreg_db.services.reports.finding_sync import sync_report_findings
 from endoreg_db.services.reports.history import get_patient_examination_history_context
 from endoreg_db.services.reports.patient_context import update_report_patient_context
@@ -625,6 +630,13 @@ def _apply_submission_report_fields(
         _mapping_or_empty(editor_payload),
         default_language="de",
     )
+    canonical_editor_payload.pop(SEGMENT_FRAME_SELECTIONS_KEY, None)
+    if SEGMENT_FRAME_SELECTIONS_KEY in report.editor_payload:
+        canonical_editor_payload[SEGMENT_FRAME_SELECTIONS_KEY] = report_json_safe(
+            validate_segment_selection_map(
+                report.editor_payload[SEGMENT_FRAME_SELECTIONS_KEY]
+            )
+        )
     report.editor_payload = canonical_editor_payload
     report.language = report_language_from_editor_payload(canonical_editor_payload)
     report.knowledge_base_module = patient_examination.knowledge_base_module

@@ -112,7 +112,7 @@ files:
 - file: upload_job_state_machine.py
   role: Rust-owned upload and expired-lease transition tables with canonical recovery admission predicates, including retained_source_recovery_filter shared by ingest reuse, interrupted-import and persisted-stack recovery.
 - file: video_provenance.py
-  role: Recording-bound ancestry exports check exclusive writers and content identity before reusing timestamp proof; receivers decode media, and electrical joins use lx-dtypes.
+  role: Export verified ancestry or decoded processed-frame coordinates when ancestry is missing; receivers verify media timestamps and electrical joins require recording ancestry.
 - file: watcher_handoff.py
   role: Exports watcher_path_reference_text, is_in_progress_handoff_path, reject_in_progress_handoff_path.
 dependencies:

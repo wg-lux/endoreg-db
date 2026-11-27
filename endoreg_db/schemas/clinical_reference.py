@@ -12,6 +12,9 @@ from lx_dtypes.models.contracts.package_snapshot import (
     restore_package_snapshot,
 )
 from lx_dtypes.models.contracts.json_types import JsonValue
+from lx_dtypes.models.contracts.reference_catalog import ReferenceKind
+from lx_dtypes.models.contracts.reference_migration import ReferenceRowMigration
+from lx_dtypes.utils.parser import camel_to_snake
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -30,6 +33,10 @@ class ReferenceModel(StrEnum):
     EXAMINATION_TYPE = "ExaminationType"
     EXAMINATION = "Examination"
     INFORMATION_SOURCE = "InformationSource"
+
+    @property
+    def catalog_kind(self) -> ReferenceKind:
+        return ReferenceKind(camel_to_snake(self.value))
 
 
 class ReferenceKey(BaseModel):
@@ -57,16 +64,36 @@ class ReferenceBinding(ReferenceKey):
 class ClinicalReferenceReceipt(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "1.1"] = "1.0"
     snapshot: KnowledgeBaseGraphSnapshot
     package_snapshot: PackageSnapshot | None = None
     bindings: list[ReferenceBinding]
+    migrations: list[ReferenceRowMigration] = Field(
+        default_factory=list, exclude_if=lambda changes: not changes
+    )
 
     @model_validator(mode="after")
     def unique_bindings(self) -> Self:
         keys = [binding.identity for binding in self.bindings]
         if len(keys) != len(set(keys)):
             raise ValueError("clinical reference bindings must have unique identities")
+        existing = {
+            (binding.model.catalog_kind, binding.name)
+            for binding in self.bindings
+            if binding.origin != "created"
+        }
+        migrated = {(item.kind, item.identity.name) for item in self.migrations}
+        if (
+            len(migrated) != len(self.migrations)
+            or not migrated.issubset(existing)
+            or any(
+                item.identity.version is not None or not item.updates
+                for item in self.migrations
+            )
+        ):
+            raise ValueError(
+                "Clinical migration history must describe existing bindings"
+            )
         if (
             self.package_snapshot is not None
             and self.package_snapshot.identity != self.snapshot.identity
@@ -91,12 +118,13 @@ class ReferenceDifference(BaseModel):
 
 
 class ReferenceChange(ReferenceKey):
-    action: Literal["create", "reuse", "adopt", "conflict"]
+    action: Literal["create", "reuse", "adopt", "migrate", "conflict"]
     row_id: int | None = None
     differing_fields: list[str] = Field(default_factory=list)
     differences: list[ReferenceDifference] = Field(
         default_factory=lambda: list[ReferenceDifference]()
     )
+    migration: ReferenceRowMigration | None = None
 
 
 class ClinicalReferencePlan(BaseModel):
@@ -107,6 +135,7 @@ class ClinicalReferencePlan(BaseModel):
     snapshot_id: str
     changes: list[ReferenceChange]
     conflicts: list[str] = Field(default_factory=list)
+    applied_migrations: list[ReferenceRowMigration] = Field(default_factory=list)
     unchanged: bool = False
 
     @property

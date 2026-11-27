@@ -8,6 +8,16 @@ from lx_dtypes.factories import normalize_missing_text
 
 from lx_dtypes.models.contracts.core_concepts import CoreConceptBase
 from lx_dtypes.models.contracts.json_types import JsonObject
+from lx_dtypes.models.contracts.reference_catalog import CatalogIdentity
+from lx_dtypes.models.contracts.reference_migration import (
+    DISPLAY_FIELDS,
+    ReferenceFieldDecision,
+    ReferenceMigrationTarget,
+    ReferenceRowMigration,
+    ReferenceRowState,
+    load_reference_migrations,
+    plan_reference_row_migration,
+)
 from lx_dtypes.models.contracts.knowledge_base import KnowledgeBaseIdentity
 from lx_dtypes.models.contracts.package_snapshot import (
     PackageSnapshot,
@@ -155,6 +165,64 @@ def _semantic_closure(
     return result
 
 
+def _plan_fields(
+    definition: ReferenceDefinition,
+    differences: list[ReferenceDifference],
+    target: ReferenceMigrationTarget,
+) -> ReferenceRowMigration:
+    kind = definition.model.catalog_kind
+    identity = CatalogIdentity(name=definition.name)
+    return plan_reference_row_migration(
+        ReferenceRowState(
+            kind=kind,
+            identity=identity,
+            fields={detail.field: detail.existing for detail in differences},
+        ),
+        ReferenceRowState(
+            kind=kind,
+            identity=identity,
+            fields={detail.field: detail.proposed for detail in differences},
+        ),
+        target,
+    )
+
+
+def _preserves_semantics(
+    before: dict[tuple[GraphNodeKind, str], BaseModel],
+    after: dict[tuple[GraphNodeKind, str], BaseModel],
+    projected: dict[tuple[GraphNodeKind, str], list[ReferenceDefinition]],
+    target: ReferenceMigrationTarget,
+) -> bool:
+    if before.keys() != after.keys():
+        return False
+    display_fields = set(DISPLAY_FIELDS)
+    for key, old in before.items():
+        new = after[key]
+        if old == new:
+            continue
+        if type(old) is not type(new):
+            return False
+        old_fields = old.model_dump(mode="json", exclude=display_fields)
+        new_fields = new.model_dump(mode="json", exclude=display_fields)
+        if old_fields.keys() != new_fields.keys():
+            return False
+        differences = [
+            ReferenceDifference(field=field, existing=value, proposed=new_fields[field])
+            for field, value in old_fields.items()
+            if value != new_fields[field]
+        ]
+        if differences and (
+            not projected.get(key)
+            or any(
+                any(detail.field not in definition.attributes for detail in differences)
+                or not _plan_fields(definition, differences, target).automatic
+                for definition in projected[key]
+            )
+        ):
+            return False
+    return True
+
+
 def _references(model: ReferenceModel, names: list[str]) -> list[ReferenceKey]:
     return [ReferenceKey(model=model, name=name) for name in names]
 
@@ -183,6 +251,11 @@ def compile_clinical_references(
             {"description": record.description or ""} if description else {}
         )
         values.update(attributes or {})
+        if record.name_de is not None and any(
+            field.name == "name_de" and field.concrete
+            for field in MODEL_TYPES[model]._meta.fields
+        ):
+            values["name_de"] = record.name_de
         definition = ReferenceDefinition(
             model=model, name=record.name, attributes=values, relations=relations or {}
         )
@@ -342,21 +415,19 @@ def _difference(
     *,
     allow_finding_extensions: bool,
 ) -> list[ReferenceDifference]:
-    differences = [
-        ReferenceDifference(
-            field=name,
-            existing=str(getattr(row, name)) if name == "date" else getattr(row, name),
-            proposed=value,
-        )
-        for name, value in definition.attributes.items()
-        if (str(getattr(row, name)) if name == "date" else (getattr(row, name) or ""))
-        != (value or "")
-        and not (
+    differences: list[ReferenceDifference] = []
+    for name, value in definition.attributes.items():
+        existing = getattr(row, name)
+        if name == "date" and existing is not None:
+            existing = str(existing)
+        if (existing or "") == (value or "") or (
             name == "description"
-            and normalize_missing_text(getattr(row, name))
-            == normalize_missing_text(value)
+            and normalize_missing_text(existing) == normalize_missing_text(value)
+        ):
+            continue
+        differences.append(
+            ReferenceDifference(field=name, existing=existing, proposed=value)
         )
-    ]
     for field, refs in definition.relations.items():
         manager = cast(ReferenceRelation, getattr(row, field))
         existing = list(manager.all().values_list("name", flat=True))
@@ -416,6 +487,7 @@ def reuse_clinical_package(package: PackageSnapshot) -> ClinicalReferencePlan | 
         version=row.version,
         snapshot_id=row.snapshot_id,
         unchanged=True,
+        applied_migrations=receipt.migrations,
         changes=[
             ReferenceChange(
                 model=binding.model,
@@ -433,6 +505,7 @@ def plan_clinical_reference_import(
     *,
     adopt_existing: bool = False,
     package_snapshot: PackageSnapshot | None = None,
+    migration_target: ReferenceMigrationTarget | None = None,
 ) -> ClinicalReferencePlan:
     if package_snapshot is not None:
         ClinicalReferenceReceipt(
@@ -441,11 +514,21 @@ def plan_clinical_reference_import(
     definitions = compile_clinical_references(snapshot)
     module = snapshot.identity.knowledge_base_module
     version = snapshot.identity.knowledge_base_version
-    receipts = list(ClinicalReferenceImport.objects.all())
+    migration_target = migration_target or load_reference_migrations().target(
+        module, version
+    )
+    if (
+        migration_target.module,
+        migration_target.version,
+    ) != (module, version):
+        raise ValueError("Clinical migration target differs from the package identity")
+    projected: dict[tuple[GraphNodeKind, str], list[ReferenceDefinition]] = {}
+    for definition in definitions:
+        for kind in _GRAPH_KINDS[definition.model]:
+            projected.setdefault((kind, definition.name), []).append(definition)
+    receipts = ClinicalReferenceImport.objects.order_by("pk")
     imported: dict[tuple[ReferenceModel, str], set[int]] = {}
-    previous_meanings: dict[
-        tuple[ReferenceModel, str], list[KnowledgeBaseGraphSnapshot]
-    ] = {}
+    previous_meanings: dict[tuple[ReferenceModel, str], KnowledgeBaseGraphSnapshot] = {}
     existing_receipt: ClinicalReferenceReceipt | None = None
     conflicts: list[str] = []
     for receipt_row in receipts:
@@ -463,7 +546,7 @@ def plan_clinical_reference_import(
                 )
         for binding in receipt.bindings:
             imported.setdefault(binding.identity, set()).add(binding.row_id)
-            previous_meanings.setdefault(binding.identity, []).append(receipt.snapshot)
+            previous_meanings[binding.identity] = receipt.snapshot
     changes: list[ReferenceChange] = []
     bound = (
         {b.identity: b.row_id for b in existing_receipt.bindings}
@@ -474,10 +557,11 @@ def plan_clinical_reference_import(
         candidates = list(
             MODEL_TYPES[definition.model]._default_manager.filter(name=definition.name)
         )
-        action: Literal["create", "reuse", "adopt", "conflict"]
+        action: Literal["create", "reuse", "adopt", "migrate", "conflict"]
         row_id: int | None = None
         differences: list[str] = []
         details: list[ReferenceDifference] = []
+        migration: ReferenceRowMigration | None = None
         if len(candidates) > 1:
             action, differences = "conflict", ["ambiguous_name"]
         elif not candidates:
@@ -490,22 +574,59 @@ def plan_clinical_reference_import(
             details = _difference(
                 row, definition, allow_finding_extensions=existing_receipt is None
             )
+            if (
+                existing_receipt is not None
+                and existing_receipt.schema_version == "1.0"
+            ):
+                details = [
+                    detail for detail in details if detail.field not in DISPLAY_FIELDS
+                ]
+            projected_differences = [
+                detail for detail in details if detail.field in definition.attributes
+            ]
+            if existing_receipt is None and projected_differences:
+                classified = _plan_fields(
+                    definition, projected_differences, migration_target
+                )
+                if classified.automatic:
+                    migration = classified if classified.updates else None
+                    details = [
+                        detail
+                        for detail in details
+                        if detail.field not in definition.attributes
+                    ]
+                else:
+                    conflicts_in_fields = {
+                        change.field
+                        for change in classified.changes
+                        if change.decision == ReferenceFieldDecision.CONFLICT
+                    }
+                    details = [
+                        detail
+                        for detail in details
+                        if detail.field not in definition.attributes
+                        or detail.field in conflicts_in_fields
+                    ]
             differences = [detail.field for detail in details]
             if definition.identity in bound and bound[definition.identity] != row_id:
                 differences.append("row_identity_changed")
             known = row_id in imported.get(definition.identity, set())
-            for previous_snapshot in previous_meanings.get(definition.identity, []):
-                if (
-                    previous_snapshot.snapshot_id != snapshot.snapshot_id
-                    and _semantic_closure(previous_snapshot, definition)
-                    != _semantic_closure(snapshot, definition)
-                ):
-                    differences.append("immutable_clinical_meaning")
-                    break
+            previous_snapshot = previous_meanings.get(definition.identity)
+            if (
+                previous_snapshot is not None
+                and previous_snapshot.snapshot_id != snapshot.snapshot_id
+                and not _preserves_semantics(
+                    _semantic_closure(previous_snapshot, definition),
+                    _semantic_closure(snapshot, definition),
+                    projected,
+                    migration_target,
+                )
+            ):
+                differences.append("immutable_clinical_meaning")
             if differences:
                 action = "conflict"
             elif known:
-                action = "reuse"
+                action = "migrate" if migration is not None else "reuse"
             elif adopt_existing:
                 action = "adopt"
             else:
@@ -518,6 +639,7 @@ def plan_clinical_reference_import(
                 row_id=row_id,
                 differing_fields=differences,
                 differences=details,
+                migration=migration if action != "conflict" else None,
             )
         )
     return ClinicalReferencePlan(
@@ -526,6 +648,7 @@ def plan_clinical_reference_import(
         snapshot_id=snapshot.snapshot_id,
         changes=changes,
         conflicts=conflicts,
+        applied_migrations=existing_receipt.migrations if existing_receipt else [],
         unchanged=existing_receipt is not None
         and not conflicts
         and all(c.action == "reuse" for c in changes),
@@ -558,6 +681,7 @@ def import_clinical_references_in_transaction(
     *,
     adopt_existing: bool = False,
     package_snapshot: PackageSnapshot | None = None,
+    migration_target: ReferenceMigrationTarget | None = None,
 ) -> ClinicalReferencePlan:
     """Compose clinical projection under the shared reference lock and transaction."""
     if not connection.in_atomic_block:
@@ -568,6 +692,7 @@ def import_clinical_references_in_transaction(
         snapshot,
         adopt_existing=adopt_existing,
         package_snapshot=package_snapshot,
+        migration_target=migration_target,
     )
     if not plan.can_import:
         raise ValueError(
@@ -590,6 +715,11 @@ def import_clinical_references_in_transaction(
             row = manager.create(name=definition.name, **definition.attributes)
         else:
             row = manager.get(pk=change.row_id)
+            if change.migration is not None:
+                fields = list(change.migration.updates)
+                for field in fields:
+                    setattr(row, field, definition.attributes[field])
+                row.save(update_fields=fields)
         rows[definition.identity] = row
         bindings.append(
             ReferenceBinding(
@@ -619,9 +749,13 @@ def import_clinical_references_in_transaction(
                 rows[ref.identity] for ref in refs
             )
     receipt = ClinicalReferenceReceipt(
+        schema_version="1.1",
         snapshot=snapshot,
         package_snapshot=package_snapshot,
         bindings=bindings,
+        migrations=[
+            change.migration for change in plan.changes if change.migration is not None
+        ],
     )
     ClinicalReferenceImport.objects.create(
         module=plan.module,
@@ -641,7 +775,7 @@ def import_clinical_references_in_transaction(
             reused=sum(c.action == "reuse" for c in plan.changes),
         )
     )
-    return plan
+    return plan.model_copy(update={"applied_migrations": receipt.migrations})
 
 
 class ClinicalPackageRequiredError(ValueError):

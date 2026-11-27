@@ -250,6 +250,13 @@ def test_two_polyps_keep_resection_and_segment_identity_through_report_and_cohor
     data = cast(SegmentFrameSelectorResponseData, response.json())
     attached = _get_segment_item(data, segment_id=segment.pk)["attached_finding"]
     assert attached is not None and attached["patient_finding_id"] == second.pk
+    save_report_submission(
+        patient_examination_id=examination.pk,
+        report_id=result.report.pk,
+        template_name="segment_frame_selection",
+        user=selector_context.user,
+        editor_payload={"report_segment_frame_selections": {}},
+    )
     reloaded = logged_in_client.get(
         _selector_url(examination.pk, report_id=result.report.pk)
     )
@@ -258,6 +265,12 @@ def test_two_polyps_keep_resection_and_segment_identity_through_report_and_cohor
     assert (
         _get_segment_item(reloaded_data, segment_id=segment.pk)["attached_finding"]
         == attached
+    )
+    assert (
+        _get_segment_item(reloaded_data, segment_id=segment.pk)["selection_meta"][
+            "selection_source"
+        ]
+        == "set"
     )
     video = cast(VideoFile, selector_context.video)
     content = b"cohort-video-test-fixture"
@@ -432,6 +445,12 @@ def patient_examination(
     )
 
 
+def _set_segment_reviewed(segment: LabelVideoSegment, reviewed: bool = True) -> None:
+    state, _ = segment.get_or_create_state()
+    state.is_validated = reviewed
+    state.save(update_fields=["is_validated"])
+
+
 @pytest.fixture
 def selector_context(
     staff_user: User,
@@ -440,6 +459,9 @@ def selector_context(
     patient_examination: PatientExamination,
 ) -> SimpleNamespace:
     video = VideoFile.objects.create(
+        state=create_media_state(
+            VideoState, anonymized=True, anonymization_validated=True
+        ),
         center=report_center,
         raw_video_hash=f"selector-video-{uuid.uuid4().hex}",
         examination=patient_examination,
@@ -454,6 +476,7 @@ def selector_context(
         start_frame_number=10,
         end_frame_number=20,
     )
+    _set_segment_reviewed(segment)
     for frame_number in [10, 12, 15, 17, 20]:
         Frame.objects.create(
             video=video,
@@ -481,6 +504,9 @@ def export_context(
     patient_examination: PatientExamination,
 ) -> Iterator[SimpleNamespace]:
     video = VideoFile.objects.create(
+        state=create_media_state(
+            VideoState, anonymized=True, anonymization_validated=True
+        ),
         center=report_center,
         raw_video_hash=f"export-report-video-{uuid.uuid4().hex}",
         examination=patient_examination,
@@ -504,6 +530,7 @@ def export_context(
         start_frame_number=10,
         end_frame_number=20,
     )
+    _set_segment_reviewed(segment)
     frame = Frame.objects.create(
         video=video,
         frame_number=12,
@@ -997,6 +1024,9 @@ def test_segment_frame_selector_includes_video_segments_by_shared_sensitive_meta
     )
 
     linked_by_meta_video = VideoFile.objects.create(
+        state=create_media_state(
+            VideoState, anonymized=True, anonymization_validated=True
+        ),
         center=selector_context.center,
         raw_video_hash=f"selector-shared-meta-video-{uuid.uuid4().hex}",
         patient=selector_context.patient,
@@ -1012,6 +1042,7 @@ def test_segment_frame_selector_includes_video_segments_by_shared_sensitive_meta
         start_frame_number=30,
         end_frame_number=40,
     )
+    _set_segment_reviewed(linked_by_meta_segment)
 
     Frame.objects.create(
         video=linked_by_meta_video,
@@ -1177,6 +1208,35 @@ def test_segment_frame_selector_patch_random_step_set_and_clear(
 
 
 @pytest.mark.django_db
+def test_report_selector_withholds_unreviewed_prediction_segments(
+    logged_in_client: Client,
+    selector_context: SimpleNamespace,
+) -> None:
+    segment = cast(LabelVideoSegment, selector_context.segment)
+    prediction, _ = InformationSource.objects.get_or_create(name="prediction")
+    segment.source = prediction
+    segment.save(update_fields=["source"])
+    _set_segment_reviewed(segment, False)
+    examination_id = selector_context.patient_examination.pk
+
+    response = logged_in_client.get(_selector_url(examination_id))
+    assert response.status_code == 200, response.content
+    assert response.json()["results"] == []
+    response = logged_in_client.patch(
+        _selector_url(examination_id),
+        data=_json_body(
+            {
+                "patient_examination_id": examination_id,
+                "segment_id": segment.pk,
+                "frame_number": 15,
+            }
+        ),
+        content_type="application/json",
+    )
+    assert response.status_code == 404, response.content
+
+
+@pytest.mark.django_db
 def test_segment_frame_selector_patch_rejects_unknown_segment(
     logged_in_client: Client,
     selector_context: SimpleNamespace,
@@ -1237,7 +1297,9 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     export_context: SimpleNamespace,
     monkeypatch: pytest.MonkeyPatch,
     selection_mode: str,
+    packaged_registry: Path,
 ) -> None:
+    del packaged_registry
     from endoreg_db.services.reports import pdf_renderer as renderer_module
     from endoreg_db.utils.frame_stream import EncodedFrameSample
 
@@ -1245,6 +1307,26 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
         VideoState, anonymized=True, anonymization_validated=True
     )
     export_context.video.save(update_fields=["state"])
+    if selection_mode == "default":
+        finding = PatientFinding.objects.create(
+            patient_examination=export_context.patient_examination,
+            finding=Finding.objects.create(name="linked_pdf_finding"),
+        )
+        link = logged_in_client.patch(
+            f"{API_PREFIX}/segment-frame-selector",
+            data=_json_body(
+                {
+                    "patient_examination_id": export_context.patient_examination.pk,
+                    "report_id": export_context.report.pk,
+                    "segment_id": export_context.segment.pk,
+                    "frame_number": export_context.frame.frame_number,
+                    "patient_finding_id": finding.pk,
+                }
+            ),
+            content_type="application/json",
+        )
+        assert link.status_code == 200, link.content
+        export_context.report.refresh_from_db()
     clicked_frame = Frame.objects.create(
         video=export_context.video, frame_number=0, timestamp=0.0, is_extracted=False
     )
@@ -1379,6 +1461,8 @@ def test_make_report_renders_selected_prediction_frame_with_patient_identity(
     assert decoded == [frame.frame_number for frame in selected_frames]
     assert captions is not None
     assert f"Bild {selected_frames[0].frame_number}" in captions[0]
+    if selection_mode == "default":
+        assert "linked_pdf_finding" in captions[0]
     assert "AI prediction based report text." in first_block_text
 
 
@@ -1983,6 +2067,7 @@ def test_segment_frame_selector_exposes_german_label_name(
         start_frame_number=30,
         end_frame_number=40,
     )
+    _set_segment_reviewed(unnamed_segment)
 
     response = logged_in_client.get(
         _selector_url(selector_context.patient_examination.pk)

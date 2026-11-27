@@ -432,13 +432,25 @@ class PatientExaminationReportApi:
         self,
         patient_examination: PatientExamination,
     ) -> QuerySet[LabelVideoSegment]:
-        return (
+        segments = (
             LabelVideoSegment.objects.select_related("video_file", "label", "source")
             .prefetch_related("patient_findings__finding")
-            .filter(self._patient_examination_segment_filter(patient_examination))
+            .filter(
+                self._patient_examination_segment_filter(patient_examination),
+                state__is_validated=True,
+                video_file__state__anonymized=True,
+                video_file__state__anonymization_validated=True,
+                video_file__state__processing_error=False,
+            )
             .distinct()
             .order_by("video_file_id", "start_frame_number", "id")
         )
+        center_ids = self._allowed_center_ids_for_user(
+            getattr(self.request, "user", None)
+        )
+        if center_ids is not None:
+            segments = segments.filter(video_file__center_id__in=center_ids)
+        return segments
 
     def _patient_examination_segment_filter(
         self,
@@ -507,7 +519,9 @@ class PatientExaminationReportApi:
         else:
             selected_frame_number = None
 
-        frame_qs = segment.get_frames().order_by("frame_number")
+        frame_qs = (
+            segment.get_frames().filter(timestamp__gte=0).order_by("frame_number")
+        )
 
         if selected_frame_number is not None:
             selected = frame_qs.filter(frame_number=selected_frame_number).first()
@@ -906,22 +920,20 @@ class PatientExaminationReportApi:
             except ValueError as exc:
                 raise HttpError(409, str(exc)) from exc
 
-        frame_qs = segment.get_frames().order_by("frame_number")
+        frame_qs = (
+            segment.get_frames().filter(timestamp__gte=0).order_by("frame_number")
+        )
         available_frame_numbers = [
             int(frame_number)
             for frame_number in frame_qs.values_list("frame_number", flat=True)
         ]
 
-        if stored_frame_number is not None and available_frame_numbers:
-            selected_frame_number = max(
-                _segment_start(segment),
-                min(_segment_end(segment), stored_frame_number),
-            )
-        else:
-            selected_frame_number = stored_frame_number or (
-                available_frame_numbers[0]
-                if available_frame_numbers
-                else self._segment_midpoint_frame(segment)
+        midpoint = self._segment_midpoint_frame(segment)
+        selected_frame_number = stored_frame_number
+        if selected_frame_number is None and available_frame_numbers:
+            selected_frame_number = min(
+                available_frame_numbers,
+                key=lambda number: (abs(number - midpoint), number),
             )
 
         selected_frame = frame_qs.filter(frame_number=selected_frame_number).first()
@@ -943,7 +955,9 @@ class PatientExaminationReportApi:
                 "stream_url": self.request.build_absolute_uri(frame_stream_path),
             }
 
-        midpoint = self._segment_midpoint_frame(segment)
+        controls_frame = (
+            selected_frame_number if selected_frame_number is not None else midpoint
+        )
         random_candidate = (
             int(random.choice(available_frame_numbers))
             if available_frame_numbers
@@ -965,11 +979,11 @@ class PatientExaminationReportApi:
                 "random_frame_number": random_candidate,
                 "step_backward_5_frame_number": max(
                     _segment_start(segment),
-                    (selected_frame_number or midpoint) - 5,
+                    controls_frame - 5,
                 ),
                 "step_forward_5_frame_number": min(
                     _segment_end(segment),
-                    (selected_frame_number or midpoint) + 5,
+                    controls_frame + 5,
                 ),
             },
             "attached_finding": (
@@ -1001,13 +1015,7 @@ class PatientExaminationReportApi:
         except ValueError as exc:
             raise HttpError(409, str(exc)) from exc
 
-        segments = list(
-            LabelVideoSegment.objects.select_related("video_file", "label")
-            .prefetch_related("patient_findings__finding")
-            .filter(self._patient_examination_segment_filter(patient_examination))
-            .distinct()
-            .order_by("video_file_id", "start_frame_number", "id")
-        )
+        segments = list(self._patient_examination_segments(patient_examination))
         finding_names_de = _resolve_report_finding_names_de(
             report,
             [
@@ -1398,9 +1406,7 @@ def patch_segment_frame_selector(
     )
 
     segment = (
-        LabelVideoSegment.objects.select_related("video_file", "label")
-        .filter(api._patient_examination_segment_filter(patient_examination))
-        .distinct()
+        api._patient_examination_segments(patient_examination)
         .filter(pk=selector_patch.segment_id)
         .first()
     )
@@ -1424,6 +1430,15 @@ def patch_segment_frame_selector(
         request_data=data,
         current_frame_number=current_frame_number,
     )
+    if selector_patch.patient_finding_id is not None and not (
+        frame_number is not None
+        and segment.get_frames()
+        .filter(frame_number=frame_number, timestamp__gte=0)
+        .exists()
+    ):
+        raise HttpError(
+            409, "Select an available processed frame within the reviewed segment."
+        )
 
     selected_finding_id = selector_patch.patient_finding_id
     if selected_finding_id is None and selector_patch.finding_id is None:

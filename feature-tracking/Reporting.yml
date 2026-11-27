@@ -20,6 +20,32 @@ source_documents:
   note: Verbindliche Implementierungsleitlinie für stabile Snapshots, Fencing, native Laufzeit und den
     Vertrag mit lx-anonymizer.
 definition_of_done:
+- id: validated_segment_report_evidence
+  category: functionality
+  title: Link reviewed video segments to individual report findings
+  acceptance:
+  - The report selector proposes frames from reviewed segments on anonymization-accepted examination media.
+  - A clinician can attach a proposed frame to a specific active finding occurrence in that examination.
+  - Report editing preserves server-managed segment frame selections and PDF export retains their finding
+    captions.
+  required: true
+  verification:
+    kind: manual
+    instructions: Run the report selector and export API tests and the reporting frontend frame selector
+      tests.
+    timeout_seconds: 300
+  assessment:
+    status: in_progress
+    evidence:
+    - kind: test
+      reference: 'tests/views/report/test_patient_examination_report_ninja_api.py: 64 passed, 2 skipped'
+    - kind: test
+      reference: 'lx-annotate reporting and video annotation Vitest suites: 400 passed'
+    note: Verified locally through the reporting frontend and report API, including finding identity,
+      preservation across save, and PDF frame captions. Coordinated release and deployed acceptance remain
+      open.
+    assessed_by: codex-terminology-20261126-a6f3
+    assessed_at: '2026-11-26T13:33:09.377090Z'
 - id: report_concept_embeddings
   category: functionality
   title: Persist anonymized report span embeddings with annotated concept links
@@ -143,8 +169,8 @@ definition_of_done:
   category: data_integrity
   title: Reusable source documents and study selection from self-declared annotator profiles
   acceptance:
-  - The authenticated user can select a profession and multiple academic qualifications in German.
-    Personal settings do not change access permissions or another user's profile.
+  - The authenticated user can select a profession and multiple academic qualifications in German. Personal
+    settings do not change access permissions or another user's profile.
   - Reports record their author and profile when saved and accept multiple validated source documents
     of the same examination. A source document can support reports by different authors.
   - A study can prefer a profession when comparing report observations. Subsequent changes to a user's
@@ -159,8 +185,6 @@ definition_of_done:
     timeout_seconds: 1200
   assessment:
     status: in_progress
-    assessed_by: codex-report-shell-7b32
-    assessed_at: '2026-11-25T09:34:11.371269+00:00'
     evidence:
     - kind: test
       reference: tests/services/test_examination_revisions.py
@@ -168,6 +192,8 @@ definition_of_done:
       reference: tests/views/misc/test_application_settings_endpoints.py
     - kind: test
       reference: tests/services/test_study_exchange.py
+    assessed_by: codex-report-shell-7b32
+    assessed_at: '2026-11-25T09:34:11.371269Z'
 - id: independent_report_persistence
   category: data_integrity
   title: Mehrere Berichte pro Patient bleiben unabhängig persistiert

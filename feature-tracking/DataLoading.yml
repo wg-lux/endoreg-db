@@ -122,6 +122,10 @@ definition_of_done:
   acceptance:
   - Repeated load_base_db_data runs produce the same domain state without duplicates.
   - Dependencies are resolved explicitly, and invalid YAML data is rejected loudly.
+  - Package imports plan safe reference updates automatically and store the applied field changes in
+    immutable import receipts in the same transaction. Conflicts roll back all changes and repeated
+    loads do not replay recorded updates. The same policy applies to standalone terminology
+    imports and terminology projected as a dependency.
   - A repeated load_base_db_data run (including --reconcile-legacy) whose catalogue digest matches the
     stored receipt and whose bound rows all exist skips the row-level comparison; changed YAML content,
     missing bound rows, or --verify run the full fail-closed reconciliation.

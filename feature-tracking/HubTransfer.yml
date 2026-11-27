@@ -31,7 +31,9 @@ definition_of_done:
     API recovery, marking and encrypted receiver acceptance cover missing and mismatched legacy ancestry;
     human approvals, content integrity and exact receiver timestamps remain mandatory.
   - Herkunft und elektrische Synchronisation beginnen bei raw_video_hash; eine spätere kanonische Transformation
-    ersetzt die Aufnahmeidentität nicht. Fehlende Ursprungsbelege bleiben ein Fehler.
+    ersetzt die Aufnahmeidentität nicht. Fehlen Ursprungsbelege, wird die geprüfte verarbeitete Datei mit
+    ihrer dekodierten Frame-Zeitachse übertragen. Aufnahmezeit und Originalframe-Zuordnung dürfen unbekannt
+    bleiben; elektrischer Abgleich erfordert weiterhin gesonderte Herkunfts- und Synchronisationsbelege.
   - Exklusive Medienoperationen und ungültige Herkunft werden vor teurer Inhaltsprüfung erkannt. Der Sender
     prüft weiterhin Freigabe und aktuellen Inhalts-Hash, verwendet danach die typisierten inhaltsgebundenen
     Zeitstempelbelege; der Empfänger dekodiert und prüft die empfangene Generation weiterhin.

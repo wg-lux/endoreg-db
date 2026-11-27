@@ -17,6 +17,12 @@ from lx_dtypes.models.knowledge_base.examination import (
 from lx_dtypes.packages import create_package
 from lx_dtypes.packages import load_package, load_registered_package
 from lx_dtypes.models.contracts.package_snapshot import build_package_snapshot
+from lx_dtypes.models.contracts.reference_catalog import CatalogIdentity, ReferenceKind
+from lx_dtypes.models.contracts.reference_migration import (
+    ReferenceMigrationCatalog,
+    ReferenceMigrationRule,
+    ReferenceMigrationTarget,
+)
 from lx_dtypes.models.knowledge_base.pydantic_main import KB_MODEL_NAMES_ORDERED
 from lx_dtypes.models.knowledge_base.study_preset import StudyPreset
 from lx_dtypes.models.knowledge_base.electrical_curve_profile import (
@@ -61,7 +67,7 @@ pytestmark = pytest.mark.django_db
 def package(
     *, version: str = "1.0.0", description: str = "Clinical inspection"
 ) -> KnowledgeBase:
-    return KnowledgeBase.model_validate(
+    kb = KnowledgeBase.model_validate(
         {
             "config": {"name": "clinical_test", "version": version},
             "intervention_type": {"sampling": {"name": "sampling"}},
@@ -87,6 +93,17 @@ def package(
             },
         }
     )
+    for records in (
+        kb.intervention_type,
+        kb.intervention,
+        kb.finding,
+        kb.indication_type,
+        kb.indication,
+        kb.examination,
+    ):
+        for record in records.values():
+            record.kb_module_name = kb.config.name
+    return kb
 
 
 def test_dry_run_import_repeat_and_lossless_snapshot() -> None:
@@ -405,7 +422,9 @@ def test_full_package_receipt_preserves_non_graph_records_and_blocks_redefinitio
 
 
 def test_changed_transitive_meaning_cannot_reuse_a_row_in_another_version() -> None:
-    import_clinical_references(clinical_snapshot(package()))
+    baseline = package()
+    baseline.intervention["biopsy"].description = "Original intervention definition"
+    import_clinical_references(clinical_snapshot(baseline))
     changed = package(version="2.0.0")
     changed.intervention["biopsy"].description = "Changed intervention definition"
     plan = plan_clinical_reference_import(clinical_snapshot(changed))
@@ -528,8 +547,76 @@ def test_placeholder_description_is_equivalent_without_rewriting_receipts(
     )
 
 
-def test_unknown_description_does_not_mask_real_description_change() -> None:
-    import_clinical_references(clinical_snapshot(package(description="unknown")))
-    plan = plan_clinical_reference_import(clinical_snapshot(package(version="2.0.0")))
-    assert not plan.can_import
-    assert any("description" in change.differing_fields for change in plan.changes)
+def test_terminology_upgrade_applies_and_records_safe_changes_once() -> None:
+    baseline = package(description="unknown")
+    baseline.examination["inspection"].name_de = "Alt"
+    import_clinical_package(baseline)
+    row = Examination.objects.get(name="inspection")
+    old_pk = row.pk
+    old_receipt = ClinicalReferenceImport.objects.get().payload
+
+    updated = package(version="2.0.0")
+    updated.examination["inspection"].name_de = "Neu"
+    updated.finding["lesion"].description = "Additional finding description."
+    plan = plan_clinical_reference_import(clinical_snapshot(updated))
+    assert plan.can_import
+    assert sum(change.migration is not None for change in plan.changes) == 2
+    row.refresh_from_db()
+    assert (row.description, row.name_de) == ("unknown", "Alt")
+    assert not plan.applied_migrations
+
+    applied = import_clinical_package(updated)
+    assert {
+        item.identity.name: item.updates for item in applied.applied_migrations
+    } == {
+        "inspection": {"description": "Clinical inspection", "name_de": "Neu"},
+        "lesion": {"description": "Additional finding description."},
+    }
+    row.refresh_from_db()
+    assert (row.pk, row.description, row.name_de) == (
+        old_pk,
+        "Clinical inspection",
+        "Neu",
+    )
+    assert ClinicalReferenceImport.objects.get(version="1.0.0").payload == old_receipt
+    repeated = import_clinical_package(updated)
+    assert repeated.unchanged
+    assert repeated.applied_migrations == applied.applied_migrations
+    assert not plan_clinical_reference_import(clinical_snapshot(baseline)).can_import
+
+
+def test_reviewed_terminology_change_requires_exact_persisted_value() -> None:
+    baseline = package()
+    baseline.finding["lesion"].description = "Original wording."
+    import_clinical_package(baseline)
+    updated = package(version="2.0.0")
+    updated.finding["lesion"].description = "Reviewed wording."
+    snapshot = clinical_snapshot(updated)
+    assert not plan_clinical_reference_import(snapshot).can_import
+
+    rule = ReferenceMigrationRule(
+        kind=ReferenceKind.FINDING,
+        identity=CatalogIdentity(name="lesion"),
+        field="description",
+        existing="Original wording.",
+        proposed="Reviewed wording.",
+        reason="Reviewed spelling correction.",
+    )
+    rules = ReferenceMigrationCatalog(
+        schema_version=1,
+        targets=[
+            ReferenceMigrationTarget(
+                module=updated.config.name, version=updated.config.version, rules=[rule]
+            )
+        ],
+    )
+    with patch(
+        "endoreg_db.services.reference_data.clinical_projection.load_reference_migrations",
+        return_value=rules,
+    ):
+        Finding.objects.filter(name="lesion").update(description="Local wording.")
+        assert not plan_clinical_reference_import(snapshot).can_import
+        Finding.objects.filter(name="lesion").update(description=rule.existing)
+        (migration,) = import_clinical_package(updated).applied_migrations
+        assert migration.changes[0].reason == rule.reason
+    assert Finding.objects.get(name="lesion").description == rule.proposed

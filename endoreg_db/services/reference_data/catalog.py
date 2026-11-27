@@ -19,6 +19,14 @@ from lx_dtypes.models.contracts.reference_catalog_snapshot import (
     ReferenceCatalogReceipt,
     ReferenceCatalogSnapshot,
 )
+from lx_dtypes.models.contracts.reference_migration import (
+    DISPLAY_FIELDS,
+    ReferenceFieldDecision,
+    ReferenceRowMigration,
+    ReferenceRowState,
+    load_reference_migrations,
+    plan_reference_row_migration,
+)
 from lx_dtypes.models.interface.KnowledgeBase import KnowledgeBase
 from lx_dtypes.models.contracts.package_snapshot import (
     PackageSnapshot,
@@ -47,25 +55,20 @@ from endoreg_db.helpers.typing import ReferenceRelation
 logger = logging.getLogger(__name__)
 
 
-# Display-only fields: updatable, never part of identity or immutable meaning.
-DISPLAY_FIELDS: frozenset[str] = frozenset({"name_de"})
-
-
 class CatalogChange(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     kind: ReferenceKind
     identity: CatalogIdentity
     # update_display_name: an already bound row whose only difference is a
     # display field; apply rewrites just those fields.
-    action: Literal["create", "adopt", "reuse", "update_display_name", "conflict"]
+    action: Literal[
+        "create", "adopt", "reuse", "update_display_name", "migrate", "conflict"
+    ]
     row_id: int | None = None
     differing_fields: list[str] = Field(default_factory=list)
-    # Display fields apply writes on an existing row (update_display_name or adopt).
+    # Kept in the plan output for clients that display label changes.
     display_fields: list[str] = Field(default_factory=list)
-
-
-def _meaning(fields: dict[str, object]) -> dict[str, object]:
-    return {key: value for key, value in fields.items() if key not in DISPLAY_FIELDS}
+    migration: ReferenceRowMigration | None = None
 
 
 class CatalogPlan(BaseModel):
@@ -77,6 +80,7 @@ class CatalogPlan(BaseModel):
     changes: list[CatalogChange]
     conflicts: list[str] = Field(default_factory=list)
     clinical_plan: ClinicalReferencePlan | None = None
+    applied_migrations: list[ReferenceRowMigration] = Field(default_factory=list)
     unchanged: bool = False
 
     @property
@@ -208,9 +212,10 @@ def plan_reference_catalog(
         snapshot.identity.knowledge_base_module,
         snapshot.identity.knowledge_base_version,
     )
+    target = load_reference_migrations().target(module, version)
     receipts = [
         ReferenceCatalogReceipt.model_validate(row.payload)
-        for row in ReferenceCatalogImport.objects.all()
+        for row in ReferenceCatalogImport.objects.order_by("pk")
     ]
     previous = next(
         (
@@ -227,6 +232,7 @@ def plan_reference_catalog(
             clinical_snapshot(restore_package_snapshot(snapshot.clinical_package)),
             adopt_existing=adopt_existing,
             package_snapshot=snapshot.clinical_package,
+            migration_target=target,
         )
     conflicts: list[str] = []
     if clinical_plan is not None and not clinical_plan.can_import:
@@ -238,10 +244,18 @@ def plan_reference_catalog(
         for receipt in receipts
         for binding in receipt.bindings
     }
-    meanings: dict[tuple[ReferenceKind, str, int | None], list[CatalogRecordBase]] = {}
+    installed = {
+        (binding.kind, binding.identity.name, binding.identity.version)
+        for receipt in receipts
+        if receipt.snapshot.identity == snapshot.identity
+        for binding in receipt.bindings
+    }
+    meanings: dict[tuple[ReferenceKind, str, int | None], CatalogRecordBase] = {}
+    # Compare against the most recent successful projection. Earlier receipts
+    # still describe the versions that were in use before a reviewed correction.
     for receipt in receipts:
         for record in receipt.snapshot.payload.records:
-            meanings.setdefault(record.key, []).append(record)
+            meanings[record.key] = record
     bound = (
         {
             (
@@ -261,9 +275,10 @@ def plan_reference_catalog(
         )
         differences: list[str] = []
         display_fields: list[str] = []
+        migration: ReferenceRowMigration | None = None
         row_id: int | None = None
         action: Literal[
-            "create", "adopt", "reuse", "update_display_name", "conflict"
+            "create", "adopt", "reuse", "update_display_name", "migrate", "conflict"
         ] = "create"
         if len(candidates) > 1:
             differences.append("ambiguous_identity")
@@ -274,31 +289,62 @@ def plan_reference_catalog(
             row = candidates[0]
             row_id = cast(int, row.pk)
             actual = export_reference_row(record.kind, row)
-            actual_fields = actual.model_dump(mode="json", by_alias=True)
-            expected_fields = record.model_dump(mode="json", by_alias=True)
-            for field in expected_fields:
-                if actual_fields[field] == expected_fields[field]:
-                    continue
-                if field in DISPLAY_FIELDS:
+            proposed = _row_state(record)
+            classified = plan_reference_row_migration(
+                _row_state(actual), proposed, target
+            )
+            blocked_fields = {
+                "record_type",
+                *record.identity_fields,
+                *record.relation_targets,
+                *record.many_relations,
+            }
+            for change in classified.changes:
+                field = change.field
+                if field in DISPLAY_FIELDS and record.key not in installed:
                     display_fields.append(field)
-                else:
+                if (
+                    change.decision == ReferenceFieldDecision.CONFLICT
+                    or field in blocked_fields
+                    or record.key in installed
+                    or (
+                        record.kind in TERMINOLOGY_REFERENCE_MODELS
+                        and field not in DISPLAY_FIELDS
+                    )
+                ):
                     differences.append(field)
-            if any(
-                _meaning(old.model_dump(mode="json", by_alias=True))
-                != _meaning(expected_fields)
-                for old in meanings.get(record.key, [])
-            ):
-                differences.append("immutable_clinical_meaning")
+            old = meanings.get(record.key)
+            if old is not None:
+                history = plan_reference_row_migration(
+                    _row_state(old), proposed, target
+                )
+                if any(
+                    change.field not in DISPLAY_FIELDS
+                    and (
+                        change.decision == ReferenceFieldDecision.CONFLICT
+                        or change.field in blocked_fields
+                        or record.kind in TERMINOLOGY_REFERENCE_MODELS
+                    )
+                    for change in history.changes
+                ):
+                    differences.append("immutable_clinical_meaning")
             if record.key in bound and bound[record.key] != row_id:
                 differences.append("row_identity_changed")
             if (*record.key, row_id) in known:
-                action = "update_display_name" if display_fields else "reuse"
+                action = "reuse"
+                if classified.changes:
+                    action = (
+                        "update_display_name"
+                        if len(display_fields) == len(classified.changes)
+                        else "migrate"
+                    )
             elif adopt_existing:
                 action = "adopt"
             else:
                 differences.append("explicit_legacy_adoption_required")
+            if classified.changes and not differences:
+                migration = classified
         if differences:
-            # Any non-display difference keeps the strict conflict.
             action = "conflict"
             display_fields = []
         changes.append(
@@ -309,6 +355,7 @@ def plan_reference_catalog(
                 row_id=row_id,
                 differing_fields=differences,
                 display_fields=display_fields,
+                migration=migration,
             )
         )
     return CatalogPlan(
@@ -319,10 +366,19 @@ def plan_reference_catalog(
         changes=changes,
         conflicts=conflicts,
         clinical_plan=clinical_plan,
+        applied_migrations=previous.migrations if previous else [],
         unchanged=previous is not None
         and (clinical_plan is None or clinical_plan.unchanged)
         and not conflicts
         and all(change.action == "reuse" for change in changes),
+    )
+
+
+def _row_state(record: CatalogRecordBase) -> ReferenceRowState:
+    return ReferenceRowState(
+        kind=record.kind,
+        identity=record.identity,
+        fields=record.model_dump(mode="json", by_alias=True),
     )
 
 
@@ -389,6 +445,7 @@ def reuse_current_catalog(snapshot: ReferenceCatalogSnapshot) -> CatalogPlan | N
             for binding in receipt.bindings
         ],
         clinical_plan=clinical_plan,
+        applied_migrations=receipt.migrations,
         unchanged=True,
     )
 
@@ -432,11 +489,15 @@ def import_reference_catalog_in_transaction(
     if plan.unchanged:
         return plan
     rows: dict[tuple[ReferenceKind, str, int | None], models.Model] = {}
+    clinical_plan = plan.clinical_plan
     if snapshot.clinical_package is not None:
-        import_clinical_references_in_transaction(
+        clinical_plan = import_clinical_references_in_transaction(
             clinical_snapshot(restore_package_snapshot(snapshot.clinical_package)),
             adopt_existing=adopt_existing,
             package_snapshot=snapshot.clinical_package,
+            migration_target=load_reference_migrations().target(
+                plan.module, plan.version
+            ),
         )
         for kind, family in TERMINOLOGY_REFERENCE_MODELS.items():
             for record in snapshot.clinical_package.records[family]:
@@ -455,11 +516,12 @@ def import_reference_catalog_in_transaction(
             pending.append((record, change))
         else:
             row = CATALOG_MODELS[record.kind]._base_manager.get(pk=change.row_id)
-            if change.display_fields:
+            if change.migration is not None:
+                fields = list(change.migration.updates)
                 values = record.model_dump(mode="python", by_alias=True)
-                for field in change.display_fields:
+                for field in fields:
                     setattr(row, field, values[field])
-                row.save(update_fields=change.display_fields)
+                row.save(update_fields=fields)
             rows[record.key] = row
     while pending:
         remaining: list[tuple[CatalogRecordBase, CatalogChange]] = []
@@ -506,6 +568,9 @@ def import_reference_catalog_in_transaction(
             manager.set(related)
     receipt = ReferenceCatalogReceipt(
         snapshot=snapshot,
+        migrations=[
+            change.migration for change in plan.changes if change.migration is not None
+        ],
         bindings=[
             CatalogBinding(
                 kind=record.kind,
@@ -539,4 +604,9 @@ def import_reference_catalog_in_transaction(
             records=len(plan.changes),
         )
     )
-    return plan
+    return plan.model_copy(
+        update={
+            "applied_migrations": receipt.migrations,
+            "clinical_plan": clinical_plan,
+        }
+    )
