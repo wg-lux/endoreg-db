@@ -1,68 +1,64 @@
-from endoreg_db.models import PatientExamination
-from endoreg_db.serializers.patient_examination import PatientExaminationSerializer
+from collections.abc import Mapping
+from typing import cast
 
-from rest_framework import generics, status
+from django.db.models import QuerySet
+from rest_framework.views import APIView
+from rest_framework.exceptions import ValidationError
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.request import Request
 from rest_framework.response import Response
-from endoreg_db.utils.permissions import DEBUG_PERMISSIONS
 
-import logging
-logger = logging.getLogger(__name__)
+from endoreg_db.authz.permissions import PolicyPermission
+from endoreg_db.models.medical.patient.patient_examination import PatientExamination
+from endoreg_db.serializers.patient_examination.patient_examination import (
+    PatientExaminationPageSerializer,
+)
+from endoreg_db.views.access_control import filter_center_scoped_queryset
 
 
-class PatientExaminationListView(generics.ListAPIView):
-    """
-    List PatientExamination instances with filtering.
-    GET /api/examinations/list/
+def scoped_examinations(request: Request) -> QuerySet[PatientExamination]:
+    return filter_center_scoped_queryset(
+        queryset=PatientExamination.objects.select_related("patient", "examination"),
+        user=request.user,
+        center_field="patient__center_id",
+    ).order_by("-date_start", "-id")
 
-    Query parameters:
-    - patient_id: Filter by patient ID
-    - examination_name: Filter by examination name
-    - limit: Number of results (default 20)
-    - offset: Pagination offset (default 0)
-    """
-    serializer_class = PatientExaminationSerializer
-    permission_classes = DEBUG_PERMISSIONS
 
-    def get_queryset(self):
-        queryset = PatientExamination.objects.select_related(
-            'patient', 'examination'
-        ).order_by('-date_start', '-id')
+class PatientExaminationListView(APIView):
+    """Paginated patient examinations within the authenticated user's centers."""
 
-        # Apply filters
-        patient_id = self.request.query_params.get('patient_id')
+    serializer_class = PatientExaminationPageSerializer
+    permission_classes = [IsAuthenticated, PolicyPermission]
+
+    def get_queryset(self) -> QuerySet[PatientExamination]:
+        queryset = scoped_examinations(self.request)
+        params = cast(Mapping[str, str], self.request.query_params)
+        patient_id = params.get("patient_id")
         if patient_id:
+            if not patient_id.isascii() or not patient_id.isdecimal():
+                raise ValidationError({"patient_id": "Expected a patient ID."})
             queryset = queryset.filter(patient_id=patient_id)
-
-        examination_name = self.request.query_params.get('examination_name')
+        examination_name = params.get("examination_name")
         if examination_name:
             queryset = queryset.filter(examination__name__icontains=examination_name)
-
         return queryset
 
-    def list(self, request, *args, **kwargs):
+    def get(self, request: Request) -> Response:
+        queryset = self.get_queryset()
+        params = cast(Mapping[str, str], request.query_params)
         try:
-            queryset = self.get_queryset()
-
-            # Pagination
-            limit = int(request.query_params.get('limit', 20))
-            offset = int(request.query_params.get('offset', 0))
-
-            total_count = queryset.count()
-            paginated_queryset = queryset[offset:offset + limit]
-
-            serializer = self.get_serializer(paginated_queryset, many=True)
-
-            return Response({
-                'results': serializer.data,
-                'total_count': total_count,
-                'limit': limit,
-                'offset': offset,
-                'has_more': (offset + limit) < total_count
-            })
-
-        except Exception as e:
-            logger.error(f"Error listing examinations: {str(e)}")
-            return Response(
-                {'error': 'Failed to list examinations'},
-                status=status.HTTP_500_INTERNAL_SERVER_ERROR
-            )
+            limit = int(params.get("limit", "20"))
+            offset = int(params.get("offset", "0"))
+        except ValueError as exc:
+            raise ValidationError("Invalid pagination.") from exc
+        if min(limit, offset) < 0:
+            raise ValidationError("Pagination must be nonnegative.")
+        total = queryset.count()
+        page: dict[str, object] = {
+            "results": queryset[offset : offset + limit],
+            "total_count": total,
+            "limit": limit,
+            "offset": offset,
+            "has_more": offset + limit < total,
+        }
+        return Response(self.serializer_class().to_representation(page))

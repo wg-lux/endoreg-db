@@ -1,0 +1,81 @@
+version: 1
+tier: domain
+path: rust
+parent: ../structure.yml
+summary: Native backend for typed media, encryption and lifecycle primitives.
+responsibilities:
+- Build the native Python extension and maintain Rust-backed primitives.
+- Declare every native state, event and action token exactly once and export the vocabularies.
+boundaries:
+- Python service orchestration retains clinical workflow and publication ownership.
+- State reducers are pure; persistence, locking and compare-and-swap writes stay in Python services.
+- Python keeps one typed mirror per vocabulary, verified at startup by endoreg_db/services/runtime/native_state_vocabulary.py.
+entrypoints:
+- name: native_state_vocabularies
+  file: endoreg_rust_backend/src/state_vocabulary.rs
+  purpose: Export every native vocabulary for fail-closed Python mirror verification.
+files:
+- file: endoreg_rust_backend/src/media_decisions.rs
+  role: Validation admission, direct identifier erasure fields, raw video purge evidence and outbound processed-media integrity decisions.
+- file: endoreg_rust_backend/src/clinical_workflow.rs
+  role: Decide clinical privacy, annotation and release transitions, project persisted facts and validate evidence.
+- file: endoreg_rust_backend/src/status_transition.rs
+  role: Native lifecycle status tables, including upload cancellation and expired-lease recovery, report import and model training; status_transition_v2 capability.
+- file: endoreg_rust_backend/src/hub_transfer_state.rs
+  role: Authoritative hub status, failure and transfer-event tokens; exhaustive transition table where duplicate, late or superseded events are explicit no-ops, completion is absorbing and non-retryable failures are kept; retry classification. Callers hold database row locks.
+- file: endoreg_rust_backend/Cargo.toml
+  role: Native crate build and dependencies
+- file: endoreg_rust_backend/src/lib.rs
+  role: Python extension registration
+- file: endoreg_rust_backend/src/state_token.rs
+  role: state_tokens macro declaring each enum variant, wire token, parser and vocabulary once.
+- file: endoreg_rust_backend/src/state_vocabulary.rs
+  role: Aggregates all native vocabularies; unique-name and snake_case token tests.
+- file: endoreg_rust_backend/src/capabilities.rs
+  role: Versioned native capability contracts checked by Python before use.
+- file: endoreg_rust_backend/src/import_processing.rs
+  role: Canonical durable import stack, typed stage and event tokens, fixed checkpoint reference and priority.
+- file: endoreg_rust_backend/src/import_state.rs
+  role: Video and report anonymization status precedence rules and lifecycle phases.
+- file: endoreg_rust_backend/src/lifecycle_state.rs
+  role: Service and bounded-operation lifecycle reducers with idempotent redelivery.
+- file: endoreg_rust_backend/src/hls_state.rs
+  role: Streaming playlist reservation, publication and stale-attempt reconciliation decisions; exhaustive artifact status transition table.
+- file: endoreg_rust_backend/src/state_enums.rs
+  role: Segment rebuild history and flag precedence, frame annotation status derivation; frame task-mode and sampling tokens reject unknown input.
+- file: endoreg_rust_backend/src/encryption_state.rs
+  role: LXENC magic probe classifying regular files as encrypted or plaintext.
+- file: endoreg_rust_backend/src/encrypted_format.rs
+  role: Shared LXENC header and chunk contract for Python streams and native range/hash readers; preserves legacy parser API.
+- file: endoreg_rust_backend/src/encrypted_range.rs
+  role: Authenticated byte-range decryption of LXENC files.
+- file: endoreg_rust_backend/src/file_identity.rs
+  role: Stable plaintext file identity hashing, single and batched.
+- file: endoreg_rust_backend/src/file_copy.rs
+  role: Copy from a borrowed file descriptor to a target path.
+- file: endoreg_rust_backend/src/frames.rs
+  role: Extracted frame number parsing and frame record construction.
+- file: endoreg_rust_backend/src/timeline_index.rs
+  role: Read-only TimelineIndex applying canonical frame/time boundary rules and generation origin/exclusive-end invariants.
+- file: endoreg_rust_backend/src/frame_ancestry.rs
+  role: Compose source_frame_indices from the recording to the final generation
+- file: endoreg_rust_backend/src/storage_profile.rs
+  role: Exhaustive storage profile policy table.
+- file: endoreg_rust_backend/src/pdf.rs
+  role: Single-page PDF rendering.
+- file: endoreg_rust_backend/src/errors.rs
+  role: Native input and I/O error mapping to Python exceptions.
+- file: endoreg_rust_backend/src/stubs.rs
+  role: Hand-declared pyo3-stub-gen signatures for endoreg_db/endoreg_rust_backend.pyi.
+- file: endoreg_rust_backend/src/bin/stub_gen.rs
+  role: Stub generator binary run by the rust:stubs and rust:report-runtime devenv tasks.
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md
+- name: Native vocabulary single source
+  doc: feature-tracking/StateMachineConformance.yml
+tests:
+  directory: tests/rust_backend
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/rust_backend/test_state_enum_parity.py
+  files:
+  - tests/rust_backend/test_state_enum_parity.py

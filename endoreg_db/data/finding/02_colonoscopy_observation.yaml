@@ -1,0 +1,152 @@
+- model: endoreg_db.finding
+  fields:
+    name: "colon_polyp"
+    name_de: "Kolonpolyp"
+    name_en: "Colon Polyp"
+    finding_types:
+      - observation
+    finding_interventions:
+      - endoscopy_biopsy_grasper_generic
+      - endoscopy_cold_snare_resection_generic
+      - endoscopy_diathermic_snare_resection_generic
+      - endoscopy_biopsy_foreceps_resection_generic
+      - endoscopy_emr_generic
+      - endoscopy_esd_generic
+      - endoscopy_eftr_generic
+      - endoscopy_injection_liftup
+      - endoscopy_hemoclip_generic
+      - endoscopy_over_the_scope_clip_generic
+    finding_classifications:
+      # Shared Models
+      ## size classifications
+      - lesion_size_mm
+      ## Morphology classifications
+      - lesion_circularity_default
+      - lesion_planarity_default
+      - lesion_surface_intact_default
+      ## Location
+      - colonoscopy_location_default
+      - colonoscopy_location_coarse
+      ## histology
+      - histology_dysplasia_default
+      - histology_dignity_default
+      - histology_in_sano_default
+
+      # More specific Models
+      ## size classifications
+      - colon_lesion_size_categorical
+      ## Morphology classifications
+      - colon_lesion_paris
+      - colon_lesion_nice
+      - colon_lesion_jnet
+      - colon_lesion_kudo
+      - colon_lesion_lst
+      ## histology
+      - colonoscopy_polyp_histology
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_diverticule"
+    name_de: "Kolondivertikel"
+    name_en: "Colon Diverticule"
+    finding_interventions:
+      - endoscopy_hemoclip_generic
+      - endoscopy_biopsy_grasper_generic
+      - endoscopy_injection_vasoactive
+    finding_types:
+      - observation
+    finding_classifications:
+      - colonoscopy_location_coarse
+      - colonoscopy_location_default
+      # - diverticule_inflammation_grade #TODO
+      # - diverticule_stenosis_degree_categorical #TODO
+
+- model: endoreg_db.finding
+  fields:
+    name: "anal_hemorrhoids"
+    name_de: "Hämorrhoiden"
+    name_en: "hemorrhoids"
+    finding_interventions: [] #TODO
+    finding_types:
+      - observation
+    finding_classifications:
+      - hemorrhoids_grade
+
+- model: endoreg_db.finding
+  fields:
+    name: "anal_fissure"
+    name_de: "Analfissur"
+    name_en: "Anal Fissure"
+    finding_interventions: [] #TODO
+    finding_types:
+      - observation
+    finding_classifications: [] #TODO
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_stenosis"
+    name_de: "Kolonstenose"
+    name_en: "Colon Stenosis"
+    finding_interventions:
+      - endoscopy_dilation_balloon #TODO
+      - endoscopy_stent_generic #TODO
+    finding_types:
+      - observation
+    finding_classifications:
+      # - colon_lesion_stenosis_degree_categorical #TODO
+      - colonoscopy_location_coarse
+      - colonoscopy_location_default
+      - lesion_circularity_default
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_post_intervention_wound"
+    name_de: "Postinterventionelle Wunde"
+    finding_interventions: ["endoscopy_hemoclip_generic"] #TODO
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_tumor_mass"
+    name_de: "Tumor"
+    name_en: "Tumor"
+    finding_interventions: []
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_inflammation"
+    name_de: "Entzündung"
+    name_en: "Inflammation"
+    finding_interventions: []
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_erosion"
+    name_de: "Erosion"
+    name_en: "Erosion"
+    finding_interventions: []
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_ulcer"
+    name_de: "Ulcus"
+    name_en: "Ulcer"
+    finding_interventions: []
+    finding_types:
+      - observation
+
+- model: endoreg_db.finding
+  fields:
+    name: "colon_scar"
+    name_de: "Narbe"
+    name_en: "Scar"
+    finding_interventions: []
+    finding_types:
+      - observation

@@ -1,0 +1,93 @@
+trials: 3
+target_rows_per_condition: 432
+results:
+  B_shared:
+    digest_match_rows: 192
+    new_correct_associations: 144
+    false_associations: 12
+    evaluations: 276
+    primitive_hmacs: 276
+  B_independent:
+    digest_match_rows: 96
+    new_correct_associations: 72
+    false_associations: 6
+    evaluations: 138
+    primitive_hmacs: 138
+  B_wrong_key:
+    digest_match_rows: 0
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 276
+  D_labelled:
+    digest_match_rows: 192
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 276
+  patient_local_uuid_B_shared:
+    digest_match_rows: 192
+    new_correct_associations: 144
+    false_associations: 12
+    evaluations: 276
+    primitive_hmacs: 552
+  patient_local_uuid_no_key:
+    digest_match_rows: 0
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 0
+    primitive_hmacs: 0
+  patient_local_uuid_B_independent:
+    digest_match_rows: 96
+    new_correct_associations: 72
+    false_associations: 6
+    evaluations: 138
+    primitive_hmacs: 276
+  patient_local_uuid_B_wrong_key:
+    digest_match_rows: 0
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 552
+  patient_local_uuid_D_labelled:
+    digest_match_rows: 192
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 552
+  patient_hub_uuid_B_shared:
+    digest_match_rows: 192
+    new_correct_associations: 144
+    false_associations: 12
+    evaluations: 276
+    primitive_hmacs: 828
+  patient_hub_uuid_no_key:
+    digest_match_rows: 0
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 0
+    primitive_hmacs: 0
+  patient_hub_uuid_wrong_hub:
+    digest_match_rows: 0
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 828
+  patient_hub_uuid_B_independent:
+    digest_match_rows: 96
+    new_correct_associations: 72
+    false_associations: 6
+    evaluations: 138
+    primitive_hmacs: 414
+  patient_hub_uuid_B_wrong_key:
+    digest_match_rows: 0
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 828
+  patient_hub_uuid_D_labelled:
+    digest_match_rows: 192
+    new_correct_associations: 0
+    false_associations: 0
+    evaluations: 276
+    primitive_hmacs: 828

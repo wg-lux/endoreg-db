@@ -1,0 +1,106 @@
+version: 1
+tier: service
+path: endoreg_db/services/clinical_lifecycle
+parent: ../structure.yml
+summary: End-to-end clinical record lifecycle as a derived finite state machine over persisted media, identity and release facts.
+responsibilities:
+- Adapt the native clinical workflow reducer to the lx-dtypes privacy, annotation and release contracts.
+- Project persisted video and report facts onto exactly one lifecycle state and reject impossible fact combinations.
+- Gate report approval, raw-report cleanup, explicit dataset ingestion and export approval and audit persisted facts and stored workflow rows read-only.
+boundaries:
+- state_machine.py, facts.py, audit.py and worklist.py are pure or read-only; legacy_exemption.py only appends
+  audit-ledger rows; none of them writes media state or the filesystem.
+- persistence.py alone stores reducer results (compare-and-swap, idempotency, transition rows); it is owned by
+  media_workflow_state_machine/persistence_and_api and never decides a transition itself.
+- Persisted media facts are the single source of truth and project the state. A stored ClinicalWorkflowRecord is its
+  versioned journal and must agree on every track; only quarantined or withdrawn privacy are row-only. Disagreement
+  fails closed with WorkflowStateDriftError, HTTP 409 stored_state_drift, an unmappable worklist count and an audit
+  drift row.
+- A caller of apply_workflow_event commits the fact change that realizes the event in the same transaction; other side
+  effects stay in the owning services after commit.
+- Wire types, PRIVACY_INACTIVE and StateSource come from
+  lx_dtypes.models.contracts.media_workflow(_api). Local additions the contract does not declare are
+  LifecycleInvariantViolation (fact invariants), the worklist import-feed stage set and the
+  stored-only privacy set UNPROJECTABLE_PRIVACY.
+- HTTP bodies of the 409 conflict (WorkflowInconsistency) and the stage rows (StageCounts) are serialized through the
+  lx-dtypes API models; the stage body adds the endoreg_db-only unmappable count. The item body stays hand-built
+  because the frontend contract lists reducer-accepted event tokens (system events included), while
+  MediaWorkflowItem requires export_approval and user-origin AllowedEvent objects.
+- Rust owns transition decisions, evidence rejection, fact projection and invariant checks in clinical_workflow.rs.
+entrypoints:
+- name: resolve_workflow_state / read_workflow_state / stored_workflow_rows
+  file: persistence.py
+  purpose: The one resolution rule for the workflow API, worklist, audit and gates; raises on invariant violations or
+    drift. stored_workflow_rows batch-loads rows for batch readers.
+- name: require_workflow_transition
+  file: persistence.py
+  purpose: Service gates (export approval) start from the resolved state, then apply guarded_clinical_transition;
+    read-only.
+- name: advance_workflow_if_journaled
+  file: persistence.py
+  purpose: Lock the media row, admit a fact mutation and advance any existing workflow journal atomically.
+- name: journal_report_annotation_changes
+  file: persistence.py
+  purpose: Check every linked source journal before a report edit and commit annotation transitions with authorship evidence.
+- name: guarded_clinical_transition
+  file: state_machine.py
+  purpose: Pure guard (fact invariants, evidence, reducer) from a given state. require_clinical_transition (from the
+    projection, ignoring stored rows) is test-only and no service gate.
+- name: video_record_facts / report_record_facts
+  file: facts.py
+  purpose: Single read-only ORM boundary that builds typed lifecycle facts.
+- name: legacy_identity_candidates / record_legacy_identity_exemptions
+  file: legacy_exemption.py
+  purpose: Named, ledger-recorded identity exemption for videos validated before verification was required.
+- name: audit_clinical_records
+  file: audit.py
+  purpose: Read-only conformance audit through resolve_workflow_state (stage counts, invariant violations, stored-state
+    drift) without patient identifiers; consumed by the audit_clinical_lifecycle command.
+- name: stage_counts / allowed_events
+  file: worklist.py
+  purpose: Worklist counts (contract StageCounts plus unmappable) and reducer-accepted events for the workflow API.
+files:
+- file: __init__.py
+  role: Public lifecycle types and reducer functions.
+- file: state_machine.py
+  role: Typed Python adapter for native projection, evidence validation and transition decisions.
+- file: facts.py
+  role: Typed fact adapters for VideoFile and RawPdfFile, including finalized document-linked examination reports.
+- file: audit.py
+  role: Stage counts, legacy exemption count, invariant violations and stored-state drift rows, resolved like the API.
+- file: legacy_exemption.py
+  role: Typed audit-ledger exemption payload, candidate selection and idempotent recording.
+- file: persistence.py
+  role: Single resolution rule (facts project, stored row must agree), CAS writes, idempotency and transition rows
+    (owner media_workflow_state_machine/persistence_and_api).
+- file: worklist.py
+  role: Read model for lx-annotate (reducer-accepted event tokens, per-stage worklist counts with unmappable); never
+    decides a transition.
+dependencies:
+  internal:
+  - rust/endoreg_rust_backend/src/clinical_workflow.rs
+  - endoreg_db/models
+  - endoreg_db/services/privacy
+  - endoreg_db/services/annotations
+  - endoreg_db/services/reports
+  external:
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Human validation transition contract
+  doc: docs/human_validation_workflow.md
+- name: Feature readiness
+  doc: feature-tracking/ProductionWorkflow.yml
+tests:
+  directory: tests/services
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_clinical_lifecycle_state_machine.py tests/services/test_clinical_lifecycle_facts.py
+    tests/services/test_clinical_lifecycle_legacy_exemption.py
+  files:
+  - tests/services/test_clinical_lifecycle_state_machine.py
+  - tests/services/test_clinical_lifecycle_facts.py
+  - tests/services/test_clinical_lifecycle_legacy_exemption.py
+  - tests/services/test_clinical_workflow_persistence.py
+  - tests/services/test_clinical_workflow_worklist.py
+  - tests/views/media/test_clinical_workflow_endpoint.py

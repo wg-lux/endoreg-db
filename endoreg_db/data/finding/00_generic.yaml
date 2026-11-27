@@ -1,0 +1,35 @@
+- model: endoreg_db.finding
+  fields:
+    name: "examination_setting"
+    finding_types:
+      - baseline
+    description: "Settings related to the examination environment and conditions."
+    finding_classifications:
+      - examination_setting_generic_location
+
+- model: endoreg_db.finding
+  fields:
+    name: "sedation_endoscopy"
+    description: "Sedation during an examination"
+    finding_types:
+      - baseline
+    finding_classifications:
+      - sedation_performed
+      - examination_setting_generic_sedation
+
+- model: endoreg_db.finding
+  fields:
+    name: "post_resection_wound"
+    description: "Postresection Wound"
+    finding_types:
+      - observation
+      - iatrogenic
+    finding_interventions:
+      - endoscopy_injection_vasoactive
+      - endoscopy_hemoclip_generic
+      - endoscopy_over_the_scope_clip_generic
+    finding_classifications: [] #TODO active bleeding? macroscopically in sano?
+    caused_by_interventions:
+      - endoscopy_cold_snare_resection_generic
+      - endoscopy_diathermic_snare_resection_generic
+      - endoscopy_biopsy_foreceps_resection_generic

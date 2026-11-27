@@ -1,27 +1,25 @@
+from __future__ import annotations
+from typing import ClassVar, Any
+
 from django.db import models
-from typing import TYPE_CHECKING
+from endoreg_db.models.utils import NameNaturalKeyManager
 
-if TYPE_CHECKING:
-    from endoreg_db.models import RequirementSet
 
-class TagManager(models.Manager):
-    def get_by_natural_key(self, name):
-        return self.get(name=name)
-    
 class Tag(models.Model):
-    name = models.CharField(max_length=100, unique=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
 
-    objects = TagManager()
-    
-    if TYPE_CHECKING:
-        requirement_sets: "models.ManyToManyField[RequirementSet]"
+    objects: ClassVar[NameNaturalKeyManager["Tag"]] = NameNaturalKeyManager["Tag"]()  # pyright: ignore[reportIncompatibleVariableOverride]
 
     class Meta:
         verbose_name = "Tag"
         verbose_name_plural = "Tags"
 
-    def __str__(self):
-        return self.name
+    def __str__(self) -> str:
+        return str(self.name)
 
-    def natural_key(self):
-        return (self.name,)
+    def natural_key(self) -> tuple[str]:
+        return (str(self.name),)

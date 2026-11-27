@@ -1,0 +1,81 @@
+version: 1
+tier: domain
+path: endoreg_db/utils
+summary: Shared runtime paths, file integrity, protected storage and narrow utilities.
+responsibilities:
+- Own runtime path and hash helpers and shared integration adapters.
+boundaries:
+- Use get_runtime_paths and get_file_hash; filesystem side effects go through typed file_operations wrappers.
+files:
+- file: encryption/encrypted.py
+  role: Encrypted storage with collision-resolved publication intent before artifact creation; callers own durable attempt inventory and recovery.
+- file: storage/files.py
+  role: Canonical FileField materialization and save helpers with explicit publication intent and no unsupported-backend fallback.
+- file: rust_backend.py
+  role: Fail-closed typed native adapters, including hub acknowledgement/failure decisions and retry classification; no Python reducer fallback.
+- file: video/timeline.py
+  role: Initialization-free canonical frame/time rules, exact rational timestamp conversion and persisted-coordinate validation.
+- file: operation_log.py
+  role: Required operation audit persistence; save failures propagate to caller-owned clinical transactions.
+- file: verify_salt.py
+  role: Shared identity salt strength validation preserving established UTF-8 key material.
+- file: video/executable_discovery.py
+  role: Shared media executable discovery and bounded worker/deployment preflight.
+- file: file_operations.py
+  role: Actual atomic filesystem wrapper implementation.
+- file: storage_profile.py
+  role: Versioned media storage limits.
+- file: storage_streaming.py
+  role: Protected streaming adapters.
+- file: frame_stream.py
+  role: Shared exact-timestamp JPEG and lossless pixel decoding, including persisted-frame identity validation and authenticated ranges.
+- file: video/frame_extraction.py
+  role: Sparse exact-timestamp frame extraction using shared rational timeline validation and container-relative seek translation, plus single-decode selected-frame extraction by zero-based decode index.
+- file: profiling.py
+  role: Opt-in function profiling.
+- file: encryption/__init__.py
+  role: Encryption utilities.
+- file: encryption/encryption.py
+  role: Shared LXENC v1/v2 stream orchestration and single production encoder; native format rules supply chunk validation, nonces and associated data.
+- file: storage/__init__.py
+  role: Encrypted storage integration.
+entrypoints:
+- name: get_report_embedding_model_path
+  file: paths.py
+  purpose: Validate the explicit deployment-provisioned report-embedding model path outside runtime storage.
+- name: get_patient_uuid
+  file: hashs.py
+  purpose: Center-scoped keyed UUIDv8 derivation for new hash-based local patient identities; hub derivation uses separate domain inputs.
+- name: get_runtime_paths
+  file: paths.py
+  purpose: Canonical typed runtime path topology.
+- name: get_file_hash
+  file: hashs.py
+  purpose: Canonical file content hashing.
+- name: get_bytes_hash
+  file: hashs.py
+  purpose: SHA-256 of serialized byte payloads; keyed identity helpers remain separate.
+- name: get_identity_hash
+  file: hashs.py
+  purpose: Domain-separated HMAC-SHA-256 with centrally validated active or enrolled identity salts.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/services/streaming
+  - endoreg_db/config
+  - endoreg_db/schemas
+  external:
+  - django
+  - lx_dtypes
+contracts:
+- name: Canonical video storage and timeline runbook
+  doc: docs/video_storage_normalization.md
+- name: Video readiness authority
+  doc: feature-tracking/VideoStorageNormalization.yml
+tests:
+  directory: tests/utils
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/utils
+parent: ../structure.yml
+submodules: []

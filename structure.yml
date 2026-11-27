@@ -1,0 +1,82 @@
+version: 1
+tier: root
+path: .
+parent: null
+summary: Django clinical endoscopy registry with protected import, storage and interoperability.
+responsibilities:
+- Route agents to domain ownership and authoritative contracts.
+- Define dependencies, development environment and repository verification.
+boundaries:
+- Clinical ingestion and storage mutations use domain services and protected wrappers.
+- Feature readiness remains exclusively in feature-tracking YAML.
+entrypoints:
+- name: manage.py
+  file: manage.py
+  purpose: Django management entrypoint.
+- name: devenv tasks
+  file: devenv.nix
+  purpose: Non-mutating shell activation, explicit dependency sync, prek hooks with project-local cache, verification lanes and provisioned report-embedding model.
+files:
+- file: AGENTS.md
+  role: Binding agent instructions and map maintenance protocol
+- file: CLAUDE.md
+  role: Symlink to AGENTS.md so Claude Code loads the same single instruction source
+- file: pyproject.toml
+  role: Project dependencies and packaging; large model data is deployment-provisioned.
+- file: pyrightconfig.json
+  role: Strict type checking against installed locked dependencies without sibling source overrides.
+- file: .pre-commit-config.yaml
+  role: Fast changed-file commit checks and explicitly invoked comprehensive hooks.
+- file: pytest.ini
+  role: Pytest markers, runtime isolation and grouped parallel execution capped at two workers by default.
+- file: .github/workflows/ci.yml
+  role: Pinned, bounded CI invoking shared local quality tasks and Python/native tests.
+- file: .github/dependabot.yml
+  role: Weekly reviewed updates for pinned GitHub Actions.
+submodules:
+- name: endoreg_db
+  path: endoreg_db
+  manifest: endoreg_db/structure.yml
+  summary: Django application, persistence, transport and domain services.
+- name: docs
+  path: docs
+  manifest: docs/structure.yml
+  summary: Architecture contracts, operational runbooks and documentation navigation.
+- name: feature-tracking
+  path: feature-tracking
+  manifest: feature-tracking/structure.yml
+  summary: Authoritative feature definitions, acceptance criteria, evidence and coordination.
+- name: scripts
+  path: scripts
+  manifest: scripts/structure.yml
+  summary: Repository checks, diagnostics and development utilities.
+- name: quality
+  path: quality
+  manifest: quality/structure.yml
+  summary: Versioned policies and reviewed baselines consumed by repository checks.
+- name: workflow
+  path: workflow
+  manifest: workflow/structure.yml
+  summary: Snakemake workflows invoking application import and media services.
+- name: deployment
+  path: deployment
+  manifest: deployment/structure.yml
+  summary: Deployment proxy configuration for authenticated hub transfer.
+- name: rust
+  path: rust
+  manifest: rust/structure.yml
+  summary: Native backend for typed media, encryption and lifecycle primitives.
+- name: tests
+  path: tests
+  manifest: tests/structure.yml
+  summary: Pytest suites for contracts, services, HTTP APIs and clinical workflows.
+contracts:
+- name: Project overview
+  doc: README.md
+- name: Context schema and rationale
+  doc: docs/agent_context.md
+- name: Agent workflow
+  doc: AGENTS.md
+tests:
+  directory: tests
+  fast_lane_command: devenv tasks run test:fast

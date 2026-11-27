@@ -1,0 +1,47 @@
+version: 1
+tier: module
+path: endoreg_db/serializers
+summary: REST framework representation and typed request adapters.
+responsibilities:
+- Represent clinical, media and administrative resources for HTTP consumers.
+boundaries:
+- No service workflow ownership or duplicate clinical payload schema; keep public fields snake_case.
+files:
+- file: label_video_segment/frame_annotation_bulk.py
+  role: Bulk frame-label validation and shared label-choice parsing and exact-name-first lookup.
+- file: label_video_segment/frame_box_annotation.py
+  role: Frame-box validation using shared label-choice resolution while retaining geometry validation.
+- file: misc/file_overview.py
+  role: File overview representation for media and report metadata.
+- file: label_video_segment/label_video_segment.py
+  role: Typed segment representation and frame/time mutation validation; missing clinical timeline mappings become request validation errors.
+- file: patient_examination/patient_examination.py
+  role: Hash-free examination identity, detail-only examiner and selected indication evidence, and local patient ID validation within authorized centers.
+- file: __init__.py
+  role: Serializer exports.
+- file: hub/transfer_job.py
+  role: Transfer request representation and raw-mode rejection.
+- file: video/video_file_detail.py
+  role: Video detail representation.
+- file: video/video_file_list.py
+  role: Video listing representation.
+- file: patient/__init__.py
+  role: Patient representation package.
+- file: report/__init__.py
+  role: Report representation package.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/hub
+  - endoreg_db/services/centers
+  - endoreg_db/services/patient_identity
+  - endoreg_db/services/video_files
+  external:
+  - rest_framework
+  - lx_dtypes
+tests:
+  directory: tests/serializers
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/serializers
+parent: ../structure.yml
+submodules: []

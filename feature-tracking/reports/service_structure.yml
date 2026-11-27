@@ -1,0 +1,58 @@
+schema_version: '1.0'
+feature_id: code_quality
+criterion_id: helper_class_boundaries
+assessor: codex-services-structure-20261001
+scope:
+  moved_modules: 99
+  architecture_reference: endoreg_db/services/structure.yml
+  roots: endoreg_db/services
+  changes:
+    - Fachliche Unterpakete statt einzelner Workflow-Module in der Service-Wurzel.
+    - Kürzere Modulnamen innerhalb des zuständigen Unterpakets.
+    - Interne Imports, Test-Patches, Dokumentationspfade und aktive Qualitätsinventare aktualisiert.
+    - Die sieben bestehenden Funktions-Exporte der Service-Wurzel bleiben verzögert geladen.
+    - Alle 99 bisherigen Modulpfade bleiben zentral über __init__.py verfügbar; Aliase laden verzögert und erhalten die kanonische Modulidentität.
+    - Das cases-Paket reicht die Symbole des früheren cases-Moduls weiter und bleibt für seine neuen Untermodule verwendbar.
+boundaries:
+  - Keine Änderung an Geschäftslogik, Modellfeldern, Datenbankschema oder API-Payloads.
+  - Verschlüsselung, Import-Fencing, Streaming-Leases und Videotimeline bleiben erhalten.
+  - Bestehende Änderungen im Arbeitsverzeichnis wurden erhalten; keine Commits oder Indexänderungen.
+  - Direkte alte Modulpfade, Paketwurzel-Imports und Sternimporte bleiben kompatibel; zusätzliche Legacy-Dateien sind nicht erforderlich.
+verification:
+  - command: .devenv/state/venv/bin/pyright
+    result: 0 Fehler und 8 bestehende Warnungen vor und nach der Umstellung.
+  - command: Ruff-Prüfung für endoreg_db/services und tests/services/test_service_structure.py
+    result: Bestanden; 20 betroffene Dateien formatiert.
+  - command: Vergleich der Service-Syntaxbäume vor und nach der Pfadmigration
+    result: 127 Dateien ohne Abweichung der Laufzeitlogik nach Normalisierung von Importpfaden. Paketinitialisierungen separat geprüft.
+  - command: Fokussierte pytest-Prüfung von Service-Struktur, Layer-Grenzen, Importausführung, Import-Leases und Bericht-/Videoimport
+    result: 270 bestanden, 2 Warnungen in 61.76 Sekunden. Alle 99 umgezogenen Module erfolgreich importiert.
+  - command: scripts/check_django_startup_imports.py
+    result: Bestanden; Django startet und löst 6 Root-URL-Muster auf.
+  - command: Breitere pytest-Regressionen für Importabschluss, Fencing, Reimport, Streaming, Referenzkataloge, Deployment, Berichtpersistenz und Trainingsdaten
+    result: 326 bestanden, 22 Untertests bestanden, 2 Warnungen in 391.05 Sekunden; einschließlich der Modellinventar- und Referenzprojektions-Skripttests.
+  - command: tracker.py validate; tracker.py show code_quality; tracker.py check code_quality
+    result: 37 Feature-Definitionen gültig; Definition lesbar. Gesamtfeature bleibt mit 11 von 17 erfüllten Kriterien nicht produktionsreif; kein Gesamtabschluss behauptet.
+  - command: scripts/check_lx_dtypes_model_inventory.py --refresh-boundaries
+    result: Bestanden; 168 registrierte und 5 abstrakte Modelle. Verbrauchermetadaten mit dem bestehenden Scanner erneuert; fachliche Klassifizierungen unverändert. Zuvor erkannte Sortier- und Referenzabweichungen behoben.
+  - command: git diff --check
+    result: Bestanden.
+external_integration:
+  repository: /home/admin/dev/lx-annotate
+  patch: .devenv/state/service_structure/lx_annotate_imports.patch
+  affected_files: 26
+  evidence: Aktive Aufrufer und Testreferenzen der bisherigen Service-Pfade gelesen; vollständiger Import-Patch vorbereitet und resultierende Python-Syntax geprüft.
+  boundary: Externes Repository unverändert. Seine bisherigen Modulpfade werden durch zentrale Kompatibilitätsaliase bedient; der vorbereitete Pfadmigrations-Patch ist optional und nicht mehr Voraussetzung für die bisherigen Laufzeitimports.
+legacy_alias_verification:
+  assessor: codex-services-structure-20261001
+  date: '2026-10-02'
+  full_pyright: 0 Fehler, 8 bestehende Warnungen.
+  focused_pyright: 0 Fehler, 0 Warnungen für beide Paketinitialisierungen und die Strukturtests.
+  ruff: Bestanden.
+  startup_and_inventory: Django-Start mit 6 Root-URL-Mustern bestanden; Modellinventar mit 168 registrierten und 5 abstrakten Modellen sauber; 37 Feature-Definitionen gültig.
+  alias_tests: 201 bestanden, 2 Warnungen in 26.37 Sekunden; alle 99 Pfadpaare, Paketwurzel- und Sternimporte, cases-Symbole und Untermodule sowie Kaltstart und Reload geprüft.
+  import_regressions: 149 Layer- und Bericht-/Videoimport-Regressionen im ersten Lauf bestanden.
+  corrected_test_assumptions:
+    - Erstlauf mit 349 bestandenen Tests und einer fehlerhaften Kaltstartannahme; das bestehende Hauptpaket lädt schon Django. Die Prüfung bezieht sich jetzt auf verzögertes Laden der Service-Unterpakete.
+    - Einzelner Wiederholungslauf durch unnötige globale Datenbank-Fixture blockiert; Strukturtests verwenden nun die bestehende no_db-Markierung und bestehen unabhängig von einer Testdatenbank.
+  concurrent_suites: Zwei fremde pytest-Prozesse erkannt; keine zusätzliche vollständige Testsuite gestartet und fremde Prozesse unverändert gelassen.

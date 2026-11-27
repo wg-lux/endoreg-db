@@ -5,7 +5,7 @@ The `Patient` model is a cornerstone of the system, representing individuals rec
 ### Core Patient Information
 
 *   A `Patient` has standard demographic information inherited from `Person` (e.g., name, date of birth, gender).
-*   It's associated with a `Center` where they might be receiving care.
+*   It can be associated with a `Center` where care is provided.
 *   The model includes methods for managing patient identity, such as `get_or_create_pseudo_patient_by_hash` for anonymized or external data integration, and calculating age (`age()`, `get_dob()`).
 
 ### 1. Patient Examinations and Findings
@@ -15,9 +15,9 @@ Examinations are central to documenting patient encounters.
 *   **`PatientExamination`**:
     *   This model links a `Patient` to a specific `Examination` (e.g., colonoscopy, gastroscopy) and records details like the start and end dates of the examination.
     *   Each `PatientExamination` has a unique `hash`.
-    *   It can be associated with a `VideoFile` if the examination was recorded.
+    *   It can be associated with zero or more `VideoFile` records through the `video_files` reverse relation.
     *   It serves as the primary link for all findings, indications, and reports related to that specific examination instance for the patient.
-    *   You can create `PatientExamination` instances for a patient, for example, by using `patient.create_examination_by_indication()`.
+    *   A `PatientExamination` can be created with `patient.create_examination(...)` or through the applicable import or service workflow.
 
 *   **`PatientFinding`**:
     *   This model represents a specific clinical observation or `Finding` (e.g., "polyp," "inflammation") identified during a `PatientExamination`.
@@ -25,18 +25,10 @@ Examinations are central to documenting patient encounters.
     *   The `PatientFinding` model is crucial as it connects the general observation to its specific characteristics for that patient, such as its location and morphology.
     *   A `PatientExamination` can have multiple `PatientFinding` records associated with it via the `patient_findings` related name. You can retrieve these using `patient_examination_instance.get_findings()`.
 
-*   **Connecting Findings to Locations (`PatientFindingLocation`)**:
-    *   The `PatientFindingLocation` model specifies where a particular `PatientFinding` was observed.
-    *   It links back to a `PatientFinding` instance (via the `finding` foreign key, accessible from `PatientFinding` through the `locations` related name).
-    *   It uses `FindingLocationClassification` (e.g., "Colon Segment") and `FindingLocationClassificationChoice` (e.g., "Sigmoid Colon") to define the location precisely.
-    *   It can also store `subcategories` and `numerical_descriptors` (e.g., distance from a landmark) as JSON data, which are often initialized from the chosen `FindingLocationClassificationChoice`.
-    *   The `save()` method on `PatientFindingLocation` includes logic to ensure the `location_choice` is valid for the `location_classification` and to populate `subcategories` and `numerical_descriptors` if they are not already set.
-
-*   **Connecting Findings to Morphologies (`PatientFindingMorphology`)**:
-    *   The `PatientFindingMorphology` model describes the form and structure (morphology) of a `PatientFinding`.
-    *   It links back to a `PatientFinding` instance (accessible from `PatientFinding` through the `morphologies` related name).
-    *   It uses `FindingMorphologyClassification` (e.g., "Paris Classification") and `FindingMorphologyClassificationChoice` (e.g., "Paris 0-Ip") to detail the morphology.
-    *   Similar to locations, it can store `subcategories` and `numerical_descriptors` related to the morphology.
+*   **Classifying Findings (`PatientFindingClassification`)**:
+    *   `PatientFindingClassification` links a `PatientFinding` to a `FindingClassification` and a `FindingClassificationChoice`.
+    *   Location and morphology are represented through the applicable finding classifications rather than separate patient-location or patient-morphology models.
+    *   On save, the model validates that the selected choice belongs to the classification and initializes and validates typed `subcategories` and `numerical_descriptors` payloads.
 
 *   **Interventions for Findings (`PatientFindingIntervention`)**:
     *   If an intervention (e.g., "biopsy," "polypectomy") is performed related to a specific `PatientFinding`, it's recorded in the `PatientFindingIntervention` model.
@@ -71,10 +63,10 @@ Laboratory results are managed through the following:
     *   This model stores a specific laboratory test result for a `Patient`.
     *   It links to the `Patient`.
     *   It links to a `LabValue` model, which defines the type of lab test (e.g., "Hemoglobin," "Creatinine").
-    *   It records the `value` of the test, the `unit`, and the `datetime` the sample was taken or the result was recorded.
+    *   It records a numeric `value` and/or `value_str`, an optional `unit`, and an automatically created `timestamp`.
     *   It can optionally link to a `PatientLabSample` if the lab value was derived from a specific sample.
     *   It includes a `normal_range` (often a JSON field like `{"min": X, "max": Y}`) which can be determined by considering the `LabValue` type, patient's age, and gender using the `get_normal_range()` method.
-    *   The `Patient` model has a reverse relation `lab_values` (likely `patientlabvalue_set` or a custom related name) to access all `PatientLabValue` instances.
+    *   The `Patient` model exposes the `lab_values` reverse relation for accessing its `PatientLabValue` instances.
 
 *   **`PatientLabSample`**:
     *   This model represents a physical sample taken from a patient (e.g., "blood sample," "urine sample").
@@ -106,7 +98,6 @@ Diagnosed diseases are recorded as follows:
     *   It can store `numerical_descriptors` and `subcategories` as JSON for additional details about the patient's specific instance of the disease.
     *   The `Patient` model has a reverse relation `diseases` (likely `patientdisease_set`) to access all `PatientDisease` instances.
 
-### Linking for Requirement Evaluation (`.links` property)
+### Linked-model traversal (`.links` property)
 
-Many of these patient-specific models (e.g., `Patient`, `PatientExamination`, `PatientMedication`, `PatientEvent`, `PatientDisease`, `PatientLabValue`) have a `.links` property. This property returns a `RequirementLinks` object, which aggregates various related model instances. This is a utility designed for a "requirements evaluation" system, allowing complex rules or criteria to be checked against the patient's comprehensive data. For instance, a requirement might check if a patient with a certain disease is on a specific medication and has a recent lab value within a particular range.
-
+Several patient-specific models, including `Patient`, `PatientMedication`, `PatientEvent`, `PatientDisease`, and `PatientLabValue`, expose a `.links` property. It returns a typed `ModelLinks` object that aggregates related domain-model instances for linked-model traversal. `PatientExamination` does not currently expose this property.

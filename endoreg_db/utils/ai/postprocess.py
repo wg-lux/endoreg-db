@@ -1,31 +1,51 @@
+from collections.abc import Sequence
+
 import numpy as np
 
 
-def concat_pred_dicts(pred_dicts):
-    """Shoulkd be a list of dictionaries with the same keys"""
+def concat_pred_dicts(
+    pred_dicts: list[dict[str, list[float]]],
+) -> dict[str, np.ndarray]:
+    """Should be a list of dictionaries with the same keys"""
     assert len(pred_dicts) > 0
     keys = pred_dicts[0].keys()
 
-    merged_predictions = {key: [] for key in keys}
+    # Temporarily hold the lists while we accumulate them
+    merged_predictions: dict[str, list[float]] = {key: [] for key in keys}
     for p in pred_dicts:
         for key in p.keys():
-            merged_predictions[key].append(p[key])
+            merged_predictions[key].extend(p[key])
 
-    for key in merged_predictions.keys():
-        merged_predictions[key] = np.array(merged_predictions[key])
-
-    return merged_predictions
+    # Convert to numpy arrays and return with the correct type annotation
+    return {key: np.array(val) for key, val in merged_predictions.items()}
 
 
-def make_smooth_preds(prediction_array, window_size_s=1, fps=50):
-    window_size = int(window_size_s * fps)
-    smooth_prediction_array = np.convolve(
-        prediction_array, np.ones(window_size) / window_size, mode="valid"
-    )
-    return smooth_prediction_array
+def make_smooth_preds(
+    prediction_array: Sequence[float],
+    window_size_s: float = 1,
+    *,
+    timestamps: Sequence[float],
+) -> np.ndarray:
+    """Centered presentation-time mean retaining every input frame identity."""
+    values = np.asarray(prediction_array, dtype=float)
+    times = np.asarray(timestamps, dtype=float)
+    if values.ndim != 1 or times.shape != values.shape:
+        raise ValueError("Predictions require one timestamp per score.")
+    if not np.isfinite(values).all() or not np.isfinite(times).all():
+        raise ValueError("Predictions and timestamps must be finite.")
+    if np.any(times < 0) or np.any(np.diff(times) <= 0):
+        raise ValueError("Timestamps must be non-negative and strictly increasing.")
+    if not np.isfinite(window_size_s) or window_size_s < 0:
+        raise ValueError("Smoothing window must be finite and non-negative.")
+    if not len(values) or window_size_s == 0:
+        return values.copy()
+    left = np.searchsorted(times, times - window_size_s / 2, side="left")
+    right = np.searchsorted(times, times + window_size_s / 2, side="right")
+    prefix = np.concatenate(([0.0], np.cumsum(values)))
+    return (prefix[right] - prefix[left]) / (right - left)
 
 
-def find_true_pred_sequences(predictions):
+def find_true_pred_sequences(predictions: np.ndarray) -> list[tuple[int, int]]:
     """
     Efficiently finds sequences of 'outside' predictions in the binary predictions array using NumPy.
 
@@ -37,6 +57,9 @@ def find_true_pred_sequences(predictions):
     list of tuples: A list where each tuple represents a sequence of 'outside' predictions,
                     with the first element as the start index and the second element as the stop index.
     """
+    if predictions.size == 0:
+        return []
+
     # Identify where the value changes in the binary array (from False to True or True to False)
     change_indices = np.where(np.diff(predictions.astype(int)) != 0)[0]
 

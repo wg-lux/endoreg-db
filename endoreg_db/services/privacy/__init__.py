@@ -1,0 +1,1 @@
+"""Anonymisierung, Pseudonymisierung und Qualitätsmessung."""

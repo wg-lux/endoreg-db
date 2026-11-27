@@ -1,12 +1,12 @@
-from django.db import models
-from rest_framework import serializers
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
 
-class ExaminationTimeManager(models.Manager):
-    """
-    Manager for ExaminationTime with custom query methods.
-    """
-    def get_by_natural_key(self, name: str) -> "ExaminationTime":
-        return self.get(name=name)
+from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
+
+if TYPE_CHECKING:
+    from endoreg_db.models import ExaminationTimeType, InformationSource
+
 
 class ExaminationTime(models.Model):
     """
@@ -18,11 +18,25 @@ class ExaminationTime(models.Model):
         end_time (TimeField): The ending time for the examination.
         time_types (ManyToManyField): The types associated with this examination time.
     """
-    name = models.CharField(max_length=100, unique=True)
-    start_time = models.TimeField(blank=True, null=True)
-    time_types = models.ManyToManyField('ExaminationTimeType', blank=True)
-    end_time = models.TimeField(blank=True, null=True)
-    objects = ExaminationTimeManager()
+
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    time_types: "models.ManyToManyField[ExaminationTimeType, ExaminationTimeType]" = (
+        models.ManyToManyField("ExaminationTimeType", blank=True)
+    )
+    objects = NameNaturalKeyManager["ExaminationTime"]()
+
+    information_sources: "models.ManyToManyField[InformationSource, InformationSource]" = models.ManyToManyField(
+        "InformationSource",
+        related_name="examination_times",
+        blank=True,
+    )
+
+    if TYPE_CHECKING:
+        pass
 
     def __str__(self) -> str:
         """
@@ -31,19 +45,18 @@ class ExaminationTime(models.Model):
         Returns:
             str: The name of the examination time.
         """
-        return self.name
+        return str(self.name)
 
-    def natural_key(self) -> tuple:
+    def natural_key(self) -> tuple[str]:
         """
         Returns the natural key for the examination time.
 
         Returns:
             tuple: The natural key consisting of the name.
         """
-        return (self.name,)
+        return (str(self.name),)
 
     class Meta:
-        verbose_name = 'Examination Time'
-        verbose_name_plural = 'Examination Times'
-        ordering = ['name']
-
+        verbose_name = "Examination Time"
+        verbose_name_plural = "Examination Times"
+        ordering = ["name"]

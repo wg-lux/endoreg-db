@@ -1,232 +1,324 @@
+from __future__ import annotations
+
 """
 Defines state tracking models related to video processing.
 """
-from django.db import models
-from .abstract import AbstractState
-from typing import TYPE_CHECKING, Optional
-import logging
-from enum import Enum
+from typing import TYPE_CHECKING, Any, ClassVar
 
-logger = logging.getLogger(__name__)
+from django.db import models
+
+from endoreg_db.models.state.write_guard import GuardedStateModel
+
+from endoreg_db.models.state.anonymization import (
+    AnonymizationState,
+    anonymization_status_case,
+    derive_video_anonymization_state,
+)
+
+
+SHA256_HEX_LENGTH = 64
+SHA256_HEX_DIGITS = frozenset("0123456789abcdef")
 
 if TYPE_CHECKING:
     from ..media import VideoFile
-    
 
-class AnonymizationStatus(str, Enum):
-    NOT_STARTED             = "not_started"
-    EXTRACTING_FRAMES       = "extracting_frames"
-    PROCESSING_ANONYMIZING  = "processing_anonymization"
-    DONE                    = "done"
-    VALIDATED               = "validated"
-    FAILED                  = "failed"
-    STARTED                = "started"
 
-class VideoState(models.Model):
+class VideoState(GuardedStateModel):
     """
     Tracks the processing state of a VideoFile instance.
     Uses BooleanFields for clear, distinct states.
     """
-    # Frame related states
+
+    # Only keep purely dynamic / reverse relation attributes in TYPE_CHECKING
     if TYPE_CHECKING:
-        video_file: Optional["VideoFile"]
-        
-    frames_extracted = models.BooleanField(default=False, help_text="True if raw frames have been extracted to files.")
-    frames_initialized = models.BooleanField(default=False, help_text="True if Frame DB objects have been created.")
-    frame_count = models.PositiveIntegerField(null=True, blank=True, help_text="Number of frames extracted/initialized.")
+        video_file: VideoFile
+
+    # Frame related states
+    frames_extracted: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, help_text="True if raw frames have been extracted to files."
+    )
+    frames_initialized: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, help_text="True if Frame DB objects have been created."
+    )
+    frame_count: models.PositiveIntegerField[Any, Any] = models.PositiveIntegerField(
+        null=True, blank=True, help_text="Number of frames extracted/initialized."
+    )
 
     # Metadata related states
-    video_meta_extracted = models.BooleanField(default=False, help_text="True if VideoMeta (technical specs) has been extracted.")
-    text_meta_extracted = models.BooleanField(default=False, help_text="True if text metadata (OCR) has been extracted.")
+    video_meta_extracted: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if VideoMeta (technical specs) has been extracted.",
+    )
+    text_meta_extracted: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, help_text="True if text metadata (OCR) has been extracted."
+    )
 
     # AI / Annotation related states
-    initial_prediction_completed = models.BooleanField(default=False, help_text="True if initial AI prediction has run.")
-    lvs_created = models.BooleanField(default=False, help_text="True if LabelVideoSegments have been created from predictions.")
-    frame_annotations_generated = models.BooleanField(default=False, help_text="True if frame-level annotations have been generated from segments.")
-    
+    initial_prediction_completed: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, help_text="True if initial AI prediction has run."
+    )
+    lvs_created: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if LabelVideoSegments have been created from predictions.",
+    )
+    frame_annotations_generated: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if frame-level annotations have been generated from segments.",
+    )
+
     # Processing state
-    sensitive_meta_processed = models.BooleanField(default=False, help_text="True if the video has been fully processed, meaning a anonymized person was created.")
+    sensitive_meta_processed: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if the video has been fully processed, meaning a anonymized person was created.",
+    )
 
     # Anonymization state
-    anonymized = models.BooleanField(default=False, help_text="True if the anonymized video file has been created.")
-    anonymization_validated = models.BooleanField(default=False, help_text="True if the anonymization process has been validated and confirmed.")
-    anonymization_status: AnonymizationStatus
-    
-    processing_started = models.BooleanField(default=False, help_text="True if the processing has started, but not yet completed.")
-    
+    anonymized: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, help_text="True if the anonymized video file has been created."
+    )
+    anonymization_validated: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if the anonymization process has been validated and confirmed.",
+    )
+    outside_segments_removed: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if outside-labelled segments have been removed or blackened in "
+            "the managed processed artifact."
+        ),
+    )
+    ready_for_export: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if the managed processed artifact passed explicit clinical "
+            "ready-for-export validation."
+        ),
+    )
+    ready_for_export_at: models.DateTimeField[Any, Any] = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text="Server-side timestamp for the ready-for-export promotion.",
+    )
+    ready_for_export_by: models.CharField[Any, Any] = models.CharField(
+        max_length=255,
+        blank=True,
+        default="",
+        help_text="Authenticated user or service that promoted this video.",
+    )
+    processed_file_sha256: models.CharField[Any, Any] = models.CharField(
+        max_length=64,
+        blank=True,
+        default="",
+        help_text="SHA-256 digest of the processed artifact at promotion time.",
+    )
+
+    processing_started: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if the processing has started, but not yet completed.",
+    )
+    processing_error: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text=(
+            "True if processing failed or media integrity marked this video lost."
+        ),
+    )
+
     # Timestamps
-    date_created = models.DateTimeField(auto_now_add=True)
-    date_modified = models.DateTimeField(auto_now=True)
-    
+    date_created: models.DateTimeField[Any, Any] = models.DateTimeField(
+        auto_now_add=True
+    )
+    date_modified: models.DateTimeField[Any, Any] = models.DateTimeField(auto_now=True)
+
     # Segment Annotation State
-    segment_annotations_created = models.BooleanField(default=False, help_text="True if segment annotations have been created from LabelVideoSegments.")
-    segment_annotations_validated = models.BooleanField(default=False, help_text="True if segment annotations have been validated.")
-    
-    was_created = models.BooleanField(default=True, help_text="True if this state was created for the first time.")
-    
-    objects = models.Manager()
+    segment_annotations_created: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False,
+        help_text="True if segment annotations have been created from LabelVideoSegments.",
+    )
+    segment_annotations_validated: models.BooleanField[Any, Any] = models.BooleanField(
+        default=False, help_text="True if segment annotations have been validated."
+    )
 
-    def __str__(self):
-        # Find the related VideoFile's UUID if possible
-        video_uuid = "Unknown"
-        try:
-            # Access the related VideoFile via the reverse relation 'video_file'
-            if hasattr(self, 'video_file') and self.video_file:
-                video_uuid = self.video_file.uuid
-        except Exception:
-            pass # Ignore errors if relation doesn't exist or causes issues
+    was_created: models.BooleanField[Any, Any] = models.BooleanField(
+        default=True, help_text="True if this state was created for the first time."
+    )
 
-        states = [
-            f"FramesExtracted={self.frames_extracted}",
-            f"FramesInit={self.frames_initialized}",
-            f"VideoMetaExtracted={self.video_meta_extracted}",
-            f"TextMetaExtracted={self.text_meta_extracted}",
-            f"PredictionDone={self.initial_prediction_completed}",
-            f"LvsCreated={self.lvs_created}",
-            f"Anonymized={self.anonymized}",
-            f"AnonymizationValidated={self.anonymization_validated}",
-            f"SensitiveMetaProcessed={self.sensitive_meta_processed}",
-            f"FrameCount={self.frame_count}" if self.frame_count is not None else "FrameCount=None",
-            f"SegmentAnnotationsCreated={self.segment_annotations_created}",
-            f"SegmentAnnotationsValidated={self.segment_annotations_validated}",
-            f"DateCreated={self.date_created.isoformat()}",
-            f"DateModified={self.date_modified.isoformat()}"
+    guarded_state_fields: ClassVar[frozenset[str]] = frozenset(
+        [
+            "frames_extracted",
+            "frames_initialized",
+            "frame_count",
+            "video_meta_extracted",
+            "text_meta_extracted",
+            "initial_prediction_completed",
+            "lvs_created",
+            "frame_annotations_generated",
+            "sensitive_meta_processed",
+            "anonymized",
+            "anonymization_validated",
+            "outside_segments_removed",
+            "ready_for_export",
+            "ready_for_export_at",
+            "ready_for_export_by",
+            "processed_file_sha256",
+            "processing_started",
+            "processing_error",
+            "segment_annotations_created",
+            "segment_annotations_validated",
+            "was_created",
         ]
-        return f"VideoState(Video:{video_uuid}): {', '.join(states)}"
+    )
 
     @property
-    def anonymization_status(self) -> AnonymizationStatus:
+    def anonymization_status(self) -> AnonymizationState:
         """
         Fast, side‑effect‑free status resolution used by API & UI.
         """
-        if self.anonymization_validated:
-            return AnonymizationStatus.VALIDATED
-        if self.sensitive_meta_processed:
-            return AnonymizationStatus.DONE
-        if self.frames_extracted and not self.anonymized:
-            return AnonymizationStatus.PROCESSING_ANONYMIZING
-        if self.was_created and not self.frames_extracted:
-            return AnonymizationStatus.EXTRACTING_FRAMES
-        if getattr(self, "processing_error", False):
-            return AnonymizationStatus.FAILED
-        if self.processing_started:
-            return AnonymizationStatus.STARTED
-        return AnonymizationStatus.NOT_STARTED
+        return derive_video_anonymization_state(
+            processing_error=self.processing_error,
+            anonymization_validated=self.anonymization_validated,
+            sensitive_meta_processed=self.sensitive_meta_processed,
+            frames_extracted=self.frames_extracted,
+            anonymized=self.anonymized,
+            was_created=self.was_created,
+            processing_started=self.processing_started,
+        )
 
-    # ---- Single‑responsibility mutators ---------------------------------
+    @classmethod
+    def anonymization_status_case(
+        cls,
+        *,
+        relation_prefix: str = "",
+        include_missing_relation: bool = False,
+    ) -> models.Case:
+        return anonymization_status_case(
+            relation_prefix=relation_prefix,
+            include_missing_relation=include_missing_relation,
+        )
+
+    def mark_processing_not_started(self) -> None:
+        from endoreg_db.services.media.state import mark_video_processing_not_started
+
+        mark_video_processing_not_started(self)
+
+    def mark_processing_failed(self, *, save: bool = True) -> None:
+        from endoreg_db.services.media.state import mark_video_processing_failed
+
+        mark_video_processing_failed(self, save=save)
+
     def mark_sensitive_meta_processed(self, *, save: bool = True) -> None:
-        self.sensitive_meta_processed = True
-        if save:
-            self.save(update_fields=["sensitive_meta_processed", "date_modified"])
+        from endoreg_db.services.media.state import mark_video_sensitive_meta_processed
+
+        mark_video_sensitive_meta_processed(self, save=save)
 
     def mark_anonymization_validated(self, *, save: bool = True) -> None:
-        """
-        Mark the anonymization process as validated for this video state.
-        
-        Parameters:
-            save (bool): If True, persist the change to the database immediately.
-        """
-        self.anonymization_validated = True
-        if save:
-            self.save(update_fields=["anonymization_validated", "date_modified"])
+        from endoreg_db.services.media.state import mark_video_anonymization_validated
 
-    def mark_frames_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the video as having its frames extracted.
-        
-        Parameters:
-            save (bool): If True, persist the change to the database immediately.
-        """
-        self.frames_extracted = True
-        if save:
-            self.save(update_fields=["frames_extracted", "date_modified"])
+        mark_video_anonymization_validated(self, save=save)
 
-    def mark_frames_not_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the video as having no extracted frames.
-        
-        If `save` is True, updates the database record for this state.
-        """
-        self.frames_extracted = False
-        if save:
-            self.save(update_fields=["frames_extracted", "date_modified"])
+    def clear_export_readiness(
+        self,
+        *,
+        clear_outside_segments_removed: bool = False,
+        save: bool = True,
+    ) -> None:
+        from endoreg_db.services.media.state import clear_video_export_readiness
+
+        clear_video_export_readiness(
+            self,
+            clear_outside_segments_removed=clear_outside_segments_removed,
+            save=save,
+        )
+
+    def mark_ready_for_export(
+        self,
+        *,
+        processed_file_sha256: str,
+        ready_for_export_by: str,
+        save: bool = True,
+    ) -> None:
+        from endoreg_db.services.media.state import mark_video_ready_for_export
+
+        mark_video_ready_for_export(
+            self,
+            processed_file_sha256=processed_file_sha256,
+            ready_for_export_by=ready_for_export_by,
+            save=save,
+        )
 
     def mark_anonymized(self, *, save: bool = True) -> None:
-        """
-        Mark the video as anonymized by setting the anonymized flag to True.
-        
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.anonymized = True
-        if save:
-            self.save(update_fields=["anonymized", "date_modified"])
+        from endoreg_db.services.media.state import mark_video_anonymized
 
-    def mark_initial_prediction_completed(self, *, save: bool = True) -> None:
-        """
-        Mark the initial AI prediction as completed for this video state.
-        
-        Parameters:
-            save (bool): If True, persist the change to the database immediately.
-        """
-        self.initial_prediction_completed = True
-        if save:
-            self.save(update_fields=["initial_prediction_completed", "date_modified"])
+        mark_video_anonymized(self, save=save)
 
-    def mark_video_meta_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the video metadata as extracted for this video state.
-        
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.video_meta_extracted = True
-        if save:
-            self.save(update_fields=["video_meta_extracted", "date_modified"])
+    def get_or_create_state(self) -> VideoState:
+        from endoreg_db.services.media.state import get_state_for_video_state
 
-    def mark_text_meta_extracted(self, *, save: bool = True) -> None:
-        """
-        Mark the video as having its text metadata extracted.
-        
-        Parameters:
-        	save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.text_meta_extracted = True
-        if save:
-            self.save(update_fields=["text_meta_extracted", "date_modified"])
-    
-    def get_or_create_state(self):
-        """
-        Get the current state of the video, or create a new one if it doesn't exist.
-        
-        Returns:
-            VideoState: The current or newly created state.
-        """
-        if not hasattr(self, 'video_file'):
-            raise ValueError("This method requires a related VideoFile instance.")
-        
-        # If the state already exists, return it
-        if self.video_file.state:
-            return self.video_file.state
-        
-        # Otherwise, create a new state
-        new_state = VideoState(video_file=self.video_file)
-        new_state.save()
-        return new_state
-    
+        return get_state_for_video_state(self)
+
     def mark_processing_started(self, *, save: bool = True) -> None:
-        """
-        Mark the processing as started for this video state.
-        
-        Parameters:
-            save (bool): If True, immediately saves the updated state to the database.
-        """
-        self.processing_started = True
-        if save:
-            self.save(update_fields=["processing_started", "date_modified"])
-    
-    
+        from endoreg_db.services.media.state import mark_video_processing_started
 
-    class Meta:
+        mark_video_processing_started(self, save=save)
+
+    class Meta(GuardedStateModel.Meta):
+        abstract = False
+        base_manager_name = "objects"
+        default_manager_name = "objects"
         verbose_name = "Video Processing State"
         verbose_name_plural = "Video Processing States"
+        constraints = [
+            models.CheckConstraint(
+                condition=(
+                    models.Q(processing_error=False)
+                    | models.Q(processing_started=False)
+                ),
+                name="videostate_failed_not_started",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False) | models.Q(processing_error=False)
+                ),
+                name="videostate_ready_not_failed",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(anonymization_validated=True)
+                ),
+                name="videostate_ready_requires_validation",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(outside_segments_removed=True)
+                ),
+                name="videostate_ready_requires_cleanup",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(segment_annotations_validated=True)
+                ),
+                name="videostate_ready_requires_segments",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | models.Q(ready_for_export_at__isnull=False)
+                ),
+                name="videostate_ready_requires_timestamp",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False) | ~models.Q(ready_for_export_by="")
+                ),
+                name="videostate_ready_requires_actor",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(ready_for_export=False)
+                    | ~models.Q(processed_file_sha256="")
+                ),
+                name="videostate_ready_requires_sha",
+            ),
+        ]

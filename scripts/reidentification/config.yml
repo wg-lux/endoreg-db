@@ -1,0 +1,32 @@
+schema_version: 1
+reference_date: '2026-10-21'
+birth_start: '1900-01-01'
+max_evaluations: 250000
+max_seconds: 60
+oracle_limit: 32
+trials: 3
+candidate_provenance: >-
+  Hand-authored synthetic corpus frozen before subject sampling. No empirical
+  frequencies. Names are ordered as written; dates ascend within each name.
+  Covered subjects are sampled from this corpus (closed-world overlap);
+  additional subjects are deliberately outside it. No clinical population claim.
+names:
+  - [Anna, Müller]
+  - [Paul, Schmidt]
+  - [Zoë, Weiß]
+  - [Zoë, Weiß]
+  - [Jean Luc, O'Neil]
+  - [Anne-Marie, Meyer]
+  - ['  Anna ', ' Müller  ']
+  - [Łukasz, Żółć]
+  - [X Æ, Qvist]
+  - ['A"B', 'C\D']
+  - [Maria Clara, de Souza]
+  - [Oskar, Mueller]
+staff_names:
+  - [Elena, Roth]
+  - [David, Kern]
+  - [Maëlle, Voss]
+centres: [centre-a, centre-b, centre-c]
+partial_interval: ['1970-01-01', '1990-12-31']
+examination_times: ['', '2025-01-01', '2025-01-02', '2025-01-01T12:30:00+02:00']

@@ -1,0 +1,34 @@
+version: 1
+tier: module
+path: endoreg_db/authz
+summary: Authentication, authorization policy and identity middleware.
+responsibilities:
+- Validate identity tokens and enforce route policies and user roles.
+boundaries:
+- Authentication does not authorize raw media export or bypass center scope.
+files:
+- file: auth.py
+  role: Keycloak JSON Web Token authentication.
+- file: policy.py
+  role: Required-role policy evaluation.
+- file: permissions.py
+  role: DRF permission adapters.
+- file: middleware.py
+  role: Identity middleware.
+- file: views_auth.py
+  role: Authentication bootstrap endpoints.
+dependencies:
+  internal:
+  - endoreg_db/models/administration
+  - endoreg_db/config
+  external:
+  - django
+  - rest_framework
+  - jwt
+  - requests
+  - lx_dtypes
+tests:
+  directory: tests/authz
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/authz
+parent: ../structure.yml
+submodules: []

@@ -1,5 +1,11 @@
 from datetime import datetime, timezone
-from endoreg_db.models import Patient, PatientLabSample, PatientLabSampleType
+
+from endoreg_db.models.administration.person.patient.patient import Patient
+from endoreg_db.models.medical.patient.patient_lab_sample import (
+    PatientLabSample,
+    PatientLabSampleType,
+)
+
 
 class LabSampleFactory:
     """
@@ -25,9 +31,7 @@ class LabSampleFactory:
         sample_type = PatientLabSampleType.objects.get(name="generic")
 
         lab_sample = PatientLabSample.objects.create(
-            patient=patient,
-            sample_type=sample_type,
-            date=datetime.now(tz=timezone.utc)
+            patient=patient, sample_type=sample_type, date=datetime.now(tz=timezone.utc)
         )
 
         return lab_sample

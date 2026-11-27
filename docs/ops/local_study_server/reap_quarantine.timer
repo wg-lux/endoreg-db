@@ -1,0 +1,10 @@
+[Unit]
+Description=Run Endoreg local study server quarantine cleanup daily
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+Unit=reap_quarantine.service
+
+[Install]
+WantedBy=timers.target

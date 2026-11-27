@@ -1,0 +1,17 @@
+# Example fragment for an existing finding record, not a complete clinical rule set.
+- model: finding
+  name: colon_polyp
+  name_de: Kolonpolyp
+  text_extraction:
+    - presence: present
+      pattern:
+        - LOWER: {REGEX: '^polyp(en)?$'}
+    - presence: absent
+      pattern:
+        - LOWER: {REGEX: '^kein(e|en)?$'}
+        - LOWER: {REGEX: '^polyp(en)?$'}
+    - presence: uncertain
+      pattern:
+        - LOWER: verdacht
+        - LOWER: auf
+        - LOWER: {REGEX: '^polyp(en)?$'}

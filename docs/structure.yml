@@ -1,0 +1,69 @@
+version: 1
+tier: domain
+path: docs
+parent: ../structure.yml
+summary: Architecture contracts, operational runbooks and documentation navigation.
+responsibilities:
+- Maintain linked architecture and operational references.
+boundaries:
+- Feature scope and readiness evidence belong in feature-tracking YAML.
+files:
+- file: package_kinds_host_guide.md
+  role: Host behavior per lx-dtypes package kind, deployment roles, projection receipts and conflict handling; the kind contract stays in lx-dtypes.
+- file: electrosurgical_video_alignment.md
+  role: Electrosurgical import, on-demand PTS alignment, API contract and open questions; readiness stays in feature YAML.
+- file: code_quality.md
+  role: Quality contracts and fast commit versus comprehensive CI command guidance.
+- file: patient_matching_threat_model.md
+  role: Current linkage contract, complete key-compromise scenarios, storage alternatives and German registry safeguards in English.
+- file: patient_matching_2pc_assessment.md
+  role: Evidence-based evaluation of exact existing-HMAC two-party matching, prototype measurements and proof obligations.
+- file: source_patient_matching.md
+  role: Local identity boundaries, center-scoped keyed patient UUIDv8 and EDPB linkage constraints, exact-HMAC evaluation and separate verified-identifier matching.
+- file: endoreg-db-threat-model.md
+  role: German recipient-specific assessment of identity linkage, token protection and research export disclosure.
+- file: annotation_export_guide.md
+  role: Annotation export selection, canonical artifact identity and shared browser/file export contracts.
+- file: image_hash_publication.md
+  role: German scientific protocol, data dictionary, figure captions and reproduction instructions.
+- file: hub_transfer_state_machine.md
+  role: Outbound hub transfer states, events, transition rules, guarantees and caller contract.
+- file: state_mutation_ownership.md
+  role: Writer kinds, single-writer rule and review workflow for quality/state_mutation_owners.yml.
+- file: report_import_concurrency_implementation.md
+  role: Report ownership, publication, extraction receipts and native lifecycle contract.
+- file: annotation_comparisons.md
+  role: Named practitioner overlap metrics, report eligibility and dashboard API contract.
+- file: key_rotation.md
+  role: Application rotation procedure linked to the central LuxNix catalog
+- file: annotation_training_selection.md
+  role: Reviewed annotation selection and training manifest provenance contract.
+- file: training-streams.md
+  role: Authorized processed-frame streaming for local training.
+- file: video_reimport_budget.md
+  role: Reimport throughput budgeting and timeout operations.
+- file: wiki/reference_catalog_migration.md
+  role: Bounded legacy colorectal catalogue reconciliation runbook.
+- file: video_pts_fps_callsite_inventory.md
+  role: Backend/frontend frame-operation inventory, presentation-timestamp skipping/export contracts and decoder ancestry review.
+- file: video_frame_extraction_contract.md
+  role: In-memory frame decoding, export-only materialization and legacy cache diagnostics.
+- file: secret_rotation.md
+  role: Backend keyring and migration contracts; readiness remains in feature YAML
+- file: README.md
+  role: Task-first operator navigation and contributor reference index.
+- file: center_access_operations.md
+  role: Center assignment, access diagnosis, role boundaries and rollout recovery.
+- file: audit_ledger_operations.md
+  role: Integrity checks, incident response, ledger contracts and retention boundaries.
+- file: agent_context.md
+  role: Agent map schema and design rationale
+- file: model_layer_map_for_agents.md
+  role: Model ownership and staged refactoring rules
+- file: video_storage_normalization.md
+  role: Canonical video architecture and operational contract
+- file: hub_ingest_operations.md
+  role: Import and transfer diagnosis, bounded cleanup, backup and incident recovery.
+contracts:
+- name: Agent workflow
+  doc: AGENTS.md

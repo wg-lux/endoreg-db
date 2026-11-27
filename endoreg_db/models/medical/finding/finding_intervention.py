@@ -1,52 +1,65 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
 from django.db import models
+from endoreg_db.models.utils import NameNaturalKeyManager
 
-class FindingInterventionManager(models.Manager):
-    def get_by_natural_key(self, name):
-        return self.get(name=name)
-    
+if TYPE_CHECKING:
+    from endoreg_db.models import InformationSource
+
+
 class FindingIntervention(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
-
-    intervention_types = models.ManyToManyField(
-        'FindingInterventionType',
-        blank=True,
-        related_name='interventions'
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
     )
-
-    required_lab_values = models.ManyToManyField(
-        'LabValue',
-        blank=True,
-        related_name='required_by_finding_interventions'
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
+    intervention_types: models.ManyToManyField[
+        "FindingInterventionType",
+        "FindingInterventionType",
+    ] = models.ManyToManyField(
+        "FindingInterventionType", blank=True, related_name="interventions"
     )
-
-    contraindications = models.ManyToManyField(
-        'Contraindication',
+    information_sources: models.ManyToManyField[
+        "InformationSource",
+        "InformationSource",
+    ] = models.ManyToManyField(
+        "InformationSource",
+        related_name="finding_interventions",
         blank=True,
-        related_name='contraindicating_finding_interventions'
     )
+    objects = NameNaturalKeyManager["FindingIntervention"]()
 
-    objects = FindingInterventionManager()
-    
-    def natural_key(self):
-        return (self.name,)
-    
-    def __str__(self):
+    if TYPE_CHECKING:
+        from endoreg_db.models import FindingInterventionType
+
+    def natural_key(self) -> tuple[str]:
+        return (str(self.name),)
+
+    def __str__(self) -> str:
         return str(self.name)
-    
 
-class FindingInterventionTypeManager(models.Manager):
-    def get_by_natural_key(self, name):
-        return self.get(name=name)
-    
+
 class FindingInterventionType(models.Model):
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = FindingInterventionTypeManager()
-    
-    def natural_key(self):
-        return (self.name,)
-    
-    def __str__(self):
+    objects = NameNaturalKeyManager["FindingInterventionType"]()
+
+    if TYPE_CHECKING:
+
+        @property
+        def interventions(
+            self,
+        ) -> "models.Manager[FindingIntervention]": ...
+
+    def natural_key(self) -> tuple[str]:
+        return (str(self.name),)
+
+    def __str__(self) -> str:
         return str(self.name)

@@ -8,3 +8,4 @@ graph TD;
     D --> E[Finding Morphology: Colon Lesion Planarity Default - Colon Lesion Planarity Excavated]
     E --> F[Intervention: Colon Lesion Polypectomy - Hot Snare]
     F --> G[Report Generation]
+```

@@ -1,39 +1,64 @@
-from endoreg_db.models import PatientFindingClassification
-from endoreg_db.serializers.misc.translatable_field_mix_in import TranslatableFieldMixin
+# pyright: reportUnusedFunction=false, reportMissingTypeStubs=false
+from typing import TYPE_CHECKING
 
+from endoreg_db.models.medical.patient.patient_finding_classification import (
+    PatientFindingClassification,
+)
 
 from rest_framework import serializers
 
+if TYPE_CHECKING:
+    _ModelSerializerMeta = serializers.ModelSerializer.Meta
+else:
+    _ModelSerializerMeta = object
 
-class PatientFindingClassificationSerializer(serializers.ModelSerializer, TranslatableFieldMixin):
-    """Serializer für PatientFinding-Klassifikationen"""
+
+def _name(value: object) -> str:
+    return str(getattr(value, "name", "") or "")
+
+
+def _name_de(value: object) -> str | None:
+    """Catalogue German name; None when absent, never the identifier."""
+    name_de = getattr(value, "name_de", None)
+    return name_de if isinstance(name_de, str) and name_de.strip() else None
+
+
+class PatientFindingClassificationSerializer(
+    serializers.ModelSerializer[PatientFindingClassification]
+):
+    """Serializer für PatientFinding-Klassifikationen.
+
+    ``*_name`` fields are identifiers; ``*_name_de`` are German display names.
+    """
 
     classification_name = serializers.SerializerMethodField()
+    classification_name_de = serializers.SerializerMethodField()
     classification_choice_name = serializers.SerializerMethodField()
-    class Meta:
-        model = PatientFindingClassification
-        fields = ['id', 'classification', 'classification_name', 'classification_choice_name']
+    classification_choice_name_de = serializers.SerializerMethodField()
 
-    def get_classification_name(self, obj:PatientFindingClassification):
-        """
-        Return the localized name for the classification attribute of a PatientFindingClassification instance.
-        
-        Parameters:
-            obj (PatientFindingClassification): The instance whose classification name is to be localized.
-        
-        Returns:
-            str: The localized classification name.
-        """
-        return self.get_localized_name(obj.classification)
+    class Meta(_ModelSerializerMeta):
+        model = PatientFindingClassification  # pyright: ignore[reportAssignmentType]
+        fields = [
+            "id",
+            "classification",
+            "classification_name",
+            "classification_name_de",
+            "classification_choice_name",
+            "classification_choice_name_de",
+        ]
 
-    def get_classification_choice_name(self, obj:PatientFindingClassification):
-        """
-        Return the localized name for the classification choice of a patient finding classification instance.
-        
-        Parameters:
-            obj (PatientFindingClassification): The patient finding classification instance.
-        
-        Returns:
-            str: Localized name of the classification choice.
-        """
-        return self.get_localized_name(obj.classification_choice)
+    def get_classification_name(self, obj: PatientFindingClassification) -> str:
+        return _name(obj.classification)
+
+    def get_classification_name_de(
+        self, obj: PatientFindingClassification
+    ) -> str | None:
+        return _name_de(obj.classification)
+
+    def get_classification_choice_name(self, obj: PatientFindingClassification) -> str:
+        return _name(obj.classification_choice)
+
+    def get_classification_choice_name_de(
+        self, obj: PatientFindingClassification
+    ) -> str | None:
+        return _name_de(obj.classification_choice)

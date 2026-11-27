@@ -1,0 +1,66 @@
+version: 1
+tier: module
+path: scripts/reidentification
+parent: ../structure.yml
+summary: Isolated synthetic incremental identity-disclosure experiment.
+responsibilities:
+- Freeze independent candidates, generate hidden records, isolate attackers and score novelty.
+boundaries:
+- No production settings, credentials, databases or identity-policy mutations.
+- Private seeds, keys and truth stay outside the public evidence bundle.
+files:
+- file: evidence/uuid_mapping/scores.json
+  role: Current local and hub UUID attacker measurements, separate from historical evidence.
+- file: evidence/uuid_mapping/summary.yml
+  role: Aggregated UUID and hash-control outcomes across three trials.
+- file: evidence/uuid_mapping/verification.json
+  role: UUID replay, isolation, redaction and verification results.
+- file: evidence/uuid_mapping/public_bundle.tar.gz
+  role: Complete UUID public inputs without keys, attacker outputs and provenance.
+- file: patient_matching_resolver.mpc
+  role: MP-SPDZ exact HMAC-SHA256 and generation check with receiver-only aggregate output; pinned by the production matching backend.
+- file: plot.py
+  role: Public-result charts for incremental associations, membership, coverage and measured costs; exports PNG, SVG and PDF.
+- file: README.md
+  role: German commands, isolation contract and scoring interpretation.
+- file: REPORT.md
+  role: German measured disclosure analysis, source comparison and limitations.
+- file: evidence/scores.json
+  role: Per-trial scored outcomes and measured work.
+- file: evidence/scores.csv
+  role: Tabular copy of per-trial measurements.
+- file: evidence/revision.json
+  role: Evaluated source revision, dirty state, dependencies and checksums.
+- file: evidence/conformance.json
+  role: Public production-helper differential vectors without exposed trial keys.
+- file: evidence/public_bundle.tar.gz
+  role: All public knowledge manifests, baseline outputs, attacker outputs and controls.
+- file: evidence/verification.json
+  role: Replay equality, key-redaction check, archive checksum and hardware evidence.
+- file: config.yml
+  role: Frozen candidate-source provenance, domains and budgets.
+- file: worker.py
+  role: Typed stdin-only attacker and Linux Landlock isolation.
+- file: run.py
+  role: Isolated application setup, differential conformance, generator, supervisor and scorer.
+- file: rescore.py
+  role: Read-only independent rescore of finished private/public artifact pairs.
+- file: test_harness.py
+  role: Information separation, ambiguity, novelty, context and budget regression tests.
+- file: pytest.ini
+  role: Standalone test configuration without project Django bootstrap.
+dependencies:
+  internal:
+  - endoreg_db/utils
+  - endoreg_db/config
+  external:
+  - matplotlib
+  - django
+  - pydantic
+  - yaml
+contracts:
+- name: Experiment readiness authority
+  doc: feature-tracking/Anonymization.yml
+tests:
+  directory: scripts/reidentification
+  fast_lane_command: PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 .devenv/state/venv/bin/pytest -c scripts/reidentification/pytest.ini --confcutdir=scripts/reidentification scripts/reidentification/test_harness.py

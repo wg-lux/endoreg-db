@@ -1,0 +1,30 @@
+feature: code_quality
+criterion: dead_code_reduction
+assessor: codex-import-dedup-20261001
+datum: '2026-10-01'
+umfang: endoreg_db/services/report_import.py
+aenderung:
+  Entfernte leere Unterklasse mit veraltetem Celery-Platzhaltertext; expliziter
+  Re-Export der kanonischen ReportImportService-Klasse erhält den Importpfad.
+belege:
+  - Die Unterklasse definierte keine Methoden, Zustände oder Registrierungen.
+  - Aktive Verbraucher in anonymization, hub/ingest, report_llm_jobs, Management Command und Tests verwenden den erhaltenen Importpfad.
+  - Symbolsuche in Repository, lx-annotate und lx-data-models fand keine Verbraucher von ris oder Abhängigkeiten von Klassenmetadaten der Unterklasse.
+metriken:
+  methode: radon.raw.analyze und radon.complexity.cc_visit auf HEAD und Arbeitsbaum
+  zeilen_vorher: 13
+  zeilen_nachher: 5
+  klassenkomplexitaet_vorher: 2
+  klassen_nachher: 0
+verifikation:
+  pyright_fokussiert: '0 Fehler, 0 Warnungen in services/report_import.py.'
+  pyright_gesamt: '16 Fehler, 8 Warnungen; alle außerhalb der geänderten Datei.'
+  syntax: AST-Parsing bestanden.
+  diff: git diff --check bestanden.
+  dead_code: 'scripts/check_dead_code.py fehlgeschlagen: neuer Fund master_keys in endoreg_db/utils/rust_backend.py:24; außerhalb dieser Änderung.'
+  tracker: 'validate bestanden (37 Definitionen); show erfolgreich; check code_quality nicht produktionsreif (11/17).'
+  laufzeit: Auf Benutzerwunsch keine pytest- oder Trace-Ausführung; Importverhalten nicht zur Laufzeit verifiziert.
+restrisiko:
+  Klassenidentität und __module__ entsprechen jetzt der kanonischen Klasse.
+  Nicht verfügbare externe Verbraucher oder gespeicherte Klassenreferenzen wurden nicht geprüft.
+  Monkeypatches auf Klassenmethoden über den alten Pfad betreffen jetzt auch direkte Verbraucher der kanonischen Klasse.

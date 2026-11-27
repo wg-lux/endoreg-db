@@ -1,0 +1,73 @@
+feature: code_quality
+criterion: anonymization_validation_helpers
+revision: 56d887d87771bbca74c938b97dea9810c8be8612
+arbeitsverzeichnis: /home/admin/endoreg-db
+umfang: Anonymisierungsviews und ihre direkten Validierungsverträge; keine repositoryweite Löschfreigabe.
+entfernt:
+  - symbol: NoPagination
+    pfad: endoreg_db/views/anonymization/overview.py
+    zeilen_vorher: 75-76
+    klassifikation: confirmed_dead
+    vulture: "unused class 'NoPagination' (60% confidence, 2 lines)"
+    beleg: Nur Definition gefunden; keine Registrierung, Verwendung als pagination_class, Barrel-Exporte oder bekannte externe Verbraucher.
+    aktion: Klasse und ausschließlich benötigten PageNumberPagination-Import entfernt.
+    risiko: Niedrig; unbekannte externe Direktimporte sind nicht ausgeschlossen.
+konsolidiert:
+  - symbole: VideoValidationPayload, _prepare_video_validation_payload, _run_video_metadata_validation
+    beleg: Lokale dict-Nachbildung wird ausschließlich innerhalb validate.py verwendet und anschließend als VideoTextMetaPayload gecastet.
+    aktion: Bestehendes lx_dtypes-Modell direkt zurückgeben und weiterreichen; kein neuer Typ oder Kompatibilitätswrapper.
+    vertragskorrektur: Der aufgerufene Metadatenservice benötigt root und to_dict; ein Cast konnte diese Laufzeitmethoden nicht bereitstellen.
+  - symbole: _record_video_validation_metrics, _record_pdf_validation_metrics
+    beleg: Identische Bestätigungs-, Statusdefault- und Aufruflogik; lediglich Eingangsformat und Medientyp unterscheiden sich.
+    aktion: Eine _record_media_validation_metrics-Funktion; Videopayload wird am Aufruf in JSON-Werte konvertiert, Berichtspayload bleibt Mapping.
+    semantik: Eingaben werden kopiert; vorhandene Nullwerte bleiben erhalten, wie zuvor im dict-Wrapper trotz dessen ignoriertem exclude_none-Argument.
+  - symbole: _validate_video_or_not_found, _validate_pdf_or_not_found, _dispatch_validation
+    beleg: Die beiden Wrapper haben jeweils nur einen internen Aufrufer und duplizieren den impliziten Dispatch.
+    aktion: Ein Dispatch mit expliziter Medientypauswahl und unverändertem Video-Vorrang bei fehlendem Typ.
+    semantik: Selektive Datenbankabfragen mit bestehenden Zeilensperren und alle drei 404-Fehlermeldungen bleiben erhalten.
+beibehalten:
+  - symbole: _TagRelation und übrige aktive Protocol-Verträge
+    klassifikation: protocol_signature
+    beleg: Stringannotation tags verweist auf _TagRelation; set wird von _apply_validation_tags aufgerufen. Vulture-Nichtverwendung ist hier kein Löschbeleg.
+  - symbole: anonymization_document_types_dropdown, AnonymizationValidateView, AnonymizationOverviewView
+    klassifikation: framework_contract
+    beleg: URL-Routing und Paketexporte; lx-annotate importiert Backend-Overview-Verträge.
+  - symbole: _state_status_value in validate.py und pdf_redaction.py
+    klassifikation: uncertain
+    beleg: Ähnliche aktive Darstellungshilfe; Zusammenführung würde eine weitere Modulgrenze und PDF-Korrekturtests betreffen. Nicht Bestandteil dieser Kohorte.
+  - symbole: _case_resolution_payload in validate.py und sensitive_metadata.py
+    klassifikation: compatibility_contract
+    beleg: Gleicher Name, aber unterschiedliche Signaturen, Datenbankabfragen und Antwortformen; keine äquivalente Duplikation.
+verbraucherpruefung:
+  statisch: rg über Repository, /home/admin/dev/lx-annotate, /home/admin/lx-data-models und /home/admin/lx-anonymizer.
+  dynamisch: URL-Routing, __all__, Dekoratoren, Konfiguration und Modul-Reflection geprüft; kein dynamischer Verbraucher der entfernten Klasse gefunden.
+  grenzen: Keine Aussage über unbekannte externe Verbraucher oder nicht untersuchte Frontend-/Rust-Dead-Code-Kandidaten.
+radon:
+  aufrufe:
+    - .devenv/state/venv/bin/radon raw endoreg_db/views/anonymization/validate.py endoreg_db/views/anonymization/overview.py
+    - .devenv/state/venv/bin/radon cc -s endoreg_db/views/anonymization/validate.py
+  zeilen: "validate.py 1128 -> 1046; overview.py 787 -> 782; Produktion netto -87 Zeilen."
+  komplexitaet: "Dispatch 5 + zwei Wrapper mit jeweils 2 -> ein Dispatch mit 7; zwei Metrikhelfer mit jeweils 3 -> ein Helper mit 3."
+guards:
+  dead_code: "Vor Änderung: quality:dead-code fehlgeschlagen; NEW endoreg_db/utils/rust_backend.py:24 unused variable 'master_keys' (100% confidence). Baseline unverändert."
+  boundaries: "Erwartet 389 breite Exceptions/109 Typunterdrückungen, tatsächlich 368/110. scan_source-Vergleich beider geänderten Produktionsdateien mit HEAD: keine hinzugefügten oder entfernten Findings. Baseline unverändert."
+  ausgangs_pyright: "0 Fehler, 10 bestehende Warnungen."
+  fremde_aenderungen: pyproject.toml und während der Arbeit entfernte .codex bleiben unberührt.
+laufzeitbeleg:
+  befehl: >-
+    .devenv/state/venv/bin/python -m trace --count
+    --ignore-dir /nix:/home/admin/endoreg-db/.devenv/state/venv:/home/admin/lx-data-models
+    -C /tmp/endoreg-anonymization-helpers-20261007 --module pytest
+    tests/views/anonymization/test_validate_view.py
+    tests/views/anonymization/test_anonymization_overview.py
+    tests/services/test_sensitive_meta_external_id_validation.py -q
+  ergebnis: "110 bestanden, 2 fehlgeschlagen, 2 Warnungen in 243.78 s. Beide Fehler: veraltete Testcallbacks erwarteten Mapping.get statt VideoTextMetaPayload.root; anschließend angepasst, False-/True-Assertions erhalten."
+  artefakt: /tmp/endoreg-anonymization-helpers-20261007/endoreg_db.views.anonymization.validate.cover
+  beobachtung: 30 Dispatch-Aufrufe, 11 kanonische Payloadvorbereitungen, 10 Aufrufe des gemeinsamen Metrikhelpers; beide Medienzweige und alle drei Not-found-Antworten ausgeführt.
+  begrenzung: Tracing belegt diese Testszenarien, keine globale Nichtverwendung oder unveränderte Coverage. Keine bestehenden Tests entfernt; Datumsfall zusätzlich parametrisiert.
+nachpruefung:
+  pyright: ".devenv/state/venv/bin/pyright: 0 Fehler, 10 bestehende Warnungen vor dem Nachlauf."
+  pytest: ".devenv/state/venv/bin/pytest tests/views/anonymization/test_validate_view.py -q: 32 bestanden, 2 Warnungen in 52.48 s."
+  gesamt: 112 unterschiedliche Fälle abgedeckt; 80 Overview-/External-ID-Fälle im Trace bestanden, sämtliche 32 Validierungsfälle im finalen Nachlauf bestanden.
+  lint: Ruff check, Ruff format --check und git diff --check bestanden.
+  einschraenkung: Kein unbelasteter Leistungsbenchmark und keine vollständige Testsuite; fremde lx-annotate-pytest-Prozesse wurden nicht verändert. Repositoryweite Guard-Abweichungen bleiben separat offen.

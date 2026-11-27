@@ -1,0 +1,109 @@
+"""Durable identities for retiring generated processed-video replacements."""
+
+from collections.abc import Mapping
+from pathlib import PurePosixPath
+from typing import Annotated, Literal
+from uuid import UUID, uuid4
+
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, field_validator
+
+Digest = Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+
+
+class ProcessedGenerationCleanupReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    receipt_id: UUID = Field(default_factory=uuid4)
+    source_name: str
+    source_kind: Literal["processed", "legacy_streamable"] = "processed"
+    source_sha256: Digest
+    replacement_name: str
+    replacement_sha256: Digest
+    committed: bool = False
+
+    @field_validator("source_name", "replacement_name")
+    @classmethod
+    def relative_name(cls, value: str) -> str:
+        path = PurePosixPath(value)
+        if (
+            not value
+            or path.is_absolute()
+            or ".." in path.parts
+            or "\\" in value
+            or path.as_posix() != value
+            or value == "."
+        ):
+            raise ValueError(
+                "Generation identity must be a normalized relative storage name"
+            )
+        return value
+
+
+class OutsideFrameBlackeningCheckpoint(BaseModel):
+    """Immutable output evidence; execution status remains in processing history."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    version: Literal[1] = 1
+    source_sha256: Digest
+    output_sha256: Digest
+    output_name: str
+    only_validated: bool
+    intervals: tuple[tuple[int, int], ...]
+
+    @field_validator("output_name")
+    @classmethod
+    def relative_name(cls, value: str) -> str:
+        return ProcessedGenerationCleanupReceipt.relative_name(value)
+
+    @field_validator("intervals")
+    @classmethod
+    def canonical_intervals(
+        cls, value: tuple[tuple[int, int], ...]
+    ) -> tuple[tuple[int, int], ...]:
+        previous_end = -1
+        for start, end in value:
+            if start < 0 or end <= start or start <= previous_end:
+                raise ValueError(
+                    "Blackening intervals must be nonempty, merged and ordered"
+                )
+            previous_end = end
+        if not value:
+            raise ValueError("Blackening checkpoint requires frame intervals")
+        return value
+
+
+def cleanup_receipts(
+    meta: Mapping[str, object] | None,
+) -> list[ProcessedGenerationCleanupReceipt]:
+    return TypeAdapter(list[ProcessedGenerationCleanupReceipt]).validate_python(
+        (meta or {}).get("processed_generation_cleanup") or []
+    )
+
+
+class ProcessedGenerationCleanupResult(BaseModel):
+    video_id: int
+    cleaned: int = 0
+    pending: int = 0
+    reason: Literal[
+        "nothing_pending",
+        "replacement_not_committed",
+        "active_media_lease",
+        "replacement_not_ready",
+        "referenced",
+        "dry_run",
+        "cleaned",
+    ]
+
+
+class ReapProcessedGenerationOptions(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+    video_id: int = Field(gt=0)
+    apply: bool = False
+
+
+class PeriodicMediaCleanupCursor(BaseModel):
+    """Scheduling progress only; never an authority for filesystem deletion."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    schema_version: Literal[1] = 1
+    video_id: int = Field(default=0, ge=0, strict=True)

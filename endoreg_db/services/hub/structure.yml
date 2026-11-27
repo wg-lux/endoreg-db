@@ -1,0 +1,249 @@
+version: 1
+tier: service
+path: endoreg_db/services/hub
+parent: ../structure.yml
+summary: Center intake, authenticated transfer and distributed processed-media placement.
+responsibilities:
+- Coordinate fenced center uploads and local watcher intake.
+- Authenticate processed-media transfers and reconcile distributed storage placements.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+- Use runtime-path and typed filesystem helpers; preserve encrypted storage and canonical generation ownership.
+- Persisted presentation timestamps define clinical coordinates; streaming derivatives cannot replace canonical
+  masters.
+- Export only approved anonymized processed media; authentication secrets never encrypt payloads.
+- Preserve ingest helper re-exports and fenced import ownership; helpers do not import ingest.py.
+entrypoints:
+- name: process_upload_job
+  file: ingest.py
+  purpose: Run fenced upload ingestion and publish validated media through the existing import services.
+- name: process_watcher_file
+  file: ingest.py
+  purpose: Resolve a settled local watcher source into the upload ingestion workflow.
+- name: process_preanonymized_watcher_file
+  file: ingest.py
+  purpose: Bind sidecar validation to the persisted upload digest and verify the published artifact before recording media state.
+- name: attach_enveloped_transfer_media
+  file: transfers.py
+  purpose: Authenticate and atomically publish one processed-media envelope.
+- name: reserve_storage_placement
+  file: storage_placement.py
+  purpose: Atomically reserve capacity and persist the primary placement intent.
+files:
+- file: outbound_export_readiness.py
+  role: Collect authenticated storage evidence and adapt native export integrity and video eligibility decisions for listing and send paths.
+- file: outbound_transfer_state.py
+  role: Only Python writer of outbound local_status/failure_class; locks the row, applies the Rust hub_transfer_event decision and leaves saving to the caller; owns resource-locked generation dispatch admission.
+- file: transfer_cleanup.py
+  role: Fresh receiver master verification and restartable explicit site file reclamation with retained transfer and clinical records.
+- file: study_transfer.py
+  role: Explicit owner-bound adoption of authenticated study archive receipts within source-center examination scope.
+- file: video_provenance_recovery.py
+  role: Explicit audited acknowledgment of unresolved frame mapping with current hashes and retained original timestamps.
+- file: __init__.py
+  role: Package marker only; callers import the owning module directly.
+- file: audit.py
+  role: Exports emit_hub_audit_event.
+- file: cleanup.py
+  role: Exports additional_source_paths, inspect_upload_job_source, apply_upload_job_source_cleanup and the shared
+    stored_media_name_referenced query; excluding one retiring raw-report reference preserves all processed and other owners.
+- file: deployment.py
+  role: Exports get_deployment_role, hub_mode_enabled, local_study_server_mode_enabled.
+- file: import_monitoring.py
+  role: Exports can_dismiss_upload_job, dismissed_upload_job_filter, safe_import_error_detail; owns retry scheduling and the documented recovery timeouts including STALE_UPLOAD_JOB_AGE.
+- file: ingest.py
+  role: Upload and watcher orchestration, authenticated preanonymized publication and required generation-bound prediction handoff before completion; preserves historical helper re-exports.
+- file: ingest_provenance.py
+  role: Upload provenance construction and updates; orchestration lives in ingest.py.
+- file: media_integrity.py
+  role: Canonical completed-import predicates for reuse and redelivery, retained raw/video integrity and verified transfers; report import completion remains separate from human review and requires authenticated artifact evidence.
+- file: network_nodes.py
+  role: Exports create_network_node, update_network_node, delete_network_node.
+- file: payloads.py
+  role: Recursive source-identity transfer prohibition and compatibility imports.
+- file: hub_record_identity.py
+  role: Pure receiver-side hub record namespace hashes and identity conflict decisions; transfers.py owns locks,
+    row creation and the transaction.
+- file: hub_pseudonyms.py
+  role: Contract 7.0 hub-scoped UUIDv8 record pseudonyms for media identity and study bundles; local UUIDs stay on the site.
+- file: preanonymized_metadata.py
+  role: Preanonymized metadata normalization and external patient identity linking with keyed local patient UUIDv8 on first creation.
+- file: quarantine.py
+  role: Exports quarantine_dir, index_quarantine_file, sync_quarantine_inventory.
+- file: remote_processed_media.py
+  role: Dependency-inverted provider boundary for a remotely placed video master.
+- file: remote_processed_report.py
+  role: Dependency-inverted provider boundary for a remotely placed processed PDF.
+- file: storage_artifact_resolution.py
+  role: Exact, non-network resolution of current processed-media placements.
+- file: storage_balancing.py
+  role: Exports plan_storage_balancing, cancel_storage_balance_work, reconcile_storage_balancing.
+- file: storage_operator_control.py
+  role: Exports set_storage_balancing_paused, request_manual_storage_action, request_storage_balance_retry.
+- file: storage_placement.py
+  role: Exports plan_storage_placement, reserve_storage_placement, transition_storage_reservation.
+- file: storage_reconciliation.py
+  role: Exports reconcile_storage_state.
+- file: storage_rotation.py
+  role: Exports request_storage_rotation, record_storage_rotation_verification, record_storage_rotation_cleanup_readiness.
+- file: storage_telemetry.py
+  role: Exports record_storage_node_telemetry, record_storage_node_probe_failure.
+- file: storage_transfer.py
+  role: Exports record_stored_transfer_evidence, record_verified_transfer_evidence, replace_verified_transfer_evidence.
+- file: transfer_envelope.py
+  role: Fail-closed receiver boundary for site-to-hub media envelopes.
+- file: transfer_logging.py
+  role: Exports enabled, sanitize, section.
+- file: transfers.py
+  role: Version 7 identity and timeline linkage, typed annotations, authenticated study archives and encrypted media publication; existing-generation metadata and sender completion claims wait for verified publication, and cleanup cannot roll back referenced masters.
+- file: upload_center_resolution.py
+  role: Declared center_key/center_name lookup and pure center-or-error decision; ingest.py re-exports it.
+- file: upload_job_cancellation.py
+  role: Persist import cancellation intent; only the owning worker acknowledges it.
+- file: upload_job_files.py
+  role: Central ownership inventory shared by import staging and source cleanup; upload_job_owns_active_attempt
+    is the shared active-attempt predicate.
+- file: upload_staging_orphans.py
+  role: Periodic reclamation of upload job directories whose UploadJob no longer exists and that nothing references;
+    other layouts are only reported; reap_upload_staging_orphan is the verified single-unit deletion shared with
+    the lx-annotate storage monitor.
+- file: upload_job_import_lease.py
+  role: Renewable fenced ownership, expired-attempt reconciliation and bounded retained-source recovery invoked by the retry dispatcher.
+- file: upload_job_state_machine.py
+  role: Rust-owned upload and expired-lease transition tables with canonical recovery admission predicates, including retained_source_recovery_filter shared by ingest reuse, interrupted-import and persisted-stack recovery.
+- file: video_provenance.py
+  role: Export verified ancestry or decoded processed-frame coordinates when ancestry is missing; receivers verify media timestamps and electrical joins require recording ancestry.
+- file: watcher_handoff.py
+  role: Exports watcher_path_reference_text, is_in_progress_handoff_path, reject_in_progress_handoff_path.
+dependencies:
+  internal:
+  - endoreg_db
+  - endoreg_db/config
+  - endoreg_db/import_files
+  - endoreg_db/models
+  - endoreg_db/schemas
+  - endoreg_db/services/studies
+  - endoreg_db/services/cases
+  - endoreg_db/services/centers
+  - endoreg_db/services/imports
+  - endoreg_db/services/jobs
+  - endoreg_db/services/media
+  - endoreg_db/services/privacy
+  - endoreg_db/services/raw_pdf_files
+  - endoreg_db/services/reports
+  - endoreg_db/services/runtime
+  - endoreg_db/services/streaming
+  - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/utils
+  external:
+  - cryptography
+  - django
+  - lx_dtypes
+  - pydantic
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Video storage and timeline contract
+  doc: docs/video_storage_normalization.md
+- name: Video readiness evidence
+  doc: feature-tracking/VideoStorageNormalization.yml
+- name: Hub ingest operations
+  doc: docs/hub_ingest_operations.md
+- name: Typed transfer contract
+  doc: docs/hub_transfer_typed_contract.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_hub_ingest_unit.py tests/services/test_ingest_helper_compatibility.py
+    tests/views/media/test_hub_transfer_endpoints.py
+  files:
+  - tests/views/media/test_hub_transfer_endpoints.py
+  - tests/services/test_study_hub_transfer.py
+  - tests/services/test_transfer_job_contract.py
+  - tests/services/test_hub_transfer_cleanup.py
+  - tests/rust_backend/test_hub_transfer_state.py
+  - tests/hub/test_ingest_postgresql_policy.py
+  - tests/management/commands/test_import_sap_ish_txt.py
+  - tests/management/commands/test_kcache_video_import.py
+  - tests/management/commands/test_reap_upload_job_sources.py
+  - tests/models/metadata/file_import/test_create_video_file.py
+  - tests/services/test_audit_integrity.py
+  - tests/services/test_hub_ingest_active_learning_provenance.py
+  - tests/services/test_hub_ingest_dispatch.py
+  - tests/services/test_hub_ingest_import_job_contract.py
+  - tests/services/test_hub_ingest_unit.py
+  - tests/services/test_hub_record_identity.py
+  - tests/services/test_hub_upload_center_resolution.py
+  - tests/services/test_ingest_helper_compatibility.py
+  - tests/services/test_preanonymized_external_identity.py
+  - tests/services/test_preanonymized_watcher_ingest.py
+  - tests/services/test_watcher_storage_import.py
+  - tests/services/test_upload_staging_orphans.py
+schema_version: '1.0'
+feature_definition: ../../../feature-tracking/ImportPipelineRobustness.yml
+criterion: ingest_helper_modules
+entrypoint: ingest.py
+rules:
+- Historical ingest.py helper names explicitly re-export the canonical function or type object.
+- Helper modules must not import ingest.py; orchestration owns transactions and publication order.
+- Video transfer publication defers active playback or segment-update leases through a fenced awaiting_media retry.
+- Unpublished transfer cleanup checks global media references under the operation fence and retains candidate ownership until encrypted storage deletion succeeds.
+- Watcher producers close writable handles before settled handoff; media and sidecar claims preserve changed arrivals but cannot atomically rename the pair.
+- Report dispatch callers preserve worker-written provenance and terminal results, and never adopt a changed import epoch after dispatch returns.
+- Use this map to select files; readiness and verification evidence belong in the feature definition.
+modules:
+  ingest.py:
+    owns: API center resolution, upload reuse, watcher entrypoints, job dispatch and media publication
+    entrypoints:
+    - create_or_reuse_upload_job
+    - create_or_reuse_watcher_upload_job
+    - process_upload_job
+    - process_watcher_file
+    - process_preanonymized_watcher_file
+    - start_upload_job_processing
+    tests:
+    - tests/services/test_hub_ingest_import_job_contract.py
+    - tests/services/test_hub_ingest_dispatch.py
+    - tests/services/test_watcher_storage_import.py
+    - tests/services/test_upload_operation_identity.py
+    - tests/services/test_ingest_idempotency_quarantine.py
+  ingest_provenance.py:
+    owns: UploadProvenance and provenance copying, normalization, mutation and active-learning recording
+    effects: Helpers mutate the supplied job; active-learning recording saves only when save is true.
+    tests:
+    - tests/services/test_hub_ingest_unit.py
+    - tests/services/test_hub_ingest_active_learning_provenance.py
+    - tests/services/test_ingest_helper_compatibility.py
+  preanonymized_metadata.py:
+    owns: Sensitive metadata normalization, application and external patient/examination identity linking
+    effects: Caller owns media publication; external identity linking retains its atomic transaction and center
+      lock.
+    tests:
+    - tests/services/test_preanonymized_external_identity.py
+    - tests/services/test_preanonymized_watcher_ingest.py
+    - tests/services/test_ingest_helper_compatibility.py
+  upload_center_resolution.py:
+    owns: Declared upload center normalization, lookup and center-or-error decision
+    effects: Read-only Center lookups; callers own audit events and error translation.
+    tests:
+    - tests/services/test_hub_upload_center_resolution.py
+    - tests/services/test_hub_ingest_unit.py
+    - tests/services/test_ingest_helper_compatibility.py
+  watcher_handoff.py:
+    owns: Temporary-name rejection, source settling, stat snapshots and claim-before-delete content checks preserving changed arrivals.
+  upload_job_import_lease.py:
+    owns: Execution ownership, heartbeat, fenced row access and expired-attempt interruption without media deletion
+  upload_job_cancellation.py:
+    owns: Cancellation intent and owner acknowledgement
+  upload_job_state_machine.py:
+    owns: Native-validated job-state transitions, atomic reimport stack completion, expired-execution interruption and shared cap-preserving recovery admission
+  upload_job_files.py:
+    owns: Source and media artifact ledger registration
+  upload_staging_orphans.py:
+    owns: Orphaned upload job directory classification and gated deletion
+    effects: Runs inside cleanup_media_sources under its single apply gate (enabled by default) and deletes only after revalidation.
+    tests:
+    - tests/services/test_upload_staging_orphans.py
+  cleanup.py:
+    owns: Retention eligibility and source cleanup

@@ -1,17 +1,11 @@
+from __future__ import annotations
+
+from typing import TYPE_CHECKING, Any
 from django.db import models
-from typing import TYPE_CHECKING
+from endoreg_db.models.utils import NameNaturalKeyManager
 
 if TYPE_CHECKING:
     from .ai_model import AiModel
-
-class ModelTypeManager(models.Manager):
-    """
-    Custom manager for ModelType with additional query methods.
-    """
-
-    def get_by_natural_key(self, name: str) -> "ModelType":
-        """Get the model type by its natural key"""
-        return self.get(name=name)
 
 
 class ModelType(models.Model):
@@ -24,18 +18,22 @@ class ModelType(models.Model):
 
     """
 
-    name = models.CharField(max_length=255)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=255)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = ModelTypeManager()
+    objects = NameNaturalKeyManager["ModelType"]()
 
     if TYPE_CHECKING:
         ai_models: models.QuerySet["AiModel"]
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """Return the natural key for this model type"""
         return (self.name,)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """Return the name of the model type"""
         return str(self.name)

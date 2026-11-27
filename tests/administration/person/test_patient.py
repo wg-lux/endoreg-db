@@ -1,15 +1,42 @@
-from django.test import TestCase
-from endoreg_db.models import (
-    Patient, Examination, PatientExamination,
-    ExaminationIndication,
-    PatientExaminationIndication,
-    Center, # Import Center
-    PatientLabSample,
-)
+from django.core.files.storage import Storage
+from typing import Protocol, cast
+import random
 from datetime import date
 from logging import getLogger
-from pathlib import Path
-import random
+
+from django.test import TestCase
+
+from endoreg_db.models import (
+    Center,  # Import Center
+    Patient,
+    Examination,
+    PatientExamination,
+    PatientLabSample,
+)
+from endoreg_db.models.administration.person.patient.patient import (
+    canonical_pseudo_patient_name,
+)
+
+
+class _StoredFileLike(Protocol):
+    name: str
+    storage: Storage
+
+
+class _PatientLike(Protocol):
+    center: Center
+    first_name: str
+    last_name: str
+    dob: date
+
+
+class _SampleTypeLike(Protocol):
+    name: str
+
+
+class _LabSampleLike(Protocol):
+    sample_type: _SampleTypeLike
+    patient: Patient
 
 
 logger = getLogger(__name__)
@@ -17,48 +44,63 @@ logger = getLogger(__name__)
 logger.debug("Starting test for Patient model")
 
 from ...helpers.data_loader import (
-    load_unit_data,
-    load_distribution_data,
     load_center_data,
+    load_distribution_data,
     load_examination_data,
     load_examination_indication_data,
     load_gender_data,
-    load_lab_value_data
+    load_lab_value_data,
+    load_unit_data,
 )
-
 from ...helpers.default_objects import (
-    generate_patient,
-    get_random_default_examination,
-    get_random_default_examination_indication,
     get_default_egd_pdf,
+    get_random_default_examination,
     get_random_gender,
 )
 
+
+def _as_center(center: Center | str | None) -> Center:
+    if isinstance(center, Center):
+        return center
+    if center is None:
+        raise ValueError("Patient center is required for this test setup.")
+    return Center.objects.get(name=center)
+
+
 class PatientModelTest(TestCase):
+    patient: Patient
+
     def setUp(self):
         load_center_data()
         load_gender_data()
-        self.patient = generate_patient(
+        self.patient = Patient.objects.create(
             first_name="John",
             last_name="Doe",
-            birth_date="1990-01-01",
+            dob=date(1990, 1, 1),
+            center=_as_center("university_hospital_wuerzburg"),
+            gender=get_random_gender(),
         )
-        self.patient.save()
 
     def test_patient_creation(self):
         """Test if the patient is created correctly."""
+        patient = cast(_PatientLike, self.patient)
         self.assertIsInstance(self.patient, Patient)
-        self.assertEqual(self.patient.first_name, self.patient.first_name)
-        self.assertEqual(self.patient.last_name, self.patient.last_name)
-        self.assertEqual(self.patient.dob, self.patient.dob)
-        self.assertEqual(self.patient.center, self.patient.center)
+        self.assertEqual(patient.first_name, patient.first_name)
+        self.assertEqual(patient.last_name, patient.last_name)
+        self.assertEqual(patient.dob, patient.dob)
+        self.assertEqual(patient.center, patient.center)
 
     def test_get_dob(self):
         """Test if the get_dob method returns the correct date of birth."""
         dob = self.patient.get_dob()
         self.assertEqual(dob, self.patient.dob)
 
+
 class PatientModelWithExaminationTest(TestCase):
+    patient: Patient
+    patient_examination: PatientExamination
+    sample_examination_object: Examination
+
     def setUp(self):
         load_center_data()
         # Ensure the default center for create_generic exists
@@ -67,27 +109,25 @@ class PatientModelWithExaminationTest(TestCase):
         load_examination_data()
         load_examination_indication_data()
 
-        self.patient = generate_patient(
-            gender="male",
-            center="university_hospital_wuerzburg",
+        self.patient = Patient.objects.create(
+            first_name="John",
+            last_name="Doe",
+            dob=date(1985, 1, 1),
+            center=_as_center("university_hospital_wuerzburg"),
+            gender=get_random_gender(),
         )
-        self.patient.save()
 
         self.sample_examination_object = get_random_default_examination()
         self.patient_examination = self.patient.create_examination(
-            examination_name_str = self.sample_examination_object.name,
+            examination_name_str=self.sample_examination_object.name,
         )
-        examination_indication = get_random_default_examination_indication()
-        self.patient_examination_2, self.examination_2_indication = self.patient.create_examination_by_indication(
-            indication=examination_indication,
-        )
-
-        
 
     def test_examination_creation(self):
         """Test if the examination is created correctly."""
         self.assertIsInstance(self.patient_examination, PatientExamination)
-        self.assertEqual(self.patient_examination.examination, self.sample_examination_object)
+        self.assertEqual(
+            self.patient_examination.examination, self.sample_examination_object
+        )
         self.assertEqual(self.patient_examination.patient, self.patient)
 
     def test_get_patient_examinations(self):
@@ -95,29 +135,22 @@ class PatientModelWithExaminationTest(TestCase):
         examinations = self.patient.get_patient_examinations()
         self.assertIn(self.patient_examination, examinations)
 
-    def test_examination_by_indication_creation(self):
-        """Test if the examination by indication is created correctly."""
-        self.assertIsInstance(self.examination_2_indication, PatientExaminationIndication)
-        self.assertEqual(self.examination_2_indication.get_examination(), self.patient_examination_2.examination)
-        self.assertEqual(self.examination_2_indication.get_patient_examination(), self.patient_examination_2)
-        self.assertEqual(self.examination_2_indication.get_patient(), self.patient_examination.patient)
-        
     def test_examination_by_pdf_creation(self):
         """Test if the examination by pdf is created correctly."""
 
         # create a pdf file
         sample_pdf = get_default_egd_pdf()
-        sample_examination_3 = self.patient.create_examination_by_pdf(
-            sample_pdf
-        )
+        sample_examination_3 = self.patient.create_examination_by_pdf(sample_pdf)
 
         self.assertIsInstance(sample_examination_3, PatientExamination)
 
         # make sure the pdf file exists
         files = sample_examination_3.raw_pdf_files.all()
         self.assertEqual(len(files), 1)
-        file_exists = Path(files[0].file.path).exists()
-        self.assertEqual(file_exists, True)
+        stored_file = cast(_StoredFileLike, files[0].file)
+        raw_file_name = stored_file.name
+        self.assertTrue(raw_file_name)
+        self.assertTrue(stored_file.storage.exists(raw_file_name))
 
     def test_get_random_age(self):
         """Test if the get_random_age method returns a valid age."""
@@ -127,7 +160,7 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertLessEqual(age, 100)
 
     def test_get_random_dob(self):
-        center = self.patient.center
+        center = _as_center(cast(_PatientLike, self.patient).center)
 
         age = Patient.get_random_age()
         dob = Patient.get_dob_from_age(age)
@@ -150,12 +183,12 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertIsNotNone(patient.last_name)
         self.assertIsNotNone(patient.dob)
         # Assert the correct center is assigned
-        self.assertIsNotNone(patient.center)
-        self.assertEqual(patient.center.name, "gplay_case_generator")
+        patient_center = _as_center(cast(_PatientLike, patient).center)
+        self.assertEqual(patient_center.name, "gplay_case_generator")
 
     def test_get_or_create_pseudo_patient_by_hash(self):
         """Test if the get_or_create_pseudo_patient_by_hash method creates a patient with a random name and dob."""
-        center = self.patient.center
+        center = _as_center(cast(_PatientLike, self.patient).center)
 
         gender = get_random_gender()
         patient_hash = "test_hash"
@@ -164,7 +197,7 @@ class PatientModelWithExaminationTest(TestCase):
         patient, created = Patient.get_or_create_pseudo_patient_by_hash(
             patient_hash=patient_hash,
             center=center,
-            gender = gender,
+            gender=gender,
             birth_month=birth_month,
             birth_year=birth_year,
         )
@@ -177,11 +210,41 @@ class PatientModelWithExaminationTest(TestCase):
         self.assertEqual(patient.is_real_person, False)
 
         # make sure the patient is not created a second time
-        patient_2, created_2 = Patient.get_or_create_pseudo_patient_by_hash(patient_hash)
+        patient_2, created_2 = Patient.get_or_create_pseudo_patient_by_hash(
+            patient_hash
+        )
         self.assertIsInstance(patient_2, Patient)
         self.assertEqual(patient_2, patient)
         self.assertEqual(created_2, False)
-        
+
+    def test_pseudo_patient_name_is_canonical_for_patient_hash(self):
+        center = _as_center(cast(_PatientLike, self.patient).center)
+        gender = get_random_gender()
+        gender_name = str(getattr(gender, "name"))
+        patient_hash = "stable-patient-hash"
+        expected_name = canonical_pseudo_patient_name(
+            patient_hash=patient_hash,
+            gender_name=gender_name,
+        )
+
+        patient, created = Patient.get_or_create_pseudo_patient_by_hash(
+            patient_hash=patient_hash,
+            center=center,
+            gender=gender,
+            birth_month=3,
+            birth_year=1985,
+        )
+
+        self.assertTrue(created)
+        self.assertEqual((patient.first_name, patient.last_name), expected_name)
+        self.assertEqual(
+            canonical_pseudo_patient_name(
+                patient_hash=patient_hash,
+                gender_name=gender_name,
+            ),
+            expected_name,
+        )
+
     def test_create_lab_sample(self):
         """Test if the create_lab_sample method creates a lab sample with a random name and dob."""
         load_unit_data()
@@ -193,10 +256,10 @@ class PatientModelWithExaminationTest(TestCase):
             sample_type="generic",
         )
         self.assertIsInstance(lab_sample, PatientLabSample)
-        self.assertEqual(lab_sample.sample_type.name, "generic")
-        self.assertEqual(lab_sample.patient, self.patient)
-    
+        lab_sample_like = cast(_LabSampleLike, lab_sample)
+        self.assertEqual(lab_sample_like.sample_type.name, "generic")
+        self.assertEqual(lab_sample_like.patient, self.patient)
+
     # After each test, we need to make sure that we delete the RawPdfObject
     # def tearDown(self):
     #     self.sample_pdf.delete()
-

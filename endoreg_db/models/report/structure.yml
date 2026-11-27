@@ -1,0 +1,30 @@
+version: 1
+tier: module
+path: endoreg_db/models/report
+summary: Structured examination reports and report definitions.
+responsibilities:
+- Persist domain entities and enforce their constraints.
+boundaries:
+- Workflow implementations belong in the service layer; validate persisted payloads at the model boundary.
+files:
+- file: concept_embedding.py
+  role: Source-bound anonymized report span vectors linked to persisted clinical annotations.
+- file: patient_examination_report.py
+  role: Report submission, draft and provenance persistence.
+- file: report.py
+  role: Report definition model.
+dependencies:
+  internal:
+  - endoreg_db/schemas
+  - endoreg_db/services
+  external:
+  - django
+  - lx_dtypes
+contracts:
+- name: Model ownership and dependency map
+  doc: docs/model_layer_map_for_agents.md
+tests:
+  directory: tests/media/report
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/media/report
+parent: ../structure.yml
+submodules: []

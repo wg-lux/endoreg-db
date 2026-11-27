@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+
+      - uses: cachix/install-nix-action@3dc140bfc76c49fbd4dd958429132e3746bcb086 # v31
+        with:
+          extra_nix_config: |
+            accept-flake-config = true
+
+      - uses: cachix/cachix-action@38b082610b782e7e93e209c35fd730d399dee866 # v17
+        with:
+          name: devenv
+
+      - name: Install devenv
+        run: |
+          devenv_revision=$(jq -er '.nodes.devenv.locked.rev' devenv.lock)
+          nix profile add "github:cachix/devenv/$devenv_revision"
+
+      - name: Sync locked dependencies
+        run: devenv tasks run ci:sync
+
+      - name: Check types, formatting, quality, contracts and migration drift
+        run: devenv tasks run ci:checks
+
+      - name: Run native backend tests
+        shell: devenv shell bash -- -euo pipefail {0}
+        run: scripts/run_rust_tests.sh --locked
+
+      - name: Run test suite including authentication and deployment security contracts
+        run: devenv tasks run ci:tests
+
+      - name: Preserve test results
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: test-results
+          path: test-results/*.xml
+          if-no-files-found: ignore
+          retention-days: 14

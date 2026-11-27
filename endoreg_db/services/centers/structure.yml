@@ -1,0 +1,47 @@
+version: 1
+tier: service
+path: endoreg_db/services/centers
+parent: ../structure.yml
+summary: Center access, local import defaults and optional employee projection.
+responsibilities:
+- Resolve center-scoped access and local intake defaults.
+- Project optional employee terminology into center recognition lists.
+boundaries:
+- Keep workflow ownership in services; preserve existing model compatibility wrappers.
+entrypoints:
+- name: resolve_allowed_center_ids
+  file: access.py
+  purpose: Return allowed center IDs, None for privileged global access, or empty.
+- name: resolve_import_center
+  file: defaults.py
+  purpose: Preserve a resolved identity while retaining explicit-name compatibility.
+files:
+- file: __init__.py
+  role: Zentrumszugriff, Importzuordnung und Mitarbeiter.
+- file: access.py
+  role: Exports validated_center_group_paths, center_keys_from_group_paths, resolve_allowed_center_ids.
+- file: defaults.py
+  role: Study-independent center selection for local intake.
+- file: employees.py
+  role: Project optional lx-dtypes employee packages into center recognition lists.
+dependencies:
+  internal:
+  - endoreg_db/models
+  - endoreg_db/utils
+  external:
+  - django
+  - lx_dtypes
+submodules: []
+contracts:
+- name: Service ownership and compatibility
+  doc: feature-tracking/CodeQuality.yml
+- name: Center access operations
+  doc: docs/center_access_operations.md
+tests:
+  directory: tests
+  fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_center_access.py tests/services/test_center_defaults.py
+    tests/services/test_center_employees.py
+  files:
+  - tests/services/test_center_access.py
+  - tests/services/test_center_defaults.py
+  - tests/services/test_center_employees.py

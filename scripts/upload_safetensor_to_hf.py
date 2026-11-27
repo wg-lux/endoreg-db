@@ -10,7 +10,9 @@ from huggingface_hub import HfApi
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Upload a safetensor file to Hugging Face Hub")
+    parser = argparse.ArgumentParser(
+        description="Upload a safetensor file to Hugging Face Hub"
+    )
     parser.add_argument(
         "--local-path",
         type=Path,
@@ -49,7 +51,9 @@ def main() -> None:
 
     token = args.token or os.getenv("HF_TOKEN")
     if not token:
-        raise SystemExit("Hugging Face token not provided. Set HF_TOKEN or pass --token.")
+        raise SystemExit(
+            "Hugging Face token not provided. Set HF_TOKEN or pass --token."
+        )
 
     if not args.local_path.exists():
         raise SystemExit(f"Local file not found: {args.local_path}")

@@ -1,0 +1,43 @@
+schema_version: "1.0"
+feature_id: code_quality
+criterion_id: helper_class_boundaries
+scope:
+  - Root-level standalone examples and developer utilities
+  - Pylance workspace import diagnostics
+moves:
+  - from: hello.py
+    to: scripts/diagnostics/hello.py
+    consumer: devenv.nix hello command
+removals:
+  - path: test_out.py
+    classification: confirmed_dead
+    evidence: Keine Imports, Registrierung, Dokumentation oder Launcher-Verweise; startet pytest bereits beim Import. Bestehende Test-Tasks ersetzen diesen isolierten Launcher.
+    lines: 18
+  - path: logger_conf.py
+    classification: confirmed_dead
+    evidence: Keine Imports oder Registrierung; isolierte Demo mit app1/app2-Beispielen. Anwendung verwendet ihre eigene Logging-Konfiguration.
+    lines: 115
+    radon_complexity: get_logging_config B(7)
+  - path: example.json
+    classification: confirmed_dead
+    evidence: Keine Verbraucher oder Dokumentationsverweise; isoliertes Beispiel mit XXX-Platzhalter.
+verification:
+  assessor: codex-folder-structure-20261001
+  results:
+    - command: devenv shell -- .devenv/state/venv/bin/pytest tests/scripts/test_devenv_quality_tasks.py -q --tb=short
+      result: 5 bestanden, 1 Warnung. Direkter Aufruf zuvor wegen fehlendem libpq beim Plugin-Import fehlgeschlagen; Devenv stellt die Bibliothek bereit.
+    - command: .devenv/state/venv/bin/pyright
+      result: 11 Fehler und 8 Warnungen außerhalb der Bereinigung; keine reportMissingImports-Diagnose. Skripte sind nicht Bestandteil des konfigurierten Pyright-Include-Umfangs.
+    - command: GPU-Diagnostik AST vor/nach Verschiebung und Launcher-Pfad prüfen
+      result: Syntaxbaum unverändert; Ziel existiert und wird durch devenv.nix referenziert.
+    - command: nix-instantiate --parse devenv.nix; git diff HEAD --check; tracker.py validate
+      result: Bestanden; 37 gültige Feature-Definitionen.
+    - command: devenv tasks run quality:dead-code quality:boundaries
+      result: Fehlgeschlagen; direkte Guards melden unabhängigen Vulture-Fund master_keys in endoreg_db/utils/rust_backend.py und Boundary-Drift mit 375 statt 389 Handlern. Baselines unverändert.
+    - command: tracker.py show code_quality; tracker.py check code_quality
+      result: Definition lesbar; Gesamtfeature nicht produktionsreif (11/17). Kein Gesamtabschluss behauptet.
+boundaries:
+  - Application modules, migrations, runtime storage and active import work remain in place.
+  - GPU-Diagnostik und bestehender hello-Command bleiben erhalten.
+  - Keine Treffer in lx-data-models; lx-annotate-Geschwistercheckout nicht vorhanden, unbekannte externe Verbraucher nicht geprüft.
+  - Pylance is installed; interactive editor refactoring is unavailable through agent tools.

@@ -22,7 +22,6 @@
     is_primary_model: true # Mark this as the primary model for setup
     weight_filenames: # Specific weight file patterns for this model
       - "colo_segmentation_RegNetX800MF_6.safetensors"
-      - "image_multilabel_classification_colonoscopy_default_v1_*.safetensors"
     huggingface_fallback: # HF configuration for this model
       repo_id: "wg-lux/colo_segmentation_RegNetX800MF_base"
       filename: "colo_segmentation_RegNetX800MF_base.safetensors"

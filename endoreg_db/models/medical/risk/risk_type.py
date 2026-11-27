@@ -1,19 +1,10 @@
+from __future__ import annotations
+from typing import TYPE_CHECKING, Any
+
 from django.db import models
-from typing import TYPE_CHECKING
+from endoreg_db.models.utils import NameNaturalKeyManager
 
-
-class RiskTypeManager(models.Manager):
-    def get_by_natural_key(self, name):
-        """
-        Retrieves a RiskType instance using its natural key.
-        
-        Args:
-            name (str): The unique name identifying the RiskType instance.
-        
-        Returns:
-            RiskType: The matching instance with the provided name.
-        """
-        return self.get(name=name)
+# Deorecate ?
 
 
 class RiskType(models.Model):
@@ -25,26 +16,30 @@ class RiskType(models.Model):
         description (str): A description of the risk type.
     """
 
-    name = models.CharField(max_length=100, unique=True)
-    description = models.TextField(blank=True, null=True)
+    name: models.CharField[Any, Any] = models.CharField(max_length=100, unique=True)
+    # German display name; NULL when the catalogue carries none.
+    name_de: models.CharField[Any, Any] = models.CharField(
+        max_length=255, blank=True, null=True
+    )
+    description: models.TextField[Any, Any] = models.TextField(blank=True, null=True)
 
-    objects = RiskTypeManager()
+    objects = NameNaturalKeyManager["RiskType"]()
 
     if TYPE_CHECKING:
-        from endoreg_db.models.risk.risk import Risk
+        from endoreg_db.models import Risk
 
         risks: models.QuerySet[Risk]
 
-    def natural_key(self):
+    def natural_key(self) -> tuple[str]:
         """
         Return the natural key for this risk type.
-        
+
         This method returns a tuple containing only the risk type's unique name, which is used
         to identify the instance naturally.
         """
-        return (self.name,)
+        return (str(self.name),)
 
-    def __str__(self):
+    def __str__(self) -> str:
         """
         Return the risk type's name as its string representation.
         """
