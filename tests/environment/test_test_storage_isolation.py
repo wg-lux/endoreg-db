@@ -7,7 +7,11 @@ import pytest
 from django.conf import settings
 
 from endoreg_db.utils.paths import EndoregPathsModel
-from tests.runtime_paths import build_test_run_namespace
+from tests.runtime_paths import (
+    build_test_run_namespace,
+    find_stale_run_roots,
+    parse_test_run_namespace_pid,
+)
 
 pytestmark = pytest.mark.no_db
 
@@ -39,6 +43,44 @@ def test_test_run_namespace_isolates_non_xdist_processes(
 def test_test_run_namespace_rejects_invalid_process_id() -> None:
     with pytest.raises(ValueError, match="process_id must be positive"):
         build_test_run_namespace(None, 0)
+
+
+@pytest.mark.parametrize(
+    ("namespace", "expected"),
+    [
+        ("main-1234", 1234),
+        ("gw0-42", 42),
+        ("main", None),
+        ("gw0-abc", None),
+        ("gw0-0", None),
+        ("", None),
+    ],
+)
+def test_parse_test_run_namespace_pid(namespace: str, expected: int | None) -> None:
+    assert parse_test_run_namespace_pid(namespace) == expected
+
+
+def test_find_stale_run_roots_only_returns_dead_namespaced_directories(
+    tmp_path: Path,
+) -> None:
+    for name in ("main-10", "gw0-11", "gw1-12", "unrelated"):
+        (tmp_path / name).mkdir()
+    (tmp_path / "main-13").write_text("not a directory")
+    alive = {11}
+
+    stale = find_stale_run_roots(tmp_path, is_alive=lambda pid: pid in alive)
+
+    assert [path.name for path in stale] == ["gw1-12", "main-10"]
+
+
+def test_find_stale_run_roots_handles_missing_root(tmp_path: Path) -> None:
+    assert find_stale_run_roots(tmp_path / "missing") == []
+
+
+def test_current_run_root_is_never_stale() -> None:
+    namespace = os.environ["ENDOREG_TEST_RUN_NAMESPACE"]
+    process_id = parse_test_run_namespace_pid(namespace)
+    assert process_id == os.getpid()
 
 
 def test_video_and_pdf_storage_share_the_session_root() -> None:

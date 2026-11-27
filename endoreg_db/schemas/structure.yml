@@ -22,7 +22,7 @@ files:
 - file: processed_video_cleanup.py
   role: Typed generation cleanup receipts and immutable outside-frame blackening output checkpoints.
 - file: persisted_json.py
-  role: Persistence-specific payload validators, shared hub UUID identity validation and owner-bound report extraction receipts.
+  role: Persistence-specific payload validators, including offline annotation import provenance, hub UUID identity and report extraction receipts.
 - file: hub_payloads.py
   role: Hub request and provenance shapes.
 - file: temporal_inference.py

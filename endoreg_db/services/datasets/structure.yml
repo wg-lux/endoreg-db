@@ -6,6 +6,7 @@ summary: Dataset-scoped training selection, active learning and annotation expor
 responsibilities:
 - Select dataset-bounded training labels and active-learning candidates.
 - Build annotation exports and training manifests.
+- Restore Full Export records against verified processed media.
 boundaries:
 - Keep workflow ownership in services; preserve existing model compatibility wrappers.
 entrypoints:
@@ -16,6 +17,10 @@ entrypoints:
   file: active_learning_shortlist.py
   purpose: Select operator-requested prediction candidates for human review.
 files:
+- file: annotation_archive.py
+  role: Typed Full Export CSV, manifest and bounded directory or ZIP member reader.
+- file: annotation_import.py
+  role: Verify and restore each processed generation and its frame and segment records transactionally, then materialize streaming.
 - file: membership.py
   role: Admit explicit video membership through the native clinical workflow before related-manager insertion.
 - file: __init__.py
@@ -43,6 +48,8 @@ dependencies:
   - endoreg_db/services/hub
   - endoreg_db/services/media
   - endoreg_db/services/video_files
+  - endoreg_db/services/video_storage
+  - endoreg_db/services/streaming
   - endoreg_db/utils
   external:
   - django
@@ -60,6 +67,7 @@ tests:
   fast_lane_command: .devenv/state/venv/bin/pytest tests/services/test_aidataset_training_selection.py tests/services/test_lx_video_contracts.py
     tests/services/test_aidataset_frame_buckets_unit.py
   files:
+  - tests/services/test_annotation_export_import.py
   - tests/services/test_aidataset_training_selection.py
   - tests/services/test_lx_video_contracts.py
   - tests/services/test_aidataset_frame_buckets_unit.py

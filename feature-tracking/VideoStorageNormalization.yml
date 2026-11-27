@@ -22,6 +22,19 @@ source_documents:
   disposition: reference
   note: Repository-weites Risikoinventar und rückwärtskompatible FPS-zu-PTS-Migration.
 definition_of_done:
+- id: offline_annotation_export_publication
+  category: functionality
+  title: Lokale Wiederherstellung einer verifizierten verarbeiteten Videogeneration
+  acceptance:
+  - Der Konverter prüft das Speicherprofil, den Inhaltshash und die vollständige dekodierte Zeitachse, bevor er ein verschlüsseltes verarbeitetes Mastervideo übernimmt.
+  - Segmentgrenzen und Frame-Annotationen werden gegen die Zeitachse geprüft. Die Wiederholung wahrt bestehende Generationen und setzt eine unterbrochene Streaming-Bereitstellung fort.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_annotation_export_import.py
+    timeout_seconds: 600
 - id: bounded_timestamp_probe_decoding
   category: operations
   title: Vollständige Zeitstempelprüfungen nutzen begrenzte Decoderparallelität

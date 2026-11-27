@@ -305,6 +305,7 @@ definition_of_done:
   category: functionality
   title: YAML-Spaltenzuordnung importiert validierte LX-Datensätze in ausgewählte Kohorten
   acceptance:
+  - Die Tabelleninspektion liefert Benennungen und kuratierte Aliasse aus genau der ausgewählten lx-dtypes-Version für Untersuchung, Befund, Klassifikation und Auswahlwert.
   - Versionierte YAML-Zuordnungen unterstützen benannte CSV- und Excel-Spalten, explizite Spaltengruppen,
     Datumsformate und injizierbare Extraktoren einschließlich zustandsisolierter lx-anonymizer-spaCy-Extraktion.
   - Pydantic und die versionierte Knowledge Base validieren vollständige Patientenidentität und klinische
@@ -776,6 +777,10 @@ definition_of_done:
   - Excel exposes readable observation and assessment sheets while retaining the complete canonical exchange
     representation; formula execution, silent cell truncation, conflicting replay and partial imports
     are rejected. Custom research spreadsheets use the canonical mapping workflow.
+  - If an Excel import lacks its original package, a locally projected, newer active release of the
+    same package may substitute only when the shared reference migration planner permits the changes,
+    all source concepts remain available and assessments are equivalent. Import replays are idempotent,
+    and conflicts leave the database untouched. The source workbook retains the original evidence.
   required: true
   verification:
     kind: manual

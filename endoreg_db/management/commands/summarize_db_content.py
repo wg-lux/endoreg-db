@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-import csv
 import datetime
 from collections.abc import Iterable, Iterator, Sequence
-from io import BytesIO, StringIO
+from io import BytesIO
 from pathlib import Path
 from typing import Protocol, cast
 
@@ -12,13 +11,14 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db.models import Count, Max, Min, fields
 from django.utils.timezone import is_aware, make_naive
 
+from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.utils.file_operations import (
     atomic_write_file,
     ensure_directory,
 )
 
 type SummaryCell = str | int
-type CsvSummaryRow = tuple[str, str]
+type CsvSummaryRow = tuple[str, SummaryCell]
 type SummaryValue = object
 
 EXCEL_HEADERS: CsvSummaryRow = ("Model Name", "Total Records")
@@ -193,7 +193,7 @@ def _summarize_model(
         return
 
     worksheet.append([model.__name__, count])
-    csv_rows.append((model.__name__, str(count)))
+    csv_rows.append((model.__name__, count))
     _write_first_date_range(command, model)
     _write_categorical_summaries(command, model)
 
@@ -373,12 +373,8 @@ def _write_csv_safely(
     rows: Sequence[CsvSummaryRow],
 ) -> None:
     try:
-        buffer = StringIO(newline="")
-        csv.writer(buffer).writerows(rows)
-        atomic_write_file(
-            destination=destination,
-            content=[buffer.getvalue().encode("utf-8")],
-        )
+        data = "".join(csv_lines(rows)).encode("utf-8")
+        atomic_write_file(destination=destination, content=[data])
         command.stdout.write(
             command.style.SUCCESS(f"Database summary report saved to {destination}")
         )

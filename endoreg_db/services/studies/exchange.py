@@ -1,5 +1,6 @@
 """One authorized persistence boundary for study workbooks and hub evidence."""
 
+import logging
 from uuid import UUID
 
 from django.contrib.auth.models import User
@@ -14,14 +15,16 @@ from lx_dtypes.models.contracts.study_collection import (
     StudyCollectionRecord,
     StudyReportSource,
 )
-from lx_dtypes.models.contracts.study_metadata import StudyMetadata
 from lx_dtypes.models.contracts.study_exchange import (
     StudyExchangeBundle,
     StudyExchangeCohort,
     StudyExchangePatientLink,
     StudyExchangeStudy,
 )
+from lx_dtypes.models.contracts.study_metadata import StudyMetadata
 from lx_dtypes.study_exchange import parse_study_exchange
+from lx_dtypes.terminology import get_terminology_service
+from lx_dtypes.terminology.terminology_service import TerminologyError
 
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport
@@ -29,8 +32,32 @@ from endoreg_db.models.other.study import Study
 from endoreg_db.models.other.study_cohort import StudyCohort
 from endoreg_db.models.other.study_collection_entry import StudyCollectionEntry
 from endoreg_db.services.reference_data.clinical_projection import (
+    ClinicalPackageRequiredError,
     require_clinical_package,
 )
+from endoreg_db.services.studies.exchange_migration import (
+    StudyTerminologyMigrationError,
+    is_newer_release,
+    migrate_study_exchange,
+)
+from endoreg_db.utils.structured_logging import emit_structured_event
+
+logger = logging.getLogger(__name__)
+
+
+class StudyWorkbookMigrationConflict(ClinicalPackageRequiredError):
+    code = "study_terminology_migration_conflict"
+
+    def response_data(self) -> dict[str, str]:
+        return {
+            "code": self.code,
+            "target_module": self.module,
+            "target_version": self.version,
+            "detail": (
+                "The workbook could not be upgraded to the active terminology release. "
+                "Install its original terminology package and retry."
+            ),
+        }
 
 
 def _study_definition(study: Study) -> StudyDefinition:
@@ -145,10 +172,12 @@ def import_study_exchange(
     owner: User,
     bundle: StudyExchangeBundle,
     examination_scope: QuerySet[PatientExamination],
+    migrate_to_active: bool = False,
 ) -> list[StudyCollectionEntry]:
     """Accept evidence explicitly as a local owner, without granting source access.
 
-    Patient identities and exact package receipts must already exist locally.
+    Patient identities must already exist locally. The workbook caller can use
+    a compatible active release when the exact package receipt is missing.
     Current definitions conflict rather than overwrite; repeated identical imports
     are no-ops. Historical evaluations are verified by the shared bundle contract.
     Imported cohorts deliberately receive no live dataset or examination links.
@@ -174,15 +203,66 @@ def import_study_exchange(
                 "Study exchange examination identity is unavailable in the authorized scope"
             )
     receipts: dict[str, ClinicalReferenceImport] = {}
+    replacements: dict[str, PackageSnapshot] = {}
+    active_package: tuple[ClinicalReferenceImport, PackageSnapshot] | None = None
+    active: tuple[str, str] | None = None
     for snapshot in bundle.packages:
-        receipt, installed = require_clinical_package(
-            snapshot.identity.knowledge_base_module,
-            snapshot.identity.knowledge_base_version,
-            lock=True,
-        )
+        module = snapshot.identity.knowledge_base_module
+        version = snapshot.identity.knowledge_base_version
+        try:
+            receipt, installed = require_clinical_package(module, version)
+        except ClinicalPackageRequiredError as missing:
+            if not migrate_to_active:
+                raise
+            try:
+                if active is None:
+                    active = get_terminology_service().active_identity()
+            except TerminologyError as error:
+                if error.status != 404:
+                    raise
+                raise missing from error
+            if (
+                active is None
+                or active[0] != module
+                or not is_newer_release(version, active[1])
+            ):
+                raise
+            if active_package is None:
+                active_package = require_clinical_package(*active)
+            receipt, installed = active_package
+            replacements[snapshot.snapshot_id] = installed
+            receipts[installed.snapshot_id] = receipt
+            continue
         if installed.snapshot_id != snapshot.snapshot_id:
             raise ValueError("Installed package differs from study exchange snapshot")
         receipts[snapshot.snapshot_id] = receipt
+    # Requests can mention the same packages in different orders. Lock the
+    # immutable receipts in one order, including substituted active receipts.
+    receipt_ids = {receipt.pk for receipt in receipts.values()}
+    locked_ids = set(
+        ClinicalReferenceImport.objects.select_for_update()
+        .filter(pk__in=receipt_ids)
+        .order_by("pk")
+        .values_list("pk", flat=True)
+    )
+    if locked_ids != receipt_ids:
+        raise ValueError("The installed terminology changed during study import")
+    if replacements and active is not None:
+        try:
+            bundle = migrate_study_exchange(bundle, replacements)
+        except StudyTerminologyMigrationError as error:
+            raise StudyWorkbookMigrationConflict(*active) from error
+        transaction.on_commit(
+            lambda: emit_structured_event(
+                logger,
+                "study_exchange.terminology_migrated",
+                packages=[
+                    {"source_snapshot": source, "target_snapshot": target.snapshot_id}
+                    for source, target in sorted(replacements.items())
+                ],
+                collection_count=len(bundle.collections),
+            )
+        )
     studies: dict[UUID, Study] = {}
     for item in bundle.studies:
         study, created = Study.objects.select_for_update().get_or_create(
@@ -242,6 +322,21 @@ def import_study_exchange(
     return entries
 
 
+def import_study_workbook(
+    *,
+    owner: User,
+    bundle: StudyExchangeBundle,
+    examination_scope: QuerySet[PatientExamination],
+) -> list[StudyCollectionEntry]:
+    """Import a validated workbook, with active-release migration if required."""
+    return import_study_exchange(
+        owner=owner,
+        bundle=bundle,
+        examination_scope=examination_scope,
+        migrate_to_active=True,
+    )
+
+
 @transaction.atomic
 def capture_study_examinations(
     *,
@@ -261,6 +356,7 @@ def capture_study_examinations(
     from lx_dtypes.models.contracts.dtypes_record_persistence import (
         DtypesRecordPersistencePayload,
     )
+
     from endoreg_db.services.studies.collections import (
         collect_study_examination,
         study_record_sources,

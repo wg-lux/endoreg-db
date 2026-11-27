@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import csv
-import io
 import logging
 import os
 import resource
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
+from itertools import chain
 from pathlib import Path
 from typing import (
     Literal,
@@ -42,6 +41,7 @@ from endoreg_db.models.medical.hardware.endoscopy_processor import EndoscopyProc
 from endoreg_db.models.media.pdf.raw_pdf import RawPdfFile
 from endoreg_db.models.media.video.video_file import VideoFile
 from endoreg_db.import_files.report_import_service import ReportImportService
+from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.services.privacy.evaluation_manifest import (
     write_performance_evaluation_manifest,
 )
@@ -890,19 +890,14 @@ class Command(BaseCommand):
         destination: Path,
         results: list[LxAnonymizerPerformanceRunPayload],
     ) -> None:
-        buffer = io.StringIO()
-        writer = csv.DictWriter(
-            buffer,
-            fieldnames=list(LX_ANONYMIZER_PERFORMANCE_CSV_FIELDNAMES),
-        )
-        writer.writeheader()
-        for result in results:
-            writer.writerow(dump_lx_anonymizer_performance_run_csv_row(result))
-        encoded = buffer.getvalue().encode("utf-8")
+        fieldnames = LX_ANONYMIZER_PERFORMANCE_CSV_FIELDNAMES
+        records = map(dump_lx_anonymizer_performance_run_csv_row, results)
+        rows = ([row[name] for name in fieldnames] for row in records)
+        data = "".join(csv_lines(chain((fieldnames,), rows))).encode("utf-8")
         atomic_write_file(
             destination=destination,
-            content=[encoded],
-            required_bytes=len(encoded),
+            content=[data],
+            required_bytes=len(data),
         )
 
     def _write_text_summary(self, payload: LxAnonymizerPerformancePayload) -> None:

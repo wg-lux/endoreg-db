@@ -44,6 +44,8 @@ files:
   role: Explicit synthetic presentation coordinates at integer and fractional rates, terminal bounds and rollback of all generated profiling rows.
 - file: services/test_hub_video_provenance.py
   role: Recording-bound ancestry, electrical anchors, early writer rejection and hash-verified sender timestamp reuse with receiver decoding.
+- file: services/test_hub_deployment.py
+  role: Database-free deployment role, transfer flags, and public deployment profile checks.
 - file: import_files/test_video_anonymization.py
   role: Anonymization staging, source integrity and proposal retry/query budgets without frame-coordinate changes.
 - file: rust_backend/test_hub_transfer_state.py
@@ -82,6 +84,8 @@ files:
   role: Export configuration, authorization, dispatch, claim fencing and process-lock regression tests.
 - file: views/media/test_frame_annotation_export_jobs_api.py
   role: Dataset export HTTP validation, admission and scoped status regression tests.
+- file: services/test_annotation_export_import.py
+  role: Real Full Export round trip, archive replay, encrypted media, streaming and invalid-input rejection.
 - file: services/test_frame_annotation_export_downloads.py
   role: Completed export run access, supersession, symbolic-link, path and ZIP archive regression tests.
 - file: views/media/test_frame_annotation_export_downloads_api.py
@@ -180,7 +184,11 @@ files:
 - file: conftest.py
   role: Shared Django and clinical fixtures; explicit full-video mode uses real media operations while fast lanes retain bounded media mocks.
 - file: plugins/runtime_paths.py
-  role: Process-owned runtime path isolation
+  role: Process-owned runtime path isolation; removes its run root after a clean exit and sweeps roots of exited processes
+- file: plugins/run_log.py
+  role: Controller-side per-test result log (.pytest_cache/last-run.log) and SIGTERM/SIGHUP to interrupt conversion so killed runs keep output
+- file: runtime_paths.py
+  role: Pure helpers for test run namespaces and stale run root detection
 - file: scripts/test_lint_structure.py
   role: Agent map schema and graph regression tests
 - file: services/test_service_structure.py

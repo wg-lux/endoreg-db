@@ -80,7 +80,10 @@ class CatalogPlan(BaseModel):
     changes: list[CatalogChange]
     conflicts: list[str] = Field(default_factory=list)
     clinical_plan: ClinicalReferencePlan | None = None
-    applied_migrations: list[ReferenceRowMigration] = Field(default_factory=list)
+    applied_migrations: list[ReferenceRowMigration] = Field(
+        default_factory=list[ReferenceRowMigration],
+        exclude_if=lambda changes: not changes,
+    )
     unchanged: bool = False
 
     @property

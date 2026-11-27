@@ -10,6 +10,91 @@ The recommended export unit is:
 - optional copied frame images under the export directory
 - optional copied anonymized processed videos for local audit only
 
+## Use an export on another machine
+
+For studies that need lx-annotate database records, use **Hub Export** from
+the source instance to an authorized receiving hub. A colleague can work
+in that hub from the laptop, or the laptop can receive directly if its
+lx-annotate instance is provisioned as a `central_hub`. The
+`local_study_server` and `standalone` roles do not expose Hub Transfer intake.
+Follow the [receiver and node setup](hub_ingest_operations.md#central-hub-configuration)
+to configure the encrypted storage, center, mutual Transport Layer Security
+(mTLS), and recipient key. Use matching lx-annotate, endoreg-db, and lx-dtypes
+releases at both ends.
+
+1. On the source, validate anonymization and segment annotations and mark the
+   selected videos ready for export. In **Hub Export**, mark and queue them for
+   the receiving hub. Select local media retention if the sender needs to
+   keep its copy. See the [sender workflow](https://github.com/wg-lux/lx-annotate/blob/main/docs/guides/hub-export-workflow.md).
+2. Wait for the sender to confirm the receiver's `applied` receipt. In the
+   receiving instance, check that the center-scoped account can open the
+   video and see its transferred segments and frame classification labels.
+   The receiver stores the approved processed video and the supported
+   annotation records. Frame images can be decoded from that video as needed.
+   See the [transfer contract](hub_transfer_typed_contract.md#video-payload)
+   and [feature criteria](../feature-tracking/HubTransfer.yml).
+3. Create or select the study cohort on the receiving instance. To bring
+   existing stored observations and study definitions, open **Export →
+   Studienledger**. Use **Studienledger an Hub übertragen** on the source
+   and **Empfangenen Hub-Transfer übernehmen** on the destination. For file
+   exchange, use **Ledger als Excel herunterladen** on the source and
+   **LX-Datei importieren** on the destination. Both require the corresponding
+   patient and examination links. If the original terminology package is
+   missing during Excel import, lx-annotate tries the destination's newer
+   active release of the same package. That release must already be projected
+   as clinical reference data. The migration rules must approve the changes,
+   and the observations must pass the same assessment. Keep the original
+   workbook as the record of the original terminology and assessment. If the
+   upgrade is rejected, install the original package and retry. Hub ledger
+   acceptance and older packaged backends require the exact terminology
+   snapshots.
+   For clinical observations already in a separate spreadsheet, use the
+   [mapped study table import](study_table_import.md).
+
+For offline analysis directly from files, use **Export → Videos und
+Annotationen → Vollständiger Export aller Videos**. Choose the center,
+enable **Zusätzlich annotierte Frames PTS-genau extrahieren** if you need
+images, and start the run. The completed run contains `annotations.csv`,
+`export_manifest.json`, approved processed videos represented in the
+annotation selection, and any requested frame images. Use the manifest to
+map source video IDs to filenames. Videos without exportable annotation
+rows are outside this selection.
+
+Select **Als ZIP herunterladen** when offered. When lx-annotate offers
+**In Ordner speichern …**, the same completed run is also available to the
+signed-in user from
+`GET <api-prefix>/media/videos/export-annotated/jobs/<job_id>/archive.zip`.
+The archive preserves the run's folder layout and stores its contents without
+recompression. Keep the files inside the approved encrypted storage boundary.
+
+### Restore a Full Export on the laptop
+
+In a migrated `standalone` or `local_study_server` installation, put the ZIP
+or extracted run directory under the encrypted runtime root. Choose the local
+center that should own the imported videos. Run the first command to verify
+the archive and check for conflicts. Add `--apply` after confirming that the
+export is authorized and its videos were anonymized.
+
+```bash
+python manage.py import_annotation_export migration_staging/study.zip --center-key study
+python manage.py import_annotation_export migration_staging/study.zip --center-key study --apply
+```
+
+The converter reads the full presentation-timestamp export with a manifest,
+annotation CSV, and processed MP4 for each video. It stores encrypted
+processed masters, frame records, classification values and segments, and
+builds HTTP Live Streaming derivatives. Optional image members are checked
+against their CSV paths. The application decodes images on demand from the
+video. Source database IDs identify records within the export, and reviewer
+tracks are preserved with export-specific aliases. Local account and model
+links, patient or examination links, original recording ancestry,
+and segment review decisions require separate source evidence.
+
+Each video and its annotations commit together. Re-run the same export to
+resume after a failure or finish its streaming derivative. The converter
+rejects conflicting or differently scoped copies of an existing video.
+The mapped study table import remains the route for clinical observations.
+
 ## Direct browser downloads
 
 On the lx-annotate **Export → Videos und Annotationen** page, select a video and

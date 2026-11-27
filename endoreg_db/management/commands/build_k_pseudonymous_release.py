@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import csv
-import io
+from collections.abc import Sequence
 from pathlib import Path
 from typing import TypedDict, Unpack, cast
 
@@ -10,6 +10,7 @@ from django.core.management.base import BaseCommand, CommandError, CommandParser
 from pydantic import ValidationError
 
 from endoreg_db.schemas.k_pseudonymity import KPseudonymityReleaseConfig
+from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.services.privacy.k_pseudonymity import (
     KPseudonymityInputError,
     ReleaseRow,
@@ -146,14 +147,10 @@ def _read_csv(path: Path, *, max_rows: int) -> tuple[dict[str, object], ...]:
 
 
 def _encode_csv(rows: tuple[ReleaseRow, ...], *, fieldnames: tuple[str, ...]) -> bytes:
-    buffer = io.StringIO(newline="")
-    writer = csv.DictWriter(
-        buffer,
-        fieldnames=list(fieldnames),
-        extrasaction="raise",
-        lineterminator="\n",
-    )
-    writer.writeheader()
+    columns = set(fieldnames)
+    csv_rows: list[Sequence[object]] = [fieldnames]
     for row in rows:
-        writer.writerow(row)
-    return buffer.getvalue().encode("utf-8")
+        if set(row) != columns:
+            raise ValueError("Release row columns must match the CSV header")
+        csv_rows.append([row[name] for name in fieldnames])
+    return "".join(csv_lines(csv_rows)).encode("utf-8")

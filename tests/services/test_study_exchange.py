@@ -1,6 +1,7 @@
 """Stored evidence has one portable, authorized and replay-safe boundary."""
 
 from pathlib import Path
+from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -9,24 +10,35 @@ from django.core.exceptions import PermissionDenied
 from lx_dtypes.models.contracts.dtypes_record_persistence import (
     DtypesRecordPersistencePayload,
 )
+from lx_dtypes.models.contracts.reference_catalog import CatalogIdentity, ReferenceKind
+from lx_dtypes.models.contracts.reference_migration import (
+    ReferenceMigrationCatalog,
+    ReferenceMigrationRule,
+    ReferenceMigrationTarget,
+)
 from lx_dtypes.models.knowledge_base.examination import Examination as DtypesExamination
 from lx_dtypes.packages import create_package, load_package
+from lx_dtypes.study_exchange import study_exchange_from_xlsx, study_exchange_to_xlsx
 
 from endoreg_db.models.administration.person.patient.patient import Patient
 from endoreg_db.models.medical.examination.examination import Examination
 from endoreg_db.models.medical.patient.patient_examination import PatientExamination
 from endoreg_db.models.other.clinical_reference_import import ClinicalReferenceImport
-from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.models.other.study import Study
 from endoreg_db.models.other.study_cohort import StudyCohort
 from endoreg_db.models.other.study_collection_entry import StudyCollectionEntry
+from endoreg_db.models.report.patient_examination_report import PatientExaminationReport
 from endoreg_db.services.reference_data.clinical_projection import (
+    ClinicalPackageRequiredError,
     import_clinical_package,
 )
+from endoreg_db.services.studies import exchange, exchange_migration
 from endoreg_db.services.studies.collections import collect_study_examination
 from endoreg_db.services.studies.exchange import (
+    StudyWorkbookMigrationConflict,
     export_study_exchange,
     import_study_exchange,
+    import_study_workbook,
 )
 
 pytestmark = pytest.mark.django_db
@@ -65,6 +77,11 @@ def evidence(tmp_path: Path) -> tuple[User, Study, PatientExamination]:
         created_by=owner,
         name="Synthetic cohort",
         hypothesis="Synthetic hypothesis",
+        study_metadata={
+            "terminology_requirements": [
+                {"module": "exchange_test", "version": "1.0.0"}
+            ]
+        },
     )
     collect_study_examination(
         owner=owner,
@@ -174,13 +191,127 @@ def test_import_requires_installed_package_before_creating_studies(
     StudyCollectionEntry.objects.all().delete()
     study.delete()
     ClinicalReferenceImport.objects.all().delete()
-    from endoreg_db.services.reference_data.clinical_projection import (
-        ClinicalPackageRequiredError,
-    )
-
     with pytest.raises(ClinicalPackageRequiredError):
         import_study_exchange(owner=owner, bundle=bundle, examination_scope=scope)
     assert not Study.objects.exists()
+
+
+@pytest.mark.parametrize("change", ["display", "reviewed", "conflict"])
+def test_workbook_uses_compatible_active_terminology(
+    evidence: tuple[User, Study, PatientExamination],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    change: str,
+) -> None:
+    owner, study, examination = evidence
+    scope = PatientExamination.objects.all()
+    source = export_study_exchange(owner=owner, study=study, examination_scope=scope)
+    workbook = study_exchange_to_xlsx(source)
+    bundle = study_exchange_from_xlsx(workbook)
+    StudyCollectionEntry.objects.all().delete()
+    study.delete()
+    ClinicalReferenceImport.objects.filter(module="exchange_test").delete()
+    import_clinical_package(
+        load_package(
+            create_package(
+                tmp_path / "current",
+                name="exchange_test",
+                version="2.0.0",
+                records=[
+                    DtypesExamination(
+                        name="inspection",
+                        name_de="Untersuchung",
+                        name_en="Inspection"
+                        if change == "display"
+                        else "Inspection visit",
+                    )
+                ],
+            )
+        ),
+        adopt_existing=True,
+    )
+    monkeypatch.setattr(
+        exchange,
+        "get_terminology_service",
+        lambda: SimpleNamespace(active_identity=lambda: ("exchange_test", "2.0.0")),
+    )
+    if change == "reviewed":
+        rules = ReferenceMigrationCatalog(
+            schema_version=1,
+            targets=[
+                ReferenceMigrationTarget(
+                    module="exchange_test",
+                    version="2.0.0",
+                    rules=[
+                        ReferenceMigrationRule(
+                            kind=ReferenceKind.EXAMINATION,
+                            identity=CatalogIdentity(name="inspection"),
+                            field="name_en",
+                            existing="Inspection",
+                            proposed="Inspection visit",
+                            reason="Approved correction to the English display name.",
+                        )
+                    ],
+                )
+            ],
+        )
+        monkeypatch.setattr(
+            exchange_migration, "load_reference_migrations", lambda: rules
+        )
+    with pytest.raises(ClinicalPackageRequiredError):
+        import_study_exchange(owner=owner, bundle=bundle, examination_scope=scope)
+    with pytest.raises(PermissionDenied):
+        import_study_workbook(
+            owner=owner,
+            bundle=bundle,
+            examination_scope=scope.none(),
+        )
+    if change == "conflict":
+        with pytest.raises(StudyWorkbookMigrationConflict) as conflict:
+            import_study_workbook(
+                owner=owner,
+                bundle=bundle,
+                examination_scope=scope,
+            )
+        assert "compatible migration rules" in str(conflict.value.__cause__)
+        assert (
+            conflict.value.response_data()["code"]
+            == "study_terminology_migration_conflict"
+        )
+        assert not Study.objects.exists()
+        assert not StudyCollectionEntry.objects.exists()
+        return
+
+    [entry] = import_study_workbook(owner=owner, bundle=bundle, examination_scope=scope)
+    [replayed] = import_study_workbook(
+        owner=owner, bundle=bundle, examination_scope=scope
+    )
+    assert replayed.pk == entry.pk
+    assert entry.patient_examination.pk == examination.pk
+    assert entry.package_import.version == "2.0.0"
+    assert entry.uuid != bundle.collections[0].record_uuid
+    assert entry.validated_record().record.knowledge_base_version == "2.0.0"
+    assert (
+        entry.validated_record().evaluation.issues
+        == bundle.collections[0].evaluation.issues
+    )
+    assert StudyCollectionEntry.objects.count() == 1
+    assert not ClinicalReferenceImport.objects.filter(
+        module="exchange_test", version="1.0.0"
+    ).exists()
+    exported = export_study_exchange(
+        owner=owner, study=entry.study, examination_scope=scope
+    )
+    assert (
+        exported.cohorts[0]
+        .definition.study_metadata.terminology_requirements[0]
+        .version
+        == "2.0.0"
+    )
+    assert (
+        study_exchange_from_xlsx(workbook).collections[0].record.knowledge_base_version
+        == "1.0.0"
+    )
 
 
 def test_patient_uuid_must_match_authorized_existing_examination(
@@ -364,6 +495,7 @@ def test_cohorts_choose_independent_report_sources_and_retain_prior_observations
         study_exchange_from_xlsx,
         study_exchange_to_xlsx,
     )
+
     from endoreg_db.services.studies.exchange import capture_study_examinations
 
     owner, study, examination = evidence

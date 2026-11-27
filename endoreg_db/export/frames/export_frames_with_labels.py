@@ -1,13 +1,12 @@
 from __future__ import annotations
 
-import csv
-import io
 import json
 import logging
 import uuid
 from collections.abc import Collection, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import datetime
+from itertools import chain
 from pathlib import Path
 from typing import Literal, Protocol, TypedDict, cast
 
@@ -42,7 +41,7 @@ from endoreg_db.schemas.frame_annotation_export import (
 from endoreg_db.schemas.persisted_json import VideoFileMetaPayload
 from endoreg_db.schemas.video_storage import VideoSourceTimelineEvidence
 from endoreg_db.services.hub.deployment import local_study_server_mode_enabled
-from endoreg_db.services.media.csv_export import encode_csv_cell
+from endoreg_db.services.media.csv_export import csv_lines
 from endoreg_db.services.media.export_file_names import (
     resolve_export_file_name,
 )
@@ -711,17 +710,13 @@ def _write_annotation_rows(
     validate_annotation_table_destination(output_file)
     ensure_directory(output_file.parent)
     if output_format == "json":
-        content = json.dumps(rows, indent=2, ensure_ascii=False)
+        data = json.dumps(rows, indent=2, ensure_ascii=False).encode("utf-8")
     else:
-        csv_buffer = io.StringIO()
-        writer = csv.DictWriter[AnnotationFieldName](
-            csv_buffer, fieldnames=DEFAULT_FIELDNAMES
+        csv_rows = ([row[name] for name in DEFAULT_FIELDNAMES] for row in rows)
+        data = "".join(csv_lines(chain((DEFAULT_FIELDNAMES,), csv_rows))).encode(
+            "utf-8"
         )
-        writer.writeheader()
-        for row in rows:
-            writer.writerow(_annotation_row_to_csv_dict(row))
-        content = csv_buffer.getvalue()
-    atomic_write_file(destination=output_file, content=[content.encode("utf-8")])
+    atomic_write_file(destination=output_file, content=[data])
     return output_file
 
 
@@ -1558,12 +1553,6 @@ def _parse_extracted_frame_number(frame_path: Path) -> int | None:
 
 def _frame_pk_filename(frame_pk: int, ext: str) -> str:
     return f"frame_{frame_pk}.{ext}"
-
-
-def _annotation_row_to_csv_dict(
-    row: AnnotationRow,
-) -> dict[AnnotationFieldName, object]:
-    return {name: encode_csv_cell(row[name]) for name in DEFAULT_FIELDNAMES}
 
 
 def _with_shared_annotation_videos(

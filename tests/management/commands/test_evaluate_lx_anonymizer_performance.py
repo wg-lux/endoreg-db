@@ -3,8 +3,9 @@ from __future__ import annotations
 # pyright: reportPrivateUsage=false
 
 from pathlib import Path
-from django.core.management.base import CommandError
+
 import pytest
+from django.core.management.base import CommandError
 from lx_dtypes.models.contracts import LxAnonymizerPerformanceRunPayload
 
 from endoreg_db.management.commands.evaluate_lx_anonymizer_performance import (
@@ -33,10 +34,10 @@ def test_roi_is_configured_requires_valid_rectangle(
 
 def _performance_run(
     *,
-    ok: bool,
-    total_seconds: float,
-    import_seconds: float,
-    anonymizer_seconds: float | None,
+    ok: bool = True,
+    total_seconds: float = 1.0,
+    import_seconds: float = 0.5,
+    anonymizer_seconds: float | None = 0.0,
     short_circuited: bool = False,
 ) -> LxAnonymizerPerformanceRunPayload:
     return LxAnonymizerPerformanceRunPayload(
@@ -61,18 +62,11 @@ def test_performance_summary_uses_successful_runs_for_duration_statistics() -> N
     summary = Command._summarize(
         [
             _performance_run(
-                ok=True,
                 total_seconds=3.0,
                 import_seconds=2.0,
                 anonymizer_seconds=1.5,
             ),
-            _performance_run(
-                ok=True,
-                total_seconds=1.0,
-                import_seconds=0.5,
-                anonymizer_seconds=0.0,
-                short_circuited=True,
-            ),
+            _performance_run(short_circuited=True),
             _performance_run(
                 ok=False,
                 total_seconds=9.0,
@@ -91,6 +85,23 @@ def test_performance_summary_uses_successful_runs_for_duration_statistics() -> N
     assert summary.import_seconds.mean == 1.25
     assert summary.anonymizer_seconds.count == 2
     assert summary.end_to_end_seconds.mean == 2.0
+
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
+def test_performance_csv_escapes_text(tmp_path: Path, prefix: str) -> None:
+    run = _performance_run(ok=False, anonymizer_seconds=None)
+    run.error = f"{prefix}test"
+    output = tmp_path / "performance.csv"
+    Command()._write_csv(output, [run])
+    assert output.read_bytes().endswith(f",'{prefix}test\r\n".encode("utf-8"))
+
+
+def test_performance_csv_preserves_numbers(tmp_path: Path) -> None:
+    run = _performance_run()
+    run.max_rss_kib_delta = -10
+    output = tmp_path / "performance.csv"
+    Command()._write_csv(output, [run])
+    assert b",-10," in output.read_bytes()
 
 
 def test_performance_command_accepts_manifest_flags(tmp_path: Path) -> None:

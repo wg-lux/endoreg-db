@@ -149,6 +149,16 @@ def test_vocabulary_lists_template_identifiers(packaged_registry: Path) -> None:
     assert "colon_polyp" in findings
     classifications = {item.name: item.choices for item in vocabulary.classifications}
     assert all(choices == sorted(choices) for choices in classifications.values())
+    terms = {(item.kind, item.name): item for item in vocabulary.terms}
+    colonoscopy = terms[("Examination", "colonoscopy")]
+    assert colonoscopy.label != colonoscopy.name
+    assert "kolo" in colonoscopy.aliases
+    assert "Darmpolyp" in terms[("Finding", "colon_polyp")].aliases
+    assert all(
+        ("ClassificationChoice", choice) in terms
+        for choices in classifications.values()
+        for choice in choices
+    )
 
 
 @pytest.mark.django_db
@@ -178,6 +188,10 @@ def test_inspection_view_returns_columns_values_and_vocabulary(
         {"column": "sex", "values": ["m", "w"], "truncated": False}
     ]
     assert "female" in body["vocabulary"]["genders"]
+    assert any(
+        term["kind"] == "Finding" and term["name"] == "colon_polyp"
+        for term in body["vocabulary"]["terms"]
+    )
     assert (
         body["vocabulary"]["knowledge_base"]["knowledge_base_module"]
         == "dgvs_reporting"

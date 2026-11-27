@@ -7,6 +7,8 @@ responsibilities:
 boundaries:
 - Commands use domain services and protected storage; destructive media migration needs tracked approvals.
 files:
+- file: commands/import_annotation_export.py
+  role: Local dry-run-first conversion of Full Export folders and ZIPs into center-scoped records.
 - file: commands/import_electrosurgical_activations.py
   role: Bounded operator CSV/XLSX activation import with explicit timezone, recording anchors and timing tolerance.
 - file: commands/import_electrosurgical_measurements.py
@@ -52,6 +54,7 @@ dependencies:
   - endoreg_db/models
   - endoreg_db/schemas
   - endoreg_db/services
+  - endoreg_db/services/media/csv_export.py
   - endoreg_db/import_files
   - endoreg_db/utils
   - endoreg_db/data

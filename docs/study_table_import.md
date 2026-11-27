@@ -69,7 +69,7 @@ The **Create mapping from the table** section of the import panel builds a mappi
 
 1. After selecting the CSV, XLSX or XLS file, choose the delimiter and encoding (CSV), the worksheet (workbooks with several sheets) and the header row, then **Read columns**.
 2. Assign a column to the row ID, first name, last name, birth date, gender and examination date, and choose a date format where cells are not ISO dates or native Excel dates. The examination is either the same for all rows or read from a column. Each finding group is a column or a constant finding, with optional classification columns.
-3. **Read values** lists the distinct cells of the gender, examination, finding and classification columns only. Each cell spelling, such as `w` or `Polyp`, is mapped to an identifier of the template knowledge base or to a gender; spellings equal to an identifier ignoring case are preselected.
+3. **Read values** lists the distinct cells of the gender, examination, finding and classification columns. The assistant displays localized terms from the selected package and saves their canonical identifiers. It suggests exact identifier, label and curated alias matches among eligible concepts. Ambiguous or unknown values remain unassigned for review.
 4. **Save mapping** stores an ordinary mapping (submitted as JSON, which is valid setup YAML) and selects it. Validation and import then proceed as in steps 4–6.
 
 **Read columns** also prefills the editor from the default rules in [`prefill.yml`](../endoreg_db/data/study_import/prefill.yml); it only fills fields the user has not set, and every suggestion must be reviewed:
@@ -81,6 +81,8 @@ The **Create mapping from the table** section of the import panel builds a mappi
 - `gender_values` spellings (`w`, `weiblich`, `m`, `männlich`, `d`, …) preselect gender value maps after **Read values**, when the host has the identifier.
 
 Sampled cells are processed in memory and never returned; the response holds column names and rule spellings only.
+
+Selecting a different file, cohort, terminology package or source setting clears the previous column and value assignments. If an examination or finding selection makes a term ineligible, resolve that assignment before saving.
 
 Value maps are omitted when every cell is already spelled as its identifier. A column with more than 200 distinct values, or values longer than 255 characters, is flagged as truncated: unseen values fail validation with `unmapped_value` until they are added to the YAML. Identity columns are never read for values unless a caller names them explicitly.
 

@@ -289,6 +289,16 @@ class OperationLogMetaPayload(BaseModel):
         return _json_compatible_value(value, field_name="meta")
 
 
+class AnnotationExportImportReceipt(BaseModel):
+    """Content-addressed provenance for a locally restored Full Export video."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    manifest_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    table_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_video_id: int = Field(gt=0)
+
+
 class VideoFileMetaPayload(BaseModel):
     """Validated metadata persisted in VideoFile.meta.
 
@@ -321,6 +331,7 @@ class VideoFileMetaPayload(BaseModel):
     outside_frame_blackening: OutsideFrameBlackeningCheckpoint | None = None
     recording_time: VideoRecordingTimeEvidence | None = None
     export_file_name: VideoExportFileName | None = None
+    annotation_export_import: AnnotationExportImportReceipt | None = None
 
     @model_validator(mode="before")
     @classmethod

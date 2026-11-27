@@ -19,6 +19,20 @@ source_documents:
   disposition: reference
   note: Frame-Exportvertrag, Präsentationszeitstempel-Identität und Speichergrenzen.
 definition_of_done:
+- id: offline_full_export_restore
+  category: functionality
+  title: Offline-Import eines vollständigen Annotationsexports
+  acceptance:
+  - Der lokale Konverter liest den Exportordner oder das ZIP und erstellt Video-, Frame-, Label- und Segmentdatensätze im ausgewählten Zentrum.
+  - Die Vorschau prüft Dateiformat, Hashes und dekodierte Zeitstempel ohne Datenbankänderungen. Wiederholung erzeugt keine Duplikate und überschreibt keine fremden Medien.
+  - Optionale Framebilder werden anhand des Exportlayouts zugeordnet. Persistierte Koordinaten erlauben die erneute Dekodierung aus dem verifizierten Video.
+  required: true
+  verification:
+    kind: command
+    command:
+    - .devenv/state/venv/bin/pytest
+    - tests/services/test_annotation_export_import.py
+    timeout_seconds: 600
 - id: documented_scope
   category: requirements
   title: Umfang und Grenzen des Frontend-Exports sind dokumentiert

@@ -40,7 +40,7 @@ files:
 - file: normalization.py
   role: Exports ensure_video_file_profile, normalize_video_file.
 - file: probes.py
-  role: Complete decoded timestamp probes with four decoder threads; validated decoder timestamps recover missing original fields without frame-rate estimates.
+  role: Complete decoded timestamp probes with four decoder threads and an offline MP4-only probe that disables external references.
 - file: processed_timelines.py
   role: Processed-video remapping using shared exact timestamp conversion and exclusive-end validation; original raw sequences remain in canonical history.
 - file: processed_transcode.py

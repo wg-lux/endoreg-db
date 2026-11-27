@@ -69,7 +69,8 @@ class ClinicalReferenceReceipt(BaseModel):
     package_snapshot: PackageSnapshot | None = None
     bindings: list[ReferenceBinding]
     migrations: list[ReferenceRowMigration] = Field(
-        default_factory=list, exclude_if=lambda changes: not changes
+        default_factory=list[ReferenceRowMigration],
+        exclude_if=lambda changes: not changes,
     )
 
     @model_validator(mode="after")
@@ -135,7 +136,10 @@ class ClinicalReferencePlan(BaseModel):
     snapshot_id: str
     changes: list[ReferenceChange]
     conflicts: list[str] = Field(default_factory=list)
-    applied_migrations: list[ReferenceRowMigration] = Field(default_factory=list)
+    applied_migrations: list[ReferenceRowMigration] = Field(
+        default_factory=list[ReferenceRowMigration],
+        exclude_if=lambda changes: not changes,
+    )
     unchanged: bool = False
 
     @property

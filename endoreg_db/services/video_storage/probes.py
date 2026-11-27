@@ -5,6 +5,7 @@ import logging
 import math
 import subprocess
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from fractions import Fraction
 from pathlib import Path
@@ -24,13 +25,21 @@ from endoreg_db.services.video_storage.contracts import (
     VideoStorageNormalizationError,
 )
 from endoreg_db.utils import ffmpeg_wrapper
-from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 from endoreg_db.utils.structured_logging import emit_structured_event
+from endoreg_db.utils.video.command_construction import FFprobeInputPolicy
 
 logger = logging.getLogger(__name__)
 
 # Bound decoder parallelism per probe; every frame is still decoded and checked.
 _FRAME_PROBE_DECODE_ARGS = ("-threads", "4")
+_LOCAL_MP4_INPUT_ARGS = (
+    "-protocol_whitelist",
+    "file",
+    "-f",
+    "mov",
+    "-enable_drefs",
+    "0",
+)
 
 
 class _ProbeStream(BaseModel):
@@ -300,6 +309,44 @@ def probe_video_artifact(
         candidate,
         input_policy=input_policy,
     )
+    return _video_artifact_from_payload(candidate, size_bytes, payload)
+
+
+def probe_local_mp4(
+    path: Path,
+    *,
+    check_artifact: Callable[[VideoArtifactProbe], None],
+) -> tuple[VideoArtifactProbe, list[FramePresentationTimestamp]]:
+    """Probe an offline import without auto-detecting playlists or opening URLs."""
+    candidate, size_bytes = _require_video_artifact(path)
+    ffprobe = _require_ffprobe_executable()
+    stream_command = [
+        ffprobe,
+        "-v",
+        "error",
+        "-show_streams",
+        "-show_format",
+        "-of",
+        "json",
+        *_LOCAL_MP4_INPUT_ARGS,
+        str(candidate),
+    ]
+    payload = _ProbePayload.model_validate_json(
+        _run_frame_timestamp_probe(stream_command, path=candidate)
+    )
+    artifact = _video_artifact_from_payload(candidate, size_bytes, payload)
+    check_artifact(artifact)
+    frame_command = _build_frame_timestamp_probe_command(ffprobe, candidate)
+    frame_command[-1:-1] = _LOCAL_MP4_INPUT_ARGS
+    frames = _parse_frame_probe_payload(
+        _run_frame_timestamp_probe(frame_command, path=candidate), path=candidate
+    )
+    return artifact, _parse_frame_timestamp_rows(frames)
+
+
+def _video_artifact_from_payload(
+    candidate: Path, size_bytes: int, payload: _ProbePayload
+) -> VideoArtifactProbe:
     video_stream = _require_primary_video_stream(
         payload,
         candidate=candidate,

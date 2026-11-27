@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from pathlib import Path
+from typing import Literal
 from uuid import UUID
 
 import yaml
@@ -12,6 +14,8 @@ from lx_dtypes.models.contracts.knowledge_base import (
 )
 from lx_dtypes.models.contracts.study_metadata import StudyMetadata
 from lx_dtypes.models.contracts.table_import import TableMapping
+from lx_dtypes.models.interface.table_import import load_table_import_vocabulary
+from lx_dtypes.models.knowledge_base.pydantic_main import KB_MODELS
 from lx_dtypes.packages import load_registered_package
 from lx_dtypes.serialization import parse_str_list
 from pydantic import BaseModel, ConfigDict
@@ -127,6 +131,20 @@ class VocabularyClassification(BaseModel):
     choices: list[str]
 
 
+type TableTermKind = Literal[
+    "Examination", "Finding", "Classification", "ClassificationChoice"
+]
+
+
+class VocabularyTerm(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    kind: TableTermKind
+    name: str
+    label: str
+    aliases: list[str]
+
+
 class TableMappingVocabulary(BaseModel):
     """Identifiers a mapping may target; the importer validates against the same KB."""
 
@@ -136,15 +154,45 @@ class TableMappingVocabulary(BaseModel):
     examinations: list[VocabularyExamination]
     findings: list[VocabularyFinding]
     classifications: list[VocabularyClassification]
+    terms: list[VocabularyTerm]
 
 
 def mapping_vocabulary(identity: KnowledgeBaseIdentity) -> TableMappingVocabulary:
     # Record lists flatten list fields to comma-separated text.
-    records = load_registered_package(
+    knowledge_base = load_registered_package(
         identity.knowledge_base_module, version=identity.knowledge_base_version
-    ).export_record_lists()
+    )
+    records = knowledge_base.export_record_lists()
+    families: dict[TableTermKind, Iterable[KB_MODELS]] = {
+        "Examination": knowledge_base.examination.values(),
+        "Finding": knowledge_base.finding.values(),
+        "Classification": knowledge_base.classification.values(),
+        "ClassificationChoice": knowledge_base.classification_choice.values(),
+    }
+    aliases = {
+        (term.concept_type, term.name): term.aliases
+        for term in load_table_import_vocabulary(knowledge_base).concepts
+        if term.concept_type in families
+    }
     return TableMappingVocabulary(
         knowledge_base=identity,
+        terms=[
+            VocabularyTerm(
+                kind=kind,
+                name=record.name,
+                label=next(
+                    (
+                        label.strip()
+                        for label in (record.name_de, record.name_en)
+                        if label.strip().casefold() not in {"", "unknown"}
+                    ),
+                    record.name,
+                ),
+                aliases=aliases.get((kind, record.name), []),
+            )
+            for kind, members in families.items()
+            for record in sorted(members, key=lambda item: item.name)
+        ],
         examinations=sorted(
             (
                 VocabularyExamination(

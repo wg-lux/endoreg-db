@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import pytest
 from django.test import override_settings
 
 from endoreg_db.services.hub import deployment
+
+
+pytestmark = pytest.mark.no_db
 
 
 def test_get_deployment_role_normalizes_case_and_falls_back_invalid() -> None:

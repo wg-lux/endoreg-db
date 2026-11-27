@@ -10,6 +10,10 @@ import yaml
 from django.core.management import call_command
 from django.core.management.base import CommandError
 
+from endoreg_db.management.commands.build_k_pseudonymous_release import (
+    _encode_csv,  # pyright: ignore[reportPrivateUsage]
+)
+
 
 def _write_config(path: Path, *, tau_max: float = 1.0) -> None:
     path.write_text(
@@ -45,35 +49,42 @@ def _write_config(path: Path, *, tau_max: float = 1.0) -> None:
     )
 
 
-def _write_input(path: Path) -> None:
-    path.write_text(
-        "center,age_band,diagnosis\na,50-59,x\nb,60-69,x\nb,60-69,y\n",
-        encoding="utf-8",
-    )
-
-
-def test_command_writes_release_without_visible_provenance_and_protected_audit(
+def _run_release(
     tmp_path: Path,
+    *,
+    center: str = "a",
+    tau_max: float = 1.0,
+    stdout: StringIO | None = None,
 ) -> None:
     config_path = tmp_path / "policy.yaml"
     input_path = tmp_path / "input.csv"
-    release_path = tmp_path / "release.csv"
-    audit_path = tmp_path / "protected" / "audit.json"
-    _write_config(config_path)
-    _write_input(input_path)
-
-    stdout = StringIO()
+    _write_config(config_path, tau_max=tau_max)
+    input_path.write_text(
+        f"center,age_band,diagnosis\n{center},50-59,x\nb,60-69,x\nb,60-69,y\n",
+        encoding="utf-8",
+    )
     call_command(
         "build_k_pseudonymous_release",
         str(config_path),
         str(input_path),
         "--release-output",
-        str(release_path),
+        str(tmp_path / "release.csv"),
         "--audit-output",
-        str(audit_path),
+        str(tmp_path / "protected" / "audit.json"),
         stdout=stdout,
     )
 
+
+@pytest.mark.parametrize("prefix", ["=", "+", "-", "@"])
+def test_command_writes_escaped_release_and_protected_audit(
+    tmp_path: Path,
+    prefix: str,
+) -> None:
+    release_path = tmp_path / "release.csv"
+    audit_path = tmp_path / "protected" / "audit.json"
+    stdout = StringIO()
+    _run_release(tmp_path, center=f"{prefix}test", stdout=stdout)
+    assert f"\r\n'{prefix}test,50-59,x\r\n".encode("utf-8") in release_path.read_bytes()
     with release_path.open("r", encoding="utf-8", newline="") as handle:
         released_rows = list(csv.DictReader(handle))
     manifest = json.loads(audit_path.read_text(encoding="utf-8"))
@@ -91,25 +102,16 @@ def test_command_writes_release_without_visible_provenance_and_protected_audit(
 def test_command_removes_stale_release_when_predicate_is_not_satisfied(
     tmp_path: Path,
 ) -> None:
-    config_path = tmp_path / "policy.yaml"
-    input_path = tmp_path / "input.csv"
     release_path = tmp_path / "release.csv"
-    audit_path = tmp_path / "audit.json"
-    _write_config(config_path, tau_max=0.0)
-    _write_input(input_path)
     release_path.write_text("stale unsafe release", encoding="utf-8")
-
     with pytest.raises(CommandError, match="no release CSV was retained"):
-        call_command(
-            "build_k_pseudonymous_release",
-            str(config_path),
-            str(input_path),
-            "--release-output",
-            str(release_path),
-            "--audit-output",
-            str(audit_path),
-        )
-
+        _run_release(tmp_path, tau_max=0.0)
     assert not release_path.exists()
-    manifest = json.loads(audit_path.read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (tmp_path / "protected" / "audit.json").read_text(encoding="utf-8")
+    )
     assert manifest["status"] == "no_release"
+
+
+def test_release_csv_preserves_numbers() -> None:
+    assert _encode_csv(({"value": -7},), fieldnames=("value",)) == b"value\r\n-7\r\n"
